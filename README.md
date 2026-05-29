@@ -47,7 +47,6 @@ These are required to actually re-run the benchmark; omitted here for size.
 |---|---|---|
 | Per-instance snapshots (511 × repo HEAD) | `HDL_verified_new/snapshots/` | 21 GB |
 | Per-instance Verilator testbenches | `HDL_verified_new/testbench_verilator/` | 16 GB |
-| Agent per-instance run dirs (claude/codex/openhands/etc.) | `HDL_agent_eval/benchmark_*/{snapshots,testbench_verilator}/` | 8 × 21 GB |
 | OpenHands eval outputs (per-instance logs) | `openhands_eval/benchmarks/eval_outputs/` | 9.5 GB |
 
 `benchmark/verifier/patches/` (122 MB, gold developer patches) IS included — needed for F2P verification once snapshots are restored.
