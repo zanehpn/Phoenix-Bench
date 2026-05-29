@@ -17,19 +17,10 @@ HWE/
 │   ├── mini-swe-agent/ # minimal SWE-agent variant (2025)
 │   ├── OpenHands/      # interactive     (Wang et al. 2024)
 │   └── SWE-agent/      # interactive     (Yang et al. 2024)
-├── benchmark/
-│   ├── construction/   # §3.1 funnel: GitHub crawl → issue/PR filtering
-│   ├── verifier/       # §3 Phoenix-Ref harness + gold patches
-│   └── eval_harness/   # §4 product+open-source agent evaluation scaffolds
-├── rtl_deps/           # RTL libraries needed by some testbenches
-│   ├── common_cells/
-│   ├── common_verification/
-│   ├── pulp_cluster/
-│   ├── openhw/  openhw2/
-│   └── tech_cells_generic/
-└── results/
-    ├── eval_patches/   # per-agent generated patches (Tables 3, 4)
-    └── openhands_eval/ # OpenHands trajectories used in Fig 5 + Table 5
+└── benchmark/
+    ├── construction/   # §3.1 funnel: GitHub crawl → issue/PR filtering
+    ├── verifier/       # §3 Phoenix-Ref harness + gold patches
+    └── eval_harness/   # §4 product+open-source agent evaluation scaffolds
 ```
 
 ## Mapping to the paper
@@ -46,9 +37,7 @@ HWE/
 | §4.2 Eight open-source agents | `agents/` |
 | §4.2 mini-SWE-agent runs | `benchmark/eval_harness/benchmark_mini_agent/` |
 | §4.3 File-level oracle localization | `benchmark/eval_harness/benchmark_localizations/` |
-| §4.3 Testbench-feedback diagnostic | `results/openhands_eval/`, `benchmark/eval_harness/benchmark_eda/` |
-| §4.3 Cross-benchmark drop (Fig 4) | `results/openhands_eval/{hwe,openhands}-trajectories.jsonl` |
-| Tab 3 / Tab 4 generated patches | `results/eval_patches/` |
+| §4.3 Testbench-feedback diagnostic | `benchmark/eval_harness/benchmark_eda/` |
 
 ## Data NOT included (download separately)
 
