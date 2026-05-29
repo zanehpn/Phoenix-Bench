@@ -1,0 +1,546 @@
+From 1175426d5dd31485cae0b330eccd7649fc47102c Mon Sep 17 00:00:00 2001
+From: Jamie Dickson <kitrinx@gmail.com>
+Date: Sat, 14 Sep 2019 21:57:53 -0500
+Subject: [PATCH] Timing fixes
+
+---
+ NES.qsf         |   2 +-
+ NES.sv          |   6 +-
+ mappers/MMC3.sv |  20 +++++--
+ mappers/VRC.sv  |   7 +--
+ mappers/misc.sv |   2 +-
+ nes.v           |  20 ++++---
+ ppu.sv          | 148 ++++++++++++++++++++++++++----------------------
+ 7 files changed, 114 insertions(+), 91 deletions(-)
+
+diff --git a/NES.qsf b/NES.qsf
+index 56d2347e..e153c37e 100644
+--- a/NES.qsf
++++ b/NES.qsf
+@@ -13,7 +13,7 @@ set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
+ set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
+ set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
+ 
+-set_global_assignment -name LAST_QUARTUS_VERSION "17.0.2 Standard Edition"
++set_global_assignment -name LAST_QUARTUS_VERSION "17.0.0 Standard Edition"
+ 
+ set_global_assignment -name GENERATE_RBF_FILE ON
+ set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+diff --git a/NES.sv b/NES.sv
+index 8eb43e5b..e487fe26 100644
+--- a/NES.sv
++++ b/NES.sv
+@@ -428,8 +428,8 @@ assign USER_OUT[5] = 1'b1;
+ always_comb begin
+ 	if (raw_serial) begin
+ 		USER_OUT[0] = joypad_strobe;
+-		USER_OUT[1] = joy_swap ? ~joypad_clock[1] : ~joypad_clock[0];
+-		joy_data = {~USER_IN[4], ~USER_IN[2], joy_swap ? ~USER_IN[5] : joypad_bits2[0], joy_swap ? joypad_bits[0] : ~USER_IN[5]};
++		USER_OUT[1] = ~joy_swap ? ~joypad_clock[1] : ~joypad_clock[0];
++		joy_data = {~USER_IN[4], ~USER_IN[2], ~joy_swap ? ~USER_IN[5] : joypad_bits2[0], ~joy_swap ? joypad_bits[0] : ~USER_IN[5]};
+ 	end else begin
+ 		USER_OUT[0] = 1'b1;
+ 		USER_OUT[1] = 1'b1;
+@@ -587,7 +587,7 @@ wire lightgun_en = |status[19:18];
+ 
+ NES nes (
+ 	.clk             (clk),
+-	.reset           (reset_nes),
++	.reset_nes       (reset_nes),
+ 	.sys_type        (status[24:23]),
+ 	.nes_div         (nes_ce),
+ 	.mapper_flags    (downloading ? 32'd0 : mapper_flags),
+diff --git a/mappers/MMC3.sv b/mappers/MMC3.sv
+index 0df25efc..976ad18b 100644
+--- a/mappers/MMC3.sv
++++ b/mappers/MMC3.sv
+@@ -249,12 +249,13 @@ reg ram6_enabled, ram6_enable, ram6_protect; //extra bits for mmc6
+ reg [7:0] chr_bank_0, chr_bank_1;  // Selected CHR banks
+ reg [7:0] chr_bank_2, chr_bank_3, chr_bank_4, chr_bank_5;
+ reg [5:0] prg_bank_0, prg_bank_1, prg_bank_2;  // Selected PRG banks
++reg last_a12;
+ wire prg_is_ram;
+ reg [4:0] irq_reg;
+ assign irq = mapper48 ? irq_reg[4] : irq_reg[0];
+ 
+ // The alternative behavior has slightly different IRQ counter semantics.
+-wire mmc3_alt_behavior = 0;
++wire mmc3_alt_behavior = acclaim;
+ 
+ wire TQROM =     (flags[7:0] == 119); 	// TQROM maps 8kB CHR RAM
+ wire TxSROM =    (flags[7:0] == 118); 	// Connects CHR A17 to CIRAM A10
+@@ -277,6 +278,7 @@ wire mapper192 = (flags[7:0] == 192);   // Has 4KB CHR RAM
+ wire mapper194 = (flags[7:0] == 194);   // Has 2KB CHR RAM
+ wire mapper195 = (flags[7:0] == 195);   // Has 4KB CHR RAM
+ wire MMC6 = ((flags[7:0] == 4) && (flags[24:21] == 1)); // mapper 4, submapper 1 = MMC6
++wire acclaim = ((flags[7:0] == 4) && (flags[24:21] == 3)); // Acclaim mapper
+ 
+ wire four_screen_mirroring = flags[16];// | DxROM; // not all DxROM are 4-screen
+ reg mapper47_multicart;
+@@ -306,6 +308,7 @@ if (~enable) begin
+ 	{prg_bank_0, prg_bank_1} <= 0;
+ 	prg_bank_2 <= 6'b111110;
+ 	a12_ctr <= 0;
++	last_a12 <= 0;
+ 	mapper37_multicart <= 3'b000;
+ end else if (ce) begin
+ 	irq_reg[4:1] <= irq_reg[3:0]; // 4 cycle delay
+@@ -418,17 +421,26 @@ end else if (ce) begin
+ 	// All MMC3C's and Sharp MMC3B's will generate an IRQ on each scanline while $C000 is $00.
+ 	// This is because this version of the MMC3 generates IRQs when the scanline counter is equal to 0.
+ 	// In the community, this is known as the "normal" or "new" behavior.
+-	if (chr_ain_o[12] && a12_ctr == 0) begin
++
++	last_a12 <= chr_ain_o[12];
++	if ((acclaim && (!last_a12 && chr_ain_o[12]) && (a12_ctr == 6)) ||
++		(~acclaim && chr_ain_o[12] && (a12_ctr == 0))) begin
+ 		counter <= new_counter;
+ 
+ 		// MMC Scanline
+-		if ( (!mmc3_alt_behavior  || counter != 0 || irq_reload) && new_counter == 0 && irq_enable && irq_support) begin
++		if ( (!mmc3_alt_behavior || counter != 0 || irq_reload) && new_counter == 0 && irq_enable && irq_support) begin
+ 			irq_reg[0] <= 1;
+ 		end
+ 		irq_reload <= 0;
+ 	end
+ 
+-	a12_ctr <= chr_ain_o[12] ? 4'b1111 : (a12_ctr != 0) ? a12_ctr - 4'b0001 : a12_ctr;
++	if (acclaim) begin
++		if (!last_a12 && chr_ain_o[12]) // acclaim mapper counts down 8 pulses, or 16 edges total
++			a12_ctr <= (a12_ctr != 0) ? a12_ctr - 4'b0001 : 4'b0111;
++		if (prg_ain == 16'hC001 && prg_write) a12_ctr <= 4'b0111;
++	end else begin // nintendo mapper 'cools down' for 16 low cycles
++		a12_ctr <= chr_ain_o[12] ? 4'b1111 : (a12_ctr != 0) ? a12_ctr - 4'b0001 : a12_ctr;
++	end
+ end
+ 
+ // The PRG bank to load. Each increment here is 8kb. So valid values are 0..63.
+diff --git a/mappers/VRC.sv b/mappers/VRC.sv
+index a1195d55..64d987df 100644
+--- a/mappers/VRC.sv
++++ b/mappers/VRC.sv
+@@ -504,14 +504,13 @@ reg [5:0] prgbank8;
+ reg [5:0] prgbankA;
+ reg [5:0] prgbankC;
+ wire prg_ain43 = prg_ain[4] ^ prg_ain[3];
+-reg ramw, soff;
++reg ramw;
+ 
+ always@(posedge clk) begin
+ 	if (~enable) begin
+-		soff <= 1'b0;
+ 		{chrbank0, chrbank1, chrbank2, chrbank3, chrbank4, chrbank5, chrbank6, chrbank7} <= 0;
+ 		{prgbank8, prgbankA, prgbankC} <= 0;
+-		{ramw, soff} <= 0;
++		ramw <= 0;
+ 	end else if(ce && prg_write) begin
+ 		casex({prg_ain[15:12],prg_ain43})
+ 			5'b10000:prgbank8<=prg_din[5:0]; //8000
+@@ -525,7 +524,7 @@ always@(posedge clk) begin
+ 			5'b11001:chrbank5<=prg_din;      //C008/10
+ 			5'b11010:chrbank6<=prg_din;      //D000
+ 			5'b11011:chrbank7<=prg_din;      //D008/10
+-			5'b11100:{ramw,soff,mirror}<={prg_din[7:6],prg_din[1:0]};   //E000
++			5'b11100:{ramw,mirror}<={prg_din[7],prg_din[1:0]};   //E000
+ 			//5'b11101:irqlatch<=nesprgdin;      //E008/10
+ 			//5'b11110:{irqM,irqA}<={nesprgdin[2],nesprgdin[0]}; //F000
+ 		endcase
+diff --git a/mappers/misc.sv b/mappers/misc.sv
+index fe85557c..4f14ccca 100644
+--- a/mappers/misc.sv
++++ b/mappers/misc.sv
+@@ -1,5 +1,5 @@
+ // These are misc small one-off mappers. Some may end up being merged with Generic mappers.
+-
++// altera message_off 10027
+ // #15 -  100-in-1 Contra Function 16
+ module Mapper15(
+ 	input        clk,         // System clock
+diff --git a/nes.v b/nes.v
+index bf5cd89a..dca8fcb5 100644
+--- a/nes.v
++++ b/nes.v
+@@ -71,7 +71,7 @@ endmodule
+ 
+ module NES(
+ 	input         clk,
+-	input         reset,
++	input         reset_nes,
+ 	input   [1:0] sys_type,
+ 	output  [1:0] nes_div,
+ 	input  [31:0] mapper_flags,
+@@ -177,10 +177,10 @@ wire cpu_ce  = (div_cpu == div_cpu_n);
+ wire ppu_ce  = (div_ppu == div_ppu_n);
+ wire cart_ce = (cart_pre & ppu_ce); // First PPU cycle where cpu data is visible.
+ 
+-// Prefetch
++// Signals
+ wire cart_pre  = (ppu_tick == (cpu_tick_count[2] ? 1 : 0));
+-wire ppu_fetch = (ppu_tick == (cpu_tick_count[2] ? 2 : 1));
+-wire ppu_io    = (ppu_tick == (cpu_tick_count[2] ? 2 : 1));
++wire ppu_read  = (ppu_tick == (cpu_tick_count[2] ? 2 : 1));
++wire ppu_write = (ppu_tick == (cpu_tick_count[2] ? 1 : 0));
+ 
+ // The infamous NES jitter is important for accuracy, but wreks havok on modern devices and scalers,
+ // so what I do here is pause the whole system for one PPU clock and insert a "fake" ppu clock to
+@@ -199,7 +199,12 @@ reg [2:0] cpu_tick_count;
+ 
+ wire skip_ppu_cycle = (cpu_tick_count == 4) && (ppu_tick == 0);
+ 
++reg hold_reset = 0;
++wire reset = reset_nes | hold_reset;
++
+ always @(posedge clk) begin
++	if (reset_nes) hold_reset <= 1;
++	if (cpu_ce) hold_reset <= 0;
+ 	if (~freeze_clocks | ~(div_ppu == (div_ppu_n - 1'b1))) begin
+ 		if (~skip_ppu_cycle)
+ 			div_cpu <= cpu_ce || (ppu_ce && div_cpu > div_cpu_n) ? 5'd1 : div_cpu + 5'd1;
+@@ -383,9 +388,8 @@ assign joypad_clock = {joypad2_cs && mr_int, joypad1_cs && mr_int};
+ // and the M2 pin from the CPU. This will only be low for 1 and 7/8th PPU cycles, or
+ // 7 and 1/2 master cycles on NTSC. Therefore, the PPU should read or write once per cpu cycle, and
+ // with our alignment, this should occur at PPU cycle 2 (the *third* cycle).
+-
+-wire mr_ppu     = mr_int && ppu_io; // Read *from* the PPU.
+-wire mw_ppu     = mw_int && ppu_io; // Write *to* the PPU.
++wire mr_ppu     = mr_int && ppu_read; // Read *from* the PPU.
++wire mw_ppu     = mw_int && ppu_write; // Write *to* the PPU.
+ wire ppu_cs = addr >= 'h2000 && addr < 'h4000;
+ wire [7:0] ppu_dout;            // Data from PPU to CPU
+ wire chr_read, chr_write, chr_read_ex;       // If PPU reads/writes from VRAM
+@@ -408,8 +412,6 @@ PPU ppu(
+ 	.read             (ppu_cs && mr_ppu),
+ 	.write            (ppu_cs && mw_ppu),
+ 	.nmi              (nmi),
+-	.pre_read         (ppu_fetch & mr_int & ppu_cs),
+-	.pre_write        (ppu_fetch & mw_int & ppu_cs),
+ 	.vram_r           (chr_read),
+ 	.vram_r_ex        (chr_read_ex),
+ 	.vram_w           (chr_write),
+diff --git a/ppu.sv b/ppu.sv
+index a70787af..db6edfcf 100644
+--- a/ppu.sv
++++ b/ppu.sv
+@@ -29,6 +29,9 @@ reg [14:0] loopy_t;
+ reg [2:0] loopy_x;
+ // Latch
+ reg ppu_address_latch;
++reg [7:0] din_shift[2];
++reg [1:0] write_shift;
++reg [1:0] latch_shift;
+ 
+ initial begin
+ 	ppu_incr = 0;
+@@ -85,13 +88,6 @@ always @(posedge clk) if (ce) begin
+ 		end
+ 		ppu_address_latch <= !ppu_address_latch;
+ 	end else if (write && ain == 6) begin
+-		if (!ppu_address_latch) begin
+-			loopy_t[13:8] <= din[5:0];
+-			loopy_t[14] <= 0;
+-		end else begin
+-			loopy_t[7:0] <= din;
+-			loopy_v <= {loopy_t[14:8], din};
+-		end
+ 		ppu_address_latch <= !ppu_address_latch;
+ 	end else if (read && ain == 2) begin
+ 		ppu_address_latch <= 0; //Reset PPU address latch
+@@ -120,6 +116,21 @@ always @(posedge clk) if (ce) begin
+ 			end
+ 		end
+ 	end
++
++	// Writes to vram address appear to be delayed by 2 cycles
++	latch_shift <= {latch_shift[0], ppu_address_latch};
++	write_shift <= {write_shift[0], (write && ain == 6)};
++	din_shift <= '{din, din_shift[0]};
++
++	if (write_shift[1]) begin
++		if (!latch_shift[1]) begin
++			loopy_t[13:8] <= din_shift[1][5:0];
++			loopy_t[14] <= 0;
++		end else begin
++			loopy_t[7:0] <= din_shift[1];
++			loopy_v <= {loopy_t[14:8], din_shift[1]};
++		end
++	end
+ end
+ 
+ assign loopy = loopy_v;
+@@ -154,6 +165,7 @@ wire [8:0] vblank_start_sl;
+ wire [8:0] vblank_end_sl;
+ wire [8:0] last_sl;
+ wire skip_en;
++reg [3:0] rendering_sr;
+ 
+ always_comb begin
+ 	case (sys_type)
+@@ -183,7 +195,7 @@ assign at_last_cycle_group = (cycle[8:3] == 42);
+ // In Visual 2C02, the counter starts at zero and flips at scanline 256.
+ assign short_frame = end_of_line & skip_pixel;
+ 
+-wire skip_pixel = is_pre_render && ~even_frame_toggle && is_rendering && skip_en;
++wire skip_pixel = is_pre_render && ~even_frame_toggle && rendering_sr[3] && skip_en;
+ assign end_of_line = at_last_cycle_group && (cycle[3:0] == (skip_pixel ? 3 : 4));
+ 
+ // Confimed with Visual 2C02
+@@ -198,14 +210,15 @@ wire new_is_in_vblank = entering_vblank ? 1'b1 : exiting_vblank ? 1'b0 : is_in_v
+ 
+ // Set if the current line is line 0..239
+ always @(posedge clk) if (reset) begin
+-	cycle <= 0;
++	cycle <= 338;
+ 	is_in_vblank <= 0;
+ end else if (ce) begin
++	// On a real AV famicom, the NMI even_odd_timing test fails with 09, this SR is to make that happen
++	rendering_sr <= {rendering_sr[2:0], is_rendering};
+ 	cycle <= end_of_line ? 9'd0 : cycle + 9'd1;
+ 	is_in_vblank <= new_is_in_vblank;
+ end
+ 
+-
+ always @(posedge clk) if (reset) begin
+ 	scanline <= 0;
+ 	is_pre_render <= 0;
+@@ -393,7 +406,8 @@ reg [1:0] eval_counter;
+ reg old_rendering;
+ reg [8:0] last_y, last_tile, last_attr;
+ 
+-// This should happen on the third cycle of rendering
++reg overflow;
++
+ if (cycle == 340 && ce) begin
+ 	sprite0 <= sprite0_curr;
+ 	sprite0_curr <= 0;
+@@ -412,7 +426,7 @@ if (reset) begin
+ 	sprite0 <= 0;
+ 	sprite0_curr <= 0;
+ 	feed_cnt <= 0;
+-	spr_overflow <= 0;
++	overflow <= 0;
+ 	eval_counter <= 0;
+ 	ex_ovr <= 0;
+ 	oam_state <= STATE_IDLE;
+@@ -505,7 +519,7 @@ end else if (ce) begin
+ 						if (~|eval_counter) begin // m is 0
+ 							if (scanline[7:0] >= oam_data && scanline[7:0] < oam_data + (obj_size ? 16 : 8)) begin
+ 								if (~oam_temp_wren)
+-									spr_overflow <= 1;
++									overflow <= 1;
+ 								if (~|oam_addr[7:2])
+ 									sprite0_curr <= 1'b1;
+ 								eval_counter <= eval_counter + 2'd1;
+@@ -593,8 +607,13 @@ end else if (ce) begin
+ 	if (oam_state == STATE_FETCH && rendering)
+ 		oam_addr <= 0;
+ 
+-	if (is_vbe && cycle == 340)
++	// XXX: This delay is nessisary probably because the OAM handling is a cycle early
++	spr_overflow <= overflow;
++
++	if (is_vbe && cycle == 340) begin
++		overflow <= 0;
+ 		spr_overflow <= 0;
++	end
+ 
+ 	// Writes to OAMDATA during rendering (on the pre-render line and the visible lines 0-239,
+ 	// provided either sprite or background rendering is enabled) do not modify values in OAM,
+@@ -717,8 +736,7 @@ wire flip_x = attr[6];
+ wire flip_y = attr[7];
+ wire dummy_sprite = attr[4];
+ 
+-// XXX: Disabled for discovering mapper problems
+-assign use_ex = /*~dummy_sprite &&*/ ~cycle[2] && ~masked_sprites;
++assign use_ex = ~dummy_sprite && ~cycle[2] && ~masked_sprites;
+ 
+ // Flip incoming vram data based on flipx. Zero out the sprite if it's invalid. The bits are already flipped once.
+ wire [7:0] vram_f =
+@@ -852,7 +870,7 @@ module PaletteRam
+ );
+ 
+ reg [5:0] palette [32] = '{
+-	6'h09, 6'h01, 6'h00, 6'h01,
++	6'h00, 6'h01, 6'h00, 6'h01,
+ 	6'h00, 6'h02, 6'h02, 6'h0D,
+ 	6'h08, 6'h10, 6'h08, 6'h24,
+ 	6'h00, 6'h00, 6'h04, 6'h2C,
+@@ -871,7 +889,7 @@ assign dout = palette[addr2];
+ 
+ always @(posedge clk) if (reset)
+ 	palette <= '{
+-		6'h09, 6'h01, 6'h00, 6'h01,
++		6'h00, 6'h01, 6'h00, 6'h01,
+ 		6'h00, 6'h02, 6'h02, 6'h0D,
+ 		6'h08, 6'h10, 6'h08, 6'h24,
+ 		6'h00, 6'h00, 6'h04, 6'h2C,
+@@ -898,8 +916,6 @@ module PPU(
+ 	input         read,             // read
+ 	input         write,            // write
+ 	output reg    nmi,              // one while inside vblank
+-	input         pre_read,
+-	input         pre_write,
+ 	output        vram_r,           // read from vram active
+ 	output        vram_r_ex,        // use extra sprite address
+ 	output        vram_w,           // write to vram active
+@@ -951,9 +967,9 @@ wire exiting_vblank;      // At the very last cycle of the vblank
+ wire entering_vblank;     //
+ wire is_pre_render_line;  // True while we're on the pre render scanline
+ 
+-// Confirmed in Visual 2C02, rendering enabled is latched from bck_enable and spr_enable,
+-// which are themselves registers. Therefor, there is one extra cycle of delay.
+-reg rendering_enabled;
++reg enable_playfield, enable_objects;
++
++wire rendering_enabled = enable_objects | enable_playfield;
+ 
+ // 2C02 has an "is_vblank" flag that is true from pixel 0 of line 241 to pixel 0 of line 0;
+ wire is_rendering = rendering_enabled && (scanline < 240 || is_pre_render_line);
+@@ -1025,7 +1041,7 @@ OAMEval spriteeval (
+ 	.clk               (clk),
+ 	.ce                (ce),
+ 	.reset             (reset),
+-	.rendering_enabled (enable_objects | enable_playfield),
++	.rendering_enabled (rendering_enabled),
+ 	.obj_size          (obj_size),
+ 	.scanline          (scanline),
+ 	.cycle             (cycle),
+@@ -1112,10 +1128,9 @@ wire [4:0] obj_pixel = {obj_pixel_noblank[4:2], show_obj_on_pixel ? obj_pixel_no
+ 
+ reg sprite0_hit_bg;            // True if sprite#0 has collided with the BG in the last frame.
+ always @(posedge clk) if (ce) begin
+-	rendering_enabled <= (enable_objects | enable_playfield);
+-	if (cycle == 340 && is_vbe_sl) // confirmed with visual 2C02 (261, 1);
++	if (cycle == 340 && is_vbe_sl) begin
+ 		sprite0_hit_bg <= 0;
+-	else if (
++	end else if (
+ 		is_rendering        &&    // Object rendering is enabled
+ 		!cycle[8]           &&    // X Pixel 0..255
+ 		cycle[7:0] != 255   &&    // X pixel != 255
+@@ -1155,8 +1170,6 @@ always_comb begin
+ 		else
+ 			vram_r_ex = 0;
+ 
+-		//if (cycle > 336)                                                   // Dummy nametable?
+-		//		vram_a = {2'b10, loopy[11:0]};
+ 		if (cycle[2:1] == 0)
+ 			vram_a = {2'b10, loopy[11:0]};                                   // Name Table
+ 		else if (cycle[2:1] == 1)
+@@ -1169,12 +1182,12 @@ always_comb begin
+ end
+ 
+ // Read from VRAM, either when user requested a manual read, or when we're generating pixels.
+-wire vram_r_ppudata = pre_read && (ain == 7);
++wire vram_r_ppudata = read && (ain == 7);
+ 
+ assign vram_r = vram_r_ppudata || is_rendering && cycle[0] == 0 && !end_of_line;
+ 
+ // Write to VRAM?
+-assign vram_w = pre_write && (ain == 7) && !is_pal_address && !is_rendering;
++assign vram_w = write && (ain == 7) && !is_pal_address && !is_rendering;
+ 
+ wire [5:0] color2;
+ wire [4:0] pram_addr = is_rendering ?
+@@ -1197,9 +1210,11 @@ wire mask_left = (cycle < 8) && ((|mask && ~&mask) || auto_mask);
+ wire mask_right = cycle > 247 && mask == 2'b10;
+ // PAL/Dendy masks scanline 0 and 2 pixels on each side with black.
+ wire mask_pal = (|sys_type && pal_mask);
+-assign color = (mask_right | mask_left | mask_pal) ? 6'h0E : (grayscale ? {color2[5:4], 4'b0} : color2);
++wire [5:0] color1 = (grayscale ? {color2[5:4], 4'b0} : color2);
++assign color = (mask_right | mask_left | mask_pal) ? 6'h0E : color1;
+ 
+-reg enable_playfield, enable_objects;
++wire clear_nmi = (exiting_vblank | (read && ain == 2));
++wire set_nmi = entering_vblank & ~clear_nmi;
+ 
+ always @(posedge clk)
+ if (ce) begin
+@@ -1228,14 +1243,9 @@ if (ce) begin
+ 		endcase
+ 	end
+ 	// https://wiki.nesdev.com/w/index.php/NMI
+-	// Reset frame specific counters upon exiting vblank
+-	if (exiting_vblank)
+-		nmi_occured <= 0;
+-	// Set the
+-	if (entering_vblank)
++	if (set_nmi)
+ 		nmi_occured <= 1;
+-	// Reset NMI register when reading from Status
+-	if (read && ain == 2)
++	if (clear_nmi)
+ 		nmi_occured <= 0;
+ end
+ 
+@@ -1284,42 +1294,42 @@ always @(posedge clk) begin
+ 			decay_low <= decay_low - 1'b1;
+ 		else
+ 			latched_dout[4:0] <= 5'b00000;
++	end
+ 
+-		if (read) begin
+-			case (ain)
+-				2: begin
+-					latched_dout <= {nmi_occured,
+-									sprite0_hit_bg,
+-									sprite_overflow,
+-									latched_dout[4:0]};
+-					refresh_high <= 1'b1;
+-				end
++	if (read) begin
++		case (ain)
++			2: begin
++				latched_dout <= {nmi_occured,
++								sprite0_hit_bg,
++								sprite_overflow,
++								latched_dout[4:0]};
++				refresh_high <= 1'b1;
++			end
++
++			4: begin
++				latched_dout <= oam_bus;
++				refresh_high <= 1'b1;
++				refresh_low <= 1'b1;
++			end
+ 
+-				4: begin
+-					latched_dout <= oam_bus;
++			7: if (is_pal_address) begin
++					latched_dout <= {latched_dout[7:6], color1};
++					refresh_low <= 1'b1;
++				end else begin
++					latched_dout <= vram_latch;
+ 					refresh_high <= 1'b1;
+ 					refresh_low <= 1'b1;
+ 				end
++			default: latched_dout <= latched_dout;
++		endcase
+ 
+-				7: if (is_pal_address) begin
+-						latched_dout <= {latched_dout[7:6], color};
+-						refresh_low <= 1'b1;
+-					end else begin
+-						latched_dout <= vram_latch;
+-						refresh_high <= 1'b1;
+-						refresh_low <= 1'b1;
+-					end
+-				default: latched_dout <= latched_dout;
+-			endcase
+-
+-			if (reset)
+-				latched_dout <= 8'd0;
++		if (reset)
++			latched_dout <= 8'd0;
+ 
+-		end else if (write) begin
+-			refresh_high <= 1'b1;
+-			refresh_low <= 1'b1;
+-			latched_dout <= din;
+-		end
++	end else if (write) begin
++		refresh_high <= 1'b1;
++		refresh_low <= 1'b1;
++		latched_dout <= din;
+ 	end
+ end
+ 

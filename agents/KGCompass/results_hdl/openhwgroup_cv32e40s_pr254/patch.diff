@@ -1,0 +1,38 @@
+diff --git a/bhv/cv32e40s_rvfi.sv b/bhv/cv32e40s_rvfi.sv
+index 8265b68..36d0e90 100644
+--- a/bhv/cv32e40s_rvfi.sv
++++ b/bhv/cv32e40s_rvfi.sv
+@@ -217,8 +217,8 @@ module cv32e40s_rvfi
+    input logic [ 7:0]                         csr_pmpncfg_n_i[PMP_MAX_REGIONS],
+    input logic [ 7:0]                         csr_pmpncfg_q_i[PMP_MAX_REGIONS],
+    input logic [PMP_MAX_REGIONS-1:0]          csr_pmpncfg_we_i,
+-   input logic [31:0]                         csr_pmpaddr_n_i, // PMP address input shared for all pmpaddr registers
+-   input logic [31:0]                         csr_pmpaddr_q_i[PMP_MAX_REGIONS],
++    input logic [31:0]                         csr_pmpaddr_n_i, // PMP address input shared for all pmpaddr registers
++    input logic [31:0]                         csr_pmpaddr_q_i[PMP_MAX_REGIONS],
+    input logic [PMP_MAX_REGIONS-1:0]          csr_pmpaddr_we_i,
+    input logic [31:0]                         csr_mseccfg_n_i,
+    input logic [31:0]                         csr_mseccfg_q_i,
+diff --git a/bhv/cv32e40s_wrapper.sv b/bhv/cv32e40s_wrapper.sv
+index 1e5d09d..d089fec 100644
+--- a/bhv/cv32e40s_wrapper.sv
++++ b/bhv/cv32e40s_wrapper.sv
+@@ -289,8 +289,16 @@ module cv32e40s_wrapper
+         prefetcher_sva ( .prefetch_is_clic_ptr (core_i.if_stage_i.prefetch_unit_i.prefetch_is_clic_ptr_o),
+                         .*);
+ 
+-  bind cv32e40s_core:
+-    core_i cv32e40s_core_sva
++   logic [31:0] rvfi_pmpaddr_q [PMP_MAX_REGIONS];
++
++   generate
++     for (genvar i = 0; i < PMP_NUM_REGIONS; i++) begin : gen_rvfi_pmpaddr
++       assign rvfi_pmpaddr_q[i] = {{(32-PMP_ADDR_WIDTH){1'b0}}, core_i.cs_registers_i.pmp_addr_rdata[i]};
++     end
++   endgenerate
++
++   bind cv32e40s_core:
++     core_i cv32e40s_core_sva
+       #(.PMA_NUM_REGIONS(PMA_NUM_REGIONS),
+         .SMCLIC(SMCLIC))
+       core_sva (// probed cs_registers signals

@@ -1,0 +1,81 @@
+The bug is in `src/axi_lite_regs.sv`, in the read datapath.
+
+### Localization
+The failure is caused by the module allowing a **read to complete in the same cycle that a conflicting direct load (`reg_load_i`) happens on bytes from the same chunk**. Since `reg_d` is updated combinationally from `reg_load_i` before the read data is formed, a randomized `rand_load` can sometimes overwrite bytes just before the read response is captured, producing a mixed value like `de01beef` instead of the expected constant `DEADBEEFDEADBEEF`.
+
+The module already stalls **writes** on chunk-load conflicts, but it does **not** stall **reads**. For this design, reads must also be held off whenever a direct load is active on bytes that are being read in the current chunk.
+
+## Fix
+Add read-side conflict detection and prevent read completion when any byte in the addressed chunk is directly loaded in the same cycle.
+
+```systemverilog
+### src/axi_lite_regs.sv
+<<<<<<< SEARCH
+   // Have a flag which is true if any of the bytes inside a chunk are directly loaded.
+   logic [AxiStrbWidth-1:0] load;
+   logic [AxiStrbWidth-1:0] read_only;
+   // Address of the lowest byte byte of a chunk accessed by an AXI write transaction.
+   addr_t byte_w_addr;
+   assign byte_w_addr = addr_t'(aw_chunk_idx * AxiStrbWidth);
+=======
+   // Have a flag which is true if any of the bytes inside a chunk are directly loaded.
+   logic [AxiStrbWidth-1:0] load;
+   logic [AxiStrbWidth-1:0] read_only;
+   // Address of the lowest byte byte of a chunk accessed by an AXI write transaction.
+   addr_t byte_w_addr;
+   assign byte_w_addr = addr_t'(aw_chunk_idx * AxiStrbWidth);
+
+   // Read-side equivalent of `chunk_loaded`: if any byte in the current read chunk is being
+   // directly loaded, the read must not complete in the same cycle.
+   logic rd_chunk_loaded;
+>>>>>>> REPLACE
+```
+
+```systemverilog
+### src/axi_lite_regs.sv
+<<<<<<< SEARCH
+   // Only assert the loaded flag if there could be a load conflict between a strobe and load
+   // signal.
+   assign chunk_loaded = |(load & axi_req_i.w.strb);
+   assign chunk_ro     = &read_only;
+=======
+   // Only assert the loaded flag if there could be a load conflict between a strobe and load
+   // signal.
+   assign chunk_loaded   = |(load & axi_req_i.w.strb);
+   assign rd_chunk_loaded = |load;
+   assign chunk_ro       = &read_only;
+>>>>>>> REPLACE
+```
+
+```systemverilog
+### src/axi_lite_regs.sv
+<<<<<<< SEARCH
+      if (ar_dec_valid && ar_prot_ok) begin
+        // Calculate the corresponding byte index from `ar_chunk_idx`.
+        for (int unsigned i = 0; i < AxiStrbWidth; i++) begin
+          reg_byte_idx = unsigned'(ar_chunk_idx) * AxiStrbWidth + i;
+          // Guard to not index outside the `reg_q_o` array.
+          if (reg_byte_idx < RegNumBytes) begin
+            r_chan.data[8*i+:8]       = reg_q_o[reg_byte_idx];
+            rd_active_o[reg_byte_idx] = r_valid & r_ready;
+          end
+        end
+        r_valid = 1'b1;
+      end
+=======
+      if (ar_dec_valid && ar_prot_ok && !rd_chunk_loaded) begin
+        // Calculate the corresponding byte index from `ar_chunk_idx`.
+        for (int unsigned i = 0; i < AxiStrbWidth; i++) begin
+          reg_byte_idx = unsigned'(ar_chunk_idx) * AxiStrbWidth + i;
+          // Guard to not index outside the `reg_q_o` array.
+          if (reg_byte_idx < RegNumBytes) begin
+            r_chan.data[8*i+:8]       = reg_q_o[reg_byte_idx];
+            rd_active_o[reg_byte_idx] = r_valid & r_ready;
+          end
+        end
+        r_valid = 1'b1;
+      end
+>>>>>>> REPLACE
+```
+
+This ensures a read cannot observe partially updated register contents when `rand_load` toggles the same bytes in the same cycle.

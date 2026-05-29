@@ -1,0 +1,36 @@
+diff --git a/libsv/coders/encoder_8b10b.sv b/libsv/coders/encoder_8b10b.sv
+index d0c38c6..8067980 100644
+--- a/libsv/coders/encoder_8b10b.sv
++++ b/libsv/coders/encoder_8b10b.sv
+@@ -1,17 +1,26 @@
+ module encoder_8b10b (
++    input  logic       i_clk,
++    input  logic       i_rst,
++    input  logic       i_en,
+     input  logic [7:0] i_8b,
+-    input  logic       i_rd,
++    input  logic       i_disp,
+     input  logic       i_ctrl,
+     output logic [9:0] o_10b,
+-    output logic       o_rd
++    output logic       o_disp,
++    output logic       o_code_err
+ );
+ 
+   // Create lookup table input and output vectors
+   logic [ 9:0] i_lut;
+   logic [10:0] o_lut;
+-  assign i_lut = {i_ctrl, i_rd, i_8b};
+-  assign o_rd  = o_lut[10];
+-  assign o_10b = o_lut[9:0];
++  logic [10:0] o_10b_r;
++  logic        o_disp_r;
++  logic        o_code_err_r;
++
++  assign i_lut = {i_ctrl, i_disp, i_8b};
++  assign o_10b = o_10b_r;
++  assign o_disp = o_disp_r;
++  assign o_code_err = o_code_err_r;
+ 
+   // Mapping is XRHGFEDCBA: rjhgfiedcba, where X selects a control symbol if
+   // '1', R is the input running disparity (0 = -1, 1 = +1), and r is the

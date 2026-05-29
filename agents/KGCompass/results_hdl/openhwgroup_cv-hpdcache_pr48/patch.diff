@@ -1,0 +1,19 @@
+diff --git a/rtl/src/hpdcache_ctrl_pe.sv b/rtl/src/hpdcache_ctrl_pe.sv
+index c0de4e2..ed0aca9 100644
+--- a/rtl/src/hpdcache_ctrl_pe.sv
++++ b/rtl/src/hpdcache_ctrl_pe.sv
+@@ -242,6 +242,14 @@ module hpdcache_ctrl_pe
+     //      Performance event
+     assign evt_req_on_hold_o   = st1_rtab_alloc | st1_rtab_alloc_and_link,
+            evt_rtab_rollback_o = st1_rtab_rback_o;
++
++    //      Flag write requests both on the original request path and on RTAB replay.
++    //      This prevents write-back stores replayed after an error response from
++    //      losing the write-request event.
++    assign evt_write_req_o = st1_req_valid_i &
++                             st1_req_is_store_i &
++                             st1_req_wr_wb_i &
++                             (st1_req_rtab_i | cachedir_hit_i);
+     //  }}}
+ 
+     //  Data-cache control lines

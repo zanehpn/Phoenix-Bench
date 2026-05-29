@@ -1,0 +1,34 @@
+# NONCOMP clears the result bit for signaling NaNs in "not equal" compare
+
+The NONCOMP block sets the result bit when either operand of a "not equal" comparison is a NaN:
+
+https://github.com/openhwgroup/cvfpu/blob/4aac6b3e87a30c8567dbe7401eba3274eea18afc/src/fpnew_noncomp.sv#L276-L279
+
+However, it does so only for quiet NaNs, not for signaling NaNs.
+
+While the effect of the modifier bit on comparisons is not documented, a comment in the source code indicates that its effect should be to invert the boolean result of comparisons. If either operand is a NaN, the result bit is cleared, except for a "not equal" comparison, which sets the result bit when encountering a NaN. This is in line with the way NaN values are handled in compare instructions in the RISC-V spec.
+
+Hence, in order to treat quiet and signaling NaNs consistently and to be in line with the RISC-V spec, I suggest to modify the NONCOMP compare logic to set the result bit when either of the operands of a "not equal" compare is a signaling NaN.
+
+## PR Title
+Fix result of not equal compare w signaling NaNs
+
+## PR Description
+Michael Platzer explained that the NONCOMP block was inconsistently handling NaN comparisons. Specifically, it "sets the result bit when either operand of a 'not equal' comparison is a quiet NaN but not for signaling NaNs." The PR modifies the logic to treat both types consistently and align with the RISC-V specification by setting the result bit when signaling NaNs are involved in "not equal" comparisons.
+
+The change references and fixes issue #115.
+
+## PR Comments
+
+**michael-platzer** (May 8, 2024):
+Requested an initial review from lucabertaccini (code owner).
+
+**stmach** (collaborator, May 23, 2024):
+Approved the changes, noting "LGTM" and referencing a comment in issue #115.
+
+## Linked Issue
+#115: NONCOMP clears the result bit for signaling NaNs in "not equal" compare
+
+## PR Metadata
+- Repository: openhwgroup/cvfpu
+- Status: Merged by stmach (May 23, 2024)

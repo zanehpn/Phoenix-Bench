@@ -1,0 +1,5462 @@
+From fb6a558498a8185eb2683415945657b69c5c68c4 Mon Sep 17 00:00:00 2001
+From: Steven Herbst <sherbst@stanford.edu>
+Date: Tue, 12 May 2020 11:11:40 -0700
+Subject: [PATCH 01/16] update net type and direction of Vcal to match design
+ intent (inout).  impedance-based driver model is added back from ButterPHY
+
+---
+ .buildkite/pipeline.yml                       |  2 +-
+ designs/dragonphy_top/qtm/analog_core.qtm.tcl |  5 ++-
+ designs/dragonphy_top/qtm/configure.yml       |  6 ++--
+ inc/new_asic/iotype.sv                        |  1 +
+ inc/new_cpu/iotype.sv                         | 10 +++---
+ inc/new_cpu/voltage_net.sv                    | 35 +++++++++++++++++++
+ tests/new_tests/AC/test.sv                    |  1 -
+ tests/new_tests/AC_REPLICA/test.sv            |  1 -
+ tests/new_tests/DC/test.sv                    |  1 -
+ tests/new_tests/DC_REPLICA/test.sv            |  1 -
+ vlog/new_chip_src/analog_core/analog_core.sv  |  2 +-
+ .../analog_core/stochastic_adc_PR.sv          |  2 +-
+ vlog/new_chip_src/top/dragonphy_top.sv        |  2 +-
+ .../new_chip_stubs/analog_core/analog_core.sv |  2 +-
+ vlog/new_cpu_models/analog_core/V2T.sv        |  6 ++--
+ vlog/new_cpu_models/analog_core/biasgen.sv    | 24 +++++--------
+ 16 files changed, 64 insertions(+), 37 deletions(-)
+ create mode 100644 inc/new_cpu/voltage_net.sv
+
+diff --git a/.buildkite/pipeline.yml b/.buildkite/pipeline.yml
+index bfb5f852..ee4fbf1c 100644
+--- a/.buildkite/pipeline.yml
++++ b/.buildkite/pipeline.yml
+@@ -44,7 +44,7 @@ steps:
+       deactivate
+     artifact_paths:
+       - "tests/new_tests/*/build/*.eps"
+-      - "build/mflowgen/*-synopsys-dc-synthesis/logs/dc.log"
++      - "build/*/*-synopsys-dc-synthesis/logs/dc.log"
+     timeout_in_minutes: 60
+     agents:
+       fault2: "true"
+diff --git a/designs/dragonphy_top/qtm/analog_core.qtm.tcl b/designs/dragonphy_top/qtm/analog_core.qtm.tcl
+index bd4f7fdc..d7fc9b4b 100644
+--- a/designs/dragonphy_top/qtm/analog_core.qtm.tcl
++++ b/designs/dragonphy_top/qtm/analog_core.qtm.tcl
+@@ -40,10 +40,9 @@ set_qtm_port_load -value 0.010000 { ctl_pi[35:0] }
+ create_qtm_port -type input { ctl_valid }
+ set_qtm_port_load -value 0.010000 { ctl_valid }
+ 
+-# TODO: make Vcal bidirectional
+-create_qtm_port -type input { Vcal }
++create_qtm_port -type inout { Vcal }
+ set_qtm_port_load -value 0.010000 { Vcal }
+-# set_qtm_port_drive -value 1.000000 { Vcal }
++set_qtm_port_drive -value 1.000000 { Vcal }
+ 
+ create_qtm_port -type output { clk_adc }
+ set_qtm_port_drive -value 1.000000 { clk_adc }
+diff --git a/designs/dragonphy_top/qtm/configure.yml b/designs/dragonphy_top/qtm/configure.yml
+index 2473cbc4..22bd7d23 100644
+--- a/designs/dragonphy_top/qtm/configure.yml
++++ b/designs/dragonphy_top/qtm/configure.yml
+@@ -29,11 +29,11 @@ commands:
+     # link build products into output folder
+     cd ../outputs
+     ln -s ../build/analog_core/analog_core_lib.db analog_core_lib.db
+-    ln -s ../build/analog_core/analog_core.db analog_core.db
++    ln -s ../build/analog_core/analog_core.lib analog_core.lib
+     ln -s ../build/input_buffer/input_buffer_lib.db input_buffer_lib.db
+-    ln -s ../build/input_buffer/input_buffer.db input_buffer.db
++    ln -s ../build/input_buffer/input_buffer.lib input_buffer.lib
+     ln -s ../build/output_buffer/output_buffer_lib.db output_buffer_lib.db
+-    ln -s ../build/output_buffer/output_buffer.db output_buffer.db
++    ln -s ../build/output_buffer/output_buffer.lib output_buffer.lib
+ 
+ outputs:
+   - analog_core_lib.db
+diff --git a/inc/new_asic/iotype.sv b/inc/new_asic/iotype.sv
+index a1870bec..b0357a8e 100644
+--- a/inc/new_asic/iotype.sv
++++ b/inc/new_asic/iotype.sv
+@@ -3,6 +3,7 @@
+ 
+ 	`define pwl_t wire logic
+ 	`define real_t wire logic
++	`define voltage_t wire logic
+ 
+ 	`define PWL_ZERO 1'b0
+ 
+diff --git a/inc/new_cpu/iotype.sv b/inc/new_cpu/iotype.sv
+index 280027f0..32b13cf0 100644
+--- a/inc/new_cpu/iotype.sv
++++ b/inc/new_cpu/iotype.sv
+@@ -1,11 +1,13 @@
+ `ifndef __IOTYPE_SV__
+ `define __IOTYPE_SV__
+ 
+-    `include "mLingua_pwl.vh"
++	`include "mLingua_pwl.vh"
++	`include "voltage_net.sv"
+ 
+-    `define pwl_t pwl
+-    `define real_t real
++	`define pwl_t pwl
++	`define real_t real
++	`define voltage_t voltage
+ 
+-    `define PWL_ZERO '{0,0,0}
++	`define PWL_ZERO '{0,0,0}
+ 
+ `endif // `ifndef __IOTYPE_SV__
+diff --git a/inc/new_cpu/voltage_net.sv b/inc/new_cpu/voltage_net.sv
+new file mode 100644
+index 00000000..34246937
+--- /dev/null
++++ b/inc/new_cpu/voltage_net.sv
+@@ -0,0 +1,35 @@
++`ifndef __VOLTAGE_NET_SV__
++`define __VOLTAGE_NET_SV__
++
++	// reference for user-defined nettypes: 
++	// https://community.cadence.com/cadence_technology_forums/f/functional-verification/36442/problem-with-user-define-net-types-resolution-functions
++	
++	// struct for storing voltages and resistances
++	
++	typedef struct {
++		real V;
++		real R;
++	} voltage_struct ;
++	
++	// resolution function
++	
++	function automatic voltage_struct voltage_res(input voltage_struct drivers[]);
++		real num;
++		real den;
++		
++		num = 0.0;
++		den = 0.0;
++	
++		foreach (drivers[j]) begin
++			num = num + drivers[j].V/drivers[j].R;
++			den = den + 1.0/drivers[j].R;
++		end
++	
++	  	voltage_res = '{num/den, 1.0/den};
++	endfunction
++	
++	// nettype declaration
++	
++	nettype voltage_struct voltage with voltage_res;
++
++`endif // `ifndef __VOLTAGE_NET_SV__
+diff --git a/tests/new_tests/AC/test.sv b/tests/new_tests/AC/test.sv
+index adde74d8..ccd37131 100644
+--- a/tests/new_tests/AC/test.sv
++++ b/tests/new_tests/AC/test.sv
+@@ -54,7 +54,6 @@ module test;
+ 		.ext_rx_inp(ch_outp),
+ 		.ext_rx_inn(ch_outn),
+ 		.ext_Vcm(v_cm),
+-	    .ext_Vcal(0.23),
+ 
+ 		// clock inputs
+ 		.ext_clkp(ext_clkp),
+diff --git a/tests/new_tests/AC_REPLICA/test.sv b/tests/new_tests/AC_REPLICA/test.sv
+index c9921c7a..73159565 100644
+--- a/tests/new_tests/AC_REPLICA/test.sv
++++ b/tests/new_tests/AC_REPLICA/test.sv
+@@ -55,7 +55,6 @@ module test;
+ 		.ext_rx_inp_test(ch_outp),
+ 		.ext_rx_inn_test(ch_outn),
+ 		.ext_Vcm(v_cm),
+-	    .ext_Vcal(0.23),
+ 
+ 		// clock inputs
+ 		.ext_clkp(ext_clkp),
+diff --git a/tests/new_tests/DC/test.sv b/tests/new_tests/DC/test.sv
+index 3e0aae32..7531c14e 100644
+--- a/tests/new_tests/DC/test.sv
++++ b/tests/new_tests/DC/test.sv
+@@ -62,7 +62,6 @@ module test;
+ 		.ext_rx_inp(ch_outp),
+ 		.ext_rx_inn(ch_outn),
+ 		.ext_Vcm(v_cm),
+-	    .ext_Vcal(0.23),
+ 
+ 		// clock inputs
+ 		.ext_clkp(ext_clkp),
+diff --git a/tests/new_tests/DC_REPLICA/test.sv b/tests/new_tests/DC_REPLICA/test.sv
+index 6aa8736f..7fc82869 100644
+--- a/tests/new_tests/DC_REPLICA/test.sv
++++ b/tests/new_tests/DC_REPLICA/test.sv
+@@ -63,7 +63,6 @@ module test;
+ 		.ext_rx_inp_test(ch_outp),
+ 		.ext_rx_inn_test(ch_outn),
+ 		.ext_Vcm(v_cm),
+-	    .ext_Vcal(0.23),
+ 
+ 		// clock inputs
+ 		.ext_clkp(ext_clkp),
+diff --git a/vlog/new_chip_src/analog_core/analog_core.sv b/vlog/new_chip_src/analog_core/analog_core.sv
+index 05210edc..c924b2ef 100644
+--- a/vlog/new_chip_src/analog_core/analog_core.sv
++++ b/vlog/new_chip_src/analog_core/analog_core.sv
+@@ -21,7 +21,7 @@ module analog_core import const_pack::*; #(
+ 	input wire logic [Npi-1:0] ctl_pi[Nout-1:0],         // PI control code (from DCORE)
+ 	input wire logic ctl_valid,                          // PI control valid flag (from DCORE) 
+ 
+-	input `real_t Vcal,                                  // bias voltage for V2T (from pad)
++	inout `voltage_t Vcal,                               // bias voltage for V2T (from pad)
+ 	
+ 	output wire logic clk_adc,                           // clock for retiming adc data assigned from ADC_0
+ 	                                                     // (to DCORE)
+diff --git a/vlog/new_chip_src/analog_core/stochastic_adc_PR.sv b/vlog/new_chip_src/analog_core/stochastic_adc_PR.sv
+index 2dd9be69..eacfb008 100644
+--- a/vlog/new_chip_src/analog_core/stochastic_adc_PR.sv
++++ b/vlog/new_chip_src/analog_core/stochastic_adc_PR.sv
+@@ -10,7 +10,7 @@ module stochastic_adc_PR #(
+     input clk_in,
+     input `pwl_t VinN,
+     input `pwl_t VinP,
+-    input `real_t Vcal,
++    input `voltage_t Vcal,
+     input rstb,
+     input en_slice,
+     input en_sync_in,
+diff --git a/vlog/new_chip_src/top/dragonphy_top.sv b/vlog/new_chip_src/top/dragonphy_top.sv
+index e877facd..669ef61c 100644
+--- a/vlog/new_chip_src/top/dragonphy_top.sv
++++ b/vlog/new_chip_src/top/dragonphy_top.sv
+@@ -7,7 +7,7 @@ module dragonphy_top import const_pack::*; (
+ 	input `pwl_t ext_rx_inp,
+ 	input `pwl_t ext_rx_inn,
+ 	input `real_t ext_Vcm,
+-	input `real_t ext_Vcal,
++	inout `voltage_t ext_Vcal,
+ 	input `pwl_t ext_rx_inp_test,
+ 	input `pwl_t ext_rx_inn_test,
+ 
+diff --git a/vlog/new_chip_stubs/analog_core/analog_core.sv b/vlog/new_chip_stubs/analog_core/analog_core.sv
+index d2f382bb..e3421c80 100644
+--- a/vlog/new_chip_stubs/analog_core/analog_core.sv
++++ b/vlog/new_chip_stubs/analog_core/analog_core.sv
+@@ -21,7 +21,7 @@ module analog_core import const_pack::*; #(
+ 	input wire logic [Npi-1:0] ctl_pi[Nout-1:0],         // PI control code (from DCORE)
+ 	input wire logic ctl_valid,                          // PI control valid flag (from DCORE)
+ 
+-	input `real_t Vcal,                                  // bias voltage for V2T (from pad)
++	inout `voltage_t Vcal,                               // bias voltage for V2T (from pad)
+ 
+ 	output wire logic clk_adc,                           // clock for retiming adc data assigned from ADC_0
+ 	                                                     // (to DCORE)
+diff --git a/vlog/new_cpu_models/analog_core/V2T.sv b/vlog/new_cpu_models/analog_core/V2T.sv
+index 7aeabec3..a3301579 100644
+--- a/vlog/new_cpu_models/analog_core/V2T.sv
++++ b/vlog/new_cpu_models/analog_core/V2T.sv
+@@ -14,13 +14,15 @@ Todo:
+ ********************************************************************/
+ 
+ `include "mLingua_pwl.vh"
++`include "voltage_net.sv"
++
+ `timescale 1fs/1fs
+ 
+ module V2T import const_pack::*; #(
+     parameter real TD_V2T_OFFSET = 0.0
+ ) (
+     output reg v2t_out,                 // output pulse
+-    input real Vcal,                    // gate bias voltage of a current source
++    input voltage Vcal,                 // gate bias voltage of a current source
+     input pwl Vin,                      // input voltage being sampled
+     input wire logic clk_v2t,           // sampling clock for the input switch
+     input wire logic clk_v2tb,          // ~clk_v2t
+@@ -70,7 +72,7 @@ real Vin_s; // sampled input voltage (debugging purpose)
+ // MODEL BODY
+ ///////////////////
+ 
+-assign Iunit = v2t_obj.get_current(Vcal);
++assign Iunit = v2t_obj.get_current(Vcal.V);
+ assign Iramp = Iunit*$countones(ctl);
+ 
+ // sample on negative clock edge of clk_v2t
+diff --git a/vlog/new_cpu_models/analog_core/biasgen.sv b/vlog/new_cpu_models/analog_core/biasgen.sv
+index 9afd0c78..724e2506 100644
+--- a/vlog/new_cpu_models/analog_core/biasgen.sv
++++ b/vlog/new_cpu_models/analog_core/biasgen.sv
+@@ -11,31 +11,23 @@ Todo:
+ 
+ ********************************************************************/
+ 
++`include "voltage_net.sv"
++
+ module biasgen import const_pack::Nbias; (
+     input wire logic en,                 // enable this block
+     input wire logic [Nbias-1:0] ctl,    // control current
+-    input real Vbias                     // gate bias voltage
++    output voltage Vbias                 // gate bias voltage
+ );
+ 
+-import model_pack::V2TParameter;
+-
+ // effective resistance when on/off
+ // TODO: update these values to match the design!
+ 
+-localparam r_on  = 1e2;
+-localparam r_off = 1e7;
+-
+-// design parameter class instantiation, initialization
+-
+-V2TParameter v2t_obj;
+-real Iunit;    // unit ramp current source
+-
+-initial begin
+-	v2t_obj = new();
+-	Iunit = v2t_obj.Iunit;
+-end
++localparam real r_on  = 1e2;
++localparam real r_off = 1e7;
++localparam real v_nom = 0.23;
+ 
+ // Model body
+-// TODO: re-implement impedance modeling
++// TODO: implement variation with ctl
++assign Vbias = '{v_nom, (en == 1'b1) ? r_on : r_off};
+ 
+ endmodule
+
+From aea2c0750f22e78611737368dc0d52b306929604 Mon Sep 17 00:00:00 2001
+From: Steven Herbst <sherbst@stanford.edu>
+Date: Tue, 12 May 2020 16:31:37 -0700
+Subject: [PATCH 02/16] try to merge in scripts from butterphy
+
+---
+ designs/dragonphy_top/construct.py            |  26 +-
+ .../dragonphy_top/custom-init/configure.yml   |  14 +
+ .../outputs/add-endcaps-welltaps.tcl          |  19 +
+ .../custom-init/outputs/floorplan.tcl         | 171 +++++++
+ .../dragonphy_top/custom-power/configure.yml  |  14 +
+ .../custom-power/outputs/globalnetconnect.tcl |  18 +
+ .../outputs/power-strategy-dualmesh.tcl       | 429 ++++++++++++++++++
+ 7 files changed, 684 insertions(+), 7 deletions(-)
+ create mode 100644 designs/dragonphy_top/custom-init/configure.yml
+ create mode 100644 designs/dragonphy_top/custom-init/outputs/add-endcaps-welltaps.tcl
+ create mode 100644 designs/dragonphy_top/custom-init/outputs/floorplan.tcl
+ create mode 100644 designs/dragonphy_top/custom-power/configure.yml
+ create mode 100644 designs/dragonphy_top/custom-power/outputs/globalnetconnect.tcl
+ create mode 100644 designs/dragonphy_top/custom-power/outputs/power-strategy-dualmesh.tcl
+
+diff --git a/designs/dragonphy_top/construct.py b/designs/dragonphy_top/construct.py
+index 8d66255b..cca9870a 100644
+--- a/designs/dragonphy_top/construct.py
++++ b/designs/dragonphy_top/construct.py
+@@ -64,9 +64,9 @@ def construct():
+     else:
+         raise Exception(f'Unknown process: {DRAGONPHY_PROCESS}')
+ 
+-    # custom_init = Step(this_dir + '/custom-init')
++    custom_init = Step(this_dir + '/custom-init')
+     # custom_lvs = Step(this_dir + '/custom-lvs-rules')
+-    # custom_power = Step(this_dir + '/custom-power')
++    custom_power = Step(this_dir + '/custom-power')
+ 
+     dc = Step(this_dir + '/synopsys-dc-synthesis')
+     qtm = Step(this_dir + '/qtm')
+@@ -78,7 +78,7 @@ def construct():
+             Step( this_dir + '/analog_core'       ),
+             Step( this_dir + '/input_buffer'      ),
+             Step( this_dir + '/output_buffer'     ),
+-            Step( this_dir + '/global_controller' )
++            Step( this_dir + '/mdll_r1' )
+         ]
+ 
+     # Default steps
+@@ -99,6 +99,11 @@ def construct():
+     lvs            = Step( 'mentor-calibre-lvs',             default=True )
+     debugcalibre   = Step( 'cadence-innovus-debug-calibre',  default=True )
+ 
++    # Add extra input edges to innovus steps that need custom tweaks
++
++    init.extend_inputs(custom_init.all_outputs())
++    power.extend_inputs(custom_power.all_outputs())
++
+     # Add *.db files for macros to downstream nodes
+     dbs = [
+         'analog_core_lib.db',
+@@ -164,9 +169,9 @@ def construct():
+     g.add_step( dc                   )
+     g.add_step( iflow                )
+     g.add_step( init                 )
+-    # g.add_step( custom_init          )
++    g.add_step( custom_init          )
+     g.add_step( power                )
+-    # g.add_step( custom_power         )
++    g.add_step( custom_power         )
+     g.add_step( place                )
+     g.add_step( cts                  )
+     g.add_step( postcts_hold         )
+@@ -247,8 +252,8 @@ def construct():
+     g.connect_by_name( iflow,          postroute      )
+     g.connect_by_name( iflow,          signoff        )
+ 
+-    # g.connect_by_name( custom_init,    init           )
+-    # g.connect_by_name( custom_power,   power          )
++    g.connect_by_name( custom_init,    init           )
++    g.connect_by_name( custom_power,   power          )
+     # g.connect_by_name( custom_lvs,     lvs            )
+ 
+     g.connect_by_name( init,           power          )
+@@ -284,6 +289,13 @@ def construct():
+ 
+     g.update_params( parameters )
+ 
++    # init -- Add 'add-endcaps-welltaps.tcl' after 'floorplan.tcl'
++
++    order = init.get_param('order')  # get the default script run order
++    floorplan_idx = order.index('floorplan.tcl')  # find floorplan.tcl
++    order.insert(floorplan_idx + 1, 'add-endcaps-welltaps.tcl')  # add here
++    init.update_params({'order': order})
++
+     return g
+ 
+ 
+diff --git a/designs/dragonphy_top/custom-init/configure.yml b/designs/dragonphy_top/custom-init/configure.yml
+new file mode 100644
+index 00000000..f7eb62bd
+--- /dev/null
++++ b/designs/dragonphy_top/custom-init/configure.yml
+@@ -0,0 +1,14 @@
++#=========================================================================
++# Custom Scripts -- init
++#=========================================================================
++
++name: custom-init
++
++#-------------------------------------------------------------------------
++# Inputs and Outputs
++#-------------------------------------------------------------------------
++
++outputs:
++  - add-endcaps-welltaps.tcl
++  - floorplan.tcl
++
+diff --git a/designs/dragonphy_top/custom-init/outputs/add-endcaps-welltaps.tcl b/designs/dragonphy_top/custom-init/outputs/add-endcaps-welltaps.tcl
+new file mode 100644
+index 00000000..31d43c87
+--- /dev/null
++++ b/designs/dragonphy_top/custom-init/outputs/add-endcaps-welltaps.tcl
+@@ -0,0 +1,19 @@
++#=========================================================================
++# add-endcaps-welltaps.tcl
++#=========================================================================
++# Author : 
++# Date   : 
++
++#-------------------------------------------------------------------------
++# Endcap and well tap specification
++#-------------------------------------------------------------------------
++# TSMC16 requires specification of different taps/caps for different
++# locations/orientations, which the foundation flow does not natively support
++
++if {[expr {$ADK_END_CAP_CELL == ""} && {$ADK_WELL_TAP_CELL == ""}]} {
++  adk_set_end_cap_mode
++  adk_set_well_tap_mode
++  adk_add_end_caps
++  adk_add_well_taps
++}
++
+diff --git a/designs/dragonphy_top/custom-init/outputs/floorplan.tcl b/designs/dragonphy_top/custom-init/outputs/floorplan.tcl
+new file mode 100644
+index 00000000..707dbb39
+--- /dev/null
++++ b/designs/dragonphy_top/custom-init/outputs/floorplan.tcl
+@@ -0,0 +1,171 @@
++##############################
++# Begin Variable Definitions #
++##############################
++
++# These variable definitions need to be shared with the "power" step
++# Right now you just need to copy and paste these definitions into
++# power-strategy-dualmesh.
++# TODO: Figure out a better way to do this... (maybe another step?)
++
++# cell_height is from common_vars.tcl
++set cell_height 0.576
++set welltap_width 0.72
++set DB_width 0.36
++
++set boundary_width [expr $welltap_width+$DB_width]
++set boundary_height [expr $cell_height]
++
++set acore_width 360.45
++set acore_height [expr 702*$cell_height]
++
++set input_buffer_width 53.1
++set input_buffer_height [expr 87*$cell_height]
++
++set output_buffer_width 13.05
++set output_buffer_height [expr 32*$cell_height]
++
++set memory_width 64.175
++set memory_height 249.84
++
++set blockage_width [expr 0.9]
++set blockage_height [expr 2*$cell_height]
++
++set FP_width [expr ceil(580/0.09)*0.09]
++set FP_height [expr ceil(700/$cell_height)*$cell_height]
++
++set center_x [expr $FP_width/2]
++
++##############################
++#  End Variable Definitions  #
++##############################
++
++# acore
++set origin1_x [expr $center_x-$acore_width/2]
++set origin1_y [expr $FP_height-2*$boundary_height-2*$blockage_height-$acore_height-2*$cell_height]
++
++# input_buffer_async
++set origin0_x [expr 6*$blockage_width+2*$DB_width+$welltap_width+2]
++set origin0_y [expr (ceil(260-$input_buffer_height/2)/$cell_height)*$cell_height]
++
++# memory
++set origin2_x [expr $origin1_x+4*$blockage_width]
++set origin2_y [expr 2*$boundary_height+2*$blockage_height+$cell_height]
++
++# input_buffer_test
++set origin3_x [expr $FP_width-$origin0_x-$input_buffer_width]
++set origin3_y [expr (ceil(260-$input_buffer_height/2)/$cell_height)*$cell_height-$input_buffer_height+57*$cell_height]
++
++# output_buffer_test
++set origin4_x [expr $origin3_x+$input_buffer_width/2+$blockage_width+10*$welltap_width+$DB_width]
++set origin4_y [expr ceil((87-$output_buffer_height/2)/$cell_height)*$cell_height]
++
++##############
++# Floor Plan #
++##############
++
++floorPlan -site core -s $FP_width $FP_height 0 0 0 0
++
++###################
++# Place Instances #
++###################
++
++placeInstance \
++    ibuf_async \
++    $origin0_x \
++    $origin0_y
++
++placeInstance \
++    iacore \
++    $origin1_x \
++    $origin1_y
++
++placeInstance \
++    ibuf_test1 \
++    [expr $origin3_x] \
++    [expr $origin3_y] \
++    R180
++
++placeInstance \
++    ibuf_test0 \
++    [expr $origin3_x] \
++    [expr $origin3_y+$input_buffer_height+4*$cell_height] \
++    MY
++
++placeInstance \
++    idcore/out_buff_i \
++    $origin4_x \
++    $origin4_y
++
++# TODO: place multiple memory instances, i.e.
++# idcore/oneshot_multimemory/sram_i[k]/memory
++# for 0 <= k <= N_mem_tiles-1
++
++# TODO: place ibuf_main
++# TODO: place ibuf_mdll_ref
++# TODO: place imdll
++
++###################
++# Place Blockages #
++###################
++
++# outermost blockage
++createPlaceBlockage -box \
++    0 \
++    0 \
++    $FP_width \
++    $blockage_height
++
++createPlaceBlockage -box \
++    0 \
++    $FP_height \
++    $FP_width \
++    [expr $FP_height-$blockage_height]
++
++createPlaceBlockage -box \
++    0 \
++    0 \
++    $blockage_width \
++    $FP_height
++
++createPlaceBlockage -box \
++    $FP_width \
++    0 \
++    [expr $FP_width-$blockage_width] \
++    $FP_height
++
++# input_buffer_async
++createPlaceBlockage -box \
++    [expr $origin0_x-5*$blockage_width] \
++    [expr $origin0_y-$blockage_width] \
++    [expr $origin0_x+$input_buffer_width+5*$blockage_width] \
++    [expr $origin0_y+$input_buffer_height+$blockage_width]
++
++# acore
++createPlaceBlockage -box \
++    [expr $origin1_x-$blockage_width] \
++    [expr $origin1_y-$blockage_width] \
++    [expr $origin1_x+$acore_width+$blockage_width] \
++    [expr $origin1_y+$acore_height+$blockage_width]
++
++# input_buffer_test
++# TODO: does this cover both ibuf_test0 and ibuf_test1?
++createPlaceBlockage -box \
++    [expr $origin3_x-5*$blockage_width] \
++    [expr $origin3_y-$blockage_width] \
++    [expr $origin3_x+$input_buffer_width+5*$blockage_width] \
++    [expr $origin3_y+2*$input_buffer_height+$blockage_width+4*$cell_height]
++
++# output_buffer
++createPlaceBlockage -box \
++    [expr $origin4_x-$blockage_width] \
++    [expr $origin4_y-$blockage_width] \
++    [expr $origin4_x+$output_buffer_width+$blockage_width] \
++    [expr $origin4_y+$output_buffer_height+$blockage_width]
++
++# TODO: create blockage for multiple memory instances, i.e.
++# idcore/oneshot_multimemory/sram_i[k]/memory
++# for 0 <= k <= N_mem_tiles-1
++
++# TODO: create blockage for ibuf_main
++# TODO: create blockage ibuf_mdll_ref
++# TODO: create blockage for imdll
+\ No newline at end of file
+diff --git a/designs/dragonphy_top/custom-power/configure.yml b/designs/dragonphy_top/custom-power/configure.yml
+new file mode 100644
+index 00000000..406f11e9
+--- /dev/null
++++ b/designs/dragonphy_top/custom-power/configure.yml
+@@ -0,0 +1,14 @@
++#=========================================================================
++# Custom Scripts -- power
++#=========================================================================
++
++name: custom-power
++
++#-------------------------------------------------------------------------
++# Inputs and Outputs
++#-------------------------------------------------------------------------
++
++outputs:
++  - globalnetconnect.tcl
++  - power-strategy-dualmesh.tcl
++
+diff --git a/designs/dragonphy_top/custom-power/outputs/globalnetconnect.tcl b/designs/dragonphy_top/custom-power/outputs/globalnetconnect.tcl
+new file mode 100644
+index 00000000..488508f3
+--- /dev/null
++++ b/designs/dragonphy_top/custom-power/outputs/globalnetconnect.tcl
+@@ -0,0 +1,18 @@
++globalNetConnect DVDD -type pgpin -pin VDD -inst * -override
++globalNetConnect DVSS -type pgpin -pin VSS -inst * -override
++globalNetConnect DVDD -type pgpin -pin VPP -inst * -override
++globalNetConnect DVSS -type pgpin -pin VBB -inst * -override
++
++globalNetConnect DVDD -type pgpin -pin DVDD -inst {iacore} -override
++globalNetConnect DVSS -type pgpin -pin DVSS -inst {iacore} -override
++
++globalNetConnect AVDD -type pgpin -pin AVDD -inst {iacore} -override
++globalNetConnect AVSS -type pgpin -pin AVSS -inst {iacore} -override
++
++globalNetConnect CVDD -type pgpin -pin CVDD -inst {iacore} -override
++globalNetConnect CVSS -type pgpin -pin CVSS -inst {iacore} -override
++
++globalNetConnect DVDD -type pgpin -pin avdd -inst {*ibuf_*} -override
++globalNetConnect DVSS -type pgpin -pin avss -inst {*ibuf_*} -override
++
++# TODO: are special net connections needed for the MDLL?
+\ No newline at end of file
+diff --git a/designs/dragonphy_top/custom-power/outputs/power-strategy-dualmesh.tcl b/designs/dragonphy_top/custom-power/outputs/power-strategy-dualmesh.tcl
+new file mode 100644
+index 00000000..1bcc9a88
+--- /dev/null
++++ b/designs/dragonphy_top/custom-power/outputs/power-strategy-dualmesh.tcl
+@@ -0,0 +1,429 @@
++# TODO: remove inbuf_aux-related stuff
++
++# TODO: add ibuf_main-related stuff
++# TODO: add ibuf_mdll_ref-related stuff
++# TODO: add imdll-related stuff
++
++# TODO: add stuff for the various SRAM instances
++
++##############################
++# Begin Variable Definitions #
++##############################
++
++# These variable definitions need to be shared with the "power" step
++# Right now you just need to copy and paste these definitions into
++# power-strategy-dualmesh.
++# TODO: Figure out a better way to do this... (maybe another step?)
++
++# cell_height is from common_vars.tcl
++set cell_height 0.576
++set welltap_width 0.72
++set DB_width 0.36
++
++set boundary_width [expr $welltap_width+$DB_width]
++set boundary_height [expr $cell_height]
++
++set acore_width 360.45
++set acore_height [expr 702*$cell_height]
++
++set input_buffer_width 53.1
++set input_buffer_height [expr 87*$cell_height]
++
++set output_buffer_width 13.05
++set output_buffer_height [expr 32*$cell_height]
++
++set memory_width 64.175
++set memory_height 249.84
++
++set blockage_width [expr 0.9]
++set blockage_height [expr 2*$cell_height]
++
++set FP_width [expr ceil(580/0.09)*0.09]
++set FP_height [expr ceil(700/$cell_height)*$cell_height]
++
++set center_x [expr $FP_width/2]
++
++##############################
++#  End Variable Definitions  #
++##############################
++
++createRouteBlk -box \
++    [expr $origin0_x-$blockage_width] \
++    [expr $origin0_y-$blockage_width] \
++    [expr $origin0_x+$input_buffer_width+$blockage_width] \
++    [expr $origin0_y+$input_buffer_height+$blockage_width] \
++    -name inbuf_async_blk -layer 1
++
++createRouteBlk -box \
++    [expr $origin2_x-$blockage_width] \
++    [expr $origin2_y-$blockage_width] \
++    [expr $origin2_x+$memory_width+$blockage_width] \
++    [expr $origin2_y+$memory_height+$blockage_width] \
++    -name memory_blk -layer 1
++
++# TODO: does this cover both ibuf_test0 and ibuf_test1?
++createRouteBlk -box \
++    [expr $origin3_x-$blockage_width] \
++    [expr $origin3_y-$blockage_width] \
++    [expr $origin3_x+$input_buffer_width+$blockage_width] \
++    [expr $origin3_y+2*$input_buffer_height+$blockage_width] \
++    -name inbuf_test_blk -layer 1
++
++createRouteBlk -box \
++    [expr $center_x-$input_buffer_width/2-$blockage_width] \
++    [expr $origin1_y-$input_buffer_height-32*$cell_height-$blockage_height] \
++    [expr $center_x-$input_buffer_width/2+$input_buffer_width+$blockage_width] \
++    [expr $origin1_y-32*$cell_height+$blockage_height] \
++    -name inbuf_aux_blk -layer 1
++
++addStripe \
++    -pin_layer M1 \
++    -over_pins 1 \
++    -block_ring_top_layer_limit M1 \
++    -max_same_layer_jog_length 3.6 \
++    -padcore_ring_bottom_layer_limit M1 \
++    -padcore_ring_top_layer_limit M1 \
++    -spacing 1.8 \
++    -master "BOUND*" \
++    -merge_stripes_value 0.045 \
++    -create_pins 1 \
++    -direction horizontal \
++    -layer M1 \
++    -block_ring_bottom_layer_limit M1 \
++    -width pin_width \
++    -extend_to design_boundary \
++    -nets {DVDD DVSS}
++
++deleteRouteBlk -name *
++
++set input_buffer_offset 21.104
++set output_buffer_offset 1.0
++
++createRouteBlk -box \
++    [expr $origin1_x-$blockage_width] \
++    [expr $origin1_y-$blockage_width-$cell_height] \
++    [expr $origin1_x+$acore_width+$blockage_width] \
++    $FP_height \
++    -name acore_blk \
++    -layer 7
++
++# input_buffers
++addStripe \
++    -nets {DVSS DVDD} \
++    -layer M7 \
++    -direction vertical \
++    -width 2 -spacing 1 \
++    -start_offset [expr $origin0_x+$input_buffer_offset] \
++    -stop_offset [expr $FP_width-($origin0_x+$input_buffer_width-$input_buffer_offset+1)] \
++    -set_to_set_distance 6 \
++    -start_from left \
++    -switch_layer_over_obs false \
++    -max_same_layer_jog_length 2 \
++    -padcore_ring_top_layer_limit AP \
++    -padcore_ring_bottom_layer_limit M7 \
++    -block_ring_top_layer_limit M7 \
++    -block_ring_bottom_layer_limit M1 \
++    -use_wire_group 0 \
++    -snap_wire_center_to_grid None \
++    -skip_via_on_pin {standardcell} \
++    -skip_via_on_wire_shape {noshape} \
++    -extend_to design_boundary
++
++addStripe \
++    -nets {DVSS DVDD} \
++    -layer M7 \
++    -direction vertical \
++    -width 2 \
++    -spacing 1 \
++    -start_offset [expr $origin0_x+$input_buffer_offset] \
++    -stop_offset [expr $FP_width-($origin0_x+$input_buffer_width-$input_buffer_offset+1)] \
++    -set_to_set_distance 6 \
++    -start_from right \
++    -switch_layer_over_obs false \
++    -max_same_layer_jog_length 2 \
++    -padcore_ring_top_layer_limit AP \
++    -padcore_ring_bottom_layer_limit M7 \
++    -block_ring_top_layer_limit M7 \
++    -block_ring_bottom_layer_limit M1 \
++    -use_wire_group 0 \
++    -snap_wire_center_to_grid None \
++    -skip_via_on_pin {standardcell} \
++    -skip_via_on_wire_shape {noshape} \
++    -extend_to design_boundary
++
++createRouteBlk -box \
++    [expr $center_x-10] \
++    [expr $origin1_y] \
++    [expr $center_x+10] \
++    [expr $origin1_y-30*$cell_height] \
++    -name inbuf_aux_blk2 \
++    -layer 7
++
++# input_buffer_aux
++addStripe \
++    -nets {DVSS DVDD} \
++    -layer M7 \
++    -direction vertical \
++    -width 2 \
++    -spacing 1 \
++    -start_offset [expr $center_x-$input_buffer_width/2+$input_buffer_offset] \
++    -stop_offset [expr $FP_width-( $center_x+$input_buffer_width/2-$input_buffer_offset+1)] \
++    -set_to_set_distance 6 \
++    -start_from left \
++    -switch_layer_over_obs false \
++    -max_same_layer_jog_length 2 \
++    -padcore_ring_top_layer_limit AP \
++    -padcore_ring_bottom_layer_limit M7 \
++    -block_ring_top_layer_limit M7 \
++    -block_ring_bottom_layer_limit M1 \
++    -use_wire_group 0 \
++    -snap_wire_center_to_grid None \
++    -skip_via_on_pin {standardcell} \
++    -skip_via_on_wire_shape {noshape} \
++    -extend_to design_boundary
++
++createRouteBlk -box \
++    [expr $origin0_x-$blockage_width] \
++    [expr $origin0_y-$blockage_width] \
++    [expr $origin0_x+$input_buffer_width+$blockage_width] \
++    [expr $origin0_y+$input_buffer_height+$blockage_width] \
++    -name inbuf_async_blk \
++    -layer 7
++
++createRouteBlk -box \
++    [expr $origin3_x-$blockage_width] \
++    [expr $origin3_y-$blockage_width] \
++    [expr $origin3_x+$input_buffer_width+$blockage_width] \
++    [expr $origin3_y+2*$input_buffer_height+$blockage_width+4*$cell_height] \
++    -name inbuf_test_blk \
++    -layer 7
++
++createRouteBlk -box \
++    [expr $center_x-$input_buffer_width/2-$blockage_width] \
++    [expr $origin1_y-$input_buffer_height-32*$cell_height-$blockage_height] \
++    [expr $center_x-$input_buffer_width/2+$input_buffer_width+$blockage_width] \
++    [expr $origin1_y-32*$cell_height+$blockage_height] \
++    -name inbuf_aux_blk \
++    -layer 7
++
++# output_buffer
++addStripe \
++    -nets {DVSS DVDD} \
++    -layer M7 \
++    -direction vertical \
++    -width 1 \
++    -spacing 0.5 \
++    -start_offset [expr $origin4_x+$output_buffer_offset] \
++    -stop_offset 8 \
++    -set_to_set_distance 8.55 \
++    -start_from left \
++    -switch_layer_over_obs false \
++    -max_same_layer_jog_length 2 \
++    -padcore_ring_top_layer_limit AP \
++    -padcore_ring_bottom_layer_limit M7 \
++    -block_ring_top_layer_limit M7 \
++    -block_ring_bottom_layer_limit M1 \
++    -use_wire_group 0
++    -snap_wire_center_to_grid None \
++    -skip_via_on_pin {standardcell} \
++    -skip_via_on_wire_shape {noshape} \
++    -extend_to design_boundary
++
++addStripe \
++    -nets {DVSS DVDD} \
++    -layer M7 \
++    -direction vertical \
++    -width 1 \
++    -spacing 0.5 \
++    -start_offset [expr $origin4_x+$output_buffer_offset] \
++    -stop_offset 8 \
++    -set_to_set_distance 8.55 \
++    -start_from right \
++    -switch_layer_over_obs false \
++    -max_same_layer_jog_length 2 \
++    -padcore_ring_top_layer_limit AP \
++    -padcore_ring_bottom_layer_limit M7 \
++    -block_ring_top_layer_limit M7 \
++    -block_ring_bottom_layer_limit M1 \
++    -use_wire_group 0 \
++    -snap_wire_center_to_grid None \
++    -skip_via_on_pin {standardcell} \
++    -skip_via_on_wire_shape {noshape} \
++    -extend_to design_boundary
++
++#dcore
++
++#outmost stripe
++
++addStripe \
++    -nets {DVDD DVSS} \
++    -layer M7 \
++    -direction vertical \
++    -width 1 \
++    -spacing 0.5 \
++    -start_offset 0.5 \
++    -set_to_set_distance 1000 \
++    -start_from right \
++    -switch_layer_over_obs false \
++    -max_same_layer_jog_length 2 \
++    -padcore_ring_top_layer_limit AP \
++    -padcore_ring_bottom_layer_limit M7 \
++    -block_ring_top_layer_limit M7 \
++    -block_ring_bottom_layer_limit M1 \
++    -use_wire_group 0 \
++    -snap_wire_center_to_grid None \
++    -skip_via_on_pin {standardcell} \
++    -skip_via_on_wire_shape {noshape} \
++    -extend_to design_boundary
++
++addStripe \
++    -nets {DVSS DVDD} \
++    -layer M7 \
++    -direction vertical \
++    -width 1 \
++    -spacing 0.5 \
++    -start_offset 0.5 \
++    -set_to_set_distance 1000 \
++    -start_from left \
++    -switch_layer_over_obs false \
++    -max_same_layer_jog_length 2 \
++    -padcore_ring_top_layer_limit AP \
++    -padcore_ring_bottom_layer_limit M7 \
++    -block_ring_top_layer_limit M7 \
++    -block_ring_bottom_layer_limit M1 \
++    -use_wire_group 0 \
++    -snap_wire_center_to_grid None \
++    -skip_via_on_pin {standardcell} \
++    -skip_via_on_wire_shape {noshape} \
++    -extend_to design_boundary
++
++# center stripe
++addStripe -nets {DVSS DVDD} \
++    -layer M7 \
++    -direction vertical \
++    -width 1 \
++    -spacing 3 \
++    -start_offset 42 \
++    -stop_offset [expr $FP_width/2] \
++    -set_to_set_distance 20 \
++    -start_from right \
++    -switch_layer_over_obs false \
++    -max_same_layer_jog_length 2 \
++    -padcore_ring_top_layer_limit AP \
++    -padcore_ring_bottom_layer_limit M7 \
++    -block_ring_top_layer_limit M7 \
++    -block_ring_bottom_layer_limit M1 \
++    -use_wire_group 0 \
++    -snap_wire_center_to_grid None \
++    -skip_via_on_pin {standardcell} \
++    -skip_via_on_wire_shape {noshape} \
++    -extend_to design_boundary
++
++addStripe \
++    -nets {DVSS DVDD} \
++    -layer M7 \
++    -direction vertical \
++    -width 1 \
++    -spacing 3 \
++    -start_offset 42 \
++    -stop_offset [expr $FP_width/2] \
++    -set_to_set_distance 20 \
++    -start_from left \
++    -switch_layer_over_obs false \
++    -max_same_layer_jog_length 2 \
++    -padcore_ring_top_layer_limit AP \
++    -padcore_ring_bottom_layer_limit M7 \
++    -block_ring_top_layer_limit M7 \
++    -block_ring_bottom_layer_limit M1 \
++    -use_wire_group 0 \
++    -snap_wire_center_to_grid None \
++    -skip_via_on_pin {standardcell} \
++    -skip_via_on_wire_shape {noshape} \
++    -extend_to design_boundary
++
++deleteRouteBlk -name *
++
++createRouteBlk -box \
++    0 \
++    0 \
++    [expr $FP_width] \
++    [expr $FP_height] \
++    -name entire_design_blk \
++    -layer 7
++
++createRouteBlk -box \
++    [expr $origin0_x-$blockage_width] \
++    [expr $origin0_y-$blockage_width] \
++    [expr $origin0_x+$input_buffer_width+$blockage_width] \
++    [expr $origin0_y+$input_buffer_height+$blockage_width] \
++    -name inbuf_async_blk \
++    -layer {8 9}
++
++createRouteBlk -box \
++    [expr $origin3_x-$blockage_width] \
++    [expr $origin3_y-$blockage_width] \
++    [expr $origin3_x+$input_buffer_width+$blockage_width] \
++    [expr $origin3_y+2*$input_buffer_height+$blockage_width+4*$cell_height] \
++    -name inbuf_test_blk \
++    -layer {8 9}
++
++createRouteBlk -box \
++    [expr $center_x-$input_buffer_width/2-$blockage_width] \
++    [expr $origin1_y-$input_buffer_height-32*$cell_height-$blockage_height] \
++    [expr $center_x-$input_buffer_width/2+$input_buffer_width+$blockage_width] \
++    [expr $origin1_y-32*$cell_height+$blockage_height] \
++    -name inbuf_aux_blk \
++    -layer {8 9}
++
++createRouteBlk -box \
++    [expr $origin1_x] \
++    [expr $FP_height] \
++    [expr $origin1_x+$acore_width] \
++    [expr $origin1_y-$blockage_height-2*$cell_height] \
++    -name acore_blk2 \
++    -layer {8 9}
++
++sroute \
++    -connect { blockPin } \
++    -layerChangeRange { M8 M8 } \
++    -blockPinTarget { boundaryWithPin } \
++    -allowJogging 0 \
++    -crossoverViaLayerRange { M8 M7 } \
++    -nets { DVDD DVSS } \
++    -allowLayerChange 0 \
++    -blockPin useLef \
++    -targetViaLayerRange { M8 M7 }
++
++createRouteBlk -box \
++    0 \
++    [expr $FP_height] \
++    [expr $FP_width] \
++    [expr $origin1_y] \
++    -name acore_blk_M8 \
++    -layer 8
++
++addStripe \
++    -nets {DVDD DVSS } \
++    -layer M8 \
++    -direction horizontal \
++    -width 2 \
++    -spacing 1 \
++    -start_offset 3 \
++    -set_to_set_distance 12 \
++    -start_from bottom \
++    -switch_layer_over_obs false \
++    -max_same_layer_jog_length 2 \
++    -padcore_ring_top_layer_limit AP \
++    -padcore_ring_bottom_layer_limit M1 \
++    -block_ring_top_layer_limit M7 \
++    -block_ring_bottom_layer_limit M1 \
++    -use_wire_group 0 \
++    -snap_wire_center_to_grid None \
++    -skip_via_on_pin {standardcell} \
++    -skip_via_on_wire_shape {noshape} \
++    -create_pins 1 \
++    -extend_to design_boundary
++
++deleteRouteBlk -name acore_blk_M8
++
++deleteRouteBlk -name *
+\ No newline at end of file
+
+From 95edd606deee1c32ec8aaf2dcdef0ad5b7bb7914 Mon Sep 17 00:00:00 2001
+From: Steven Herbst <sherbst@stanford.edu>
+Date: Tue, 12 May 2020 16:38:24 -0700
+Subject: [PATCH 03/16] fix missing variables
+
+---
+ .../custom-init/outputs/floorplan.tcl         |  8 ++---
+ .../outputs/power-strategy-dualmesh.tcl       | 35 ++++++++++++++-----
+ 2 files changed, 31 insertions(+), 12 deletions(-)
+
+diff --git a/designs/dragonphy_top/custom-init/outputs/floorplan.tcl b/designs/dragonphy_top/custom-init/outputs/floorplan.tcl
+index 707dbb39..b81c4f83 100644
+--- a/designs/dragonphy_top/custom-init/outputs/floorplan.tcl
++++ b/designs/dragonphy_top/custom-init/outputs/floorplan.tcl
+@@ -35,10 +35,6 @@ set FP_height [expr ceil(700/$cell_height)*$cell_height]
+ 
+ set center_x [expr $FP_width/2]
+ 
+-##############################
+-#  End Variable Definitions  #
+-##############################
+-
+ # acore
+ set origin1_x [expr $center_x-$acore_width/2]
+ set origin1_y [expr $FP_height-2*$boundary_height-2*$blockage_height-$acore_height-2*$cell_height]
+@@ -59,6 +55,10 @@ set origin3_y [expr (ceil(260-$input_buffer_height/2)/$cell_height)*$cell_height
+ set origin4_x [expr $origin3_x+$input_buffer_width/2+$blockage_width+10*$welltap_width+$DB_width]
+ set origin4_y [expr ceil((87-$output_buffer_height/2)/$cell_height)*$cell_height]
+ 
++##############################
++#  End Variable Definitions  #
++##############################
++
+ ##############
+ # Floor Plan #
+ ##############
+diff --git a/designs/dragonphy_top/custom-power/outputs/power-strategy-dualmesh.tcl b/designs/dragonphy_top/custom-power/outputs/power-strategy-dualmesh.tcl
+index 1bcc9a88..a48160dd 100644
+--- a/designs/dragonphy_top/custom-power/outputs/power-strategy-dualmesh.tcl
++++ b/designs/dragonphy_top/custom-power/outputs/power-strategy-dualmesh.tcl
+@@ -1,11 +1,3 @@
+-# TODO: remove inbuf_aux-related stuff
+-
+-# TODO: add ibuf_main-related stuff
+-# TODO: add ibuf_mdll_ref-related stuff
+-# TODO: add imdll-related stuff
+-
+-# TODO: add stuff for the various SRAM instances
+-
+ ##############################
+ # Begin Variable Definitions #
+ ##############################
+@@ -43,10 +35,37 @@ set FP_height [expr ceil(700/$cell_height)*$cell_height]
+ 
+ set center_x [expr $FP_width/2]
+ 
++# acore
++set origin1_x [expr $center_x-$acore_width/2]
++set origin1_y [expr $FP_height-2*$boundary_height-2*$blockage_height-$acore_height-2*$cell_height]
++
++# input_buffer_async
++set origin0_x [expr 6*$blockage_width+2*$DB_width+$welltap_width+2]
++set origin0_y [expr (ceil(260-$input_buffer_height/2)/$cell_height)*$cell_height]
++
++# memory
++set origin2_x [expr $origin1_x+4*$blockage_width]
++set origin2_y [expr 2*$boundary_height+2*$blockage_height+$cell_height]
++
++# input_buffer_test
++set origin3_x [expr $FP_width-$origin0_x-$input_buffer_width]
++set origin3_y [expr (ceil(260-$input_buffer_height/2)/$cell_height)*$cell_height-$input_buffer_height+57*$cell_height]
++
++# output_buffer_test
++set origin4_x [expr $origin3_x+$input_buffer_width/2+$blockage_width+10*$welltap_width+$DB_width]
++set origin4_y [expr ceil((87-$output_buffer_height/2)/$cell_height)*$cell_height]
++
+ ##############################
+ #  End Variable Definitions  #
+ ##############################
+ 
++# General tasks:
++# TODO: remove inbuf_aux-related stuff
++# TODO: add ibuf_main-related stuff
++# TODO: add ibuf_mdll_ref-related stuff
++# TODO: add imdll-related stuff
++# TODO: add stuff for the various SRAM instances
++
+ createRouteBlk -box \
+     [expr $origin0_x-$blockage_width] \
+     [expr $origin0_y-$blockage_width] \
+
+From 988629ddf857dbac8bcd498116e3c790ed87910d Mon Sep 17 00:00:00 2001
+From: Steven Herbst <sherbst@stanford.edu>
+Date: Tue, 12 May 2020 19:07:11 -0700
+Subject: [PATCH 04/16] refactor common variables into custom-geom
+
+---
+ designs/dragonphy_top/construct.py            | 32 +++++++++-
+ .../dragonphy_top/custom-geom/configure.yml   | 11 ++++
+ .../custom-geom/outputs/set-geom-vars.tcl     | 49 +++++++++++++++
+ .../custom-init/outputs/floorplan.tcl         | 61 -------------------
+ .../outputs/power-strategy-dualmesh.tcl       | 61 -------------------
+ 5 files changed, 91 insertions(+), 123 deletions(-)
+ create mode 100644 designs/dragonphy_top/custom-geom/configure.yml
+ create mode 100644 designs/dragonphy_top/custom-geom/outputs/set-geom-vars.tcl
+
+diff --git a/designs/dragonphy_top/construct.py b/designs/dragonphy_top/construct.py
+index cca9870a..a38d3d86 100644
+--- a/designs/dragonphy_top/construct.py
++++ b/designs/dragonphy_top/construct.py
+@@ -67,6 +67,7 @@ def construct():
+     custom_init = Step(this_dir + '/custom-init')
+     # custom_lvs = Step(this_dir + '/custom-lvs-rules')
+     custom_power = Step(this_dir + '/custom-power')
++    custom_geom = Step(this_dir + '/custom-geom')
+ 
+     dc = Step(this_dir + '/synopsys-dc-synthesis')
+     qtm = Step(this_dir + '/qtm')
+@@ -102,7 +103,10 @@ def construct():
+     # Add extra input edges to innovus steps that need custom tweaks
+ 
+     init.extend_inputs(custom_init.all_outputs())
++    init.extend_inputs(custom_geom.all_outputs())
++
+     power.extend_inputs(custom_power.all_outputs())
++    power.extend_inputs(custom_geom.all_outputs())
+ 
+     # Add *.db files for macros to downstream nodes
+     dbs = [
+@@ -194,6 +198,9 @@ def construct():
+     # *.lib and *.db files for some blocks
+     g.add_step( qtm )
+ 
++    # variables related to the design geometry
++    g.add_step( custom_geom )
++
+     #-----------------------------------------------------------------------
+     # Graph -- Add edges
+     #-----------------------------------------------------------------------
+@@ -253,7 +260,11 @@ def construct():
+     g.connect_by_name( iflow,          signoff        )
+ 
+     g.connect_by_name( custom_init,    init           )
++    g.connect_by_name( custom_geom,    init           )
++
+     g.connect_by_name( custom_power,   power          )
++    g.connect_by_name( custom_geom,    power          )
++
+     # g.connect_by_name( custom_lvs,     lvs            )
+ 
+     g.connect_by_name( init,           power          )
+@@ -289,13 +300,32 @@ def construct():
+ 
+     g.update_params( parameters )
+ 
+-    # init -- Add 'add-endcaps-welltaps.tcl' after 'floorplan.tcl'
++    ####
++    # modify script order for init
++    ####
+ 
+     order = init.get_param('order')  # get the default script run order
++
++    # Add 'add-endcaps-welltaps.tcl' after 'floorplan.tcl'
+     floorplan_idx = order.index('floorplan.tcl')  # find floorplan.tcl
+     order.insert(floorplan_idx + 1, 'add-endcaps-welltaps.tcl')  # add here
++
++    # Add 'set-geom-vars.tcl' at the beginning
++    order.insert(0, 'set-geom-vars.tcl')
++
+     init.update_params({'order': order})
+ 
++    ####
++    # modify script order for power
++    ####
++
++    order = power.get_param('order')  # get the default script run order
++
++    # Add 'set-geom-vars.tcl' at the beginning
++    order.insert(0, 'set-geom-vars.tcl')
++
++    power.update_params({'order': order})
++
+     return g
+ 
+ 
+diff --git a/designs/dragonphy_top/custom-geom/configure.yml b/designs/dragonphy_top/custom-geom/configure.yml
+new file mode 100644
+index 00000000..e7478708
+--- /dev/null
++++ b/designs/dragonphy_top/custom-geom/configure.yml
+@@ -0,0 +1,11 @@
++# Set up variables related to the design geometry
++
++name: custom-geom
++
++#-------------------------------------------------------------------------
++# Inputs and Outputs
++#-------------------------------------------------------------------------
++
++outputs:
++  - set-geom-vars.tcl
++
+diff --git a/designs/dragonphy_top/custom-geom/outputs/set-geom-vars.tcl b/designs/dragonphy_top/custom-geom/outputs/set-geom-vars.tcl
+new file mode 100644
+index 00000000..0d02035d
+--- /dev/null
++++ b/designs/dragonphy_top/custom-geom/outputs/set-geom-vars.tcl
+@@ -0,0 +1,49 @@
++# Variables shared between init and power steps
++
++# cell_height is from common_vars.tcl
++set cell_height 0.576
++set welltap_width 0.72
++set DB_width 0.36
++
++set boundary_width [expr $welltap_width+$DB_width]
++set boundary_height [expr $cell_height]
++
++set acore_width 360.45
++set acore_height [expr 702*$cell_height]
++
++set input_buffer_width 53.1
++set input_buffer_height [expr 87*$cell_height]
++
++set output_buffer_width 13.05
++set output_buffer_height [expr 32*$cell_height]
++
++set memory_width 64.175
++set memory_height 249.84
++
++set blockage_width [expr 0.9]
++set blockage_height [expr 2*$cell_height]
++
++set FP_width [expr ceil(580/0.09)*0.09]
++set FP_height [expr ceil(700/$cell_height)*$cell_height]
++
++set center_x [expr $FP_width/2]
++
++# acore
++set origin1_x [expr $center_x-$acore_width/2]
++set origin1_y [expr $FP_height-2*$boundary_height-2*$blockage_height-$acore_height-2*$cell_height]
++
++# input_buffer_async
++set origin0_x [expr 6*$blockage_width+2*$DB_width+$welltap_width+2]
++set origin0_y [expr (ceil(260-$input_buffer_height/2)/$cell_height)*$cell_height]
++
++# memory
++set origin2_x [expr $origin1_x+4*$blockage_width]
++set origin2_y [expr 2*$boundary_height+2*$blockage_height+$cell_height]
++
++# input_buffer_test
++set origin3_x [expr $FP_width-$origin0_x-$input_buffer_width]
++set origin3_y [expr (ceil(260-$input_buffer_height/2)/$cell_height)*$cell_height-$input_buffer_height+57*$cell_height]
++
++# output_buffer_test
++set origin4_x [expr $origin3_x+$input_buffer_width/2+$blockage_width+10*$welltap_width+$DB_width]
++set origin4_y [expr ceil((87-$output_buffer_height/2)/$cell_height)*$cell_height]
+\ No newline at end of file
+diff --git a/designs/dragonphy_top/custom-init/outputs/floorplan.tcl b/designs/dragonphy_top/custom-init/outputs/floorplan.tcl
+index b81c4f83..60cc50a0 100644
+--- a/designs/dragonphy_top/custom-init/outputs/floorplan.tcl
++++ b/designs/dragonphy_top/custom-init/outputs/floorplan.tcl
+@@ -1,64 +1,3 @@
+-##############################
+-# Begin Variable Definitions #
+-##############################
+-
+-# These variable definitions need to be shared with the "power" step
+-# Right now you just need to copy and paste these definitions into
+-# power-strategy-dualmesh.
+-# TODO: Figure out a better way to do this... (maybe another step?)
+-
+-# cell_height is from common_vars.tcl
+-set cell_height 0.576
+-set welltap_width 0.72
+-set DB_width 0.36
+-
+-set boundary_width [expr $welltap_width+$DB_width]
+-set boundary_height [expr $cell_height]
+-
+-set acore_width 360.45
+-set acore_height [expr 702*$cell_height]
+-
+-set input_buffer_width 53.1
+-set input_buffer_height [expr 87*$cell_height]
+-
+-set output_buffer_width 13.05
+-set output_buffer_height [expr 32*$cell_height]
+-
+-set memory_width 64.175
+-set memory_height 249.84
+-
+-set blockage_width [expr 0.9]
+-set blockage_height [expr 2*$cell_height]
+-
+-set FP_width [expr ceil(580/0.09)*0.09]
+-set FP_height [expr ceil(700/$cell_height)*$cell_height]
+-
+-set center_x [expr $FP_width/2]
+-
+-# acore
+-set origin1_x [expr $center_x-$acore_width/2]
+-set origin1_y [expr $FP_height-2*$boundary_height-2*$blockage_height-$acore_height-2*$cell_height]
+-
+-# input_buffer_async
+-set origin0_x [expr 6*$blockage_width+2*$DB_width+$welltap_width+2]
+-set origin0_y [expr (ceil(260-$input_buffer_height/2)/$cell_height)*$cell_height]
+-
+-# memory
+-set origin2_x [expr $origin1_x+4*$blockage_width]
+-set origin2_y [expr 2*$boundary_height+2*$blockage_height+$cell_height]
+-
+-# input_buffer_test
+-set origin3_x [expr $FP_width-$origin0_x-$input_buffer_width]
+-set origin3_y [expr (ceil(260-$input_buffer_height/2)/$cell_height)*$cell_height-$input_buffer_height+57*$cell_height]
+-
+-# output_buffer_test
+-set origin4_x [expr $origin3_x+$input_buffer_width/2+$blockage_width+10*$welltap_width+$DB_width]
+-set origin4_y [expr ceil((87-$output_buffer_height/2)/$cell_height)*$cell_height]
+-
+-##############################
+-#  End Variable Definitions  #
+-##############################
+-
+ ##############
+ # Floor Plan #
+ ##############
+diff --git a/designs/dragonphy_top/custom-power/outputs/power-strategy-dualmesh.tcl b/designs/dragonphy_top/custom-power/outputs/power-strategy-dualmesh.tcl
+index a48160dd..3afcb97e 100644
+--- a/designs/dragonphy_top/custom-power/outputs/power-strategy-dualmesh.tcl
++++ b/designs/dragonphy_top/custom-power/outputs/power-strategy-dualmesh.tcl
+@@ -1,64 +1,3 @@
+-##############################
+-# Begin Variable Definitions #
+-##############################
+-
+-# These variable definitions need to be shared with the "power" step
+-# Right now you just need to copy and paste these definitions into
+-# power-strategy-dualmesh.
+-# TODO: Figure out a better way to do this... (maybe another step?)
+-
+-# cell_height is from common_vars.tcl
+-set cell_height 0.576
+-set welltap_width 0.72
+-set DB_width 0.36
+-
+-set boundary_width [expr $welltap_width+$DB_width]
+-set boundary_height [expr $cell_height]
+-
+-set acore_width 360.45
+-set acore_height [expr 702*$cell_height]
+-
+-set input_buffer_width 53.1
+-set input_buffer_height [expr 87*$cell_height]
+-
+-set output_buffer_width 13.05
+-set output_buffer_height [expr 32*$cell_height]
+-
+-set memory_width 64.175
+-set memory_height 249.84
+-
+-set blockage_width [expr 0.9]
+-set blockage_height [expr 2*$cell_height]
+-
+-set FP_width [expr ceil(580/0.09)*0.09]
+-set FP_height [expr ceil(700/$cell_height)*$cell_height]
+-
+-set center_x [expr $FP_width/2]
+-
+-# acore
+-set origin1_x [expr $center_x-$acore_width/2]
+-set origin1_y [expr $FP_height-2*$boundary_height-2*$blockage_height-$acore_height-2*$cell_height]
+-
+-# input_buffer_async
+-set origin0_x [expr 6*$blockage_width+2*$DB_width+$welltap_width+2]
+-set origin0_y [expr (ceil(260-$input_buffer_height/2)/$cell_height)*$cell_height]
+-
+-# memory
+-set origin2_x [expr $origin1_x+4*$blockage_width]
+-set origin2_y [expr 2*$boundary_height+2*$blockage_height+$cell_height]
+-
+-# input_buffer_test
+-set origin3_x [expr $FP_width-$origin0_x-$input_buffer_width]
+-set origin3_y [expr (ceil(260-$input_buffer_height/2)/$cell_height)*$cell_height-$input_buffer_height+57*$cell_height]
+-
+-# output_buffer_test
+-set origin4_x [expr $origin3_x+$input_buffer_width/2+$blockage_width+10*$welltap_width+$DB_width]
+-set origin4_y [expr ceil((87-$output_buffer_height/2)/$cell_height)*$cell_height]
+-
+-##############################
+-#  End Variable Definitions  #
+-##############################
+-
+ # General tasks:
+ # TODO: remove inbuf_aux-related stuff
+ # TODO: add ibuf_main-related stuff
+
+From 2aef77450a4d395f10de6653a2eb5e1f5a6210df Mon Sep 17 00:00:00 2001
+From: Steven Herbst <sherbst@stanford.edu>
+Date: Tue, 12 May 2020 19:51:53 -0700
+Subject: [PATCH 05/16] remove duplicate of welltap/endcap script addition
+
+---
+ designs/dragonphy_top/construct.py | 4 ----
+ 1 file changed, 4 deletions(-)
+
+diff --git a/designs/dragonphy_top/construct.py b/designs/dragonphy_top/construct.py
+index a38d3d86..2efd4774 100644
+--- a/designs/dragonphy_top/construct.py
++++ b/designs/dragonphy_top/construct.py
+@@ -306,10 +306,6 @@ def construct():
+ 
+     order = init.get_param('order')  # get the default script run order
+ 
+-    # Add 'add-endcaps-welltaps.tcl' after 'floorplan.tcl'
+-    floorplan_idx = order.index('floorplan.tcl')  # find floorplan.tcl
+-    order.insert(floorplan_idx + 1, 'add-endcaps-welltaps.tcl')  # add here
+-
+     # Add 'set-geom-vars.tcl' at the beginning
+     order.insert(0, 'set-geom-vars.tcl')
+ 
+
+From 34e5e77918811b6c38d07ff20bc8fab9ddc3f049 Mon Sep 17 00:00:00 2001
+From: Steven Herbst <sherbst@stanford.edu>
+Date: Wed, 13 May 2020 09:20:31 -0700
+Subject: [PATCH 06/16] add default scripts from mflowgen for init and power
+
+---
+ .../custom-init/outputs/floorplan.default.tcl |  53 ++
+ .../custom-init/outputs/floorplan.new.tcl     | 110 ++++
+ .../custom-init/outputs/floorplan.tcl         | 163 ++---
+ .../outputs/globalnetconnect.default.tcl      |  21 +
+ .../outputs/globalnetconnect.new.tcl          |  18 +
+ .../custom-power/outputs/globalnetconnect.tcl |  29 +-
+ .../power-strategy-dualmesh.default.tcl       | 178 ++++++
+ .../outputs/power-strategy-dualmesh.new.tcl   | 387 ++++++++++++
+ .../outputs/power-strategy-dualmesh.tcl       | 565 ++++++------------
+ 9 files changed, 1014 insertions(+), 510 deletions(-)
+ create mode 100644 designs/dragonphy_top/custom-init/outputs/floorplan.default.tcl
+ create mode 100644 designs/dragonphy_top/custom-init/outputs/floorplan.new.tcl
+ create mode 100644 designs/dragonphy_top/custom-power/outputs/globalnetconnect.default.tcl
+ create mode 100644 designs/dragonphy_top/custom-power/outputs/globalnetconnect.new.tcl
+ create mode 100644 designs/dragonphy_top/custom-power/outputs/power-strategy-dualmesh.default.tcl
+ create mode 100644 designs/dragonphy_top/custom-power/outputs/power-strategy-dualmesh.new.tcl
+
+diff --git a/designs/dragonphy_top/custom-init/outputs/floorplan.default.tcl b/designs/dragonphy_top/custom-init/outputs/floorplan.default.tcl
+new file mode 100644
+index 00000000..949876f6
+--- /dev/null
++++ b/designs/dragonphy_top/custom-init/outputs/floorplan.default.tcl
+@@ -0,0 +1,53 @@
++#=========================================================================
++# floorplan.tcl
++#=========================================================================
++# Author : Christopher Torng
++# Date   : March 26, 2018
++
++#-------------------------------------------------------------------------
++# Floorplan variables
++#-------------------------------------------------------------------------
++
++# Set the floorplan to target a reasonable placement density with a good
++# aspect ratio (height:width). An aspect ratio of 2.0 here will make a
++# rectangular chip with a height that is twice the width.
++
++set core_aspect_ratio   1.00; # Aspect ratio 1.0 for a square chip
++set core_density_target 0.70; # Placement density of 70% is reasonable
++
++# Make room in the floorplan for the core power ring
++
++set pwr_net_list {VDD VSS}; # List of power nets in the core power ring
++
++set M1_min_width   [dbGet [dbGetLayerByZ 1].minWidth]
++set M1_min_spacing [dbGet [dbGetLayerByZ 1].minSpacing]
++
++set savedvars(p_ring_width)   [expr 48 * $M1_min_width];   # Arbitrary!
++set savedvars(p_ring_spacing) [expr 24 * $M1_min_spacing]; # Arbitrary!
++
++# Core bounding box margins
++
++set core_margin_t [expr ([llength $pwr_net_list] * ($savedvars(p_ring_width) + $savedvars(p_ring_spacing))) + $savedvars(p_ring_spacing)]
++set core_margin_b [expr ([llength $pwr_net_list] * ($savedvars(p_ring_width) + $savedvars(p_ring_spacing))) + $savedvars(p_ring_spacing)]
++set core_margin_r [expr ([llength $pwr_net_list] * ($savedvars(p_ring_width) + $savedvars(p_ring_spacing))) + $savedvars(p_ring_spacing)]
++set core_margin_l [expr ([llength $pwr_net_list] * ($savedvars(p_ring_width) + $savedvars(p_ring_spacing))) + $savedvars(p_ring_spacing)]
++
++#-------------------------------------------------------------------------
++# Floorplan
++#-------------------------------------------------------------------------
++
++# Calling floorPlan with the "-r" flag sizes the floorplan according to
++# the core aspect ratio and a density target (70% is a reasonable
++# density).
++#
++
++floorPlan -r $core_aspect_ratio $core_density_target \
++             $core_margin_l $core_margin_b $core_margin_r $core_margin_t
++
++setFlipping s
++
++# Use automatic floorplan synthesis to pack macros (e.g., SRAMs) together
++
++planDesign
++
++
+diff --git a/designs/dragonphy_top/custom-init/outputs/floorplan.new.tcl b/designs/dragonphy_top/custom-init/outputs/floorplan.new.tcl
+new file mode 100644
+index 00000000..60cc50a0
+--- /dev/null
++++ b/designs/dragonphy_top/custom-init/outputs/floorplan.new.tcl
+@@ -0,0 +1,110 @@
++##############
++# Floor Plan #
++##############
++
++floorPlan -site core -s $FP_width $FP_height 0 0 0 0
++
++###################
++# Place Instances #
++###################
++
++placeInstance \
++    ibuf_async \
++    $origin0_x \
++    $origin0_y
++
++placeInstance \
++    iacore \
++    $origin1_x \
++    $origin1_y
++
++placeInstance \
++    ibuf_test1 \
++    [expr $origin3_x] \
++    [expr $origin3_y] \
++    R180
++
++placeInstance \
++    ibuf_test0 \
++    [expr $origin3_x] \
++    [expr $origin3_y+$input_buffer_height+4*$cell_height] \
++    MY
++
++placeInstance \
++    idcore/out_buff_i \
++    $origin4_x \
++    $origin4_y
++
++# TODO: place multiple memory instances, i.e.
++# idcore/oneshot_multimemory/sram_i[k]/memory
++# for 0 <= k <= N_mem_tiles-1
++
++# TODO: place ibuf_main
++# TODO: place ibuf_mdll_ref
++# TODO: place imdll
++
++###################
++# Place Blockages #
++###################
++
++# outermost blockage
++createPlaceBlockage -box \
++    0 \
++    0 \
++    $FP_width \
++    $blockage_height
++
++createPlaceBlockage -box \
++    0 \
++    $FP_height \
++    $FP_width \
++    [expr $FP_height-$blockage_height]
++
++createPlaceBlockage -box \
++    0 \
++    0 \
++    $blockage_width \
++    $FP_height
++
++createPlaceBlockage -box \
++    $FP_width \
++    0 \
++    [expr $FP_width-$blockage_width] \
++    $FP_height
++
++# input_buffer_async
++createPlaceBlockage -box \
++    [expr $origin0_x-5*$blockage_width] \
++    [expr $origin0_y-$blockage_width] \
++    [expr $origin0_x+$input_buffer_width+5*$blockage_width] \
++    [expr $origin0_y+$input_buffer_height+$blockage_width]
++
++# acore
++createPlaceBlockage -box \
++    [expr $origin1_x-$blockage_width] \
++    [expr $origin1_y-$blockage_width] \
++    [expr $origin1_x+$acore_width+$blockage_width] \
++    [expr $origin1_y+$acore_height+$blockage_width]
++
++# input_buffer_test
++# TODO: does this cover both ibuf_test0 and ibuf_test1?
++createPlaceBlockage -box \
++    [expr $origin3_x-5*$blockage_width] \
++    [expr $origin3_y-$blockage_width] \
++    [expr $origin3_x+$input_buffer_width+5*$blockage_width] \
++    [expr $origin3_y+2*$input_buffer_height+$blockage_width+4*$cell_height]
++
++# output_buffer
++createPlaceBlockage -box \
++    [expr $origin4_x-$blockage_width] \
++    [expr $origin4_y-$blockage_width] \
++    [expr $origin4_x+$output_buffer_width+$blockage_width] \
++    [expr $origin4_y+$output_buffer_height+$blockage_width]
++
++# TODO: create blockage for multiple memory instances, i.e.
++# idcore/oneshot_multimemory/sram_i[k]/memory
++# for 0 <= k <= N_mem_tiles-1
++
++# TODO: create blockage for ibuf_main
++# TODO: create blockage ibuf_mdll_ref
++# TODO: create blockage for imdll
+\ No newline at end of file
+diff --git a/designs/dragonphy_top/custom-init/outputs/floorplan.tcl b/designs/dragonphy_top/custom-init/outputs/floorplan.tcl
+index 60cc50a0..949876f6 100644
+--- a/designs/dragonphy_top/custom-init/outputs/floorplan.tcl
++++ b/designs/dragonphy_top/custom-init/outputs/floorplan.tcl
+@@ -1,110 +1,53 @@
+-##############
+-# Floor Plan #
+-##############
+-
+-floorPlan -site core -s $FP_width $FP_height 0 0 0 0
+-
+-###################
+-# Place Instances #
+-###################
+-
+-placeInstance \
+-    ibuf_async \
+-    $origin0_x \
+-    $origin0_y
+-
+-placeInstance \
+-    iacore \
+-    $origin1_x \
+-    $origin1_y
+-
+-placeInstance \
+-    ibuf_test1 \
+-    [expr $origin3_x] \
+-    [expr $origin3_y] \
+-    R180
+-
+-placeInstance \
+-    ibuf_test0 \
+-    [expr $origin3_x] \
+-    [expr $origin3_y+$input_buffer_height+4*$cell_height] \
+-    MY
+-
+-placeInstance \
+-    idcore/out_buff_i \
+-    $origin4_x \
+-    $origin4_y
+-
+-# TODO: place multiple memory instances, i.e.
+-# idcore/oneshot_multimemory/sram_i[k]/memory
+-# for 0 <= k <= N_mem_tiles-1
+-
+-# TODO: place ibuf_main
+-# TODO: place ibuf_mdll_ref
+-# TODO: place imdll
+-
+-###################
+-# Place Blockages #
+-###################
+-
+-# outermost blockage
+-createPlaceBlockage -box \
+-    0 \
+-    0 \
+-    $FP_width \
+-    $blockage_height
+-
+-createPlaceBlockage -box \
+-    0 \
+-    $FP_height \
+-    $FP_width \
+-    [expr $FP_height-$blockage_height]
+-
+-createPlaceBlockage -box \
+-    0 \
+-    0 \
+-    $blockage_width \
+-    $FP_height
+-
+-createPlaceBlockage -box \
+-    $FP_width \
+-    0 \
+-    [expr $FP_width-$blockage_width] \
+-    $FP_height
+-
+-# input_buffer_async
+-createPlaceBlockage -box \
+-    [expr $origin0_x-5*$blockage_width] \
+-    [expr $origin0_y-$blockage_width] \
+-    [expr $origin0_x+$input_buffer_width+5*$blockage_width] \
+-    [expr $origin0_y+$input_buffer_height+$blockage_width]
+-
+-# acore
+-createPlaceBlockage -box \
+-    [expr $origin1_x-$blockage_width] \
+-    [expr $origin1_y-$blockage_width] \
+-    [expr $origin1_x+$acore_width+$blockage_width] \
+-    [expr $origin1_y+$acore_height+$blockage_width]
+-
+-# input_buffer_test
+-# TODO: does this cover both ibuf_test0 and ibuf_test1?
+-createPlaceBlockage -box \
+-    [expr $origin3_x-5*$blockage_width] \
+-    [expr $origin3_y-$blockage_width] \
+-    [expr $origin3_x+$input_buffer_width+5*$blockage_width] \
+-    [expr $origin3_y+2*$input_buffer_height+$blockage_width+4*$cell_height]
+-
+-# output_buffer
+-createPlaceBlockage -box \
+-    [expr $origin4_x-$blockage_width] \
+-    [expr $origin4_y-$blockage_width] \
+-    [expr $origin4_x+$output_buffer_width+$blockage_width] \
+-    [expr $origin4_y+$output_buffer_height+$blockage_width]
+-
+-# TODO: create blockage for multiple memory instances, i.e.
+-# idcore/oneshot_multimemory/sram_i[k]/memory
+-# for 0 <= k <= N_mem_tiles-1
+-
+-# TODO: create blockage for ibuf_main
+-# TODO: create blockage ibuf_mdll_ref
+-# TODO: create blockage for imdll
+\ No newline at end of file
++#=========================================================================
++# floorplan.tcl
++#=========================================================================
++# Author : Christopher Torng
++# Date   : March 26, 2018
++
++#-------------------------------------------------------------------------
++# Floorplan variables
++#-------------------------------------------------------------------------
++
++# Set the floorplan to target a reasonable placement density with a good
++# aspect ratio (height:width). An aspect ratio of 2.0 here will make a
++# rectangular chip with a height that is twice the width.
++
++set core_aspect_ratio   1.00; # Aspect ratio 1.0 for a square chip
++set core_density_target 0.70; # Placement density of 70% is reasonable
++
++# Make room in the floorplan for the core power ring
++
++set pwr_net_list {VDD VSS}; # List of power nets in the core power ring
++
++set M1_min_width   [dbGet [dbGetLayerByZ 1].minWidth]
++set M1_min_spacing [dbGet [dbGetLayerByZ 1].minSpacing]
++
++set savedvars(p_ring_width)   [expr 48 * $M1_min_width];   # Arbitrary!
++set savedvars(p_ring_spacing) [expr 24 * $M1_min_spacing]; # Arbitrary!
++
++# Core bounding box margins
++
++set core_margin_t [expr ([llength $pwr_net_list] * ($savedvars(p_ring_width) + $savedvars(p_ring_spacing))) + $savedvars(p_ring_spacing)]
++set core_margin_b [expr ([llength $pwr_net_list] * ($savedvars(p_ring_width) + $savedvars(p_ring_spacing))) + $savedvars(p_ring_spacing)]
++set core_margin_r [expr ([llength $pwr_net_list] * ($savedvars(p_ring_width) + $savedvars(p_ring_spacing))) + $savedvars(p_ring_spacing)]
++set core_margin_l [expr ([llength $pwr_net_list] * ($savedvars(p_ring_width) + $savedvars(p_ring_spacing))) + $savedvars(p_ring_spacing)]
++
++#-------------------------------------------------------------------------
++# Floorplan
++#-------------------------------------------------------------------------
++
++# Calling floorPlan with the "-r" flag sizes the floorplan according to
++# the core aspect ratio and a density target (70% is a reasonable
++# density).
++#
++
++floorPlan -r $core_aspect_ratio $core_density_target \
++             $core_margin_l $core_margin_b $core_margin_r $core_margin_t
++
++setFlipping s
++
++# Use automatic floorplan synthesis to pack macros (e.g., SRAMs) together
++
++planDesign
++
++
+diff --git a/designs/dragonphy_top/custom-power/outputs/globalnetconnect.default.tcl b/designs/dragonphy_top/custom-power/outputs/globalnetconnect.default.tcl
+new file mode 100644
+index 00000000..c3f25dce
+--- /dev/null
++++ b/designs/dragonphy_top/custom-power/outputs/globalnetconnect.default.tcl
+@@ -0,0 +1,21 @@
++#=========================================================================
++# globalnetconnect.tcl
++#=========================================================================
++# Author : Christopher Torng
++# Date   : January 13, 2020
++
++#-------------------------------------------------------------------------
++# Global net connections for PG pins
++#-------------------------------------------------------------------------
++
++globalNetConnect VDD    -type pgpin -pin VDD    -inst * -verbose
++globalNetConnect VSS    -type pgpin -pin VSS    -inst * -verbose
++
++# Connect VNW / VPW if any cells have these pins
++
++if { [ lindex [dbGet top.insts.cell.pgterms.name VNW] 0 ] != 0x0 } {
++  globalNetConnect VDD    -type pgpin -pin VNW    -inst * -verbose
++  globalNetConnect VSS    -type pgpin -pin VPW    -inst * -verbose
++}
++
++
+diff --git a/designs/dragonphy_top/custom-power/outputs/globalnetconnect.new.tcl b/designs/dragonphy_top/custom-power/outputs/globalnetconnect.new.tcl
+new file mode 100644
+index 00000000..488508f3
+--- /dev/null
++++ b/designs/dragonphy_top/custom-power/outputs/globalnetconnect.new.tcl
+@@ -0,0 +1,18 @@
++globalNetConnect DVDD -type pgpin -pin VDD -inst * -override
++globalNetConnect DVSS -type pgpin -pin VSS -inst * -override
++globalNetConnect DVDD -type pgpin -pin VPP -inst * -override
++globalNetConnect DVSS -type pgpin -pin VBB -inst * -override
++
++globalNetConnect DVDD -type pgpin -pin DVDD -inst {iacore} -override
++globalNetConnect DVSS -type pgpin -pin DVSS -inst {iacore} -override
++
++globalNetConnect AVDD -type pgpin -pin AVDD -inst {iacore} -override
++globalNetConnect AVSS -type pgpin -pin AVSS -inst {iacore} -override
++
++globalNetConnect CVDD -type pgpin -pin CVDD -inst {iacore} -override
++globalNetConnect CVSS -type pgpin -pin CVSS -inst {iacore} -override
++
++globalNetConnect DVDD -type pgpin -pin avdd -inst {*ibuf_*} -override
++globalNetConnect DVSS -type pgpin -pin avss -inst {*ibuf_*} -override
++
++# TODO: are special net connections needed for the MDLL?
+\ No newline at end of file
+diff --git a/designs/dragonphy_top/custom-power/outputs/globalnetconnect.tcl b/designs/dragonphy_top/custom-power/outputs/globalnetconnect.tcl
+index 488508f3..c3f25dce 100644
+--- a/designs/dragonphy_top/custom-power/outputs/globalnetconnect.tcl
++++ b/designs/dragonphy_top/custom-power/outputs/globalnetconnect.tcl
+@@ -1,18 +1,21 @@
+-globalNetConnect DVDD -type pgpin -pin VDD -inst * -override
+-globalNetConnect DVSS -type pgpin -pin VSS -inst * -override
+-globalNetConnect DVDD -type pgpin -pin VPP -inst * -override
+-globalNetConnect DVSS -type pgpin -pin VBB -inst * -override
++#=========================================================================
++# globalnetconnect.tcl
++#=========================================================================
++# Author : Christopher Torng
++# Date   : January 13, 2020
+ 
+-globalNetConnect DVDD -type pgpin -pin DVDD -inst {iacore} -override
+-globalNetConnect DVSS -type pgpin -pin DVSS -inst {iacore} -override
++#-------------------------------------------------------------------------
++# Global net connections for PG pins
++#-------------------------------------------------------------------------
+ 
+-globalNetConnect AVDD -type pgpin -pin AVDD -inst {iacore} -override
+-globalNetConnect AVSS -type pgpin -pin AVSS -inst {iacore} -override
++globalNetConnect VDD    -type pgpin -pin VDD    -inst * -verbose
++globalNetConnect VSS    -type pgpin -pin VSS    -inst * -verbose
+ 
+-globalNetConnect CVDD -type pgpin -pin CVDD -inst {iacore} -override
+-globalNetConnect CVSS -type pgpin -pin CVSS -inst {iacore} -override
++# Connect VNW / VPW if any cells have these pins
++
++if { [ lindex [dbGet top.insts.cell.pgterms.name VNW] 0 ] != 0x0 } {
++  globalNetConnect VDD    -type pgpin -pin VNW    -inst * -verbose
++  globalNetConnect VSS    -type pgpin -pin VPW    -inst * -verbose
++}
+ 
+-globalNetConnect DVDD -type pgpin -pin avdd -inst {*ibuf_*} -override
+-globalNetConnect DVSS -type pgpin -pin avss -inst {*ibuf_*} -override
+ 
+-# TODO: are special net connections needed for the MDLL?
+\ No newline at end of file
+diff --git a/designs/dragonphy_top/custom-power/outputs/power-strategy-dualmesh.default.tcl b/designs/dragonphy_top/custom-power/outputs/power-strategy-dualmesh.default.tcl
+new file mode 100644
+index 00000000..8965109f
+--- /dev/null
++++ b/designs/dragonphy_top/custom-power/outputs/power-strategy-dualmesh.default.tcl
+@@ -0,0 +1,178 @@
++#=========================================================================
++# power-strategy-dualmesh.tcl
++#=========================================================================
++# This script implements a dual power mesh, with a fine-grain power mesh
++# on the lower metal layers and a coarse-grain power mesh on the upper
++# metal layers. Note that M2/M3 are expected to be horizontal/vertical,
++# and the lower metal layer of the coarse power mesh is expected to be
++# horizontal.
++#
++# Author : Christopher Torng
++# Date   : March 26, 2018
++
++#-------------------------------------------------------------------------
++# Stdcell power rail preroute
++#-------------------------------------------------------------------------
++# Generate horizontal stdcell preroutes
++
++sroute -nets {VDD VSS}
++
++#-------------------------------------------------------------------------
++# Shorter names from the ADK
++#-------------------------------------------------------------------------
++
++set pmesh_bot $ADK_POWER_MESH_BOT_LAYER
++set pmesh_top $ADK_POWER_MESH_TOP_LAYER
++
++#-------------------------------------------------------------------------
++# M3 power stripe settings
++#-------------------------------------------------------------------------
++# We are using addStripe to add sets of stripes (a set includes both VSS
++# and VDD).
++#
++# Set variables to space VSS and VDD straps evenly throughout the chip.
++#
++#     VSS    VDD    VSS
++#     | |    | |    | |
++#     | |    | |    | |
++#     | |    | |    | |
++#
++#     _______ <---- $M3_str_pitch
++#     ______________
++#        ____   ^
++#     ___  ^    |
++#      ^   |    +-- $M3_str_interset_pitch
++#      |   +------- $M3_str_intraset_spacing
++#      +----------- $M3_str_width
++#
++# - M3_str_intraset_spacing : Space between VSS/VDD, chosen for constant
++#                             pitch across all VSS and VDD stripes
++# - M3_str_interset_pitch   : Pitch between same-signal stripes
++#
++# - M3_str_offset           : Offset from left edge of core to center the
++#                             M3 stripe between vertical M3 routing tracks
++#
++# - M3_str_width            : M3 stripe width
++# - M3_str_pitch            : Choosing an arbitrary M3 pitch that is a
++#                             multiple of M3 signal pitch for now
++
++# Get M3 min width and signal routing pitch as defined in the LEF
++
++set M3_min_width    [dbGet [dbGetLayerByZ 3].minWidth]
++set M3_route_pitchX [dbGet [dbGetLayerByZ 3].pitchX]
++
++# Set M3 stripe variables
++
++set M3_str_width            [expr  3 * $M3_min_width]
++set M3_str_pitch            [expr 10 * $M3_route_pitchX]
++
++set M3_str_intraset_spacing [expr $M3_str_pitch - $M3_str_width]
++set M3_str_interset_pitch   [expr 2*$M3_str_pitch]
++
++set M3_str_offset           [expr $M3_str_pitch + $M3_route_pitchX/2 - $M3_str_width/2]
++
++setViaGenMode -reset
++setViaGenMode -viarule_preference default
++setViaGenMode -ignore_DRC false
++
++setAddStripeMode -reset
++setAddStripeMode -stacked_via_bottom_layer 2 \
++                 -stacked_via_top_layer    3
++
++addStripe -nets {VSS VDD} -layer 3 -direction vertical \
++    -width $M3_str_width                                \
++    -spacing $M3_str_intraset_spacing                   \
++    -set_to_set_distance $M3_str_interset_pitch         \
++    -start_offset $M3_str_offset
++
++#-------------------------------------------------------------------------
++# Power ring
++#-------------------------------------------------------------------------
++
++addRing -nets {VDD VSS} -type core_rings -follow core   \
++        -layer [list top  $pmesh_bot bottom $pmesh_bot  \
++                     left $pmesh_top right  $pmesh_top] \
++        -width $savedvars(p_ring_width)                 \
++        -spacing $savedvars(p_ring_spacing)             \
++        -offset $savedvars(p_ring_spacing)              \
++        -extend_corner {tl tr bl br lt lb rt rb}
++
++#-------------------------------------------------------------------------
++# Power mesh bottom settings (horizontal)
++#-------------------------------------------------------------------------
++# - pmesh_bot_str_width            : 8X thickness compared to M3
++# - pmesh_bot_str_pitch            : Arbitrarily choosing the stripe pitch
++# - pmesh_bot_str_intraset_spacing : Space between VSS/VDD, choosing
++#                                    constant pitch across VSS/VDD stripes
++# - pmesh_bot_str_interset_pitch   : Pitch between same-signal stripes
++
++set pmesh_bot_str_width [expr  8 * $M3_str_width]
++set pmesh_bot_str_pitch [expr 10 * $M3_str_pitch]
++
++set pmesh_bot_str_intraset_spacing [expr $pmesh_bot_str_pitch - $pmesh_bot_str_width]
++set pmesh_bot_str_interset_pitch   [expr 2*$pmesh_bot_str_pitch]
++
++setViaGenMode -reset
++setViaGenMode -viarule_preference default
++setViaGenMode -ignore_DRC false
++
++setAddStripeMode -reset
++setAddStripeMode -stacked_via_bottom_layer 3 \
++                 -stacked_via_top_layer    $pmesh_top
++
++# Add the stripes
++#
++# Use -start to offset the stripes slightly away from the core edge.
++# Allow same-layer jogs to connect stripes to the core ring if some
++# blockage is in the way (e.g., connections from core ring to pads).
++# Restrict any routing around blockages to use only layers for power.
++
++addStripe -nets {VSS VDD} -layer $pmesh_bot -direction horizontal \
++    -width $pmesh_bot_str_width                                   \
++    -spacing $pmesh_bot_str_intraset_spacing                      \
++    -set_to_set_distance $pmesh_bot_str_interset_pitch            \
++    -max_same_layer_jog_length $pmesh_bot_str_pitch               \
++    -padcore_ring_bottom_layer_limit $pmesh_bot                   \
++    -padcore_ring_top_layer_limit $pmesh_top                      \
++    -start [expr $pmesh_bot_str_pitch]
++
++#-------------------------------------------------------------------------
++# Power mesh top settings (vertical)
++#-------------------------------------------------------------------------
++# - pmesh_top_str_width            : 16X thickness compared to M3
++# - pmesh_top_str_pitch            : Arbitrarily choosing the stripe pitch
++# - pmesh_top_str_intraset_spacing : Space between VSS/VDD, choosing
++#                                    constant pitch across VSS/VDD stripes
++# - pmesh_top_str_interset_pitch   : Pitch between same-signal stripes
++
++set pmesh_top_str_width [expr 16 * $M3_str_width]
++set pmesh_top_str_pitch [expr 20 * $M3_str_pitch] ; # Arbitrary
++
++set pmesh_top_str_intraset_spacing [expr $pmesh_top_str_pitch - $pmesh_top_str_width]
++set pmesh_top_str_interset_pitch   [expr 2*$pmesh_top_str_pitch]
++
++setViaGenMode -reset
++setViaGenMode -viarule_preference default
++setViaGenMode -ignore_DRC false
++
++setAddStripeMode -reset
++setAddStripeMode -stacked_via_bottom_layer $pmesh_bot \
++                 -stacked_via_top_layer    $pmesh_top
++
++# Add the stripes
++#
++# Use -start to offset the stripes slightly away from the core edge.
++# Allow same-layer jogs to connect stripes to the core ring if some
++# blockage is in the way (e.g., connections from core ring to pads).
++# Restrict any routing around blockages to use only layers for power.
++
++addStripe -nets {VSS VDD} -layer $pmesh_top -direction vertical \
++    -width $pmesh_top_str_width                                 \
++    -spacing $pmesh_top_str_intraset_spacing                    \
++    -set_to_set_distance $pmesh_top_str_interset_pitch          \
++    -max_same_layer_jog_length $pmesh_top_str_pitch             \
++    -padcore_ring_bottom_layer_limit $pmesh_bot                 \
++    -padcore_ring_top_layer_limit $pmesh_top                    \
++    -start [expr $pmesh_top_str_pitch/2]
++
++
+diff --git a/designs/dragonphy_top/custom-power/outputs/power-strategy-dualmesh.new.tcl b/designs/dragonphy_top/custom-power/outputs/power-strategy-dualmesh.new.tcl
+new file mode 100644
+index 00000000..3afcb97e
+--- /dev/null
++++ b/designs/dragonphy_top/custom-power/outputs/power-strategy-dualmesh.new.tcl
+@@ -0,0 +1,387 @@
++# General tasks:
++# TODO: remove inbuf_aux-related stuff
++# TODO: add ibuf_main-related stuff
++# TODO: add ibuf_mdll_ref-related stuff
++# TODO: add imdll-related stuff
++# TODO: add stuff for the various SRAM instances
++
++createRouteBlk -box \
++    [expr $origin0_x-$blockage_width] \
++    [expr $origin0_y-$blockage_width] \
++    [expr $origin0_x+$input_buffer_width+$blockage_width] \
++    [expr $origin0_y+$input_buffer_height+$blockage_width] \
++    -name inbuf_async_blk -layer 1
++
++createRouteBlk -box \
++    [expr $origin2_x-$blockage_width] \
++    [expr $origin2_y-$blockage_width] \
++    [expr $origin2_x+$memory_width+$blockage_width] \
++    [expr $origin2_y+$memory_height+$blockage_width] \
++    -name memory_blk -layer 1
++
++# TODO: does this cover both ibuf_test0 and ibuf_test1?
++createRouteBlk -box \
++    [expr $origin3_x-$blockage_width] \
++    [expr $origin3_y-$blockage_width] \
++    [expr $origin3_x+$input_buffer_width+$blockage_width] \
++    [expr $origin3_y+2*$input_buffer_height+$blockage_width] \
++    -name inbuf_test_blk -layer 1
++
++createRouteBlk -box \
++    [expr $center_x-$input_buffer_width/2-$blockage_width] \
++    [expr $origin1_y-$input_buffer_height-32*$cell_height-$blockage_height] \
++    [expr $center_x-$input_buffer_width/2+$input_buffer_width+$blockage_width] \
++    [expr $origin1_y-32*$cell_height+$blockage_height] \
++    -name inbuf_aux_blk -layer 1
++
++addStripe \
++    -pin_layer M1 \
++    -over_pins 1 \
++    -block_ring_top_layer_limit M1 \
++    -max_same_layer_jog_length 3.6 \
++    -padcore_ring_bottom_layer_limit M1 \
++    -padcore_ring_top_layer_limit M1 \
++    -spacing 1.8 \
++    -master "BOUND*" \
++    -merge_stripes_value 0.045 \
++    -create_pins 1 \
++    -direction horizontal \
++    -layer M1 \
++    -block_ring_bottom_layer_limit M1 \
++    -width pin_width \
++    -extend_to design_boundary \
++    -nets {DVDD DVSS}
++
++deleteRouteBlk -name *
++
++set input_buffer_offset 21.104
++set output_buffer_offset 1.0
++
++createRouteBlk -box \
++    [expr $origin1_x-$blockage_width] \
++    [expr $origin1_y-$blockage_width-$cell_height] \
++    [expr $origin1_x+$acore_width+$blockage_width] \
++    $FP_height \
++    -name acore_blk \
++    -layer 7
++
++# input_buffers
++addStripe \
++    -nets {DVSS DVDD} \
++    -layer M7 \
++    -direction vertical \
++    -width 2 -spacing 1 \
++    -start_offset [expr $origin0_x+$input_buffer_offset] \
++    -stop_offset [expr $FP_width-($origin0_x+$input_buffer_width-$input_buffer_offset+1)] \
++    -set_to_set_distance 6 \
++    -start_from left \
++    -switch_layer_over_obs false \
++    -max_same_layer_jog_length 2 \
++    -padcore_ring_top_layer_limit AP \
++    -padcore_ring_bottom_layer_limit M7 \
++    -block_ring_top_layer_limit M7 \
++    -block_ring_bottom_layer_limit M1 \
++    -use_wire_group 0 \
++    -snap_wire_center_to_grid None \
++    -skip_via_on_pin {standardcell} \
++    -skip_via_on_wire_shape {noshape} \
++    -extend_to design_boundary
++
++addStripe \
++    -nets {DVSS DVDD} \
++    -layer M7 \
++    -direction vertical \
++    -width 2 \
++    -spacing 1 \
++    -start_offset [expr $origin0_x+$input_buffer_offset] \
++    -stop_offset [expr $FP_width-($origin0_x+$input_buffer_width-$input_buffer_offset+1)] \
++    -set_to_set_distance 6 \
++    -start_from right \
++    -switch_layer_over_obs false \
++    -max_same_layer_jog_length 2 \
++    -padcore_ring_top_layer_limit AP \
++    -padcore_ring_bottom_layer_limit M7 \
++    -block_ring_top_layer_limit M7 \
++    -block_ring_bottom_layer_limit M1 \
++    -use_wire_group 0 \
++    -snap_wire_center_to_grid None \
++    -skip_via_on_pin {standardcell} \
++    -skip_via_on_wire_shape {noshape} \
++    -extend_to design_boundary
++
++createRouteBlk -box \
++    [expr $center_x-10] \
++    [expr $origin1_y] \
++    [expr $center_x+10] \
++    [expr $origin1_y-30*$cell_height] \
++    -name inbuf_aux_blk2 \
++    -layer 7
++
++# input_buffer_aux
++addStripe \
++    -nets {DVSS DVDD} \
++    -layer M7 \
++    -direction vertical \
++    -width 2 \
++    -spacing 1 \
++    -start_offset [expr $center_x-$input_buffer_width/2+$input_buffer_offset] \
++    -stop_offset [expr $FP_width-( $center_x+$input_buffer_width/2-$input_buffer_offset+1)] \
++    -set_to_set_distance 6 \
++    -start_from left \
++    -switch_layer_over_obs false \
++    -max_same_layer_jog_length 2 \
++    -padcore_ring_top_layer_limit AP \
++    -padcore_ring_bottom_layer_limit M7 \
++    -block_ring_top_layer_limit M7 \
++    -block_ring_bottom_layer_limit M1 \
++    -use_wire_group 0 \
++    -snap_wire_center_to_grid None \
++    -skip_via_on_pin {standardcell} \
++    -skip_via_on_wire_shape {noshape} \
++    -extend_to design_boundary
++
++createRouteBlk -box \
++    [expr $origin0_x-$blockage_width] \
++    [expr $origin0_y-$blockage_width] \
++    [expr $origin0_x+$input_buffer_width+$blockage_width] \
++    [expr $origin0_y+$input_buffer_height+$blockage_width] \
++    -name inbuf_async_blk \
++    -layer 7
++
++createRouteBlk -box \
++    [expr $origin3_x-$blockage_width] \
++    [expr $origin3_y-$blockage_width] \
++    [expr $origin3_x+$input_buffer_width+$blockage_width] \
++    [expr $origin3_y+2*$input_buffer_height+$blockage_width+4*$cell_height] \
++    -name inbuf_test_blk \
++    -layer 7
++
++createRouteBlk -box \
++    [expr $center_x-$input_buffer_width/2-$blockage_width] \
++    [expr $origin1_y-$input_buffer_height-32*$cell_height-$blockage_height] \
++    [expr $center_x-$input_buffer_width/2+$input_buffer_width+$blockage_width] \
++    [expr $origin1_y-32*$cell_height+$blockage_height] \
++    -name inbuf_aux_blk \
++    -layer 7
++
++# output_buffer
++addStripe \
++    -nets {DVSS DVDD} \
++    -layer M7 \
++    -direction vertical \
++    -width 1 \
++    -spacing 0.5 \
++    -start_offset [expr $origin4_x+$output_buffer_offset] \
++    -stop_offset 8 \
++    -set_to_set_distance 8.55 \
++    -start_from left \
++    -switch_layer_over_obs false \
++    -max_same_layer_jog_length 2 \
++    -padcore_ring_top_layer_limit AP \
++    -padcore_ring_bottom_layer_limit M7 \
++    -block_ring_top_layer_limit M7 \
++    -block_ring_bottom_layer_limit M1 \
++    -use_wire_group 0
++    -snap_wire_center_to_grid None \
++    -skip_via_on_pin {standardcell} \
++    -skip_via_on_wire_shape {noshape} \
++    -extend_to design_boundary
++
++addStripe \
++    -nets {DVSS DVDD} \
++    -layer M7 \
++    -direction vertical \
++    -width 1 \
++    -spacing 0.5 \
++    -start_offset [expr $origin4_x+$output_buffer_offset] \
++    -stop_offset 8 \
++    -set_to_set_distance 8.55 \
++    -start_from right \
++    -switch_layer_over_obs false \
++    -max_same_layer_jog_length 2 \
++    -padcore_ring_top_layer_limit AP \
++    -padcore_ring_bottom_layer_limit M7 \
++    -block_ring_top_layer_limit M7 \
++    -block_ring_bottom_layer_limit M1 \
++    -use_wire_group 0 \
++    -snap_wire_center_to_grid None \
++    -skip_via_on_pin {standardcell} \
++    -skip_via_on_wire_shape {noshape} \
++    -extend_to design_boundary
++
++#dcore
++
++#outmost stripe
++
++addStripe \
++    -nets {DVDD DVSS} \
++    -layer M7 \
++    -direction vertical \
++    -width 1 \
++    -spacing 0.5 \
++    -start_offset 0.5 \
++    -set_to_set_distance 1000 \
++    -start_from right \
++    -switch_layer_over_obs false \
++    -max_same_layer_jog_length 2 \
++    -padcore_ring_top_layer_limit AP \
++    -padcore_ring_bottom_layer_limit M7 \
++    -block_ring_top_layer_limit M7 \
++    -block_ring_bottom_layer_limit M1 \
++    -use_wire_group 0 \
++    -snap_wire_center_to_grid None \
++    -skip_via_on_pin {standardcell} \
++    -skip_via_on_wire_shape {noshape} \
++    -extend_to design_boundary
++
++addStripe \
++    -nets {DVSS DVDD} \
++    -layer M7 \
++    -direction vertical \
++    -width 1 \
++    -spacing 0.5 \
++    -start_offset 0.5 \
++    -set_to_set_distance 1000 \
++    -start_from left \
++    -switch_layer_over_obs false \
++    -max_same_layer_jog_length 2 \
++    -padcore_ring_top_layer_limit AP \
++    -padcore_ring_bottom_layer_limit M7 \
++    -block_ring_top_layer_limit M7 \
++    -block_ring_bottom_layer_limit M1 \
++    -use_wire_group 0 \
++    -snap_wire_center_to_grid None \
++    -skip_via_on_pin {standardcell} \
++    -skip_via_on_wire_shape {noshape} \
++    -extend_to design_boundary
++
++# center stripe
++addStripe -nets {DVSS DVDD} \
++    -layer M7 \
++    -direction vertical \
++    -width 1 \
++    -spacing 3 \
++    -start_offset 42 \
++    -stop_offset [expr $FP_width/2] \
++    -set_to_set_distance 20 \
++    -start_from right \
++    -switch_layer_over_obs false \
++    -max_same_layer_jog_length 2 \
++    -padcore_ring_top_layer_limit AP \
++    -padcore_ring_bottom_layer_limit M7 \
++    -block_ring_top_layer_limit M7 \
++    -block_ring_bottom_layer_limit M1 \
++    -use_wire_group 0 \
++    -snap_wire_center_to_grid None \
++    -skip_via_on_pin {standardcell} \
++    -skip_via_on_wire_shape {noshape} \
++    -extend_to design_boundary
++
++addStripe \
++    -nets {DVSS DVDD} \
++    -layer M7 \
++    -direction vertical \
++    -width 1 \
++    -spacing 3 \
++    -start_offset 42 \
++    -stop_offset [expr $FP_width/2] \
++    -set_to_set_distance 20 \
++    -start_from left \
++    -switch_layer_over_obs false \
++    -max_same_layer_jog_length 2 \
++    -padcore_ring_top_layer_limit AP \
++    -padcore_ring_bottom_layer_limit M7 \
++    -block_ring_top_layer_limit M7 \
++    -block_ring_bottom_layer_limit M1 \
++    -use_wire_group 0 \
++    -snap_wire_center_to_grid None \
++    -skip_via_on_pin {standardcell} \
++    -skip_via_on_wire_shape {noshape} \
++    -extend_to design_boundary
++
++deleteRouteBlk -name *
++
++createRouteBlk -box \
++    0 \
++    0 \
++    [expr $FP_width] \
++    [expr $FP_height] \
++    -name entire_design_blk \
++    -layer 7
++
++createRouteBlk -box \
++    [expr $origin0_x-$blockage_width] \
++    [expr $origin0_y-$blockage_width] \
++    [expr $origin0_x+$input_buffer_width+$blockage_width] \
++    [expr $origin0_y+$input_buffer_height+$blockage_width] \
++    -name inbuf_async_blk \
++    -layer {8 9}
++
++createRouteBlk -box \
++    [expr $origin3_x-$blockage_width] \
++    [expr $origin3_y-$blockage_width] \
++    [expr $origin3_x+$input_buffer_width+$blockage_width] \
++    [expr $origin3_y+2*$input_buffer_height+$blockage_width+4*$cell_height] \
++    -name inbuf_test_blk \
++    -layer {8 9}
++
++createRouteBlk -box \
++    [expr $center_x-$input_buffer_width/2-$blockage_width] \
++    [expr $origin1_y-$input_buffer_height-32*$cell_height-$blockage_height] \
++    [expr $center_x-$input_buffer_width/2+$input_buffer_width+$blockage_width] \
++    [expr $origin1_y-32*$cell_height+$blockage_height] \
++    -name inbuf_aux_blk \
++    -layer {8 9}
++
++createRouteBlk -box \
++    [expr $origin1_x] \
++    [expr $FP_height] \
++    [expr $origin1_x+$acore_width] \
++    [expr $origin1_y-$blockage_height-2*$cell_height] \
++    -name acore_blk2 \
++    -layer {8 9}
++
++sroute \
++    -connect { blockPin } \
++    -layerChangeRange { M8 M8 } \
++    -blockPinTarget { boundaryWithPin } \
++    -allowJogging 0 \
++    -crossoverViaLayerRange { M8 M7 } \
++    -nets { DVDD DVSS } \
++    -allowLayerChange 0 \
++    -blockPin useLef \
++    -targetViaLayerRange { M8 M7 }
++
++createRouteBlk -box \
++    0 \
++    [expr $FP_height] \
++    [expr $FP_width] \
++    [expr $origin1_y] \
++    -name acore_blk_M8 \
++    -layer 8
++
++addStripe \
++    -nets {DVDD DVSS } \
++    -layer M8 \
++    -direction horizontal \
++    -width 2 \
++    -spacing 1 \
++    -start_offset 3 \
++    -set_to_set_distance 12 \
++    -start_from bottom \
++    -switch_layer_over_obs false \
++    -max_same_layer_jog_length 2 \
++    -padcore_ring_top_layer_limit AP \
++    -padcore_ring_bottom_layer_limit M1 \
++    -block_ring_top_layer_limit M7 \
++    -block_ring_bottom_layer_limit M1 \
++    -use_wire_group 0 \
++    -snap_wire_center_to_grid None \
++    -skip_via_on_pin {standardcell} \
++    -skip_via_on_wire_shape {noshape} \
++    -create_pins 1 \
++    -extend_to design_boundary
++
++deleteRouteBlk -name acore_blk_M8
++
++deleteRouteBlk -name *
+\ No newline at end of file
+diff --git a/designs/dragonphy_top/custom-power/outputs/power-strategy-dualmesh.tcl b/designs/dragonphy_top/custom-power/outputs/power-strategy-dualmesh.tcl
+index 3afcb97e..8965109f 100644
+--- a/designs/dragonphy_top/custom-power/outputs/power-strategy-dualmesh.tcl
++++ b/designs/dragonphy_top/custom-power/outputs/power-strategy-dualmesh.tcl
+@@ -1,387 +1,178 @@
+-# General tasks:
+-# TODO: remove inbuf_aux-related stuff
+-# TODO: add ibuf_main-related stuff
+-# TODO: add ibuf_mdll_ref-related stuff
+-# TODO: add imdll-related stuff
+-# TODO: add stuff for the various SRAM instances
+-
+-createRouteBlk -box \
+-    [expr $origin0_x-$blockage_width] \
+-    [expr $origin0_y-$blockage_width] \
+-    [expr $origin0_x+$input_buffer_width+$blockage_width] \
+-    [expr $origin0_y+$input_buffer_height+$blockage_width] \
+-    -name inbuf_async_blk -layer 1
+-
+-createRouteBlk -box \
+-    [expr $origin2_x-$blockage_width] \
+-    [expr $origin2_y-$blockage_width] \
+-    [expr $origin2_x+$memory_width+$blockage_width] \
+-    [expr $origin2_y+$memory_height+$blockage_width] \
+-    -name memory_blk -layer 1
+-
+-# TODO: does this cover both ibuf_test0 and ibuf_test1?
+-createRouteBlk -box \
+-    [expr $origin3_x-$blockage_width] \
+-    [expr $origin3_y-$blockage_width] \
+-    [expr $origin3_x+$input_buffer_width+$blockage_width] \
+-    [expr $origin3_y+2*$input_buffer_height+$blockage_width] \
+-    -name inbuf_test_blk -layer 1
+-
+-createRouteBlk -box \
+-    [expr $center_x-$input_buffer_width/2-$blockage_width] \
+-    [expr $origin1_y-$input_buffer_height-32*$cell_height-$blockage_height] \
+-    [expr $center_x-$input_buffer_width/2+$input_buffer_width+$blockage_width] \
+-    [expr $origin1_y-32*$cell_height+$blockage_height] \
+-    -name inbuf_aux_blk -layer 1
+-
+-addStripe \
+-    -pin_layer M1 \
+-    -over_pins 1 \
+-    -block_ring_top_layer_limit M1 \
+-    -max_same_layer_jog_length 3.6 \
+-    -padcore_ring_bottom_layer_limit M1 \
+-    -padcore_ring_top_layer_limit M1 \
+-    -spacing 1.8 \
+-    -master "BOUND*" \
+-    -merge_stripes_value 0.045 \
+-    -create_pins 1 \
+-    -direction horizontal \
+-    -layer M1 \
+-    -block_ring_bottom_layer_limit M1 \
+-    -width pin_width \
+-    -extend_to design_boundary \
+-    -nets {DVDD DVSS}
+-
+-deleteRouteBlk -name *
+-
+-set input_buffer_offset 21.104
+-set output_buffer_offset 1.0
+-
+-createRouteBlk -box \
+-    [expr $origin1_x-$blockage_width] \
+-    [expr $origin1_y-$blockage_width-$cell_height] \
+-    [expr $origin1_x+$acore_width+$blockage_width] \
+-    $FP_height \
+-    -name acore_blk \
+-    -layer 7
+-
+-# input_buffers
+-addStripe \
+-    -nets {DVSS DVDD} \
+-    -layer M7 \
+-    -direction vertical \
+-    -width 2 -spacing 1 \
+-    -start_offset [expr $origin0_x+$input_buffer_offset] \
+-    -stop_offset [expr $FP_width-($origin0_x+$input_buffer_width-$input_buffer_offset+1)] \
+-    -set_to_set_distance 6 \
+-    -start_from left \
+-    -switch_layer_over_obs false \
+-    -max_same_layer_jog_length 2 \
+-    -padcore_ring_top_layer_limit AP \
+-    -padcore_ring_bottom_layer_limit M7 \
+-    -block_ring_top_layer_limit M7 \
+-    -block_ring_bottom_layer_limit M1 \
+-    -use_wire_group 0 \
+-    -snap_wire_center_to_grid None \
+-    -skip_via_on_pin {standardcell} \
+-    -skip_via_on_wire_shape {noshape} \
+-    -extend_to design_boundary
+-
+-addStripe \
+-    -nets {DVSS DVDD} \
+-    -layer M7 \
+-    -direction vertical \
+-    -width 2 \
+-    -spacing 1 \
+-    -start_offset [expr $origin0_x+$input_buffer_offset] \
+-    -stop_offset [expr $FP_width-($origin0_x+$input_buffer_width-$input_buffer_offset+1)] \
+-    -set_to_set_distance 6 \
+-    -start_from right \
+-    -switch_layer_over_obs false \
+-    -max_same_layer_jog_length 2 \
+-    -padcore_ring_top_layer_limit AP \
+-    -padcore_ring_bottom_layer_limit M7 \
+-    -block_ring_top_layer_limit M7 \
+-    -block_ring_bottom_layer_limit M1 \
+-    -use_wire_group 0 \
+-    -snap_wire_center_to_grid None \
+-    -skip_via_on_pin {standardcell} \
+-    -skip_via_on_wire_shape {noshape} \
+-    -extend_to design_boundary
+-
+-createRouteBlk -box \
+-    [expr $center_x-10] \
+-    [expr $origin1_y] \
+-    [expr $center_x+10] \
+-    [expr $origin1_y-30*$cell_height] \
+-    -name inbuf_aux_blk2 \
+-    -layer 7
+-
+-# input_buffer_aux
+-addStripe \
+-    -nets {DVSS DVDD} \
+-    -layer M7 \
+-    -direction vertical \
+-    -width 2 \
+-    -spacing 1 \
+-    -start_offset [expr $center_x-$input_buffer_width/2+$input_buffer_offset] \
+-    -stop_offset [expr $FP_width-( $center_x+$input_buffer_width/2-$input_buffer_offset+1)] \
+-    -set_to_set_distance 6 \
+-    -start_from left \
+-    -switch_layer_over_obs false \
+-    -max_same_layer_jog_length 2 \
+-    -padcore_ring_top_layer_limit AP \
+-    -padcore_ring_bottom_layer_limit M7 \
+-    -block_ring_top_layer_limit M7 \
+-    -block_ring_bottom_layer_limit M1 \
+-    -use_wire_group 0 \
+-    -snap_wire_center_to_grid None \
+-    -skip_via_on_pin {standardcell} \
+-    -skip_via_on_wire_shape {noshape} \
+-    -extend_to design_boundary
+-
+-createRouteBlk -box \
+-    [expr $origin0_x-$blockage_width] \
+-    [expr $origin0_y-$blockage_width] \
+-    [expr $origin0_x+$input_buffer_width+$blockage_width] \
+-    [expr $origin0_y+$input_buffer_height+$blockage_width] \
+-    -name inbuf_async_blk \
+-    -layer 7
+-
+-createRouteBlk -box \
+-    [expr $origin3_x-$blockage_width] \
+-    [expr $origin3_y-$blockage_width] \
+-    [expr $origin3_x+$input_buffer_width+$blockage_width] \
+-    [expr $origin3_y+2*$input_buffer_height+$blockage_width+4*$cell_height] \
+-    -name inbuf_test_blk \
+-    -layer 7
+-
+-createRouteBlk -box \
+-    [expr $center_x-$input_buffer_width/2-$blockage_width] \
+-    [expr $origin1_y-$input_buffer_height-32*$cell_height-$blockage_height] \
+-    [expr $center_x-$input_buffer_width/2+$input_buffer_width+$blockage_width] \
+-    [expr $origin1_y-32*$cell_height+$blockage_height] \
+-    -name inbuf_aux_blk \
+-    -layer 7
+-
+-# output_buffer
+-addStripe \
+-    -nets {DVSS DVDD} \
+-    -layer M7 \
+-    -direction vertical \
+-    -width 1 \
+-    -spacing 0.5 \
+-    -start_offset [expr $origin4_x+$output_buffer_offset] \
+-    -stop_offset 8 \
+-    -set_to_set_distance 8.55 \
+-    -start_from left \
+-    -switch_layer_over_obs false \
+-    -max_same_layer_jog_length 2 \
+-    -padcore_ring_top_layer_limit AP \
+-    -padcore_ring_bottom_layer_limit M7 \
+-    -block_ring_top_layer_limit M7 \
+-    -block_ring_bottom_layer_limit M1 \
+-    -use_wire_group 0
+-    -snap_wire_center_to_grid None \
+-    -skip_via_on_pin {standardcell} \
+-    -skip_via_on_wire_shape {noshape} \
+-    -extend_to design_boundary
+-
+-addStripe \
+-    -nets {DVSS DVDD} \
+-    -layer M7 \
+-    -direction vertical \
+-    -width 1 \
+-    -spacing 0.5 \
+-    -start_offset [expr $origin4_x+$output_buffer_offset] \
+-    -stop_offset 8 \
+-    -set_to_set_distance 8.55 \
+-    -start_from right \
+-    -switch_layer_over_obs false \
+-    -max_same_layer_jog_length 2 \
+-    -padcore_ring_top_layer_limit AP \
+-    -padcore_ring_bottom_layer_limit M7 \
+-    -block_ring_top_layer_limit M7 \
+-    -block_ring_bottom_layer_limit M1 \
+-    -use_wire_group 0 \
+-    -snap_wire_center_to_grid None \
+-    -skip_via_on_pin {standardcell} \
+-    -skip_via_on_wire_shape {noshape} \
+-    -extend_to design_boundary
+-
+-#dcore
+-
+-#outmost stripe
+-
+-addStripe \
+-    -nets {DVDD DVSS} \
+-    -layer M7 \
+-    -direction vertical \
+-    -width 1 \
+-    -spacing 0.5 \
+-    -start_offset 0.5 \
+-    -set_to_set_distance 1000 \
+-    -start_from right \
+-    -switch_layer_over_obs false \
+-    -max_same_layer_jog_length 2 \
+-    -padcore_ring_top_layer_limit AP \
+-    -padcore_ring_bottom_layer_limit M7 \
+-    -block_ring_top_layer_limit M7 \
+-    -block_ring_bottom_layer_limit M1 \
+-    -use_wire_group 0 \
+-    -snap_wire_center_to_grid None \
+-    -skip_via_on_pin {standardcell} \
+-    -skip_via_on_wire_shape {noshape} \
+-    -extend_to design_boundary
+-
+-addStripe \
+-    -nets {DVSS DVDD} \
+-    -layer M7 \
+-    -direction vertical \
+-    -width 1 \
+-    -spacing 0.5 \
+-    -start_offset 0.5 \
+-    -set_to_set_distance 1000 \
+-    -start_from left \
+-    -switch_layer_over_obs false \
+-    -max_same_layer_jog_length 2 \
+-    -padcore_ring_top_layer_limit AP \
+-    -padcore_ring_bottom_layer_limit M7 \
+-    -block_ring_top_layer_limit M7 \
+-    -block_ring_bottom_layer_limit M1 \
+-    -use_wire_group 0 \
+-    -snap_wire_center_to_grid None \
+-    -skip_via_on_pin {standardcell} \
+-    -skip_via_on_wire_shape {noshape} \
+-    -extend_to design_boundary
+-
+-# center stripe
+-addStripe -nets {DVSS DVDD} \
+-    -layer M7 \
+-    -direction vertical \
+-    -width 1 \
+-    -spacing 3 \
+-    -start_offset 42 \
+-    -stop_offset [expr $FP_width/2] \
+-    -set_to_set_distance 20 \
+-    -start_from right \
+-    -switch_layer_over_obs false \
+-    -max_same_layer_jog_length 2 \
+-    -padcore_ring_top_layer_limit AP \
+-    -padcore_ring_bottom_layer_limit M7 \
+-    -block_ring_top_layer_limit M7 \
+-    -block_ring_bottom_layer_limit M1 \
+-    -use_wire_group 0 \
+-    -snap_wire_center_to_grid None \
+-    -skip_via_on_pin {standardcell} \
+-    -skip_via_on_wire_shape {noshape} \
+-    -extend_to design_boundary
+-
+-addStripe \
+-    -nets {DVSS DVDD} \
+-    -layer M7 \
+-    -direction vertical \
+-    -width 1 \
+-    -spacing 3 \
+-    -start_offset 42 \
+-    -stop_offset [expr $FP_width/2] \
+-    -set_to_set_distance 20 \
+-    -start_from left \
+-    -switch_layer_over_obs false \
+-    -max_same_layer_jog_length 2 \
+-    -padcore_ring_top_layer_limit AP \
+-    -padcore_ring_bottom_layer_limit M7 \
+-    -block_ring_top_layer_limit M7 \
+-    -block_ring_bottom_layer_limit M1 \
+-    -use_wire_group 0 \
+-    -snap_wire_center_to_grid None \
+-    -skip_via_on_pin {standardcell} \
+-    -skip_via_on_wire_shape {noshape} \
+-    -extend_to design_boundary
+-
+-deleteRouteBlk -name *
+-
+-createRouteBlk -box \
+-    0 \
+-    0 \
+-    [expr $FP_width] \
+-    [expr $FP_height] \
+-    -name entire_design_blk \
+-    -layer 7
+-
+-createRouteBlk -box \
+-    [expr $origin0_x-$blockage_width] \
+-    [expr $origin0_y-$blockage_width] \
+-    [expr $origin0_x+$input_buffer_width+$blockage_width] \
+-    [expr $origin0_y+$input_buffer_height+$blockage_width] \
+-    -name inbuf_async_blk \
+-    -layer {8 9}
+-
+-createRouteBlk -box \
+-    [expr $origin3_x-$blockage_width] \
+-    [expr $origin3_y-$blockage_width] \
+-    [expr $origin3_x+$input_buffer_width+$blockage_width] \
+-    [expr $origin3_y+2*$input_buffer_height+$blockage_width+4*$cell_height] \
+-    -name inbuf_test_blk \
+-    -layer {8 9}
+-
+-createRouteBlk -box \
+-    [expr $center_x-$input_buffer_width/2-$blockage_width] \
+-    [expr $origin1_y-$input_buffer_height-32*$cell_height-$blockage_height] \
+-    [expr $center_x-$input_buffer_width/2+$input_buffer_width+$blockage_width] \
+-    [expr $origin1_y-32*$cell_height+$blockage_height] \
+-    -name inbuf_aux_blk \
+-    -layer {8 9}
+-
+-createRouteBlk -box \
+-    [expr $origin1_x] \
+-    [expr $FP_height] \
+-    [expr $origin1_x+$acore_width] \
+-    [expr $origin1_y-$blockage_height-2*$cell_height] \
+-    -name acore_blk2 \
+-    -layer {8 9}
+-
+-sroute \
+-    -connect { blockPin } \
+-    -layerChangeRange { M8 M8 } \
+-    -blockPinTarget { boundaryWithPin } \
+-    -allowJogging 0 \
+-    -crossoverViaLayerRange { M8 M7 } \
+-    -nets { DVDD DVSS } \
+-    -allowLayerChange 0 \
+-    -blockPin useLef \
+-    -targetViaLayerRange { M8 M7 }
+-
+-createRouteBlk -box \
+-    0 \
+-    [expr $FP_height] \
+-    [expr $FP_width] \
+-    [expr $origin1_y] \
+-    -name acore_blk_M8 \
+-    -layer 8
+-
+-addStripe \
+-    -nets {DVDD DVSS } \
+-    -layer M8 \
+-    -direction horizontal \
+-    -width 2 \
+-    -spacing 1 \
+-    -start_offset 3 \
+-    -set_to_set_distance 12 \
+-    -start_from bottom \
+-    -switch_layer_over_obs false \
+-    -max_same_layer_jog_length 2 \
+-    -padcore_ring_top_layer_limit AP \
+-    -padcore_ring_bottom_layer_limit M1 \
+-    -block_ring_top_layer_limit M7 \
+-    -block_ring_bottom_layer_limit M1 \
+-    -use_wire_group 0 \
+-    -snap_wire_center_to_grid None \
+-    -skip_via_on_pin {standardcell} \
+-    -skip_via_on_wire_shape {noshape} \
+-    -create_pins 1 \
+-    -extend_to design_boundary
+-
+-deleteRouteBlk -name acore_blk_M8
+-
+-deleteRouteBlk -name *
+\ No newline at end of file
++#=========================================================================
++# power-strategy-dualmesh.tcl
++#=========================================================================
++# This script implements a dual power mesh, with a fine-grain power mesh
++# on the lower metal layers and a coarse-grain power mesh on the upper
++# metal layers. Note that M2/M3 are expected to be horizontal/vertical,
++# and the lower metal layer of the coarse power mesh is expected to be
++# horizontal.
++#
++# Author : Christopher Torng
++# Date   : March 26, 2018
++
++#-------------------------------------------------------------------------
++# Stdcell power rail preroute
++#-------------------------------------------------------------------------
++# Generate horizontal stdcell preroutes
++
++sroute -nets {VDD VSS}
++
++#-------------------------------------------------------------------------
++# Shorter names from the ADK
++#-------------------------------------------------------------------------
++
++set pmesh_bot $ADK_POWER_MESH_BOT_LAYER
++set pmesh_top $ADK_POWER_MESH_TOP_LAYER
++
++#-------------------------------------------------------------------------
++# M3 power stripe settings
++#-------------------------------------------------------------------------
++# We are using addStripe to add sets of stripes (a set includes both VSS
++# and VDD).
++#
++# Set variables to space VSS and VDD straps evenly throughout the chip.
++#
++#     VSS    VDD    VSS
++#     | |    | |    | |
++#     | |    | |    | |
++#     | |    | |    | |
++#
++#     _______ <---- $M3_str_pitch
++#     ______________
++#        ____   ^
++#     ___  ^    |
++#      ^   |    +-- $M3_str_interset_pitch
++#      |   +------- $M3_str_intraset_spacing
++#      +----------- $M3_str_width
++#
++# - M3_str_intraset_spacing : Space between VSS/VDD, chosen for constant
++#                             pitch across all VSS and VDD stripes
++# - M3_str_interset_pitch   : Pitch between same-signal stripes
++#
++# - M3_str_offset           : Offset from left edge of core to center the
++#                             M3 stripe between vertical M3 routing tracks
++#
++# - M3_str_width            : M3 stripe width
++# - M3_str_pitch            : Choosing an arbitrary M3 pitch that is a
++#                             multiple of M3 signal pitch for now
++
++# Get M3 min width and signal routing pitch as defined in the LEF
++
++set M3_min_width    [dbGet [dbGetLayerByZ 3].minWidth]
++set M3_route_pitchX [dbGet [dbGetLayerByZ 3].pitchX]
++
++# Set M3 stripe variables
++
++set M3_str_width            [expr  3 * $M3_min_width]
++set M3_str_pitch            [expr 10 * $M3_route_pitchX]
++
++set M3_str_intraset_spacing [expr $M3_str_pitch - $M3_str_width]
++set M3_str_interset_pitch   [expr 2*$M3_str_pitch]
++
++set M3_str_offset           [expr $M3_str_pitch + $M3_route_pitchX/2 - $M3_str_width/2]
++
++setViaGenMode -reset
++setViaGenMode -viarule_preference default
++setViaGenMode -ignore_DRC false
++
++setAddStripeMode -reset
++setAddStripeMode -stacked_via_bottom_layer 2 \
++                 -stacked_via_top_layer    3
++
++addStripe -nets {VSS VDD} -layer 3 -direction vertical \
++    -width $M3_str_width                                \
++    -spacing $M3_str_intraset_spacing                   \
++    -set_to_set_distance $M3_str_interset_pitch         \
++    -start_offset $M3_str_offset
++
++#-------------------------------------------------------------------------
++# Power ring
++#-------------------------------------------------------------------------
++
++addRing -nets {VDD VSS} -type core_rings -follow core   \
++        -layer [list top  $pmesh_bot bottom $pmesh_bot  \
++                     left $pmesh_top right  $pmesh_top] \
++        -width $savedvars(p_ring_width)                 \
++        -spacing $savedvars(p_ring_spacing)             \
++        -offset $savedvars(p_ring_spacing)              \
++        -extend_corner {tl tr bl br lt lb rt rb}
++
++#-------------------------------------------------------------------------
++# Power mesh bottom settings (horizontal)
++#-------------------------------------------------------------------------
++# - pmesh_bot_str_width            : 8X thickness compared to M3
++# - pmesh_bot_str_pitch            : Arbitrarily choosing the stripe pitch
++# - pmesh_bot_str_intraset_spacing : Space between VSS/VDD, choosing
++#                                    constant pitch across VSS/VDD stripes
++# - pmesh_bot_str_interset_pitch   : Pitch between same-signal stripes
++
++set pmesh_bot_str_width [expr  8 * $M3_str_width]
++set pmesh_bot_str_pitch [expr 10 * $M3_str_pitch]
++
++set pmesh_bot_str_intraset_spacing [expr $pmesh_bot_str_pitch - $pmesh_bot_str_width]
++set pmesh_bot_str_interset_pitch   [expr 2*$pmesh_bot_str_pitch]
++
++setViaGenMode -reset
++setViaGenMode -viarule_preference default
++setViaGenMode -ignore_DRC false
++
++setAddStripeMode -reset
++setAddStripeMode -stacked_via_bottom_layer 3 \
++                 -stacked_via_top_layer    $pmesh_top
++
++# Add the stripes
++#
++# Use -start to offset the stripes slightly away from the core edge.
++# Allow same-layer jogs to connect stripes to the core ring if some
++# blockage is in the way (e.g., connections from core ring to pads).
++# Restrict any routing around blockages to use only layers for power.
++
++addStripe -nets {VSS VDD} -layer $pmesh_bot -direction horizontal \
++    -width $pmesh_bot_str_width                                   \
++    -spacing $pmesh_bot_str_intraset_spacing                      \
++    -set_to_set_distance $pmesh_bot_str_interset_pitch            \
++    -max_same_layer_jog_length $pmesh_bot_str_pitch               \
++    -padcore_ring_bottom_layer_limit $pmesh_bot                   \
++    -padcore_ring_top_layer_limit $pmesh_top                      \
++    -start [expr $pmesh_bot_str_pitch]
++
++#-------------------------------------------------------------------------
++# Power mesh top settings (vertical)
++#-------------------------------------------------------------------------
++# - pmesh_top_str_width            : 16X thickness compared to M3
++# - pmesh_top_str_pitch            : Arbitrarily choosing the stripe pitch
++# - pmesh_top_str_intraset_spacing : Space between VSS/VDD, choosing
++#                                    constant pitch across VSS/VDD stripes
++# - pmesh_top_str_interset_pitch   : Pitch between same-signal stripes
++
++set pmesh_top_str_width [expr 16 * $M3_str_width]
++set pmesh_top_str_pitch [expr 20 * $M3_str_pitch] ; # Arbitrary
++
++set pmesh_top_str_intraset_spacing [expr $pmesh_top_str_pitch - $pmesh_top_str_width]
++set pmesh_top_str_interset_pitch   [expr 2*$pmesh_top_str_pitch]
++
++setViaGenMode -reset
++setViaGenMode -viarule_preference default
++setViaGenMode -ignore_DRC false
++
++setAddStripeMode -reset
++setAddStripeMode -stacked_via_bottom_layer $pmesh_bot \
++                 -stacked_via_top_layer    $pmesh_top
++
++# Add the stripes
++#
++# Use -start to offset the stripes slightly away from the core edge.
++# Allow same-layer jogs to connect stripes to the core ring if some
++# blockage is in the way (e.g., connections from core ring to pads).
++# Restrict any routing around blockages to use only layers for power.
++
++addStripe -nets {VSS VDD} -layer $pmesh_top -direction vertical \
++    -width $pmesh_top_str_width                                 \
++    -spacing $pmesh_top_str_intraset_spacing                    \
++    -set_to_set_distance $pmesh_top_str_interset_pitch          \
++    -max_same_layer_jog_length $pmesh_top_str_pitch             \
++    -padcore_ring_bottom_layer_limit $pmesh_bot                 \
++    -padcore_ring_top_layer_limit $pmesh_top                    \
++    -start [expr $pmesh_top_str_pitch/2]
++
++
+
+From d817ba79deede327cfb616f7c9e5cf795ae37efd Mon Sep 17 00:00:00 2001
+From: Steven Herbst <sherbst@stanford.edu>
+Date: Wed, 13 May 2020 11:59:33 -0700
+Subject: [PATCH 07/16] syntax issues resolved
+
+---
+ md/prbs_intf.md                               |  12 +-
+ .../new_chip_src/digital_core/digital_core.sv |  18 ++-
+ vlog/new_chip_src/jtag/jtag.sv                |  10 +-
+ vlog/new_chip_src/prbs/prbs_checker.sv        | 139 +++++++++---------
+ vlog/new_chip_src/prbs/prbs_checker_core.sv   | 126 ++++++----------
+ vlog/new_chip_src/prbs/prbs_debug_intf.sv     |  44 +++---
+ vlog/new_chip_src/prbs/prbs_generator.sv      |  63 --------
+ vlog/new_pack/const_pack.sv                   |   2 +-
+ 8 files changed, 166 insertions(+), 248 deletions(-)
+ delete mode 100644 vlog/new_chip_src/prbs/prbs_generator.sv
+
+diff --git a/md/prbs_intf.md b/md/prbs_intf.md
+index 47cecb9a..19f71437 100644
+--- a/md/prbs_intf.md
++++ b/md/prbs_intf.md
+@@ -1,9 +1,11 @@
+ | Name                       | Signed? | Packed Dim      | Unpacked Dim   | Clock Domain | JTAG Dir | Reset Val                                    |
+ |----------------------------|---------|-----------------|----------------|--------------|----------|----------------------------------------------|
+-| prbs_checker_mode          |         | 1:0             |                | Test         | out      | 0                                            |
+-| prbs_init_vals             |         | Nprbs-1:0       | Nti-1:0        | Test         | out      | 3&10&60&11&58&31&67&9&54&55&49&37&92&74&63&1 |
+-| prbs_correct_bits_upper    |         | 31:0            |                | System       | in       |                                              |
+-| prbs_correct_bits_lower    |         | 31:0            |                | System       | in       |                                              |
++| prbs_cke                   |         |                 |                | Test         | out      | 1                                            |
++| prbs_eqn                   |         | Nprbs-1:0       |                | Test         | out      | 'b00000000000000000000000001100000           |
++| prbs_chan_sel              |         | Nti-1:0         |                | Test         | out      | 'hFFFF                                       |
++| prbs_inv_chicken           |         | 1:0             |                | Test         | out      | 'b00                                         |
++| prbs_checker_mode          |         | 1:0             |                | Test         | out      | 'b00                                         |
++| prbs_error_bits_upper      |         | 31:0            |                | System       | in       |                                              |
++| prbs_error_bits_lower      |         | 31:0            |                | System       | in       |                                              |
+ | prbs_total_bits_upper      |         | 31:0            |                | System       | in       |                                              |
+ | prbs_total_bits_lower      |         | 31:0            |                | System       | in       |                                              |
+-| prbs_rx_shift              |         | $clog2(Nti)-1:0 |                | System       | in       |                                              |
+\ No newline at end of file
+diff --git a/vlog/new_chip_src/digital_core/digital_core.sv b/vlog/new_chip_src/digital_core/digital_core.sv
+index 9c8e087d..b867f5c6 100644
+--- a/vlog/new_chip_src/digital_core/digital_core.sv
++++ b/vlog/new_chip_src/digital_core/digital_core.sv
+@@ -328,7 +328,6 @@ module digital_core import const_pack::*; (
+ 
+     assign prbs_rx_bits = mux_prbs_rx_bits[ddbg_intf_i.sel_prbs_mux];
+ 
+-
+     prbs_checker #(
+         .n_prbs(Nprbs),
+         .n_channels(Nti)
+@@ -336,14 +335,21 @@ module digital_core import const_pack::*; (
+         // clock and reset
+         .clk(clk_adc),
+         .rst(~prbs_rstb),
+-        // inputs
+-        .prbs_init_vals(pdbg_intf_i.prbs_init_vals),
++        // clock gating
++        .cke(pdbg_intf_i.prbs_cke),
++        // define the PRBS equation
++        .eqn(pdbg_intf_i.prbs_eqn),
++        // bits for selecting / de-selecting certain channels from the PRBS test
++        .chan_sel(pdbg_intf_i.prbs_chan_sel),
++        // "chicken" bits for flipping the sign of various bits
++        .inv_chicken(pdbg_intf_i.prbs_inv_chicken),
++        // recovered data from ADC, FFE, MLSD, etc.
+         .rx_bits(prbs_rx_bits),
++        // checker mode
+         .checker_mode(pdbg_intf_i.prbs_checker_mode),
+         // outputs
+-        .correct_bits({pdbg_intf_i.prbs_correct_bits_upper, pdbg_intf_i.prbs_correct_bits_lower}),
+-        .total_bits({pdbg_intf_i.prbs_total_bits_upper, pdbg_intf_i.prbs_total_bits_lower}),
+-        .rx_shift(pdbg_intf_i.prbs_rx_shift)
++        .error_bits({pdbg_intf_i.prbs_error_bits_upper, pdbg_intf_i.prbs_error_bits_lower}),
++        .total_bits({pdbg_intf_i.prbs_total_bits_upper, pdbg_intf_i.prbs_total_bits_lower})
+     );
+ 
+     // Output buffer
+diff --git a/vlog/new_chip_src/jtag/jtag.sv b/vlog/new_chip_src/jtag/jtag.sv
+index e696ff54..8314ca56 100644
+--- a/vlog/new_chip_src/jtag/jtag.sv
++++ b/vlog/new_chip_src/jtag/jtag.sv
+@@ -225,14 +225,16 @@ module jtag (
+ 
+ 
+     // PRBS Input
++    assign pdbg_intf_i.prbs_cke = rjtag_intf_i.prbs_cke;
++    assign pdbg_intf_i.prbs_eqn = rjtag_intf_i.prbs_eqn;
++    assign pdbg_intf_i.prbs_chan_sel = rjtag_intf_i.prbs_chan_sel;
++    assign pdbg_intf_i.prbs_inv_chicken = rjtag_intf_i.prbs_inv_chicken;
+     assign pdbg_intf_i.prbs_checker_mode = rjtag_intf_i.prbs_checker_mode;
+-    assign pdbg_intf_i.prbs_init_vals = rjtag_intf_i.prbs_init_vals;
+     // PRBS Output
+-    assign rjtag_intf_i.prbs_correct_bits_upper = pdbg_intf_i.prbs_correct_bits_upper;
+-    assign rjtag_intf_i.prbs_correct_bits_lower = pdbg_intf_i.prbs_correct_bits_lower;
++    assign rjtag_intf_i.prbs_error_bits_upper = pdbg_intf_i.prbs_error_bits_upper;
++    assign rjtag_intf_i.prbs_error_bits_lower = pdbg_intf_i.prbs_error_bits_lower;
+     assign rjtag_intf_i.prbs_total_bits_upper = pdbg_intf_i.prbs_total_bits_upper;
+     assign rjtag_intf_i.prbs_total_bits_lower = pdbg_intf_i.prbs_total_bits_lower;
+-    assign rjtag_intf_i.prbs_rx_shift = pdbg_intf_i.prbs_rx_shift;
+ 
+     //WME Input
+     assign wdbg_intf_i.wme_ffe_data  = rjtag_intf_i.wme_ffe_data;
+diff --git a/vlog/new_chip_src/prbs/prbs_checker.sv b/vlog/new_chip_src/prbs/prbs_checker.sv
+index 035c0ab8..172273a8 100644
+--- a/vlog/new_chip_src/prbs/prbs_checker.sv
++++ b/vlog/new_chip_src/prbs/prbs_checker.sv
+@@ -1,17 +1,24 @@
++`default_nettype none
++
+ module prbs_checker #(
+-    parameter integer n_prbs=7,
+-    parameter integer n_channels=16,
+-    parameter integer n_shift_bits=$clog2(n_channels),
+-    parameter integer n_match_bits=$clog2(n_channels)+1
++    parameter integer n_prbs=32,
++    parameter integer n_channels=16
+ ) (
+-    // clock and reset
++    // basic clock and reset for this block
+     input wire logic clk,
+     input wire logic rst,
+ 
+-    // initial values for LFSRs used in PRBS
+-    // these have to be picked in a certain way
+-    // to ensure the right phase relationship
+-    input wire logic [(n_prbs-1):0] prbs_init_vals [(n_channels-1):0],
++    // clock gating
++    input wire logic cke,
++
++    // define the PRBS equation
++    input wire logic [(n_prbs-1):0] eqn,
++
++    // bits for selecting / de-selecting certain channels from the PRBS test
++    input wire logic [(n_channels-1):0] chan_sel,
++
++    // "chicken" bits for flipping the sign of various bits
++    input wire logic [1:0] inv_chicken,
+ 
+     // recovered data from ADC, FFE, MLSD, etc.
+     input wire logic [(n_channels-1):0] rx_bits,
+@@ -24,86 +31,72 @@ module prbs_checker #(
+     input wire logic [1:0] checker_mode,
+ 
+     // outputs
+-    output reg [63:0] correct_bits,
+-    output reg [63:0] total_bits,
+-    output reg [(n_shift_bits-1):0] rx_shift
++    output wire logic [63:0] error_bits,
++    output wire logic [63:0] total_bits
+ );
+-
+     // TODO: consider using enum here
+     localparam logic [1:0]  RESET = 2'b00;
+     localparam logic [1:0]  ALIGN = 2'b01;
+     localparam logic [1:0]   TEST = 2'b10;
+     localparam logic [1:0] FREEZE = 2'b11;
+ 
+-    // control signals for the checker core
+-    logic prbs_rst, prbs_cke, prbs_match;
+-    logic [(n_match_bits-1):0] prbs_match_bits;
+-
+     // instantiate the core prbs checker
+-    prbs_checker_core #(
+-        .n_prbs(n_prbs),
+-        .n_channels(n_channels),
+-        .n_shift_bits(n_shift_bits)
+-    ) prbs_checker_core_i (
+-        .clk(clk),
+-        .rst(prbs_rst),
+-        .prbs_cke(prbs_cke),
+-        .prbs_init_vals(prbs_init_vals),
+-        .rx_bits(rx_bits),
+-        .rx_shift(rx_shift),
+-        .match(prbs_match),
+-        .match_bits(prbs_match_bits)
+-    );
++    logic [(n_channels-1):0] error_signals;
++    genvar k;
++    generate
++        for (k=0; k<n_channels; k=k+1) begin
++            prbs_checker_core #(
++                .n_prbs(n_prbs)
++            ) prbs_checker_core_i (
++                .clk(clk),
++                .rst(rst),
++                .cke(cke),
++                .eqn(eqn),
++                .inv_chicken(inv_chicken),
++                .error(error_signals[k])
++            );
++        end
++    endgenerate
++
++    // sum up number of errors for selected channels
++    logic [$clog2(n_channels):0] err_count;
++    logic [$clog2(n_channels):0] tot_count;
++
++    integer i;
++    always @* begin
++        err_count = 0;
++        tot_count = 0;
++        for (i=0; i<n_channels; i=i+1) begin
++            err_count = err_count + (error_signals[i] & chan_sel[i]);
++            tot_count = tot_count + chan_sel[i];
++        end
++    end
+ 
+     // check the RX data
+-    logic [1:0] err_count;
++
++    logic [63:0] error_bits_reg;
++    logic [63:0] total_bits_reg;
++
+     always @(posedge clk) begin
+         if (checker_mode == RESET) begin
+-            prbs_rst <= 1;
+-            prbs_cke <= 0;
+-            rx_shift <= '1;
+-            correct_bits <= 0;
+-            total_bits <= 0;
+-            err_count <= 0;
++            error_bits_reg <= 0;
++            total_bits_reg <= 0;
+         end else if (checker_mode == ALIGN) begin
+-            prbs_rst <= 0;
+-            if (prbs_match) begin
+-                prbs_cke <= 1;
+-                rx_shift <= rx_shift;
+-                err_count <= 0;
+-            end else begin
+-                if (err_count == 3) begin
+-                    if (rx_shift == 0) begin
+-                        prbs_cke <= 0;
+-                        rx_shift <= '1;
+-                    end else begin
+-                        prbs_cke <= 1;
+-                        rx_shift <= rx_shift - 1;
+-                    end
+-                    err_count <= 0;
+-                end else begin
+-                    prbs_cke <= 1;
+-                    rx_shift <= rx_shift;
+-                    err_count <= err_count + 1;
+-                end
+-            end
+-            correct_bits <= 0;
+-            total_bits <= 0;
++            error_bits_reg <= error_bits_reg;
++            total_bits_reg <= total_bits_reg;
+         end else if (checker_mode == TEST) begin
+-            prbs_rst <= 0;
+-            prbs_cke <= 1;
+-            rx_shift <= rx_shift;
+-            correct_bits <= correct_bits + prbs_match_bits;
+-            total_bits <= total_bits + n_channels;
+-            err_count <= 0;
++            error_bits_reg <= error_bits_reg + err_count;
++            total_bits_reg <= total_bits_reg + tot_count;
+         end else begin
+-            prbs_rst <= prbs_rst;
+-            prbs_cke <= prbs_cke;
+-            rx_shift <= rx_shift;
+-            correct_bits <= correct_bits;
+-            total_bits <= total_bits;
+-            err_count <= err_count;
++            error_bits_reg <= error_bits_reg;
++            total_bits_reg <= total_bits_reg;
+         end
+     end
+ 
++    // assign outputs
++    assign error_bits = error_bits_reg;
++    assign total_bits = total_bits_reg;
++
+ endmodule
++
++`default_nettype wire
+\ No newline at end of file
+diff --git a/vlog/new_chip_src/prbs/prbs_checker_core.sv b/vlog/new_chip_src/prbs/prbs_checker_core.sv
+index cee34f03..47cff339 100644
+--- a/vlog/new_chip_src/prbs/prbs_checker_core.sv
++++ b/vlog/new_chip_src/prbs/prbs_checker_core.sv
+@@ -1,101 +1,73 @@
++`default_nettype none
++
+ module prbs_checker_core #(
+-    parameter integer n_prbs=7,
+-    parameter integer n_channels=16,
+-    parameter integer n_shift_bits=$clog2(n_channels),
+-    parameter integer n_match_bits=$clog2(n_channels)+1
++    parameter integer n_prbs=32
+ ) (
++    // basic clock and reset for this block
+     input wire logic clk,
+     input wire logic rst,
+-    input wire logic prbs_cke,
+-    input wire logic [(n_prbs-1):0] prbs_init_vals [(n_channels-1):0],
+-    input wire logic [(n_channels-1):0] rx_bits,
+-    input wire logic [(n_shift_bits-1):0] rx_shift,
+-    output reg [(n_match_bits-1):0] match_bits,
+-    output reg match
++    // clock gating
++    input wire logic cke,
++    // define the PRBS equation
++    input wire logic [(n_prbs-1):0] eqn,
++    // "chicken" bits for flipping the sign of various bits
++    input wire logic [1:0] inv_chicken,
++    // input bit
++    input wire logic rx_bit,
++    // output signal indicating if there is an error
++    output wire logic error
+ );
+-    // store previous sets of rx_bits
+-    logic [(n_channels-1):0] rx_bits_prev_1;
+-    logic [(n_channels-1):0] rx_bits_prev_2;
+-
++    // register input
++    logic rx_bit_reg;
+     always @(posedge clk) begin
+-        if (rst == 1'b1) begin
+-            rx_bits_prev_1 <= 0;
+-            rx_bits_prev_2 <= 0;
++        if (rst) begin
++            rx_bit_reg <= 0;
++        end else if (cke) begin
++            rx_bit_reg <= rx_bit;
+         end else begin
+-            rx_bits_prev_1 <= rx_bits;
+-            rx_bits_prev_2 <= rx_bits_prev_1;
++            rx_bit_reg <= rx_bit_reg;
+         end
+     end
+ 
+-    // store output bits of the PRBS
+-    logic [(n_channels-1):0] prbs_bits;
+-
+-    genvar k;
+-    generate
+-        for (k=0; k<n_channels; k=k+1) begin
+-            prbs_generator #(
+-                .n_prbs(n_prbs)
+-            ) prbs_gen_i (
+-                .clk(clk),
+-                .rst(rst),
+-                .cke(prbs_cke),
+-                .init_val(prbs_init_vals[k]),
+-                .out(prbs_bits[k])
+-            );
+-        end
+-    endgenerate
+-
+-    // concatenate input bits
+-    logic [((2*n_channels)-1):0] rx_bits_concat;
+-    assign rx_bits_concat = {rx_bits_prev_1, rx_bits_prev_2};
+-
+-    // select input bits based on the user-provided shift
+-    logic [(n_channels-1):0] rx_bits_select_imm;
+-    logic [(n_channels-1):0] rx_bits_select;
+-
+-    assign rx_bits_select_imm = rx_bits_concat[((2*n_channels)-1-rx_shift) -: n_channels];
+-
++    // create memory of past inputs, with chicken bit to flip
++    // the polarity of the input, if desired
++    logic [(n_prbs-1):0] rx_mem;
+     always @(posedge clk) begin
+-        if (rst == 1'b1) begin
+-            rx_bits_select <= 0;
++        if (rst) begin
++            rx_mem <= 0;
++        end else if (cke) begin
++            rx_mem <= {rx_mem[(n_prbs-2):0], (rx_bit_reg^inv_chicken[0])};
+         end else begin
+-            rx_bits_select <= rx_bits_select_imm;
++            rx_mem <= rx_mem;
+         end
+     end
+ 
+-    // count the number of correct bits
+-    logic [(n_channels-1):0] xnor_bits;
+-    logic [(n_match_bits-1):0] match_bits_imm;
++    // select bits for the LFSR equation
++    logic [(n_prbs-1):0] rx_mem_select;
++    assign rx_mem_select = rx_mem & eqn;
+ 
+-    assign xnor_bits = rx_bits_select ~^ prbs_bits;
++    // xor selected bits
++    logic rx_mem_xor;
++    assign rx_mem_xor = ^rx_mem_select;
+ 
+-    // count ones (ref: https://stackoverflow.com/questions/27197177/ones-count-system-verilog)
+-    // $countones is not compatible with Icarus Verilog so a more verbose implementation has to be used
+-    integer idx;
+-    always @* begin
+-        match_bits_imm = 0;
+-        for(idx=0; idx<n_channels; idx=idx+1) begin
+-            match_bits_imm = match_bits_imm + xnor_bits[idx];
+-        end
+-    end
++    // determine if an error occured
++    logic error_imm;
++    assign error_imm = rx_mem_xor ^ rx_bit_reg ^ inv_chicken[1];
+ 
++    // register output
++    logic error_reg;
+     always @(posedge clk) begin
+-        if (rst == 1'b1) begin
+-            match_bits <= 0;
++        if (rst) begin
++            error_reg <= 0;
++        end else if (cke) begin
++            error_reg <= error_imm;
+         end else begin
+-            match_bits <= match_bits_imm;
++            error_reg <= error_reg;
+         end
+     end
+ 
+-    // compare the selected bits against the prbs output
+-    logic match_imm;
+-    assign match_imm = (rx_bits_select == prbs_bits);
+-
+-    always @(posedge clk) begin
+-        if (rst == 1'b1) begin
+-            match <= 0;
+-        end else begin
+-            match <= match_imm;
+-        end
+-    end
++    // assign output
++    assign error = error_reg;
+ endmodule
++
++`default_nettype wire
+\ No newline at end of file
+diff --git a/vlog/new_chip_src/prbs/prbs_debug_intf.sv b/vlog/new_chip_src/prbs/prbs_debug_intf.sv
+index 6a9bb94e..4c8a0dde 100644
+--- a/vlog/new_chip_src/prbs/prbs_debug_intf.sv
++++ b/vlog/new_chip_src/prbs/prbs_debug_intf.sv
+@@ -2,32 +2,38 @@ interface prbs_debug_intf;
+ 
+ 	import const_pack::*;
+ 
++    logic prbs_cke;
++    logic [(Nprbs-1):0] prbs_eqn;
++    logic [(Nti-1):0] prbs_chan_sel;
++    logic [1:0] prbs_inv_chicken;
+     logic [1:0] prbs_checker_mode;
+-    logic [Nprbs-1:0] prbs_init_vals [Nti-1:0];
+-    logic [31:0] prbs_correct_bits_upper;
+-    logic [31:0] prbs_correct_bits_lower;
++
++    logic [31:0] prbs_error_bits_upper;
++    logic [31:0] prbs_error_bits_lower;
+     logic [31:0] prbs_total_bits_upper;
+     logic [31:0] prbs_total_bits_lower;
+-    logic [$clog2(Nti)-1:0] prbs_rx_shift;
+ 
+     modport prbs (
+-	    input prbs_checker_mode,
+-	    input prbs_init_vals,
+-	    output prbs_correct_bits_upper,
+-	    output prbs_correct_bits_lower,
+-	    output prbs_total_bits_upper,
+-	    output prbs_total_bits_lower,
+-	    output prbs_rx_shift
++        input prbs_cke,
++        input prbs_eqn,
++        input prbs_chan_sel,
++        input prbs_inv_chicken,
++        input prbs_checker_mode,
++        output prbs_error_bits_upper,
++        output prbs_error_bits_lower,
++        output prbs_total_bits_upper,
++        output prbs_total_bits_lower
+     );
+ 
+     modport jtag (
+-	    output prbs_checker_mode,
+-	    output prbs_init_vals,
+-	    input prbs_correct_bits_upper,
+-	    input prbs_correct_bits_lower,
+-	    input prbs_total_bits_upper,
+-	    input prbs_total_bits_lower,
+-	    input prbs_rx_shift
++        output prbs_cke,
++        output prbs_eqn,
++        output prbs_chan_sel,
++        output prbs_inv_chicken,
++        output prbs_checker_mode,
++        input prbs_error_bits_upper,
++        input prbs_error_bits_lower,
++        input prbs_total_bits_upper,
++        input prbs_total_bits_lower
+     );
+-
+ endinterface
+diff --git a/vlog/new_chip_src/prbs/prbs_generator.sv b/vlog/new_chip_src/prbs/prbs_generator.sv
+deleted file mode 100644
+index 72aab0eb..00000000
+--- a/vlog/new_chip_src/prbs/prbs_generator.sv
++++ /dev/null
+@@ -1,63 +0,0 @@
+-module prbs_generator #(
+-    parameter integer n_prbs=7
+-) (
+-    input wire logic clk,
+-    input wire logic rst,
+-    input wire logic cke,
+-    input wire logic [(n_prbs-1):0] init_val,
+-    output wire logic out
+-);
+-
+-    // internal variables
+-    logic [(n_prbs-1):0] data;
+-
+-    // Set PRBS polynomial
+-    // ref: https://www.xilinx.com/support/documentation/application_notes/xapp884_PRBS_GeneratorChecker.pdf
+-    logic next_bit;
+-    generate
+-        if (n_prbs == 7) begin
+-            assign next_bit = data[6] ^ data[5];
+-        end else if (n_prbs == 9) begin
+-            assign next_bit = data[8] ^ data[4];
+-        end else if (n_prbs == 11) begin
+-            assign next_bit = data[10] ^ data[8];
+-        end else if (n_prbs == 15) begin
+-            assign next_bit = data[14] ^ data[13];
+-        end else if (n_prbs == 17) begin
+-            assign next_bit = data[16] ^ data[13];
+-        end else if (n_prbs == 20) begin
+-            assign next_bit = data[19] ^ data[2];
+-        end else if (n_prbs == 23) begin
+-            assign next_bit = data[22] ^ data[17];
+-        end else if (n_prbs == 29) begin
+-            assign next_bit = data[28] ^ data[26];
+-        end else if (n_prbs == 31) begin
+-            assign next_bit = data[30] ^ data[27];
+-        end else begin
+-            // synopsys translate_off
+-            initial begin
+-                $error("Invalid value for n_prbs: %0d", n_prbs);
+-            end
+-            // synopsys translate_on
+-        end
+-    endgenerate
+-
+-    // shift previous data and append the new bit
+-    logic [(n_prbs-1):0] next_data;
+-    assign next_data = {data[(n_prbs-2):0], next_bit};
+-
+-    // state update
+-    always @(posedge clk) begin
+-        if (rst == 1'b1) begin
+-            data <= init_val;
+-        end else if (cke == 1'b1) begin
+-            data <= next_data;
+-        end else begin
+-            data <= data;
+-        end
+-    end
+-
+-    // output assignment
+-    assign out = data[n_prbs-1];
+-
+-endmodule
+diff --git a/vlog/new_pack/const_pack.sv b/vlog/new_pack/const_pack.sv
+index bc1a93b0..785df447 100644
+--- a/vlog/new_pack/const_pack.sv
++++ b/vlog/new_pack/const_pack.sv
+@@ -22,5 +22,5 @@ package const_pack;
+     localparam integer phase_est_shift = 8;
+     localparam integer N_mem_width = 18;
+     localparam integer N_mem_tiles  = 4;
+-    localparam integer Nprbs = 7;       // length of LFSR used in PRBS checker
++    localparam integer Nprbs = 32;      // length of LFSR used in PRBS checker
+ endpackage
+
+From eb0990674c70e1796afa021a90b8933a10e2b74a Mon Sep 17 00:00:00 2001
+From: Steven Herbst <sherbst@stanford.edu>
+Date: Wed, 13 May 2020 12:54:59 -0700
+Subject: [PATCH 08/16] test of checker core works
+
+---
+ .../test_prbs_checker_core.py                 | 107 ++++++++++++------
+ .../test_prbs_checker_core.sv                 |  77 ++++---------
+ .../test_prbs_generator.py                    |  93 ---------------
+ vlog/new_chip_src/prbs/prbs_checker.sv        |   1 +
+ vlog/new_tb/prbs_generator.sv                 |  63 +++++++++++
+ 5 files changed, 154 insertions(+), 187 deletions(-)
+ delete mode 100644 tests/test_prbs_generator/test_prbs_generator.py
+ create mode 100644 vlog/new_tb/prbs_generator.sv
+
+diff --git a/tests/test_prbs_checker_core/test_prbs_checker_core.py b/tests/test_prbs_checker_core/test_prbs_checker_core.py
+index 458fc2b2..ef5a44c5 100644
+--- a/tests/test_prbs_checker_core/test_prbs_checker_core.py
++++ b/tests/test_prbs_checker_core/test_prbs_checker_core.py
+@@ -2,7 +2,7 @@
+ import os
+ import pytest
+ import shutil
+-from math import ceil
++from random import randint
+ from pathlib import Path
+ 
+ # AHA imports
+@@ -22,72 +22,107 @@
+     SIMULATOR = 'ncsim'
+ 
+ if SIMULATOR == 'vivado':
+-    pytest_params = [pytest.param(0, marks=pytest.mark.slow)]
++    pytest_params = [pytest.param(7, marks=pytest.mark.slow)]
+ else:
+-    pytest_params = [k for k in range(32)]
+-@pytest.mark.parametrize('n_delay', pytest_params)
+-def test_sim(n_delay, n_prbs=7, n_channels=16, n_shift_bits=4, n_match_bits=5):
++    pytest_params = [7, 9, 11, 15, 17, 20, 23, 29, 31]
++@pytest.mark.parametrize('n_prbs', pytest_params)
++def test_sim(n_prbs, n_channels=16, n_trials=256):
++    # determine the right equation
++    if n_prbs == 7:
++        eqn = (1 << 6) | (1 << 5)
++    elif n_prbs == 9:
++        eqn = (1 << 8) | (1 << 4)
++    elif n_prbs == 11:
++        eqn = (1 << 10) | (1 << 8)
++    elif n_prbs == 15:
++        eqn = (1 << 14) | (1 << 13)
++    elif n_prbs == 17:
++        eqn = (1 << 16) | (1 << 13)
++    elif n_prbs == 20:
++        eqn = (1 << 19) | (1 << 2)
++    elif n_prbs == 23:
++        eqn = (1 << 22) | (1 << 17)
++    elif n_prbs == 29:
++        eqn = (1 << 28) | (1 << 26)
++    elif n_prbs == 31:
++        eqn = (1 << 30) | (1 << 27)
++    else:
++        raise Exception(f'Unknown value for n_prbs: {n_prbs}')
++
+     # declare circuit
+     class dut(m.Circuit):
+         name = 'test_prbs_checker_core'
+         io = m.IO(
+-            clk_bogus=m.ClockIn,  # need to have clock signal in order to wait on posedges (possible fault bug?)
+-            clk_div=m.BitOut,
+             rst=m.BitIn,
+-            prbs_cke=m.BitIn,
+-            prbs_init=m.In(m.Bits[n_prbs]),
+-            prbs_del=m.In(m.Bits[8]),
+-            rx_shift=m.In(m.Bits[n_shift_bits]),
+-            match=m.BitOut,
+-            match_bits=m.Out(m.Bits[n_match_bits])
++            eqn=m.In(m.Bits[n_prbs]),
++            delay=m.In(m.Bits[5]),
++            clk_div=m.BitOut,
++            error=m.BitOut,
++            clk_bogus=m.ClockIn  # need to have clock signal in order to wait on posedges (possible fault bug?)
+         )
+ 
+     # create tester
+     t = fault.Tester(dut, dut.clk_bogus)
+ 
+-    # compute delay strategy
+-    n_delay_tot = n_delay + 3*n_channels
+-    n_cyc_cke_0 = int(ceil(n_delay_tot / n_channels))
+-    print(n_cyc_cke_0)
++    # initialize with the right equation
++    t.poke(dut.rst, 1)
++    t.poke(dut.eqn, eqn)
++    t.poke(dut.delay, randint(0, 31))
++    for _ in range(10):
++        t.wait_until_posedge(dut.clk_div)
++
++    # release from reset and run for a bit
++    t.poke(dut.rst, 0)
++    for _ in range(2*n_prbs):
++        t.wait_until_posedge(dut.clk_div)
++
++    # check for errors
++    for _ in range(n_trials):
++        t.wait_until_posedge(dut.clk_div)
++        t.expect(dut.error, 0)
+ 
+-    # initialize with given delay
++    # initialize with the wrong equation
+     t.poke(dut.rst, 1)
+-    t.poke(dut.prbs_cke, 0)
+-    t.poke(dut.prbs_init, 1)
+-    t.poke(dut.prbs_del, n_delay)
+-    t.poke(dut.rx_shift, n_cyc_cke_0*n_channels - n_delay_tot)
+-    t.wait_until_posedge(dut.clk_div)
++    t.poke(dut.eqn, eqn+1)
++    for _ in range(10):
++        t.wait_until_posedge(dut.clk_div)
+ 
+-    # stall PRBS generator to account for lag in input
++    # release from reset and run for a bit
+     t.poke(dut.rst, 0)
+-    for _ in range(n_cyc_cke_0):
++    for _ in range(2*n_prbs):
+         t.wait_until_posedge(dut.clk_div)
+ 
+-    # release PRBS generator from stall
+-    t.poke(dut.prbs_cke, 1)
+-    for k in range((1<<n_prbs)-1):
++    # check for errors
++    vals_with_wrong_equation = []
++    for _ in range(n_trials):
+         t.wait_until_posedge(dut.clk_div)
+-        t.eval()  # need to eval because the "match" output is available right after the clock edge
+-        t.expect(dut.match, 1)
+-        t.expect(dut.match_bits, n_channels)
++        vals_with_wrong_equation.append(t.get_value(dut.error))
+ 
+     # run the test
+     t.compile_and_run(
+         target='system-verilog',
+         simulator=SIMULATOR,
+         ext_srcs=[
+-            get_file('vlog/new_chip_src/prbs/prbs_generator.sv'),
++            get_file('vlog/new_tb/prbs_generator.sv'),
+             get_file('vlog/new_chip_src/prbs/prbs_checker_core.sv'),
+             THIS_DIR / 'test_prbs_checker_core.sv'
+         ],
+         parameters={
+             'n_prbs': n_prbs,
+-            'n_channels': n_channels,
+-            'n_shift_bits': n_shift_bits,
+-            'n_match_bits': n_match_bits
++            'n_channels': n_channels
+         },
+         ext_model_file=True,
+         disp_type='realtime',
+         dump_waveforms=False,
+         directory=BUILD_DIR
+-    )
+\ No newline at end of file
++    )
++
++    # post-process results
++    errors_with_wrong_equation = 0
++    for elem in vals_with_wrong_equation:
++        errors_with_wrong_equation += elem.value
++
++    assert errors_with_wrong_equation > 0, \
++        'Should have detected errors when using the wrong equation.'
++
++    print('Success!')
+\ No newline at end of file
+diff --git a/tests/test_prbs_checker_core/test_prbs_checker_core.sv b/tests/test_prbs_checker_core/test_prbs_checker_core.sv
+index bbaea3ce..1660e81f 100644
+--- a/tests/test_prbs_checker_core/test_prbs_checker_core.sv
++++ b/tests/test_prbs_checker_core/test_prbs_checker_core.sv
+@@ -3,49 +3,17 @@
+ module test_prbs_checker_core #(
+     parameter integer n_prbs=7,
+     parameter integer n_channels=16,
+-    parameter integer n_shift_bits=$clog2(n_channels),
+-    parameter integer n_match_bits=$clog2(n_channels)+1
++    parameter [(n_prbs-1):0] prbs_init=1
+ ) (
+-    // checker core inputs
+     input wire logic rst,
+-    input wire logic prbs_cke,
+-    // stimulus inputs
+-    input wire logic [(n_prbs-1):0] prbs_init,
+-    input wire logic [7:0] prbs_del,
+-    input wire logic [(n_shift_bits-1):0] rx_shift,
++    input wire logic [(n_prbs-1):0] eqn,
++    input wire logic [4:0] delay,
+     // outputs
+-    output wire logic match,
+-    output wire logic [(n_match_bits-1):0] match_bits,
+     output reg clk_div,
++    output error,
+     // bogus input needed for fault
+     input wire logic clk_bogus
+ );
+-    // assign the initial values for the PRBS generators
+-    // only valid for n_prbs=7 and n_channels=16
+-    logic [(n_prbs-1):0] prbs_init_vals [n_channels];
+-    assign prbs_init_vals[0] = 3;
+-    assign prbs_init_vals[1] = 10;
+-    assign prbs_init_vals[2] = 60;
+-    assign prbs_init_vals[3] = 11;
+-    assign prbs_init_vals[4] = 58;
+-    assign prbs_init_vals[5] = 31;
+-    assign prbs_init_vals[6] = 67;
+-    assign prbs_init_vals[7] = 9;
+-    assign prbs_init_vals[8] = 54;
+-    assign prbs_init_vals[9] = 55;
+-    assign prbs_init_vals[10] = 49;
+-    assign prbs_init_vals[11] = 37;
+-    assign prbs_init_vals[12] = 92;
+-    assign prbs_init_vals[13] = 74;
+-    assign prbs_init_vals[14] = 63;
+-    assign prbs_init_vals[15] = 1;
+-
+-    initial begin
+-        if (!((n_prbs == 7) && (n_channels == 16))) begin
+-            $error("Invalid combination of n_prbs and n_channels.");
+-        end
+-    end
+-
+     // fast and slow clock
+     // note that the period of the fast clock is actually "2us" due to a limit in fault
+     logic clk;
+@@ -78,46 +46,39 @@ module test_prbs_checker_core #(
+     );
+ 
+     // store up a history of PRBS bits
+-    logic [269:0] prbs_mem;
++    logic [31:0] prbs_mem;
+     always @(posedge clk) begin
+         if (rst == 1'b1) begin
+             prbs_mem <= 0;
+         end else begin
+-            prbs_mem <= {prbs_out, prbs_mem[269:1]};
++            prbs_mem <= {prbs_mem[30:0], prbs_out};
+         end
+     end
+ 
+-    // add current PRBS bit to the history
+-    logic [270:0] prbs_concat;
+-    assign prbs_concat = {prbs_out, prbs_mem};
+-
+-    // select a delayed slice of those PRBS bits
+-    logic [(n_channels-1):0] rx_bits_imm;
+-    logic [(n_channels-1):0] rx_bits;
+-
+-    assign rx_bits_imm = prbs_concat[(270-prbs_del) -: n_channels];
++    // select one of those bits from the memory
++    logic rx_bit_imm;
++    assign rx_bit_imm = prbs_mem[delay];
+ 
++    // register that bit to the divided clock
++    logic rx_bit;
+     always @(posedge clk_div) begin
+         if (rst == 1'b1) begin
+-            rx_bits <= 0;
++            rx_bit <= 0;
+         end else begin
+-            rx_bits <= rx_bits_imm;
++            rx_bit <= rx_bit_imm;
+         end
+     end
+ 
+     // instantiate the checker core
+     prbs_checker_core #(
+-        .n_prbs(n_prbs),
+-        .n_channels(n_channels),
+-        .n_shift_bits(n_shift_bits)
++        .n_prbs(n_prbs)
+     ) prbs_checker_core_i (
+         .clk(clk_div),
+         .rst(rst),
+-        .prbs_cke(prbs_cke),
+-        .prbs_init_vals(prbs_init_vals),
+-        .rx_bits(rx_bits),
+-        .rx_shift(rx_shift),
+-        .match(match),
+-        .match_bits(match_bits)
++        .cke(1'b1),
++        .eqn(eqn),
++        .inv_chicken(2'b00),
++        .rx_bit(rx_bit),
++        .error(error)
+     );
+ endmodule
+\ No newline at end of file
+diff --git a/tests/test_prbs_generator/test_prbs_generator.py b/tests/test_prbs_generator/test_prbs_generator.py
+deleted file mode 100644
+index 32b5679f..00000000
+--- a/tests/test_prbs_generator/test_prbs_generator.py
++++ /dev/null
+@@ -1,93 +0,0 @@
+-# general imports
+-import os
+-import numpy as np
+-import pytest
+-import shutil
+-from pathlib import Path
+-
+-# AHA imports
+-import fault
+-import magma as m
+-
+-# DragonPHY-specific imports
+-from dragonphy import get_file
+-
+-THIS_DIR = Path(__file__).parent.resolve()
+-BUILD_DIR = THIS_DIR / 'build'
+-if shutil.which('iverilog'):
+-    SIMULATOR = 'iverilog'
+-elif 'FPGA_SERVER' in os.environ:
+-    SIMULATOR = 'vivado'
+-else:
+-    SIMULATOR = 'ncsim'
+-
+-@pytest.mark.parametrize((), [pytest.param(marks=pytest.mark.slow) if SIMULATOR=='vivado' else ()])
+-def test_sim(n_prbs=7):
+-    # declare circuit
+-    class dut(m.Circuit):
+-        name = 'prbs_generator'
+-        io = m.IO(
+-            clk=m.ClockIn,
+-            rst=m.BitIn,
+-            cke=m.BitIn,
+-            init_val=m.In(m.Bits[n_prbs]),
+-            out=m.BitOut
+-        )
+-
+-    # create tester
+-    t = fault.Tester(dut, dut.clk)
+-
+-    # initialize
+-    t.poke(dut.clk, 0)
+-    t.poke(dut.rst, 1)
+-    t.poke(dut.cke, 1)
+-    t.poke(dut.init_val, 1)
+-    t.step(2)
+-
+-    # get output values
+-    out_vals = []
+-    t.poke(dut.rst, 0)
+-    for _ in range((1<<n_prbs)-1):
+-        out_vals.append(t.get_value(dut.out))
+-        t.step(2)
+-
+-    # run the test
+-    t.compile_and_run(
+-        target='system-verilog',
+-        simulator=SIMULATOR,
+-        ext_libs=[get_file('vlog/new_chip_src/prbs/prbs_generator.sv')],
+-        parameters={'n_prbs': n_prbs},
+-        ext_model_file=True,
+-        disp_type='realtime',
+-        dump_waveforms=False,
+-        directory=BUILD_DIR
+-    )
+-
+-    # get output values (uncomment lines below to generate balanced, but non-random data)
+-    out_vals = [out_val.value for out_val in out_vals]
+-    # out_vals = np.repeat([0, 1], len(out_vals) // 2)
+-    # out_vals = np.tile([0, 1], len(out_vals) // 2)
+-
+-    # convert output values to a numpy array
+-    out_vals = np.array(out_vals, dtype=float)
+-
+-    # check properties
+-    ratio = np.sum(out_vals) / len(out_vals)
+-    print(f"Chance of getting a '1': {ratio}")
+-    assert 0.49 <= ratio <= 0.51, 'PRBS is unbalanced.'
+-
+-    # remove the mean to avoid an offset (signal will now be +/- 0.5)
+-    no_mean = out_vals - np.mean(out_vals)
+-    # compute the full autocorrelation
+-    corr = np.correlate(no_mean, no_mean, 'full')
+-    # look at half the autocorrelation (so index 0 is completely aligned)
+-    corr = corr[len(corr) // 2 :]
+-    # discard first point
+-    corr = corr[1:]
+-    # compute peak correlation as a fraction of the theoretical peak correlation
+-    pk_corr = np.max(np.abs(corr))
+-    pk_corr_rel = pk_corr / (len(out_vals) / 4)
+-
+-    # check the randomness
+-    print(f'Auto-correlation score (0.0-1.0; lower is better): {pk_corr_rel}')
+-    assert pk_corr_rel < 0.15, 'PRBS is not sufficiently random'
+\ No newline at end of file
+diff --git a/vlog/new_chip_src/prbs/prbs_checker.sv b/vlog/new_chip_src/prbs/prbs_checker.sv
+index 172273a8..61795d1d 100644
+--- a/vlog/new_chip_src/prbs/prbs_checker.sv
++++ b/vlog/new_chip_src/prbs/prbs_checker.sv
+@@ -53,6 +53,7 @@ module prbs_checker #(
+                 .cke(cke),
+                 .eqn(eqn),
+                 .inv_chicken(inv_chicken),
++                .rx_bit(rx_bits[k]),
+                 .error(error_signals[k])
+             );
+         end
+diff --git a/vlog/new_tb/prbs_generator.sv b/vlog/new_tb/prbs_generator.sv
+new file mode 100644
+index 00000000..72aab0eb
+--- /dev/null
++++ b/vlog/new_tb/prbs_generator.sv
+@@ -0,0 +1,63 @@
++module prbs_generator #(
++    parameter integer n_prbs=7
++) (
++    input wire logic clk,
++    input wire logic rst,
++    input wire logic cke,
++    input wire logic [(n_prbs-1):0] init_val,
++    output wire logic out
++);
++
++    // internal variables
++    logic [(n_prbs-1):0] data;
++
++    // Set PRBS polynomial
++    // ref: https://www.xilinx.com/support/documentation/application_notes/xapp884_PRBS_GeneratorChecker.pdf
++    logic next_bit;
++    generate
++        if (n_prbs == 7) begin
++            assign next_bit = data[6] ^ data[5];
++        end else if (n_prbs == 9) begin
++            assign next_bit = data[8] ^ data[4];
++        end else if (n_prbs == 11) begin
++            assign next_bit = data[10] ^ data[8];
++        end else if (n_prbs == 15) begin
++            assign next_bit = data[14] ^ data[13];
++        end else if (n_prbs == 17) begin
++            assign next_bit = data[16] ^ data[13];
++        end else if (n_prbs == 20) begin
++            assign next_bit = data[19] ^ data[2];
++        end else if (n_prbs == 23) begin
++            assign next_bit = data[22] ^ data[17];
++        end else if (n_prbs == 29) begin
++            assign next_bit = data[28] ^ data[26];
++        end else if (n_prbs == 31) begin
++            assign next_bit = data[30] ^ data[27];
++        end else begin
++            // synopsys translate_off
++            initial begin
++                $error("Invalid value for n_prbs: %0d", n_prbs);
++            end
++            // synopsys translate_on
++        end
++    endgenerate
++
++    // shift previous data and append the new bit
++    logic [(n_prbs-1):0] next_data;
++    assign next_data = {data[(n_prbs-2):0], next_bit};
++
++    // state update
++    always @(posedge clk) begin
++        if (rst == 1'b1) begin
++            data <= init_val;
++        end else if (cke == 1'b1) begin
++            data <= next_data;
++        end else begin
++            data <= data;
++        end
++    end
++
++    // output assignment
++    assign out = data[n_prbs-1];
++
++endmodule
+
+From ec17a9f66c77fbd82c999683962510dfe75ec7aa Mon Sep 17 00:00:00 2001
+From: Steven Herbst <sherbst@stanford.edu>
+Date: Wed, 13 May 2020 13:23:30 -0700
+Subject: [PATCH 09/16] test of the PRBS checker appears to be working
+
+---
+ tests/test_prbs_checker/test_prbs_checker.py | 142 ++++++++++++-------
+ tests/test_prbs_checker/test_prbs_checker.sv |  70 +++------
+ 2 files changed, 112 insertions(+), 100 deletions(-)
+
+diff --git a/tests/test_prbs_checker/test_prbs_checker.py b/tests/test_prbs_checker/test_prbs_checker.py
+index c0071920..6f247757 100644
+--- a/tests/test_prbs_checker/test_prbs_checker.py
++++ b/tests/test_prbs_checker/test_prbs_checker.py
+@@ -2,7 +2,7 @@
+ import os
+ import pytest
+ import shutil
+-from math import ceil
++from random import randint
+ from pathlib import Path
+ 
+ # AHA imports
+@@ -21,91 +21,135 @@
+ else:
+     SIMULATOR = 'ncsim'
+ 
+-# PRBS checker modes
+-PRBS_RESET = 0
+-PRBS_ALIGN = 1
+-PRBS_TEST = 2
++RESET  = 0b00
++ALIGN  = 0b01
++TEST   = 0b10
++FREEZE = 0b11
+ 
+ if SIMULATOR == 'vivado':
+-    pytest_params = [pytest.param(0, marks=pytest.mark.slow)]
++    pytest_params = [pytest.param(7, marks=pytest.mark.slow)]
+ else:
+-    pytest_params = [k for k in range(16)]
+-@pytest.mark.parametrize('n_delay', pytest_params)
+-def test_sim(n_delay, n_prbs=7, n_channels=16, n_shift_bits=4):
++    #pytest_params = [7, 9, 11, 15, 17, 20, 23, 29, 31]
++    pytest_params = [7]
++@pytest.mark.parametrize('n_prbs', pytest_params)
++def test_sim(n_prbs, n_channels=16, n_trials=256):
++    # determine the right equation
++    if n_prbs == 7:
++        eqn = (1 << 6) | (1 << 5)
++    elif n_prbs == 9:
++        eqn = (1 << 8) | (1 << 4)
++    elif n_prbs == 11:
++        eqn = (1 << 10) | (1 << 8)
++    elif n_prbs == 15:
++        eqn = (1 << 14) | (1 << 13)
++    elif n_prbs == 17:
++        eqn = (1 << 16) | (1 << 13)
++    elif n_prbs == 20:
++        eqn = (1 << 19) | (1 << 2)
++    elif n_prbs == 23:
++        eqn = (1 << 22) | (1 << 17)
++    elif n_prbs == 29:
++        eqn = (1 << 28) | (1 << 26)
++    elif n_prbs == 31:
++        eqn = (1 << 30) | (1 << 27)
++    else:
++        raise Exception(f'Unknown value for n_prbs: {n_prbs}')
++
+     # declare circuit
+     class dut(m.Circuit):
+         name = 'test_prbs_checker'
+         io = m.IO(
+-            # checker inputs
+             rst=m.BitIn,
++            eqn=m.In(m.Bits[n_prbs]),
+             checker_mode=m.In(m.Bits[2]),
+-            # stimulus configuration
+-            prbs_init=m.In(m.Bits[n_prbs]),
+-            prbs_del=m.In(m.Bits[8]),
+-            # outputs
++            delay=m.In(m.Bits[5]),
+             clk_div=m.BitOut,
++            error_bits=m.Out(m.Bits[64]),
+             total_bits=m.Out(m.Bits[64]),
+-            correct_bits=m.Out(m.Bits[64]),
+-            rx_shift=m.Out(m.Bits[n_shift_bits]),
+-            # bogus input needed for fault
+-            clk_bogus=m.ClockIn,  # need to have clock signal in order to wait on posedges (possible fault bug?)
++            clk_bogus=m.ClockIn  # need to have clock signal in order to wait on posedges (possible fault bug?)
+         )
+ 
+     # create tester
+     t = fault.Tester(dut, dut.clk_bogus)
+ 
+-    # initialize with given delay
++    # initialize with the right equation
+     t.poke(dut.rst, 1)
+-    t.poke(dut.checker_mode, PRBS_RESET)
+-    t.poke(dut.prbs_init, 15)
+-    t.poke(dut.prbs_del, n_delay)
+-    t.wait_until_posedge(dut.clk_div)
+-    t.eval()
++    t.poke(dut.eqn, eqn)
++    t.poke(dut.checker_mode, RESET)
++    t.poke(dut.delay, randint(0, 31))
++    for _ in range(10):
++        t.wait_until_posedge(dut.clk_div)
+ 
+-    # release from reset
++    # release from reset and run for a bit
+     t.poke(dut.rst, 0)
+-    t.wait_until_posedge(dut.clk_div)
+-    t.eval()
++    for _ in range(2*n_prbs):
++        t.wait_until_posedge(dut.clk_div)
++
++    # check for errors
++    t.poke(dut.checker_mode, TEST)
++    for _ in range(n_trials):
++        t.wait_until_posedge(dut.clk_div)
++
++    # freeze, wait, then read out values
++    t.poke(dut.checker_mode, FREEZE)
++    for _ in range(10):
++        t.wait_until_posedge(dut.clk_div)
++    error_bits_case_1 = t.get_value(dut.error_bits)
++    total_bits_case_1 = t.get_value(dut.total_bits)
+ 
+-    # align the PRBS tester
+-    t.poke(dut.checker_mode, PRBS_ALIGN)
+-    t.delay(20e-3)
++    # initialize with the wrong equation
++    t.poke(dut.checker_mode, RESET)
++    t.poke(dut.eqn, eqn+1)
++    for _ in range(2*n_prbs):
++        t.wait_until_posedge(dut.clk_div)
+ 
+-    # run PRBS test
+-    t.poke(dut.checker_mode, PRBS_TEST)
+-    t.delay(20e-3)
++    # check for errors
++    t.poke(dut.checker_mode, TEST)
++    for _ in range(n_trials):
++        t.wait_until_posedge(dut.clk_div)
+ 
+-    # get results
+-    correct_bits = t.get_value(dut.correct_bits)
+-    total_bits = t.get_value(dut.total_bits)
+-    rx_shift = t.get_value(dut.rx_shift)
++    # freeze, wait, then read out values
++    t.poke(dut.checker_mode, FREEZE)
++    for _ in range(10):
++        t.wait_until_posedge(dut.clk_div)
++    error_bits_case_2 = t.get_value(dut.error_bits)
++    total_bits_case_2 = t.get_value(dut.total_bits)
+ 
+     # run the test
+     t.compile_and_run(
+         target='system-verilog',
+         simulator=SIMULATOR,
+         ext_srcs=[
+-            get_file('vlog/new_chip_src/prbs/prbs_generator.sv'),
++            get_file('vlog/new_tb/prbs_generator.sv'),
+             get_file('vlog/new_chip_src/prbs/prbs_checker_core.sv'),
+             get_file('vlog/new_chip_src/prbs/prbs_checker.sv'),
+             THIS_DIR / 'test_prbs_checker.sv'
+         ],
+-        parameters={'n_prbs': n_prbs, 'n_channels': n_channels, 'n_shift_bits': n_shift_bits},
++        parameters={
++            'n_prbs': n_prbs,
++            'n_channels': n_channels
++        },
+         ext_model_file=True,
+         disp_type='realtime',
+         dump_waveforms=False,
+         directory=BUILD_DIR
+     )
+ 
+-    # check results
+-    correct_bits = correct_bits.value
+-    total_bits = total_bits.value
+-    rx_shift = rx_shift.value
++    print(f'error_bits_case_1: {error_bits_case_1.value}')
++    print(f'total_bits_case_1: {total_bits_case_1.value}')
++    print(f'error_bits_case_2: {error_bits_case_2.value}')
++    print(f'total_bits_case_2: {total_bits_case_2.value}')
++
++    assert error_bits_case_1.value == 0, \
++        'Should be no errors (case 1)'
++
++    assert total_bits_case_1.value == n_channels*n_trials, \
++        'Wrong number of total bits (case 1)'
++
++    assert error_bits_case_2.value > 0, \
++        'Some errors should be detected when the wrong equation is used'
+ 
+-    print(f'n_delay: {n_delay}')
+-    print(f'total_bits: {total_bits}')
+-    print(f'correct_bits: {correct_bits}')
+-    print(f'rx_shift: {rx_shift}')
++    assert total_bits_case_2.value == n_channels*n_trials, \
++        'Wrong number of total bits (case 2)'
+ 
+-    assert total_bits >= 9500, 'Not enough bits transmitted '
+-    assert correct_bits == total_bits, 'Bit error detected.'
+\ No newline at end of file
++    print('Success!')
+\ No newline at end of file
+diff --git a/tests/test_prbs_checker/test_prbs_checker.sv b/tests/test_prbs_checker/test_prbs_checker.sv
+index 140a5b6e..fd1b5f72 100644
+--- a/tests/test_prbs_checker/test_prbs_checker.sv
++++ b/tests/test_prbs_checker/test_prbs_checker.sv
+@@ -3,48 +3,19 @@
+ module test_prbs_checker #(
+     parameter integer n_prbs=7,
+     parameter integer n_channels=16,
+-    parameter integer n_shift_bits=$clog2(n_channels)
++    parameter [(n_prbs-1):0] prbs_init=1
+ ) (
+-    // checker inputs
+     input wire logic rst,
++    input wire logic [(n_prbs-1):0] eqn,
+     input wire logic [1:0] checker_mode,
+-    // stimulus configuration
+-    input wire logic [(n_prbs-1):0] prbs_init,
+-    input wire logic [7:0] prbs_del,
++    input wire logic [4:0] delay,
+     // outputs
+     output reg clk_div,
++    output wire logic [63:0] error_bits,
+     output wire logic [63:0] total_bits,
+-    output wire logic [63:0] correct_bits,
+-    output wire logic [(n_shift_bits-1):0] rx_shift,
+     // bogus input needed for fault
+     input wire logic clk_bogus
+ );
+-    // assign the initial values for the PRBS generators
+-    // only valid for n_prbs=7 and n_channels=16
+-    logic [(n_prbs-1):0] prbs_init_vals [n_channels];
+-    assign prbs_init_vals[0] = 3;
+-    assign prbs_init_vals[1] = 10;
+-    assign prbs_init_vals[2] = 60;
+-    assign prbs_init_vals[3] = 11;
+-    assign prbs_init_vals[4] = 58;
+-    assign prbs_init_vals[5] = 31;
+-    assign prbs_init_vals[6] = 67;
+-    assign prbs_init_vals[7] = 9;
+-    assign prbs_init_vals[8] = 54;
+-    assign prbs_init_vals[9] = 55;
+-    assign prbs_init_vals[10] = 49;
+-    assign prbs_init_vals[11] = 37;
+-    assign prbs_init_vals[12] = 92;
+-    assign prbs_init_vals[13] = 74;
+-    assign prbs_init_vals[14] = 63;
+-    assign prbs_init_vals[15] = 1;
+-
+-    initial begin
+-        if (!((n_prbs == 7) && (n_channels == 16))) begin
+-            $error("Invalid combination of n_prbs and n_channels.");
+-        end
+-    end
+-
+     // fast and slow clock
+     // note that the period of the fast clock is actually "2us" due to a limit in fault
+     logic clk;
+@@ -77,25 +48,21 @@ module test_prbs_checker #(
+     );
+ 
+     // store up a history of PRBS bits
+-    logic [269:0] prbs_mem;
++    logic [(31+n_channels-1):0] prbs_mem;
+     always @(posedge clk) begin
+         if (rst == 1'b1) begin
+             prbs_mem <= 0;
+         end else begin
+-            prbs_mem <= {prbs_out, prbs_mem[269:1]};
++            prbs_mem <= {prbs_mem[(31+n_channels-2):0], prbs_out};
+         end
+     end
+ 
+-    // add current PRBS bit to the history
+-    logic [270:0] prbs_concat;
+-    assign prbs_concat = {prbs_out, prbs_mem};
+-
+-    // select a delayed slice of those PRBS bits
++    // select one of those bits from the memory
+     logic [(n_channels-1):0] rx_bits_imm;
+-    logic [(n_channels-1):0] rx_bits;
+-
+-    assign rx_bits_imm = prbs_concat[(270-prbs_del) -: n_channels];
++    assign rx_bits_imm = prbs_mem[(delay+n_channels-1) -: n_channels];
+ 
++    // register that bit to the divided clock
++    logic [(n_channels-1):0] rx_bits;
+     always @(posedge clk_div) begin
+         if (rst == 1'b1) begin
+             rx_bits <= 0;
+@@ -104,19 +71,20 @@ module test_prbs_checker #(
+         end
+     end
+ 
+-    // instantiate the checker
++    // instantiate the checker core
+     prbs_checker #(
+         .n_prbs(n_prbs),
+-        .n_channels(n_channels),
+-        .n_shift_bits(n_shift_bits)
++        .n_channels(n_channels)
+     ) prbs_checker_i (
+         .clk(clk_div),
+         .rst(rst),
+-        .prbs_init_vals(prbs_init_vals),
++        .cke(1'b1),
++        .eqn(eqn),
++        .chan_sel({n_channels{1'b1}}),
++        .inv_chicken(2'b00),
+         .rx_bits(rx_bits),
+         .checker_mode(checker_mode),
+-        .correct_bits(correct_bits),
+-        .total_bits(total_bits),
+-        .rx_shift(rx_shift)
++        .error_bits(error_bits),
++        .total_bits(total_bits)
+     );
+-endmodule
+\ No newline at end of file
++endmodule
+
+From ea3972f9d492606d1b47a3cb88eae75317d738c7 Mon Sep 17 00:00:00 2001
+From: Steven Herbst <sherbst@stanford.edu>
+Date: Wed, 13 May 2020 13:49:43 -0700
+Subject: [PATCH 10/16] system-level PRBS test works
+
+---
+ tests/new_tests/PRBS/test.sv                 | 86 ++++++++++++++------
+ tests/test_prbs_checker/test_prbs_checker.py |  3 +-
+ 2 files changed, 63 insertions(+), 26 deletions(-)
+
+diff --git a/tests/new_tests/PRBS/test.sv b/tests/new_tests/PRBS/test.sv
+index 64672d39..52c8d8cf 100644
+--- a/tests/new_tests/PRBS/test.sv
++++ b/tests/new_tests/PRBS/test.sv
+@@ -70,7 +70,7 @@ module test;
+     logic prbs_out;
+     logic stim_rst;
+     prbs_generator #(
+-        .n_prbs(Nprbs)
++        .n_prbs(7)
+     ) prbs_gen_i (
+         .clk(clk_full_rate),
+         .rst(stim_rst),
+@@ -119,7 +119,8 @@ module test;
+ 	// Main test
+ 
+ 	logic [31:0] result;
+-    longint correct_bits, total_bits;
++    longint error_bits_1, total_bits_1;
++    longint error_bits_2, total_bits_2;
+     integer rx_shift;
+ 	initial begin
+ 		`ifdef DUMP_WAVEFORMS
+@@ -152,50 +153,87 @@ module test;
+         #(1ns);
+ 
+         // Toggle the PRBS block reset
++        $display("Reset the PRBS tester (case 1)");
+         `FORCE_DDBG(prbs_rstb, 0);
+         #(10ns);
+         `FORCE_DDBG(prbs_rstb, 1);
+         #(10ns);
+ 
+-        // align the PRBS tester
+-        $display("Aligning the PRBS tester");
+-        `FORCE_PDBG(prbs_checker_mode, 1);
++        // run the PRBS tester
++        $display("Running the PRBS tester (case 1)");
++        `FORCE_PDBG(prbs_checker_mode, 2);
+         #(625ns);
+ 
++        // get results
++        `FORCE_PDBG(prbs_checker_mode, 3);
++        #(10ns);
++
++        error_bits_1 = 0;
++        error_bits_1 |= `GET_PDBG(prbs_error_bits_upper);
++        error_bits_1 <<= 32;
++        error_bits_1 |= `GET_PDBG(prbs_error_bits_lower);
++
++        total_bits_1 = 0;
++        total_bits_1 |= `GET_PDBG(prbs_total_bits_upper);
++        total_bits_1 <<= 32;
++        total_bits_1 |= `GET_PDBG(prbs_total_bits_lower);
++
++        // Change the PRBS equation and reset the tester
++        $display("Reset the PRBS tester (case 2)");
++        `FORCE_PDBG(prbs_checker_mode, 0);
++        `FORCE_PDBG(prbs_eqn, 7'b1100001);
++        #(100ns);
++
+         // run the PRBS tester
+-        $display("Running the PRBS tester");
++        $display("Running the PRBS tester (case 2)");
+         `FORCE_PDBG(prbs_checker_mode, 2);
+         #(625ns);
+ 
+         // get results
+-        correct_bits = 0;
+-        correct_bits |= `GET_PDBG(prbs_correct_bits_upper);
+-        correct_bits <<= 32;
+-        correct_bits |= `GET_PDBG(prbs_correct_bits_lower);
++        `FORCE_PDBG(prbs_checker_mode, 3);
++        #(10ns);
+ 
+-        total_bits = 0;
+-        total_bits |= `GET_PDBG(prbs_total_bits_upper);
+-        total_bits <<= 32;
+-        total_bits |= `GET_PDBG(prbs_total_bits_lower);
++        error_bits_2 = 0;
++        error_bits_2 |= `GET_PDBG(prbs_error_bits_upper);
++        error_bits_2 <<= 32;
++        error_bits_2 |= `GET_PDBG(prbs_error_bits_lower);
+ 
+-        rx_shift = `GET_PDBG(prbs_rx_shift);
++        total_bits_2 = 0;
++        total_bits_2 |= `GET_PDBG(prbs_total_bits_upper);
++        total_bits_2 <<= 32;
++        total_bits_2 |= `GET_PDBG(prbs_total_bits_lower);
+ 
+         // print results
+         $display("n_delay: %0d", `PRBS_DEL);
+-        $display("correct_bits: %0d", correct_bits);
+-        $display("total_bits: %0d", total_bits);
+-        $display("rx_shift: %0d", rx_shift);
++        $display("error_bits_1: %0d", error_bits_1);
++        $display("total_bits_1: %0d", total_bits_1);
++        $display("error_bits_2: %0d", error_bits_2);
++        $display("total_bits_2: %0d", total_bits_2);
++
++        // check results
++
++        if (!(total_bits_1 >= 9500)) begin
++            $error("Not enough bits transmitted (case 1)");
++        end else begin
++            $display("Number of bits transmitted is OK (case 1)");
++        end
++
++        if (!(error_bits_1 == 0)) begin
++            $error("Bit error detected (case 1)");
++        end else begin
++            $display("No bit errors detected (case 1)");
++        end
+ 
+-        if (!(total_bits >= 9500)) begin
+-            $error("Not enough bits transmitted.");
++        if (!(total_bits_2 >= 9500)) begin
++            $error("Not enough bits transmitted (case 2)");
+         end else begin
+-            $display("Number of bits transmitted is OK.");
++            $display("Number of bits transmitted is OK (case 2)");
+         end
+ 
+-        if (!(correct_bits == total_bits)) begin
+-            $error("Bit error detected.");
++        if (!(error_bits_2 > 0)) begin
++            $error("Bit errors should be detected (case 2)");
+         end else begin
+-            $display("No bit errors detected :-)");
++            $display("Bit errors detected, as expected for case 2");
+         end
+ 
+ 		// Finish test
+diff --git a/tests/test_prbs_checker/test_prbs_checker.py b/tests/test_prbs_checker/test_prbs_checker.py
+index 6f247757..363f11b7 100644
+--- a/tests/test_prbs_checker/test_prbs_checker.py
++++ b/tests/test_prbs_checker/test_prbs_checker.py
+@@ -29,8 +29,7 @@
+ if SIMULATOR == 'vivado':
+     pytest_params = [pytest.param(7, marks=pytest.mark.slow)]
+ else:
+-    #pytest_params = [7, 9, 11, 15, 17, 20, 23, 29, 31]
+-    pytest_params = [7]
++    pytest_params = [7, 9, 11, 15, 17, 20, 23, 29, 31]
+ @pytest.mark.parametrize('n_prbs', pytest_params)
+ def test_sim(n_prbs, n_channels=16, n_trials=256):
+     # determine the right equation
+
+From d3655c3dfaed8fedfffc2b4bcf681f21473a699f Mon Sep 17 00:00:00 2001
+From: Steven Herbst <sherbst@stanford.edu>
+Date: Wed, 13 May 2020 14:47:07 -0700
+Subject: [PATCH 11/16] rename error to err for mflowgen
+
+---
+ md/prbs_intf.md                               |  4 +--
+ tests/new_tests/PRBS/test.sv                  | 28 +++++++++----------
+ tests/test_prbs_checker/test_prbs_checker.py  | 14 +++++-----
+ tests/test_prbs_checker/test_prbs_checker.sv  |  4 +--
+ .../test_prbs_checker_core.py                 |  6 ++--
+ .../test_prbs_checker_core.sv                 |  4 +--
+ .../new_chip_src/digital_core/digital_core.sv |  2 +-
+ vlog/new_chip_src/jtag/jtag.sv                |  4 +--
+ vlog/new_chip_src/prbs/prbs_checker.sv        | 20 ++++++-------
+ vlog/new_chip_src/prbs/prbs_checker_core.sv   | 16 +++++------
+ vlog/new_chip_src/prbs/prbs_debug_intf.sv     | 12 ++++----
+ 11 files changed, 57 insertions(+), 57 deletions(-)
+
+diff --git a/md/prbs_intf.md b/md/prbs_intf.md
+index 19f71437..166efb88 100644
+--- a/md/prbs_intf.md
++++ b/md/prbs_intf.md
+@@ -5,7 +5,7 @@
+ | prbs_chan_sel              |         | Nti-1:0         |                | Test         | out      | 'hFFFF                                       |
+ | prbs_inv_chicken           |         | 1:0             |                | Test         | out      | 'b00                                         |
+ | prbs_checker_mode          |         | 1:0             |                | Test         | out      | 'b00                                         |
+-| prbs_error_bits_upper      |         | 31:0            |                | System       | in       |                                              |
+-| prbs_error_bits_lower      |         | 31:0            |                | System       | in       |                                              |
++| prbs_err_bits_upper        |         | 31:0            |                | System       | in       |                                              |
++| prbs_err_bits_lower        |         | 31:0            |                | System       | in       |                                              |
+ | prbs_total_bits_upper      |         | 31:0            |                | System       | in       |                                              |
+ | prbs_total_bits_lower      |         | 31:0            |                | System       | in       |                                              |
+diff --git a/tests/new_tests/PRBS/test.sv b/tests/new_tests/PRBS/test.sv
+index 52c8d8cf..9dedb0d6 100644
+--- a/tests/new_tests/PRBS/test.sv
++++ b/tests/new_tests/PRBS/test.sv
+@@ -119,8 +119,8 @@ module test;
+ 	// Main test
+ 
+ 	logic [31:0] result;
+-    longint error_bits_1, total_bits_1;
+-    longint error_bits_2, total_bits_2;
++    longint err_bits_1, total_bits_1;
++    longint err_bits_2, total_bits_2;
+     integer rx_shift;
+ 	initial begin
+ 		`ifdef DUMP_WAVEFORMS
+@@ -168,10 +168,10 @@ module test;
+         `FORCE_PDBG(prbs_checker_mode, 3);
+         #(10ns);
+ 
+-        error_bits_1 = 0;
+-        error_bits_1 |= `GET_PDBG(prbs_error_bits_upper);
+-        error_bits_1 <<= 32;
+-        error_bits_1 |= `GET_PDBG(prbs_error_bits_lower);
++        err_bits_1 = 0;
++        err_bits_1 |= `GET_PDBG(prbs_err_bits_upper);
++        err_bits_1 <<= 32;
++        err_bits_1 |= `GET_PDBG(prbs_err_bits_lower);
+ 
+         total_bits_1 = 0;
+         total_bits_1 |= `GET_PDBG(prbs_total_bits_upper);
+@@ -193,10 +193,10 @@ module test;
+         `FORCE_PDBG(prbs_checker_mode, 3);
+         #(10ns);
+ 
+-        error_bits_2 = 0;
+-        error_bits_2 |= `GET_PDBG(prbs_error_bits_upper);
+-        error_bits_2 <<= 32;
+-        error_bits_2 |= `GET_PDBG(prbs_error_bits_lower);
++        err_bits_2 = 0;
++        err_bits_2 |= `GET_PDBG(prbs_err_bits_upper);
++        err_bits_2 <<= 32;
++        err_bits_2 |= `GET_PDBG(prbs_err_bits_lower);
+ 
+         total_bits_2 = 0;
+         total_bits_2 |= `GET_PDBG(prbs_total_bits_upper);
+@@ -205,9 +205,9 @@ module test;
+ 
+         // print results
+         $display("n_delay: %0d", `PRBS_DEL);
+-        $display("error_bits_1: %0d", error_bits_1);
++        $display("err_bits_1: %0d", err_bits_1);
+         $display("total_bits_1: %0d", total_bits_1);
+-        $display("error_bits_2: %0d", error_bits_2);
++        $display("err_bits_2: %0d", err_bits_2);
+         $display("total_bits_2: %0d", total_bits_2);
+ 
+         // check results
+@@ -218,7 +218,7 @@ module test;
+             $display("Number of bits transmitted is OK (case 1)");
+         end
+ 
+-        if (!(error_bits_1 == 0)) begin
++        if (!(err_bits_1 == 0)) begin
+             $error("Bit error detected (case 1)");
+         end else begin
+             $display("No bit errors detected (case 1)");
+@@ -230,7 +230,7 @@ module test;
+             $display("Number of bits transmitted is OK (case 2)");
+         end
+ 
+-        if (!(error_bits_2 > 0)) begin
++        if (!(err_bits_2 > 0)) begin
+             $error("Bit errors should be detected (case 2)");
+         end else begin
+             $display("Bit errors detected, as expected for case 2");
+diff --git a/tests/test_prbs_checker/test_prbs_checker.py b/tests/test_prbs_checker/test_prbs_checker.py
+index 363f11b7..1ed09800 100644
+--- a/tests/test_prbs_checker/test_prbs_checker.py
++++ b/tests/test_prbs_checker/test_prbs_checker.py
+@@ -63,7 +63,7 @@ class dut(m.Circuit):
+             checker_mode=m.In(m.Bits[2]),
+             delay=m.In(m.Bits[5]),
+             clk_div=m.BitOut,
+-            error_bits=m.Out(m.Bits[64]),
++            err_bits=m.Out(m.Bits[64]),
+             total_bits=m.Out(m.Bits[64]),
+             clk_bogus=m.ClockIn  # need to have clock signal in order to wait on posedges (possible fault bug?)
+         )
+@@ -93,7 +93,7 @@ class dut(m.Circuit):
+     t.poke(dut.checker_mode, FREEZE)
+     for _ in range(10):
+         t.wait_until_posedge(dut.clk_div)
+-    error_bits_case_1 = t.get_value(dut.error_bits)
++    err_bits_case_1 = t.get_value(dut.err_bits)
+     total_bits_case_1 = t.get_value(dut.total_bits)
+ 
+     # initialize with the wrong equation
+@@ -111,7 +111,7 @@ class dut(m.Circuit):
+     t.poke(dut.checker_mode, FREEZE)
+     for _ in range(10):
+         t.wait_until_posedge(dut.clk_div)
+-    error_bits_case_2 = t.get_value(dut.error_bits)
++    err_bits_case_2 = t.get_value(dut.err_bits)
+     total_bits_case_2 = t.get_value(dut.total_bits)
+ 
+     # run the test
+@@ -134,18 +134,18 @@ class dut(m.Circuit):
+         directory=BUILD_DIR
+     )
+ 
+-    print(f'error_bits_case_1: {error_bits_case_1.value}')
++    print(f'err_bits_case_1: {err_bits_case_1.value}')
+     print(f'total_bits_case_1: {total_bits_case_1.value}')
+-    print(f'error_bits_case_2: {error_bits_case_2.value}')
++    print(f'err_bits_case_2: {err_bits_case_2.value}')
+     print(f'total_bits_case_2: {total_bits_case_2.value}')
+ 
+-    assert error_bits_case_1.value == 0, \
++    assert err_bits_case_1.value == 0, \
+         'Should be no errors (case 1)'
+ 
+     assert total_bits_case_1.value == n_channels*n_trials, \
+         'Wrong number of total bits (case 1)'
+ 
+-    assert error_bits_case_2.value > 0, \
++    assert err_bits_case_2.value > 0, \
+         'Some errors should be detected when the wrong equation is used'
+ 
+     assert total_bits_case_2.value == n_channels*n_trials, \
+diff --git a/tests/test_prbs_checker/test_prbs_checker.sv b/tests/test_prbs_checker/test_prbs_checker.sv
+index fd1b5f72..9283ed9a 100644
+--- a/tests/test_prbs_checker/test_prbs_checker.sv
++++ b/tests/test_prbs_checker/test_prbs_checker.sv
+@@ -11,7 +11,7 @@ module test_prbs_checker #(
+     input wire logic [4:0] delay,
+     // outputs
+     output reg clk_div,
+-    output wire logic [63:0] error_bits,
++    output wire logic [63:0] err_bits,
+     output wire logic [63:0] total_bits,
+     // bogus input needed for fault
+     input wire logic clk_bogus
+@@ -84,7 +84,7 @@ module test_prbs_checker #(
+         .inv_chicken(2'b00),
+         .rx_bits(rx_bits),
+         .checker_mode(checker_mode),
+-        .error_bits(error_bits),
++        .err_bits(err_bits),
+         .total_bits(total_bits)
+     );
+ endmodule
+diff --git a/tests/test_prbs_checker_core/test_prbs_checker_core.py b/tests/test_prbs_checker_core/test_prbs_checker_core.py
+index ef5a44c5..5c149f72 100644
+--- a/tests/test_prbs_checker_core/test_prbs_checker_core.py
++++ b/tests/test_prbs_checker_core/test_prbs_checker_core.py
+@@ -57,7 +57,7 @@ class dut(m.Circuit):
+             eqn=m.In(m.Bits[n_prbs]),
+             delay=m.In(m.Bits[5]),
+             clk_div=m.BitOut,
+-            error=m.BitOut,
++            err=m.BitOut,
+             clk_bogus=m.ClockIn  # need to have clock signal in order to wait on posedges (possible fault bug?)
+         )
+ 
+@@ -79,7 +79,7 @@ class dut(m.Circuit):
+     # check for errors
+     for _ in range(n_trials):
+         t.wait_until_posedge(dut.clk_div)
+-        t.expect(dut.error, 0)
++        t.expect(dut.err, 0)
+ 
+     # initialize with the wrong equation
+     t.poke(dut.rst, 1)
+@@ -96,7 +96,7 @@ class dut(m.Circuit):
+     vals_with_wrong_equation = []
+     for _ in range(n_trials):
+         t.wait_until_posedge(dut.clk_div)
+-        vals_with_wrong_equation.append(t.get_value(dut.error))
++        vals_with_wrong_equation.append(t.get_value(dut.err))
+ 
+     # run the test
+     t.compile_and_run(
+diff --git a/tests/test_prbs_checker_core/test_prbs_checker_core.sv b/tests/test_prbs_checker_core/test_prbs_checker_core.sv
+index 1660e81f..90a54fc9 100644
+--- a/tests/test_prbs_checker_core/test_prbs_checker_core.sv
++++ b/tests/test_prbs_checker_core/test_prbs_checker_core.sv
+@@ -10,7 +10,7 @@ module test_prbs_checker_core #(
+     input wire logic [4:0] delay,
+     // outputs
+     output reg clk_div,
+-    output error,
++    output err,
+     // bogus input needed for fault
+     input wire logic clk_bogus
+ );
+@@ -79,6 +79,6 @@ module test_prbs_checker_core #(
+         .eqn(eqn),
+         .inv_chicken(2'b00),
+         .rx_bit(rx_bit),
+-        .error(error)
++        .err(err)
+     );
+ endmodule
+\ No newline at end of file
+diff --git a/vlog/new_chip_src/digital_core/digital_core.sv b/vlog/new_chip_src/digital_core/digital_core.sv
+index b867f5c6..7c374bc0 100644
+--- a/vlog/new_chip_src/digital_core/digital_core.sv
++++ b/vlog/new_chip_src/digital_core/digital_core.sv
+@@ -348,7 +348,7 @@ module digital_core import const_pack::*; (
+         // checker mode
+         .checker_mode(pdbg_intf_i.prbs_checker_mode),
+         // outputs
+-        .error_bits({pdbg_intf_i.prbs_error_bits_upper, pdbg_intf_i.prbs_error_bits_lower}),
++        .err_bits({pdbg_intf_i.prbs_err_bits_upper, pdbg_intf_i.prbs_err_bits_lower}),
+         .total_bits({pdbg_intf_i.prbs_total_bits_upper, pdbg_intf_i.prbs_total_bits_lower})
+     );
+ 
+diff --git a/vlog/new_chip_src/jtag/jtag.sv b/vlog/new_chip_src/jtag/jtag.sv
+index 8314ca56..04e9bb59 100644
+--- a/vlog/new_chip_src/jtag/jtag.sv
++++ b/vlog/new_chip_src/jtag/jtag.sv
+@@ -231,8 +231,8 @@ module jtag (
+     assign pdbg_intf_i.prbs_inv_chicken = rjtag_intf_i.prbs_inv_chicken;
+     assign pdbg_intf_i.prbs_checker_mode = rjtag_intf_i.prbs_checker_mode;
+     // PRBS Output
+-    assign rjtag_intf_i.prbs_error_bits_upper = pdbg_intf_i.prbs_error_bits_upper;
+-    assign rjtag_intf_i.prbs_error_bits_lower = pdbg_intf_i.prbs_error_bits_lower;
++    assign rjtag_intf_i.prbs_err_bits_upper = pdbg_intf_i.prbs_err_bits_upper;
++    assign rjtag_intf_i.prbs_err_bits_lower = pdbg_intf_i.prbs_err_bits_lower;
+     assign rjtag_intf_i.prbs_total_bits_upper = pdbg_intf_i.prbs_total_bits_upper;
+     assign rjtag_intf_i.prbs_total_bits_lower = pdbg_intf_i.prbs_total_bits_lower;
+ 
+diff --git a/vlog/new_chip_src/prbs/prbs_checker.sv b/vlog/new_chip_src/prbs/prbs_checker.sv
+index 61795d1d..a957b0c7 100644
+--- a/vlog/new_chip_src/prbs/prbs_checker.sv
++++ b/vlog/new_chip_src/prbs/prbs_checker.sv
+@@ -31,7 +31,7 @@ module prbs_checker #(
+     input wire logic [1:0] checker_mode,
+ 
+     // outputs
+-    output wire logic [63:0] error_bits,
++    output wire logic [63:0] err_bits,
+     output wire logic [63:0] total_bits
+ );
+     // TODO: consider using enum here
+@@ -41,7 +41,7 @@ module prbs_checker #(
+     localparam logic [1:0] FREEZE = 2'b11;
+ 
+     // instantiate the core prbs checker
+-    logic [(n_channels-1):0] error_signals;
++    logic [(n_channels-1):0] err_signals;
+     genvar k;
+     generate
+         for (k=0; k<n_channels; k=k+1) begin
+@@ -54,7 +54,7 @@ module prbs_checker #(
+                 .eqn(eqn),
+                 .inv_chicken(inv_chicken),
+                 .rx_bit(rx_bits[k]),
+-                .error(error_signals[k])
++                .err(err_signals[k])
+             );
+         end
+     endgenerate
+@@ -68,34 +68,34 @@ module prbs_checker #(
+         err_count = 0;
+         tot_count = 0;
+         for (i=0; i<n_channels; i=i+1) begin
+-            err_count = err_count + (error_signals[i] & chan_sel[i]);
++            err_count = err_count + (err_signals[i] & chan_sel[i]);
+             tot_count = tot_count + chan_sel[i];
+         end
+     end
+ 
+     // check the RX data
+ 
+-    logic [63:0] error_bits_reg;
++    logic [63:0] err_bits_reg;
+     logic [63:0] total_bits_reg;
+ 
+     always @(posedge clk) begin
+         if (checker_mode == RESET) begin
+-            error_bits_reg <= 0;
++            err_bits_reg <= 0;
+             total_bits_reg <= 0;
+         end else if (checker_mode == ALIGN) begin
+-            error_bits_reg <= error_bits_reg;
++            err_bits_reg <= err_bits_reg;
+             total_bits_reg <= total_bits_reg;
+         end else if (checker_mode == TEST) begin
+-            error_bits_reg <= error_bits_reg + err_count;
++            err_bits_reg <= err_bits_reg + err_count;
+             total_bits_reg <= total_bits_reg + tot_count;
+         end else begin
+-            error_bits_reg <= error_bits_reg;
++            err_bits_reg <= err_bits_reg;
+             total_bits_reg <= total_bits_reg;
+         end
+     end
+ 
+     // assign outputs
+-    assign error_bits = error_bits_reg;
++    assign err_bits = err_bits_reg;
+     assign total_bits = total_bits_reg;
+ 
+ endmodule
+diff --git a/vlog/new_chip_src/prbs/prbs_checker_core.sv b/vlog/new_chip_src/prbs/prbs_checker_core.sv
+index 47cff339..e5fb5804 100644
+--- a/vlog/new_chip_src/prbs/prbs_checker_core.sv
++++ b/vlog/new_chip_src/prbs/prbs_checker_core.sv
+@@ -15,7 +15,7 @@ module prbs_checker_core #(
+     // input bit
+     input wire logic rx_bit,
+     // output signal indicating if there is an error
+-    output wire logic error
++    output wire logic err
+ );
+     // register input
+     logic rx_bit_reg;
+@@ -51,23 +51,23 @@ module prbs_checker_core #(
+     assign rx_mem_xor = ^rx_mem_select;
+ 
+     // determine if an error occured
+-    logic error_imm;
+-    assign error_imm = rx_mem_xor ^ rx_bit_reg ^ inv_chicken[1];
++    logic err_imm;
++    assign err_imm = rx_mem_xor ^ rx_bit_reg ^ inv_chicken[1];
+ 
+     // register output
+-    logic error_reg;
++    logic err_reg;
+     always @(posedge clk) begin
+         if (rst) begin
+-            error_reg <= 0;
++            err_reg <= 0;
+         end else if (cke) begin
+-            error_reg <= error_imm;
++            err_reg <= err_imm;
+         end else begin
+-            error_reg <= error_reg;
++            err_reg <= err_reg;
+         end
+     end
+ 
+     // assign output
+-    assign error = error_reg;
++    assign err = err_reg;
+ endmodule
+ 
+ `default_nettype wire
+\ No newline at end of file
+diff --git a/vlog/new_chip_src/prbs/prbs_debug_intf.sv b/vlog/new_chip_src/prbs/prbs_debug_intf.sv
+index 4c8a0dde..32393d4c 100644
+--- a/vlog/new_chip_src/prbs/prbs_debug_intf.sv
++++ b/vlog/new_chip_src/prbs/prbs_debug_intf.sv
+@@ -8,8 +8,8 @@ interface prbs_debug_intf;
+     logic [1:0] prbs_inv_chicken;
+     logic [1:0] prbs_checker_mode;
+ 
+-    logic [31:0] prbs_error_bits_upper;
+-    logic [31:0] prbs_error_bits_lower;
++    logic [31:0] prbs_err_bits_upper;
++    logic [31:0] prbs_err_bits_lower;
+     logic [31:0] prbs_total_bits_upper;
+     logic [31:0] prbs_total_bits_lower;
+ 
+@@ -19,8 +19,8 @@ interface prbs_debug_intf;
+         input prbs_chan_sel,
+         input prbs_inv_chicken,
+         input prbs_checker_mode,
+-        output prbs_error_bits_upper,
+-        output prbs_error_bits_lower,
++        output prbs_err_bits_upper,
++        output prbs_err_bits_lower,
+         output prbs_total_bits_upper,
+         output prbs_total_bits_lower
+     );
+@@ -31,8 +31,8 @@ interface prbs_debug_intf;
+         output prbs_chan_sel,
+         output prbs_inv_chicken,
+         output prbs_checker_mode,
+-        input prbs_error_bits_upper,
+-        input prbs_error_bits_lower,
++        input prbs_err_bits_upper,
++        input prbs_err_bits_lower,
+         input prbs_total_bits_upper,
+         input prbs_total_bits_lower
+     );
+
+From 27858b2478b6198855cd2fbc23397232361d54e6 Mon Sep 17 00:00:00 2001
+From: Steven Herbst <sherbst@stanford.edu>
+Date: Wed, 13 May 2020 16:07:40 -0700
+Subject: [PATCH 12/16] updates for computing jtag id from git hash
+
+---
+ dragonphy/git_util.py                         | 21 +++++++++++
+ dragonphy/jtag.py                             | 37 +++++++++++++++++--
+ tests/new_tests/JTAG_HELLO/test.sv            |  6 ++-
+ tests/new_tests/JTAG_HELLO/test_jtag_hello.py | 23 +++++++++++-
+ 4 files changed, 81 insertions(+), 6 deletions(-)
+ create mode 100644 dragonphy/git_util.py
+
+diff --git a/dragonphy/git_util.py b/dragonphy/git_util.py
+new file mode 100644
+index 00000000..b5ceb20d
+--- /dev/null
++++ b/dragonphy/git_util.py
+@@ -0,0 +1,21 @@
++import subprocess
++
++
++def get_git_is_clean():
++    result = subprocess.run(['git', 'status', '--porcelain'], capture_output=True)
++    if result.stdout == '':
++        return True
++    else:
++        return False
++
++
++def get_git_hash_short():
++    result = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True)
++    # get output
++    git_hash_str = result.stdout
++    # shorten to 7 characters (28 bits)
++    git_hash_short_str = git_hash_str[:7]
++    # convert short hash to an int
++    git_hash_short = int(git_hash_short_str, 16)
++    # return int
++    return git_hash_short
+diff --git a/dragonphy/jtag.py b/dragonphy/jtag.py
+index 00e6c6bd..f5ebd11d 100644
+--- a/dragonphy/jtag.py
++++ b/dragonphy/jtag.py
+@@ -1,16 +1,21 @@
+ import sys
+ import os
+-from subprocess import call
++import subprocess
+ from pathlib import Path
+ from dragonphy.files import get_file, get_dir
++from dragonphy.git_util import *
+ from justag import jtag_directory
+ 
++
+ class JTAG:
+     def __init__(self,  filename=None, **system_values):
+         build_dir = Path(filename).parent
+ 
++        id_code = self.calc_id_code()
++        print(f'JTAG ID Code: 0x{id_code:08x}')
++
+         justag_inputs = []
+-        justag_inputs += ["123"]
++        justag_inputs += [str(id_code)]
+         justag_inputs += list(get_dir('md').glob('*.md'))
+         justag_inputs += [get_file('vlog/new_pack/const_pack.sv')]
+         print(justag_inputs)
+@@ -77,7 +82,7 @@ def justag(*inputs, cwd=None):
+         args = []
+         args += [f'justag']
+         args += list(inputs)
+-        call(args, cwd=cwd)
++        subprocess.call(args, cwd=cwd)
+ 
+     @staticmethod
+     def genesis(top, *inputs, cwd=None):
+@@ -87,8 +92,32 @@ def genesis(top, *inputs, cwd=None):
+         args += ['-generate']
+         args += ['-top', top]
+         args += ['-input'] + list(inputs)
+-        call(args, cwd=cwd)
++        subprocess.call(args, cwd=cwd)
+ 
+     @staticmethod
+     def required_values():
+         return []
++
++    @staticmethod
++    def calc_id_code():
++        # get short git hash as an int
++        git_hash_short = get_git_hash_short()
++
++        # find out if the git repo is clean/dirty
++        git_is_clean = get_git_is_clean()
++
++        # build up ID code
++        id_code = 0
++
++        # add 7-character git hash
++        id_code |= git_hash_short << 4
++
++        # add bit to indicate clean/dirty status
++        if git_is_clean:
++            id_code |= 1 << 1
++
++        # lowest bit is always "1"
++        id_code |= 1
++
++        # return the ID code
++        return id_code
+diff --git a/tests/new_tests/JTAG_HELLO/test.sv b/tests/new_tests/JTAG_HELLO/test.sv
+index 74fa341f..1fade3d4 100644
+--- a/tests/new_tests/JTAG_HELLO/test.sv
++++ b/tests/new_tests/JTAG_HELLO/test.sv
+@@ -1,5 +1,9 @@
+ `include "mLingua_pwl.vh"
+ 
++`ifndef EXPECTED_JTAG_ID
++    `define EXPECTED_JTAG_ID 32'h0
++`endif
++
+ module test;
+ 	
+ 	import const_pack::*;
+@@ -63,7 +67,7 @@ module test;
+ 		// ID read test
+ 		$display("Reading the JTAG ID.");
+ 		jtag_drv_i.read_id(result);
+-		assert (result == 'h7b);
++		assert (result == `EXPECTED_JTAG_ID);
+ 
+ 		// TC domain write/read test
+ 		$display("Writing TC register 0x%0H...", pd_offset_ext);
+diff --git a/tests/new_tests/JTAG_HELLO/test_jtag_hello.py b/tests/new_tests/JTAG_HELLO/test_jtag_hello.py
+index e08d7f73..d226e72b 100644
+--- a/tests/new_tests/JTAG_HELLO/test_jtag_hello.py
++++ b/tests/new_tests/JTAG_HELLO/test_jtag_hello.py
+@@ -2,6 +2,7 @@
+ import os
+ import pytest
+ from pathlib import Path
++from dragonphy.git_util import get_git_hash_short
+ 
+ # DragonPHY imports
+ from dragonphy import *
+@@ -17,8 +18,27 @@
+ # test.  The waveforms are stored in tests/new_tests/JTAG_HELLO/build/waves.shm
+ DUMP_WAVEFORMS = False
+ 
++
++def calc_id_code():
++    # get short git hash as an int
++    git_hash_short = get_git_hash_short()
++
++    # build up ID code, requiring that the repo is clean
++    id_code = 0
++    id_code |= git_hash_short << 4
++    id_code |= 3
++
++    # return the ID code
++    return id_code
++
++
+ @pytest.mark.parametrize((), [pytest.param(marks=pytest.mark.slow) if SIMULATOR=='vivado' else ()])
+ def test_sim():
++    # determine the expected JTAG ID
++    id_code = calc_id_code()
++    EXPECTED_JTAG_ID = f"32'h{id_code:08x}"
++    print(f'EXPECTED_JTAG_ID={EXPECTED_JTAG_ID}')
++
+     deps = get_deps_cpu_sim_new(impl_file=THIS_DIR / 'test.sv')
+     print(deps)
+ 
+@@ -27,7 +47,8 @@ def test_sim():
+     defines = {
+         'DAVE_TIMEUNIT': '1fs',
+         'NCVLOG': None,
+-        'SIMULATION': None
++        'SIMULATION': None,
++        'EXPECTED_JTAG_ID': EXPECTED_JTAG_ID
+     }
+ 
+     if DUMP_WAVEFORMS:
+
+From 474153c2b9a0dedfc290d949963a235532ab935f Mon Sep 17 00:00:00 2001
+From: Steven Herbst <sherbst@stanford.edu>
+Date: Wed, 13 May 2020 16:13:21 -0700
+Subject: [PATCH 13/16] test
+
+---
+ dragonphy/git_util.py | 1 +
+ dragonphy/jtag.py     | 2 ++
+ 2 files changed, 3 insertions(+)
+
+diff --git a/dragonphy/git_util.py b/dragonphy/git_util.py
+index b5ceb20d..31947813 100644
+--- a/dragonphy/git_util.py
++++ b/dragonphy/git_util.py
+@@ -3,6 +3,7 @@
+ 
+ def get_git_is_clean():
+     result = subprocess.run(['git', 'status', '--porcelain'], capture_output=True)
++    print(result.stdout)
+     if result.stdout == '':
+         return True
+     else:
+diff --git a/dragonphy/jtag.py b/dragonphy/jtag.py
+index f5ebd11d..6de3a7cd 100644
+--- a/dragonphy/jtag.py
++++ b/dragonphy/jtag.py
+@@ -105,6 +105,8 @@ def calc_id_code():
+ 
+         # find out if the git repo is clean/dirty
+         git_is_clean = get_git_is_clean()
++        print(git_is_clean)
++        raise Exception()
+ 
+         # build up ID code
+         id_code = 0
+
+From 8e95c0669135b076bc7ce85cee7f2a9c4f795628 Mon Sep 17 00:00:00 2001
+From: Steven Herbst <sherbst@stanford.edu>
+Date: Wed, 13 May 2020 16:13:55 -0700
+Subject: [PATCH 14/16] test
+
+---
+ dragonphy/git_util.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/dragonphy/git_util.py b/dragonphy/git_util.py
+index 31947813..7b9dd00f 100644
+--- a/dragonphy/git_util.py
++++ b/dragonphy/git_util.py
+@@ -4,7 +4,7 @@
+ def get_git_is_clean():
+     result = subprocess.run(['git', 'status', '--porcelain'], capture_output=True)
+     print(result.stdout)
+-    if result.stdout == '':
++    if result.stdout == b'':
+         return True
+     else:
+         return False
+
+From c0b4b67ab9223aaa2aefcf519237260c608dbcf7 Mon Sep 17 00:00:00 2001
+From: Steven Herbst <sherbst@stanford.edu>
+Date: Wed, 13 May 2020 16:14:33 -0700
+Subject: [PATCH 15/16] test
+
+---
+ dragonphy/jtag.py | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/dragonphy/jtag.py b/dragonphy/jtag.py
+index 6de3a7cd..f5ebd11d 100644
+--- a/dragonphy/jtag.py
++++ b/dragonphy/jtag.py
+@@ -105,8 +105,6 @@ def calc_id_code():
+ 
+         # find out if the git repo is clean/dirty
+         git_is_clean = get_git_is_clean()
+-        print(git_is_clean)
+-        raise Exception()
+ 
+         # build up ID code
+         id_code = 0
+
+From 977ea176250c716061afe8e7283b05975b04d3c4 Mon Sep 17 00:00:00 2001
+From: Steven Herbst <sherbst@stanford.edu>
+Date: Wed, 13 May 2020 16:49:00 -0700
+Subject: [PATCH 16/16] fix issue related to git clean/dirty bit
+
+---
+ tests/new_tests/JTAG_HELLO/test.sv            |  6 ++---
+ tests/new_tests/JTAG_HELLO/test_jtag_hello.py | 23 ++++---------------
+ 2 files changed, 8 insertions(+), 21 deletions(-)
+
+diff --git a/tests/new_tests/JTAG_HELLO/test.sv b/tests/new_tests/JTAG_HELLO/test.sv
+index 1fade3d4..7f98bdf2 100644
+--- a/tests/new_tests/JTAG_HELLO/test.sv
++++ b/tests/new_tests/JTAG_HELLO/test.sv
+@@ -1,7 +1,7 @@
+ `include "mLingua_pwl.vh"
+ 
+-`ifndef EXPECTED_JTAG_ID
+-    `define EXPECTED_JTAG_ID 32'h0
++`ifndef GIT_HASH
++    `define GIT_HASH 28'h0
+ `endif
+ 
+ module test;
+@@ -67,7 +67,7 @@ module test;
+ 		// ID read test
+ 		$display("Reading the JTAG ID.");
+ 		jtag_drv_i.read_id(result);
+-		assert (result == `EXPECTED_JTAG_ID);
++		assert ((result[31:4] == `GIT_HASH) && (result[0] == 1'b1));
+ 
+ 		// TC domain write/read test
+ 		$display("Writing TC register 0x%0H...", pd_offset_ext);
+diff --git a/tests/new_tests/JTAG_HELLO/test_jtag_hello.py b/tests/new_tests/JTAG_HELLO/test_jtag_hello.py
+index d226e72b..74c19316 100644
+--- a/tests/new_tests/JTAG_HELLO/test_jtag_hello.py
++++ b/tests/new_tests/JTAG_HELLO/test_jtag_hello.py
+@@ -19,25 +19,12 @@
+ DUMP_WAVEFORMS = False
+ 
+ 
+-def calc_id_code():
+-    # get short git hash as an int
+-    git_hash_short = get_git_hash_short()
+-
+-    # build up ID code, requiring that the repo is clean
+-    id_code = 0
+-    id_code |= git_hash_short << 4
+-    id_code |= 3
+-
+-    # return the ID code
+-    return id_code
+-
+-
+ @pytest.mark.parametrize((), [pytest.param(marks=pytest.mark.slow) if SIMULATOR=='vivado' else ()])
+ def test_sim():
+-    # determine the expected JTAG ID
+-    id_code = calc_id_code()
+-    EXPECTED_JTAG_ID = f"32'h{id_code:08x}"
+-    print(f'EXPECTED_JTAG_ID={EXPECTED_JTAG_ID}')
++    # determine the git hash
++    git_hash_short = get_git_hash_short()
++    GIT_HASH = f"28'h{git_hash_short:07x}"
++    print(f'GIT_HASH={GIT_HASH}')
+ 
+     deps = get_deps_cpu_sim_new(impl_file=THIS_DIR / 'test.sv')
+     print(deps)
+@@ -48,7 +35,7 @@ def test_sim():
+         'DAVE_TIMEUNIT': '1fs',
+         'NCVLOG': None,
+         'SIMULATION': None,
+-        'EXPECTED_JTAG_ID': EXPECTED_JTAG_ID
++        'GIT_HASH': GIT_HASH
+     }
+ 
+     if DUMP_WAVEFORMS:

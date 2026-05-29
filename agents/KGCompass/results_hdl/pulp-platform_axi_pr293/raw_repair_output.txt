@@ -1,0 +1,31 @@
+The bug is localized in `src/axi_pkg.sv`:
+
+- `burst_t` is a typedef of fixed width `logic [1:0]`, but its companion parameter `BurstWidth` is defined as `parameter int unsigned BurstWidth = $size(burst_t);`
+- Vivado IP packager does not like top-level ports whose types depend on package parameters/functions in this way.
+- The issue text suggests the compatible fix: define the typedef via a numeric width and derive the parameter from that numeric typedef size, avoiding the problematic dependency chain.
+
+A minimal fix is to introduce a numeric width localparam for `burst_t`, then define `burst_t` from it, and keep `BurstWidth` derived from `$size(burst_t)`. Since `burst_t` is used in interface/module ports, this preserves behavior while making the typedef self-contained for Vivado packaging.
+
+```systemverilog
+### src/axi_pkg.sv
+<<<<<<< SEARCH
+  /// AXI Transaction Burst Width.
+  typedef logic [1:0]  burst_t;
+=======
+  /// AXI Transaction Burst Width.
+  localparam int unsigned BurstWidthVal = 2;
+  typedef logic [BurstWidthVal-1:0]  burst_t;
+>>>>>>> REPLACE
+```
+
+```systemverilog
+### src/axi_pkg.sv
+<<<<<<< SEARCH
+  /// AXI Transaction Burst Width.
+  parameter int unsigned BurstWidth  = $size(burst_t);
+=======
+  /// AXI Transaction Burst Width.
+  parameter int unsigned BurstWidth  = BurstWidthVal;
+>>>>>>> REPLACE
+```
+

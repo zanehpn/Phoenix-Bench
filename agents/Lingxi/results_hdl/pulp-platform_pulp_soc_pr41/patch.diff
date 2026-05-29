@@ -1,0 +1,15 @@
+diff --git a/rtl/pulp_soc/l2_ram_multi_bank.sv b/rtl/pulp_soc/l2_ram_multi_bank.sv
+index 86ba415..3398774 100755
+--- a/rtl/pulp_soc/l2_ram_multi_bank.sv
++++ b/rtl/pulp_soc/l2_ram_multi_bank.sv
+@@ -47,8 +47,8 @@ module l2_ram_multi_bank #(
+                 mem_slave[i].r_valid <= mem_slave[i].req;
+             end
+         end
+-       //Remove Address offset
+-       assign interleaved_addresses[i] = mem_slave[i].add - `SOC_MEM_MAP_TCDM_START_ADDR;
++       //Remove Address offset and strip byte as well as bank index bits
++       assign interleaved_addresses[i] = (mem_slave[i].add - `SOC_MEM_MAP_TCDM_START_ADDR) >> (2 + $clog2(NB_BANKS));
+ 
+       `ifndef PULP_FPGA_EMUL
+           /*

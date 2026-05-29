@@ -1,0 +1,53 @@
+diff --git a/hw/carfield.sv b/hw/carfield.sv
+index d6ac6ab..1b0fa26 100644
+--- a/hw/carfield.sv
++++ b/hw/carfield.sv
+@@ -1014,6 +1014,36 @@ hyperbus_wrap      #(
+ );
+ 
+ // Reconfigurable L2 Memory
++// Atomics shim for L2: required to support LR/SC and AMOs towards the L2 SPM
++// This mirrors the setup used for other internal memories/peripherals.
++carfield_axi_slv_req_t axi_d64_a48_l2_req;
++carfield_axi_slv_rsp_t axi_d64_a48_l2_rsp;
++carfield_axi_slv_req_t axi_d64_a48_amo_l2_req;
++carfield_axi_slv_rsp_t axi_d64_a48_amo_l2_rsp;
++
++axi_riscv_atomics_structs #(
++  .AxiAddrWidth     ( Cfg.AddrWidth          ),
++  .AxiDataWidth     ( Cfg.AxiDataWidth       ),
++  .AxiIdWidth       ( AxiSlvIdWidth          ),
++  .AxiUserWidth     ( Cfg.AxiUserWidth       ),
++  .AxiMaxReadTxns   ( Cfg.RegMaxReadTxns     ),
++  .AxiMaxWriteTxns  ( Cfg.RegMaxWriteTxns    ),
++  .AxiUserAsId      ( 1                      ),
++  .AxiUserIdMsb     ( Cfg.AxiUserAmoMsb      ),
++  .AxiUserIdLsb     ( Cfg.AxiUserAmoLsb      ),
++  .RiscvWordWidth   ( 64                     ),
++  .NAxiCuts         ( Cfg.RegAmoNumCuts      ),
++  .axi_req_t        ( carfield_axi_slv_req_t ),
++  .axi_rsp_t        ( carfield_axi_slv_rsp_t )
++) i_atomics_l2 (
++  .clk_i         ( l2_clk             ),
++  .rst_ni        ( l2_pwr_on_rst_n    ),
++  .axi_slv_req_i ( axi_d64_a48_l2_req ),
++  .axi_slv_rsp_o ( axi_d64_a48_l2_rsp ),
++  .axi_mst_req_o ( axi_d64_a48_amo_l2_req ),
++  .axi_mst_rsp_i ( axi_d64_a48_amo_l2_rsp )
++);
++
+ // Host Clock Domain
+ logic l2_ecc_err;
+ 
+@@ -1046,6 +1076,11 @@ l2_wrap #(
+   .slvport_w_data_i    ( axi_slv_ext_w_data  [NumL2Ports-1:0] ),
+   .slvport_w_wptr_i    ( axi_slv_ext_w_wptr  [NumL2Ports-1:0] ),
+   .slvport_w_rptr_o    ( axi_slv_ext_w_rptr  [NumL2Ports-1:0] ),
++  // Route the L2 port through the atomics shim
++  .axi_slv_req_o       ( axi_d64_a48_l2_req                 ),
++  .axi_slv_rsp_i       ( axi_d64_a48_l2_rsp                 ),
++  .axi_mst_req_i       ( axi_d64_a48_amo_l2_req             ),
++  .axi_mst_rsp_o       ( axi_d64_a48_amo_l2_rsp             ),
+   .ecc_error_o         ( l2_ecc_err                           )
+ );
+ 

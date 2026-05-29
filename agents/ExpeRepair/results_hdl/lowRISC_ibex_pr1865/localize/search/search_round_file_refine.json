@@ -1,0 +1,22 @@
+[
+    {
+        "role": "system",
+        "content": "As a software developer maintaining the GitHub repository lowRISC_ibex_pr1865, you are responsible for analyzing a submitted issue and identifying the exact location in the repository where the issue occurs."
+    },
+    {
+        "role": "user",
+        "content": "Here is the issue description:\nObserved Behavior\nThe core_busy_o output signal of the non-lockstep core is used to gate the core clock, which is used by the regular Ibex core and its lockstep counterpart.\nibex/rtl/ibex_top.sv\nLines 211 to 219 in 3943a4e\nassign clock_en     = core_busy_q | debug_req_i | irq_pending | irq_nm_i;\nassign core_sleep_o = ~clock_en;\nprim_clock_gating core_clock_gate_i (\n.clk_i    (clk_i),\n.en_i     (clock_en),\n.test_en_i(test_en_i),\n.clk_o    (clk)\n);\nibex/rtl/ibex_top.sv\nLines 286 to 287 in 3943a4e\n) u_ibex_core (\n.clk_i(clk),\nibex/rtl/ibex_top.sv\nLines 927 to 928 in 3943a4e\n) u_ibex_lockstep (\n.clk_i                  (clk),\nThis means that the lockstep core gets gated in the same clock cycle as the regular core, even though the lockstep core is a few cycles delayed. A low-glitch in the core_busy_o output of the non-lockstep core thus does not lead to a comparison mismatch and a major alert because the lockstep core is already clock-gated when it would produce the value of core_busy_o that is used in the comparison.\nibex/rtl/ibex_lockstep.sv\nLines 453 to 454 in 3943a4e\nassign outputs_mismatch       = enable_cmp_q & (shadow_outputs_q != core_outputs_q[0]);\nassign alert_major_internal_o = outputs_mismatch | shadow_alert_major_internal;\nExpected Behavior\nA low-glitch/mismatch in the core_busy_o output signal of the non-lockstep core should lead to a major alert by the lockstep core.\nSteps to reproduce the issue\nRun the chip_sw_ibex_lockstep_glitch test in OpenTitan (currently in lowRISC/opentitan#15221) and override port_idx to the index of core_busy_o in output_ports."
+    },
+    {
+        "role": "user",
+        "content": "Here are the skeletons of the files:\n### Skeleton 0:\n\n\n### Skeleton 1:\n\n\n### Skeleton 2:\n\n\n### Skeleton 3:\n\n\n### Skeleton 4:\n\n\n### Skeleton 5:\n\n\n### Skeleton 6:\n\n\n### Skeleton 7:\n\n\n### Skeleton 8:\n\n\n### Skeleton 9:"
+    },
+    {
+        "role": "user",
+        "content": "Please review the issue description and thoroughly analyze the issue to uncover all possible causes.\nThen, review the skeletons of potentially relevant files and identify up to FOUR files that are most likely to require edits to resolve the issue.\n\nIMPORTANT:\n1. Select files ONLY FROM THE PROVIDED FILE LIST and specify their FULL PATHS.\n2. The returned files should be separated by new lines ordered by most to least important. Wrap the file list in triple backticks (```).\n\nExplain your reasoning, then provide your answer in the following format:\n```\nfull_path1/file1.py\nfull_path2/file2.py\n```"
+    },
+    {
+        "role": "assistant",
+        "content": "The root cause here is that in ibex_top.sv we\u2019re using the single \u201ccore_busy_o\u201d to gate both the regular and lock\u2010step cores, then in ibex_lockstep.sv we never see a glitch in core_busy_o (since the lock\u2010step core is already off) and thus no major\u2010alert is ever raised. To fix this we need to:\n\n 1. Decouple the clock gating for the lock\u2010step core \u2013 update the clock\u2010enable logic in ibex_top.sv so the lock\u2010step core sees its own (possibly delayed) busy signal, not the direct non\u2013lockstep core_busy_o.\n 2. In ibex_lockstep.sv, ensure that any glitch on the gated\u2010off busy signal still propagates through your compare logic (or add an error-capture on the busy port).\n 3. Potentially extend prim_clock_gating.sv (or add a variant) to allow transparent bypass or dedicated control for lock-step.\n 4. If you\u2019re indexing outputs by port_idx in a shared port-map (output_ports array), you\u2019ll also need to update the definitions/indices in ibex_pkg.sv so the non\u2013lockstep busy port and the lock\u2010step busy shadow port are distinct.\n\n```  \nibex/rtl/ibex_top.sv  \nibex/rtl/ibex_lockstep.sv  \nibex/rtl/prim_clock_gating.sv  \nibex/rtl/ibex_pkg.sv  \n```"
+    }
+]

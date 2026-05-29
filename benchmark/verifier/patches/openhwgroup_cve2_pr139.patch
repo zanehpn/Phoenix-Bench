@@ -1,0 +1,40 @@
+diff --git a/rtl/cve2_irq_cause.sv b/rtl/cve2_irq_cause.sv
+--- a/rtl/cve2_irq_cause.sv
++++ b/rtl/cve2_irq_cause.sv
+@@ -15,7 +15,7 @@ module cve2_irq_cause (
+ 
+   always_comb begin
+     mfip_id = 4'd0;
+-    for (int i = 14; i >= 0; i--) begin
++    for (int i = 15; i >= 0; i--) begin
+       if (irq_fast_i[i]) begin
+         mfip_id = i[3:0];
+       end
+@@ -25,15 +25,15 @@ module cve2_irq_cause (
+   always_comb begin
+     exc_cause_o = 7'd0;
+     if (irq_nm_i) begin
+-      exc_cause_o = {1'b0, 1'b1, 5'd31};
+-    end else if (irq_fast_i[14:0] != 15'b0) begin
+-      exc_cause_o = {1'b0, 2'b11, mfip_id};
++      exc_cause_o = {1'b1, 6'd32};
++    end else if (irq_fast_i != 16'b0) begin
++      exc_cause_o = {3'b101, mfip_id};
+     end else if (irq_external_i) begin
+-      exc_cause_o = {1'b0, 1'b1, 5'd11};
++      exc_cause_o = {1'b1, 6'd11};
+     end else if (irq_timer_i) begin
+-      exc_cause_o = {1'b0, 1'b1, 5'd7};
++      exc_cause_o = {1'b1, 6'd7};
+     end else if (irq_software_i) begin
+-      exc_cause_o = {1'b0, 1'b1, 5'd3};
++      exc_cause_o = {1'b1, 6'd3};
+     end
+   end
+ 
+@@ -41,5 +41,5 @@ module cve2_irq_cause (
+-  assign unused_irq_bit = irq_id[5];
+-  assign exc_pc_o = {csr_mtvec_i[31:8], 1'b0, irq_id[4:0], 2'b00};
++  assign unused_irq_bit = irq_id[6];
++  assign exc_pc_o = {csr_mtvec_i[31:8], irq_id[5:0], 2'b00};
+ endmodule

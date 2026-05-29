@@ -1,0 +1,22 @@
+diff --git a/rtl/src/hpdcache_ctrl_pe.sv b/rtl/src/hpdcache_ctrl_pe.sv
+index 0fde070..bb097d9 100644
+--- a/rtl/src/hpdcache_ctrl_pe.sv
++++ b/rtl/src/hpdcache_ctrl_pe.sv
+@@ -402,6 +402,17 @@ module hpdcache_ctrl_pe
+                 end
+ 
+                 else if (st1_req_is_error_i) begin
++                    // If a request is replayed from the RTAB with the error flag set,
++                    // it will directly respond to the core without updating the cache.
++                    // Still, it must be accounted as a write request event when the
++                    // original core request was a cacheable store with a write-back
++                    // policy (write-allocate miss + failing refill).
++                    if (st1_req_rtab_i && st1_req_is_store_i &&
++                        (st1_req_wr_wb_i || (st1_req_wr_auto_i && st1_dir_hit_wback_i)))
++                    begin
++                        evt_write_req_o = 1'b1;
++                    end
++
+                     st1_rtab_commit_o = st1_req_rtab_i;
+                     st1_rsp_valid_o = st1_req_need_rsp_i;
+                     st1_rsp_error_o = st1_req_need_rsp_i;

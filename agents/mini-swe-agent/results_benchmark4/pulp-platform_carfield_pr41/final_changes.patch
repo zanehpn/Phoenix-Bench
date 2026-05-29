@@ -1,0 +1,36 @@
+diff --git a/hw/carfield.sv b/hw/carfield.sv
+index d6ac6ab..fb2540e 100755
+--- a/hw/carfield.sv
++++ b/hw/carfield.sv
+@@ -1017,6 +1017,31 @@ hyperbus_wrap      #(
+ // Host Clock Domain
+ logic l2_ecc_err;
+ 
++// Shim atomics, which are not supported in the L2 SPM
++// TODO: should we use a filter instead here?
++axi_riscv_atomics_structs #(
++  .AxiAddrWidth     ( Cfg.AddrWidth          ),
++  .AxiDataWidth     ( Cfg.AxiDataWidth       ),
++  .AxiIdWidth       ( AxiSlvIdWidth          ),
++  .AxiUserWidth     ( Cfg.AxiUserWidth       ),
++  .AxiMaxReadTxns   ( Cfg.AxiMaxSlvTrans     ),
++  .AxiMaxWriteTxns  ( Cfg.AxiMaxSlvTrans     ),
++  .AxiUserAsId      ( 1                      ),
++  .AxiUserIdMsb     ( Cfg.AxiUserAmoMsb      ),
++  .AxiUserIdLsb     ( Cfg.AxiUserAmoLsb      ),
++  .RiscvWordWidth   ( 64                     ),
++  .NAxiCuts         ( Cfg.RegAmoNumCuts      ),
++  .axi_req_t        ( carfield_axi_slv_req_t ),
++  .axi_rsp_t        ( carfield_axi_slv_rsp_t )
++) i_atomics_l2 (
++  .clk_i         ( l2_clk                          ),
++  .rst_ni        ( l2_rst_n                        ),
++  .axi_slv_req_i ( axi_slv_ext_req [NumL2Ports-1]  ),
++  .axi_slv_rsp_o ( axi_slv_ext_rsp [NumL2Ports-1]  ),
++  .axi_mst_req_o ( axi_slv_ext_req [NumL2Ports-1]  ),
++  .axi_mst_rsp_i ( axi_slv_ext_rsp [NumL2Ports-1]  )
++);
++
+ l2_wrap #(
+   .NumPort      ( NumL2Ports             ),
+   .AxiAddrWidth ( Cfg.AddrWidth          ),

@@ -1,0 +1,40 @@
+diff --git a/bsg_misc/bsg_defines.sv b/bsg_misc/bsg_defines.sv
+index a334daa..5a51825 100644
+--- a/bsg_misc/bsg_defines.sv
++++ b/bsg_misc/bsg_defines.sv
+@@ -39,7 +39,9 @@
+ `define BSG_INV_PARAM(param) param = -1
+ `elsif YOSYS // Bare default parameters are incompatible as of 0.9
+ `define BSG_INV_PARAM(param) param = "inv"
+-`else // VIVADO, DC, VERILATOR, GENUS, SURELOG
++`elsif VIVADO // Bare default parameters are incompatible as of 0.9
++`define BSG_INV_PARAM(param) param
++`else // DC, VERILATOR, GENUS, SURELOG
+ `define BSG_INV_PARAM(param) param
+ `endif
+ 
+@@ -73,11 +75,10 @@
+ `define BSG_DISCONNECTED_IN_SIM(val) ('z)
+ `endif
+ 
+-// Ufortunately per the Xilinx forums, Xilinx does not define
+-// any variable that indicates that Vivado Synthesis is running
+-// so as a result we identify Vivado merely as the exclusion of
+-// Synopsys Design Compiler (DC). Support beyond DC and Vivado
+-// will require modification of this macro.
++// Unfortunately per the Xilinx forums, Xilinx does not define
++// any variable that indicates that Vivado Synthesis is running.
++// Yosys does define YOSYS, so it should be distinguished from Vivado.
++// Support beyond DC, Vivado, and Yosys will require modification of this macro.
+ 
+ `ifdef SYNTHESIS
+   `ifdef DC
+@@ -86,6 +87,8 @@
+   `define BSG_VIVADO_SYNTH_FAILS
+   `elsif SURELOG
+   `define BSG_VIVADO_SYNTH_FAILS
++  `elsif YOSYS
++  `define BSG_VIVADO_SYNTH_FAILS
+   `else
+   `define BSG_VIVADO_SYNTH_FAILS this_module_is_not_synthesizeable_in_vivado
+   `endif

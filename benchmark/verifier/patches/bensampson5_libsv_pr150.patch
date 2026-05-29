@@ -1,0 +1,58 @@
+From 123026312f348c2e306851381fa70a5caec018f7 Mon Sep 17 00:00:00 2001
+From: Ben Sampson <bensampson5@gmail.com>
+Date: Sun, 6 Feb 2022 22:53:35 -0600
+Subject: [PATCH] Fix reconvergence issue in synchronizer
+
+---
+ libsv/synchronizers/synchronizer.sv      | 13 ++++++-------
+ tests/synchronizers/test_synchronizer.py |  3 +--
+ 2 files changed, 7 insertions(+), 9 deletions(-)
+
+diff --git a/libsv/synchronizers/synchronizer.sv b/libsv/synchronizers/synchronizer.sv
+index 51b9da7..c10c954 100644
+--- a/libsv/synchronizers/synchronizer.sv
++++ b/libsv/synchronizers/synchronizer.sv
+@@ -2,16 +2,15 @@
+ `define LIBSV_SYNCHRONIZERS_SYNCHRONIZER
+ 
+ module synchronizer #(
+-    parameter int DATA_WIDTH  /* verilator public_flat_rd */ = 1,
+-    parameter int FF_STAGES  /* verilator public_flat_rd */  = 2
++    parameter int FF_STAGES  /* verilator public_flat_rd */ = 2
+ ) (
+-    input  logic                  i_clock,
+-    input  logic                  i_aresetn,
+-    input  logic [DATA_WIDTH-1:0] i_data,
+-    output logic [DATA_WIDTH-1:0] o_data
++    input  logic i_clock,
++    input  logic i_aresetn,
++    input  logic i_data,
++    output logic o_data
+ );
+ 
+-    logic [FF_STAGES-1:0][DATA_WIDTH-1:0] sync_mem;
++    logic [FF_STAGES-1:0] sync_mem;
+ 
+     always_ff @(posedge i_clock, negedge i_aresetn) begin
+         if (!i_aresetn) begin
+diff --git a/tests/synchronizers/test_synchronizer.py b/tests/synchronizers/test_synchronizer.py
+index 1dd99d1..51f12bd 100644
+--- a/tests/synchronizers/test_synchronizer.py
++++ b/tests/synchronizers/test_synchronizer.py
+@@ -13,7 +13,6 @@ def test_synchonrizer(pytestconfig):
+ async def cocotb_test_synchonrizer(dut):
+     """Synchronizer test"""
+ 
+-    data_width = int(dut.DATA_WIDTH)
+     ff_stages = int(dut.FF_STAGES)
+ 
+     cocotb.fork(Clock(dut.i_clock, 2).start())
+@@ -22,7 +21,7 @@ async def cocotb_test_synchonrizer(dut):
+     await FallingEdge(dut.i_clock)
+     dut.i_aresetn.value = 1
+ 
+-    sync_value = 1 % (2 ** data_width)
++    sync_value = 1
+     dut.i_data.value = sync_value
+     for _ in range(ff_stages):
+         assert dut.o_data.value != sync_value

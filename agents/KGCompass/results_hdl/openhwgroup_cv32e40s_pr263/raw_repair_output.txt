@@ -1,0 +1,25 @@
+The bug is localized in **`bhv/cv32e40s_rvfi.sv`**: `rvfi_mode` is only driven when a valid WB instruction is accepted, so it is never explicitly reset. That leaves it undefined after reset and until the first qualifying writeback.
+
+A safe fix is to add a reset path for `rvfi_mode` in the same sequential block that assigns it during normal operation.
+
+```systemverilog
+### bhv/cv32e40s_rvfi.sv
+<<<<<<< SEARCH
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (wb_valid_adjusted && !is_dummy_instr_in_wb) begin
+      rvfi_mode <= priv_lvl_i[1:0];
+    end
+  end
+=======
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      rvfi_mode <= '0;
+    end
+    else if (wb_valid_adjusted && !is_dummy_instr_in_wb) begin
+      rvfi_mode <= priv_lvl_i[1:0];
+    end
+  end
+>>>>>>> REPLACE
+```
+
+If you want, I can also scan for other RVFI fields with the same reset omission pattern.

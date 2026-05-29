@@ -1,0 +1,75 @@
+diff --git a/src/V3FileLine.h b/src/V3FileLine.h
+index da4b6fa..18327f3 100644
+--- a/src/V3FileLine.h
++++ b/src/V3FileLine.h
+@@ -140,10 +140,14 @@ class FileLine final {
+     using msgEnSetIdx_t = FileLineSingleton::msgEnSetIdx_t;
+     using MsgEnBitSet = FileLineSingleton::MsgEnBitSet;
+ 
++    // Control-file-only warning enable state, sticky across source metacomments.
++    using MsgEnCtrlBitSet = FileLineSingleton::MsgEnBitSet;
++
+     // MEMBERS
+     // Columns here means number of chars from beginning (i.e. tabs count as one)
+     // 64-bit word # 0
+     msgEnSetIdx_t m_msgEnIdx = 0;  // Message enable bit set (index into interned array)
++    msgEnSetIdx_t m_ctrlMsgEnIdx = 0;  // Control-file-only message enable bit set
+     fileNameIdx_t m_filenameno = 0;  // `line corrected filename number
+     bool m_waive : 1;  // Waive warning - pack next to the line number to save 8 bytes of storage
+     unsigned m_contentLineno : 31;  // Line number within source stream
+@@ -180,6 +184,7 @@ private:
+ 
+     FileLine()  // Only used for defaultFileLine above
+         : m_msgEnIdx{singleton().defaultMsgEnIndex()}
++        , m_ctrlMsgEnIdx{singleton().defaultMsgEnIndex()}
+         , m_filenameno{singleton().nameToNumber(FileLine::builtInFilename())}
+         , m_waive{false}
+         , m_contentLineno{0}
+@@ -196,6 +201,7 @@ public:
+         , m_lastColumn{0} {}
+     explicit FileLine(const FileLine& from)
+         : m_msgEnIdx{from.m_msgEnIdx}
++        , m_ctrlMsgEnIdx{from.m_ctrlMsgEnIdx}
+         , m_filenameno{from.m_filenameno}
+         , m_waive{from.m_waive}
+         , m_contentLineno{from.m_contentLineno}
+@@ -210,6 +216,7 @@ public:
+     }
+     explicit FileLine(FileLine* fromp)
+         : m_msgEnIdx{fromp->m_msgEnIdx}
++        , m_ctrlMsgEnIdx{fromp->m_ctrlMsgEnIdx}
+         , m_filenameno{fromp->m_filenameno}
+         , m_waive{fromp->m_waive}
+         , m_contentLineno{fromp->m_contentLineno}
+@@ -320,6 +327,7 @@ public:
+         }
+         if (code == V3ErrorCode::E_UNSUPPORTED) warnOn(V3ErrorCode::COVERIGN, flag);
+         m_msgEnIdx = singleton().msgEnSetBit(m_msgEnIdx, code, flag);
++        if (filename() != commandLineFilename()) m_ctrlMsgEnIdx = singleton().msgEnSetBit(m_ctrlMsgEnIdx, code, flag);
+     }
+     void warnOff(V3ErrorCode code, bool flag) { warnOn(code, !flag); }
+     string warnOffParse(const string& msgs, bool flag);  // Returns "" if ok
+@@ -327,10 +335,11 @@ public:
+     void warnLintOff(bool flag);
+     void warnStyleOff(bool flag);
+     void warnUnusedOff(bool flag);
+-    void warnStateFrom(const FileLine& from) { m_msgEnIdx = from.m_msgEnIdx; }
++    void warnStateFrom(const FileLine& from) { m_msgEnIdx = from.m_msgEnIdx; m_ctrlMsgEnIdx = from.m_ctrlMsgEnIdx; }
+     void warnResetDefault() { warnStateFrom(defaultFileLine()); }
+ 
+     // Specific flag ACCESSORS/METHODS
++    const MsgEnBitSet& ctrlMsgEn() const { return singleton().msgEnSet(m_ctrlMsgEnIdx); }
+     bool celldefineOn() const { return msgEn().test(V3ErrorCode::I_CELLDEFINE); }
+     void celldefineOn(bool flag) { warnOn(V3ErrorCode::I_CELLDEFINE, flag); }
+     bool coverageOn() const { return msgEn().test(V3ErrorCode::I_COVERAGE); }
+@@ -347,9 +356,7 @@ public:
+     static void globalWarnLintOff(bool flag) { defaultFileLine().warnLintOff(flag); }
+     static void globalWarnStyleOff(bool flag) { defaultFileLine().warnStyleOff(flag); }
+     static void globalWarnUnusedOff(bool flag) { defaultFileLine().warnUnusedOff(flag); }
+-    static void globalWarnOff(V3ErrorCode code, bool flag) {
+-        defaultFileLine().warnOff(code, flag);
+-    }
++    static void globalWarnOff(V3ErrorCode code, bool flag) { defaultFileLine().warnOff(code, flag); }
+     static string globalWarnOffParse(const string& msgs, bool flag) {
+         return defaultFileLine().warnOffParse(msgs, flag);
+     }

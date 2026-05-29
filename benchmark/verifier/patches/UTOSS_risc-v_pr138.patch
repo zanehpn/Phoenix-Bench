@@ -1,0 +1,2444 @@
+From 823057cda78886313a752146b1ca10f4e1ed376e Mon Sep 17 00:00:00 2001
+From: TonyZhu <1207555640@qq.com>
+Date: Fri, 5 Dec 2025 22:23:18 -0500
+Subject: [PATCH 01/14] Make some changes on FSM to ensure synchronous read and
+ write for inferred RAM
+
+---
+ envs/de1-soc/memory_map.sv                   |   7 +-
+ envs/de1-soc/poc/poc.c                       |  24 ++-
+ envs/de1-soc/poc/poc2.c                      |   9 +
+ src/ControlFSM.sv                            | 143 +++++++------
+ src/Instruction_Decode/Instruction_Decode.sv |   7 +-
+ src/Instruction_Decode/MemoryLoader.sv       | 107 ++++++++++
+ src/utoss_riscv.sv                           | 209 +++++++++++++++++++
+ 7 files changed, 430 insertions(+), 76 deletions(-)
+ create mode 100644 envs/de1-soc/poc/poc2.c
+
+diff --git a/envs/de1-soc/memory_map.sv b/envs/de1-soc/memory_map.sv
+index f34dc5d..a5b53a6 100644
+--- a/envs/de1-soc/memory_map.sv
++++ b/envs/de1-soc/memory_map.sv
+@@ -12,6 +12,7 @@ module memory_map #( parameter SIZE = 1024 )
+   );
+ 
+     reg [31:0] M[0:SIZE -1];
++	  reg [31:0] mem_rdata;
+ 
+     // need to run make in the poc directory before this command can succeed
+     initial $readmemh("poc/poc.mem", M);
+@@ -23,11 +24,13 @@ module memory_map #( parameter SIZE = 1024 )
+     always @(*) begin
+       case (address)
+         LEDR_ADDRESS: read_data = {22'b0, LEDR};
+-        default: read_data = M[mem_index];
++		  //default: read_data = M[mem_index];
++        default: read_data = mem_rdata;
+       endcase
+     end
+ 
+     always @(posedge clk) begin
++	   mem_rdata <= M[mem_index];
+       case (address)
+         LEDR_ADDRESS: begin
+           if (|write_enable) LEDR <= write_data[9:0];
+@@ -41,4 +44,4 @@ module memory_map #( parameter SIZE = 1024 )
+       endcase
+     end
+ 
+-endmodule
++endmodule
+\ No newline at end of file
+diff --git a/envs/de1-soc/poc/poc.c b/envs/de1-soc/poc/poc.c
+index 7fbba3d..a326539 100644
+--- a/envs/de1-soc/poc/poc.c
++++ b/envs/de1-soc/poc/poc.c
+@@ -1,9 +1,21 @@
+ #define LEDR ((volatile int*)0x10000000)
+ 
+-int main() {
+-  int cnt = 0;
+-  cnt += 42;
+-  cnt += 22;
+-  *LEDR = cnt;
+-  return 0;
++static void delay(void) {
++    volatile int i;
++    for (i = 0; i < 1000000; i++) {
++        // take some time
++    }
+ }
++
++int main(void) {
++    int cnt = 0;
++
++    while (1) {
++        cnt = (cnt + 1) & 0x3FF;  // 10 bits
++        *LEDR = cnt;              // update LED
++
++        delay();   
++    }
++
++    return 0;
++}
+\ No newline at end of file
+diff --git a/envs/de1-soc/poc/poc2.c b/envs/de1-soc/poc/poc2.c
+new file mode 100644
+index 0000000..7fbba3d
+--- /dev/null
++++ b/envs/de1-soc/poc/poc2.c
+@@ -0,0 +1,9 @@
++#define LEDR ((volatile int*)0x10000000)
++
++int main() {
++  int cnt = 0;
++  cnt += 42;
++  cnt += 22;
++  *LEDR = cnt;
++  return 0;
++}
+diff --git a/src/ControlFSM.sv b/src/ControlFSM.sv
+index b7a120a..e36e99d 100644
+--- a/src/ControlFSM.sv
++++ b/src/ControlFSM.sv
+@@ -48,6 +48,9 @@ module ControlFSM
+ 
+   // new state for remaining branch instructions
+   parameter BRANCHCOMP = 5'b01111;
++  
++  parameter FETCH_WAIT  = 5'b10000;
++
+ 
+   //declare state registers
+   reg [4:0] current_state, next_state;
+@@ -57,7 +60,8 @@ module ControlFSM
+ 
+     case (current_state)
+ 
+-      FETCH: next_state = DECODE;
++		FETCH:      next_state = FETCH_WAIT;
++		FETCH_WAIT: next_state = DECODE;
+ 
+       DECODE: begin
+ 
+@@ -139,163 +143,168 @@ module ControlFSM
+ 
+   //output logic
+   always @(*) begin
+-    Branch <= 1'b0;
+-    pc_src <= PC_SRC__INCREMENT;
+-    PCUpdate <= 1'b0;
+-    IRWrite <= 1'b0;
+-    MemWrite <= 4'b0;
+-    RegWrite <= 1'b0;
+-
+-    FSMState <= current_state;
++    Branch = 1'b0;
++    pc_src = PC_SRC__INCREMENT;
++    PCUpdate = 1'b0;
++    IRWrite = 1'b0;
++    MemWrite = 4'b0;
++    RegWrite = 1'b0;
++    AdrSrc    = ADR_SRC__PC;
++    ResultSrc = RESULT_SRC__ALU_OUT;
++    FSMState = current_state;
+ 
+     case (current_state)
+ 
+-      FETCH: begin
++		FETCH: begin
++			AdrSrc   = ADR_SRC__PC;
++		end
++		
++		FETCH_WAIT: begin
++			AdrSrc   = ADR_SRC__PC;            
++			IRWrite  = 1'b1;                   
++			PCUpdate = 1'b1;                   
++			pc_src   = PC_SRC__INCREMENT;      
++		end
+ 
+-        AdrSrc <= ADR_SRC__PC;
+-        IRWrite <= 1'b1;
+-        PCUpdate <= 1'b1;
+-
+-      end
+ 
+       DECODE: begin
+ 
+-        ALUSrcA <= ALU_SRC_A__OLD_PC;
+-        ALUSrcB <= ALU_SRC_B__IMM_EXT;
++        ALUSrcA = ALU_SRC_A__OLD_PC;
++        ALUSrcB = ALU_SRC_B__IMM_EXT;
+ 
+       end
+ 
+       AUIPC: begin
+ 
+-        ALUSrcA <= ALU_SRC_A__OLD_PC;
+-        ALUSrcB <= ALU_SRC_B__IMM_EXT;
++        ALUSrcA = ALU_SRC_A__OLD_PC;
++        ALUSrcB = ALU_SRC_B__IMM_EXT;
+ 
+       end
+ 
+       LUI: begin
+ 
+-        ALUSrcA <= ALU_SRC_A__ZERO;
+-        ALUSrcB <= ALU_SRC_B__IMM_EXT;
++        ALUSrcA = ALU_SRC_A__ZERO;
++        ALUSrcB = ALU_SRC_B__IMM_EXT;
+ 
+       end
+ 
+       EXECUTER: begin
+ 
+-        ALUSrcA <= ALU_SRC_A__RD1;
+-        ALUSrcB <= ALU_SRC_B__RD2;
++        ALUSrcA = ALU_SRC_A__RD1;
++        ALUSrcB = ALU_SRC_B__RD2;
+ 
+       end
+ 
+       EXECUTEI: begin
+ 
+-        ALUSrcA <= ALU_SRC_A__RD1;
+-        ALUSrcB <= ALU_SRC_B__IMM_EXT;
++        ALUSrcA = ALU_SRC_A__RD1;
++        ALUSrcB = ALU_SRC_B__IMM_EXT;
+ 
+       end
+ 
+       UNCONDJUMP: begin
+ 
+-        ALUSrcA <= ALU_SRC_A__OLD_PC;
+-        ALUSrcB <= ALU_SRC_B__4;
+-        ResultSrc <= RESULT_SRC__ALU_OUT;
+-        PCUpdate <= 1'b1;
+-        pc_src    <= PC_SRC__JUMP;  // new added
++        ALUSrcA = ALU_SRC_A__OLD_PC;
++        ALUSrcB = ALU_SRC_B__4;
++        ResultSrc = RESULT_SRC__ALU_OUT;
++        PCUpdate = 1'b1;
++        pc_src    = PC_SRC__JUMP;  // new added
+ 
+       end
+ 
+       JALR_CALC: begin
+-        ALUSrcA  <= ALU_SRC_A__RD1;      // rs1
+-        ALUSrcB  <= ALU_SRC_B__IMM_EXT;  // + imm
++        ALUSrcA  = ALU_SRC_A__RD1;      // rs1
++        ALUSrcB  = ALU_SRC_B__IMM_EXT;  // + imm
+       end
+ 
+       JALR_STEP2: begin
+-        ALUSrcA   <= ALU_SRC_A__OLD_PC;  // Calculate link = pc_old + 4, write back in ALUWB
+-        ALUSrcB   <= ALU_SRC_B__4;
+-        ResultSrc <= RESULT_SRC__ALU_OUT;
+-        pc_src    <= PC_SRC__ALU_RESULT; // fetch  (alu_out & ~1) for new PC
+-        PCUpdate  <= 1'b1;
++        ALUSrcA   = ALU_SRC_A__OLD_PC;  // Calculate link = pc_old + 4, write back in ALUWB
++        ALUSrcB   = ALU_SRC_B__4;
++        ResultSrc = RESULT_SRC__ALU_OUT;
++        pc_src    = PC_SRC__ALU_RESULT; // fetch  (alu_out & ~1) for new PC
++        PCUpdate  = 1'b1;
+       end
+ 
+ 
+       MEMADR: begin
+ 
+-        ALUSrcA <= ALU_SRC_A__RD1;
+-        ALUSrcB <= ALU_SRC_B__IMM_EXT;
++        ALUSrcA = ALU_SRC_A__RD1;
++        ALUSrcB = ALU_SRC_B__IMM_EXT;
+ 
+       end
+ 
+       BRANCHIFEQ: begin
+ 
+-        ALUSrcA <= ALU_SRC_A__RD1;
+-        ALUSrcB <= ALU_SRC_B__RD2;
+-        ResultSrc <= RESULT_SRC__ALU_OUT;
+-        Branch <= 1'b1;
++        ALUSrcA = ALU_SRC_A__RD1;
++        ALUSrcB = ALU_SRC_B__RD2;
++        ResultSrc = RESULT_SRC__ALU_OUT;
++        Branch = 1'b1;
+         case (funct3)
+           3'b000: begin
+             if (zero_flag) begin
+-              pc_src <= PC_SRC__JUMP;
+-              PCUpdate <= 1'b1;
++              pc_src = PC_SRC__JUMP;
++              PCUpdate = 1'b1;
+             end
+-            else pc_src <= PC_SRC__INCREMENT;
++            else pc_src = PC_SRC__INCREMENT;
+           end
+ 
+           3'b001: begin
+             if (!zero_flag) begin
+-              pc_src <= PC_SRC__JUMP;
+-              PCUpdate <= 1'b1;
++              pc_src = PC_SRC__JUMP;
++              PCUpdate = 1'b1;
+             end
+-            else pc_src <= PC_SRC__INCREMENT;
++            else pc_src = PC_SRC__INCREMENT;
+           end
+         endcase
+       end
+ 
+       BRANCHCOMP: begin
+ 
+-        ALUSrcA <= ALU_SRC_A__RD1;
+-        ALUSrcB <= ALU_SRC_B__RD2;
+-        ResultSrc <= RESULT_SRC__ALU_OUT;
+-        Branch <= 1'b1;
++        ALUSrcA = ALU_SRC_A__RD1;
++        ALUSrcB = ALU_SRC_B__RD2;
++        ResultSrc = RESULT_SRC__ALU_OUT;
++        Branch = 1'b1;
+         if (alu_result == 32'b1) begin
+-          pc_src <= PC_SRC__JUMP;
+-          PCUpdate <= 1'b1;
++          pc_src = PC_SRC__JUMP;
++          PCUpdate = 1'b1;
+         end
+-        else pc_src <= PC_SRC__INCREMENT;
++        else pc_src = PC_SRC__INCREMENT;
+ 
+       end
+ 
+       ALUWB: begin
+ 
+-        ResultSrc <= RESULT_SRC__ALU_OUT;
+-        RegWrite <= 1'b1;
++        ResultSrc = RESULT_SRC__ALU_OUT;
++        RegWrite = 1'b1;
+ 
+       end
+ 
+       MEMWRITE: begin
+ 
+-        ResultSrc <= RESULT_SRC__ALU_OUT;
+-        AdrSrc <= ADR_SRC__RESULT;
+-        MemWrite <= MemWriteByteAddress;
++        ResultSrc = RESULT_SRC__ALU_OUT;
++        AdrSrc = ADR_SRC__RESULT;
++        MemWrite = MemWriteByteAddress;
+ 
+       end
+ 
+       MEMREAD: begin
+ 
+-        ResultSrc <= RESULT_SRC__ALU_OUT;
+-        AdrSrc <= ADR_SRC__RESULT;
++        ResultSrc = RESULT_SRC__ALU_OUT;
++        AdrSrc = ADR_SRC__RESULT;
+ 
+       end
+ 
+       MEMWB: begin
+ 
+-        ResultSrc <= RESULT_SRC__DATA;
+-        RegWrite <= 1'b1;
++        ResultSrc = RESULT_SRC__DATA;
++        RegWrite = 1'b1;
+ 
+       end
+ 
+       default: begin //by default, we return to FETCH state
+ 
+-        AdrSrc <= ADR_SRC__PC;
+-        IRWrite <= 1'b1;
++        AdrSrc = ADR_SRC__PC;
++        IRWrite = 1'b1;
+ 
+       end
+ 
+diff --git a/src/Instruction_Decode/Instruction_Decode.sv b/src/Instruction_Decode/Instruction_Decode.sv
+index e5ea848..00331d6 100644
+--- a/src/Instruction_Decode/Instruction_Decode.sv
++++ b/src/Instruction_Decode/Instruction_Decode.sv
+@@ -101,6 +101,11 @@ module Instruction_Decode
+         rd = instr[11:7];
+       end
+ 
++      default: begin
++        rd  = 5'b0;
++        rs1 = 5'b0;
++        rs2 = 5'b0;
++      end
+     endcase
+   end
+ 
+@@ -116,7 +121,7 @@ module Instruction_Decode
+       JType       : imm_ext = {{12{instr[31]}}, instr[19:12], instr[20], instr[30:21], 1'b0};
+       UType_auipc  : imm_ext = {instr[31:12], 12'b0};
+       UType_lui  : imm_ext = {instr[31:12], 12'b0};
+-
++      default    : imm_ext = 32'b0;
+     endcase
+   end
+ 
+diff --git a/src/Instruction_Decode/MemoryLoader.sv b/src/Instruction_Decode/MemoryLoader.sv
+index 60175f5..79bd61d 100644
+--- a/src/Instruction_Decode/MemoryLoader.sv
++++ b/src/Instruction_Decode/MemoryLoader.sv
+@@ -86,3 +86,110 @@ module MemoryLoader
+             end
+         endcase
+ endmodule
++// `include "src/types.svh"
++
++// module MemoryLoader
++// ( input  wire   clk
++// , input  data_t memory_data
++// , input  addr_t memory_address
++// , input  opcode_t opcode
++// , input  logic [2:0]  funct3
++// , input  logic [31:0] dataB
++// , output data_t mem_load_result
++// , output logic [3:0] MemWriteByteAddress
++// , output logic [31:0] __tmp_MemData
++// );
++//     logic [1:0] byteindex_for_store;
++//     logic [1:0] byteindex_for_load;
++
++//     // we need different logic for retrieving byteindex depending on whether we are planning to
++//     // store or to load; if we are planning to store -- we need to use the byteindex from the
++//     // current memory address, since its the one that alu computed for the store to proceed; however
++//     // for load instruction we need to use the memory address from the previous clock cycle since
++//     // its the address that was used to retrieve the current memory data
++//     assign byteindex_for_store = memory_address[1:0];
++//     always @(posedge clk) begin
++//       byteindex_for_load <= memory_address[1:0];
++//     end
++
++//     logic [1:0] byteindex;
++//     always @(*) begin
++//       case (opcode)
++//         SType: byteindex <= byteindex_for_store;
++//         IType_load: byteindex <= byteindex_for_load;
++//       endcase
++//     end
++
++//     typedef enum logic [1:0]
++//     { BYTE = 2'b00
++//     , HALF = 2'b01
++//     , WORD = 2'b10
++//     } transfersize_t;
++
++//     logic signed_mode;
++//     assign signed_mode = ~funct3[2];
++
++//     always @(*) // cannot use always_comb yet: https://github.com/steveicarus/iverilog/issues/734
++//         case (funct3[1:0])
++//             BYTE: begin
++//                 __tmp_MemData = { dataB[7:0], dataB[7:0], dataB[7:0], dataB[7:0] };
++//                 case (byteindex)
++//                     2'd0: begin
++//                         mem_load_result = {{24{signed_mode & memory_data[7]}}, memory_data[7:0]};
++//                         MemWriteByteAddress = 4'b0001;
++//                     end
++//                     2'd1: begin
++//                         mem_load_result = {{24{signed_mode & memory_data[15]}}, memory_data[15:8]};
++//                         MemWriteByteAddress = 4'b0010;
++//                     end
++//                     2'd2: begin
++//                         mem_load_result = {{24{signed_mode & memory_data[23]}}, memory_data[23:16]};
++//                         MemWriteByteAddress = 4'b0100;
++//                     end
++//                     2'd3: begin
++//                         mem_load_result = {{24{signed_mode & memory_data[31]}}, memory_data[31:24]};
++//                         MemWriteByteAddress = 4'b1000;
++//                     end
++//                     default: begin
++//                         mem_load_result = 32'hxxxxxxxx;
++//                         MemWriteByteAddress = 4'bxxxx;
++//                     end
++//                 endcase
++//             end
++//             HALF: begin
++//                 __tmp_MemData = { dataB[15:0], dataB[15:0] };
++//                 case (byteindex)
++//                     2'd0: begin
++//                         mem_load_result = {{16{signed_mode & memory_data[15]}}, memory_data[15:0]};
++//                         MemWriteByteAddress = 4'b0011;
++//                     end
++//                     2'd2: begin
++//                         mem_load_result = {{16{signed_mode & memory_data[31]}}, memory_data[31:16]};
++//                         MemWriteByteAddress = 4'b1100;
++//                     end
++//                     default: begin
++//                         mem_load_result = 32'hxxxxxxxx;
++//                         MemWriteByteAddress = 4'bxxxx;
++//                     end
++//                 endcase
++//             end
++//             WORD: begin
++//                 __tmp_MemData = { dataB[31:0] };
++//                 case (byteindex)
++//                     2'd0: begin
++//                         mem_load_result = memory_data;
++//                         MemWriteByteAddress = 4'b1111;
++//                     end
++//                     default: begin
++//                         mem_load_result = 32'hxxxxxxxx;
++//                         MemWriteByteAddress = 4'bxxxx;
++//                     end
++//                 endcase
++//             end
++//             default: begin
++//                 __tmp_MemData = 32'hxxxxxxxx;
++//                 mem_load_result = 32'hxxxxxxxx;
++//                 MemWriteByteAddress = 4'bxxxx;
++//             end
++//         endcase
++// endmodule
+diff --git a/src/utoss_riscv.sv b/src/utoss_riscv.sv
+index deeeba0..870578b 100644
+--- a/src/utoss_riscv.sv
++++ b/src/utoss_riscv.sv
+@@ -211,3 +211,212 @@ module utoss_riscv
+ `endif
+ 
+ endmodule
++// `include "src/types.svh"
++
++// module utoss_riscv
++//   ( input wire clk
++//   , input wire reset
++
++//   // memory interface begin
++//   , output addr_t       memory__address
++//   , output data_t       memory__write_data
++//   , output logic  [3:0] memory__write_enable
++//   , input  data_t       memory__read_data
++//   // memory interface end
++//   );
++
++//   wire         cfsm__pc_update;
++//   wire         cfsm__reg_write;
++//   wire         cfsm__ir_write;
++//   pc_src_t     cfsm__pc_src;
++//   result_src_t cfsm__result_src;
++
++//   addr_t   pc_cur;
++//   data_t   data;
++//   instr_t  instruction;
++//   opcode_t opcode;
++//   imm_t    imm_ext;
++//   reg [2:0] funct3;
++//   reg [6:0] funct7;
++
++//   integer byteindex;
++
++//   data_t result;
++//   data_t mem_load_result;
++
++//   data_t rd1;
++//   data_t rd2;
++
++//   data_t alu_input_a;
++//   data_t alu_input_b;
++//   data_t alu_result;
++//   data_t alu_out;
++
++//   addr_t pc_old;
++
++//   wire alu__zero_flag;
++
++//   adr_src_t cfsm__adr_src;
++//   wire __tmp_Branch;
++//   wire [1:0] __tmp_ALUSrcA, __tmp_ALUSrcB;
++//   wire [3:0] __tmp_ALUControl;
++//   wire [1:0] __tmp_ResultSrc;
++//   wire [4:0] __tmp_FSMState;
++//   data_t     dataA, dataB;
++//   reg  [4:0] rd, rs1, rs2;
++
++//   logic [3:0] MemWriteByteAddress;
++
++//   ControlFSM control_fsm
++//     ( .opcode     ( opcode               )
++//     , .clk        ( clk                  )
++//     , .reset      ( reset                )
++//     , .zero_flag  ( alu__zero_flag       )
++//     , .MemWriteByteAddress ( MemWriteByteAddress )
++//     , .funct3     ( funct3               )
++//     , .alu_result ( alu_result           )
++//     , .AdrSrc     ( cfsm__adr_src        )
++//     , .IRWrite    ( cfsm__ir_write       )
++//     , .RegWrite   ( cfsm__reg_write      )
++//     , .PCUpdate   ( cfsm__pc_update      )
++//     , .pc_src     ( cfsm__pc_src         )
++//     , .MemWrite   ( memory__write_enable )
++//     , .Branch     ( __tmp_Branch         )
++//     , .ALUSrcA    ( __tmp_ALUSrcA        )
++//     , .ALUSrcB    ( __tmp_ALUSrcB        )
++//     , .ResultSrc  ( cfsm__result_src     )
++//     , .FSMState   ( __tmp_FSMState       )
++//     );
++
++//   fetch fetch
++//     ( .clk             ( clk             )
++//     , .reset           ( reset           )
++//     , .cfsm__pc_update ( cfsm__pc_update )
++//     , .alu_result_for_pc ( alu_out )
++//     , .cfsm__pc_src    ( cfsm__pc_src    )
++//     , .cfsm__ir_write  ( cfsm__ir_write  )
++//     , .imm_ext         ( imm_ext         )
++
++//     // outputs
++//     , .pc_cur          ( pc_cur          )
++//     , .pc_old          ( pc_old          )
++//     );
++
++//   always @(*) begin
++//     case (cfsm__adr_src)
++//       ADR_SRC__PC:     memory__address = pc_cur;
++//       ADR_SRC__RESULT: memory__address = result;
++//     endcase
++//   end
++
++// assign instruction = cfsm__ir_write ? memory__read_data : instruction;
++
++//   MemoryLoader MemLoad
++//   ( .clk                  ( clk                 )
++//   , .memory_data          ( memory__read_data   )
++//   , .memory_address       ( memory__address     )
++//   , .mem_load_result      ( mem_load_result     )
++//   , .opcode               ( opcode              )
++//   , .funct3               ( funct3              )
++//   , .dataB                ( dataB               )
++//   , .MemWriteByteAddress  ( MemWriteByteAddress )
++//   , .__tmp_MemData        ( memory__write_data  )
++//   );
++
++//   assign data = mem_load_result;
++
++//   Instruction_Decode instruction_decode
++//     ( .instr           ( instruction      )
++//     , .opcode          ( opcode           )
++//     , .funct3          ( funct3           )
++//     , .funct7          ( funct7           )
++//     , .ALUControl      ( __tmp_ALUControl )
++//     , .imm_ext         ( imm_ext          )
++//     , .rd              ( rd               )
++//     , .rs1             ( rs1              )
++//     , .rs2             ( rs2              )
++//     );
++
++//   registerFile RegFile
++//     ( .Addr1           ( rs1              )
++//     , .Addr2           ( rs2              )
++//     , .Addr3           ( rd               )
++//     , .clk             ( clk              )
++//     , .reset           ( reset            )
++//     , .regWrite        ( cfsm__reg_write  )
++//     , .dataIn          ( result           )
++//     , .baseAddr        ( rd1              )
++//     , .writeData       ( rd2              )
++//     );
++
++//   ALU alu
++//     ( .a              ( alu_input_a      )
++//     , .b              ( alu_input_b      )
++//     , .alu_control    ( __tmp_ALUControl )
++//     , .out            ( alu_result       )
++//     , .zeroE          ( alu__zero_flag   )
++//     );
++
++//   always @(posedge clk) begin
++//     alu_out <= alu_result;
++//   end
++
++//   always @(*) begin
++//     case (__tmp_ALUSrcA)
++//       ALU_SRC_A__PC:     alu_input_a = pc_cur;
++//       ALU_SRC_A__OLD_PC: alu_input_a = pc_old;
++//       ALU_SRC_A__RD1:    alu_input_a = dataA;
++//       ALU_SRC_A__ZERO:   alu_input_a = 32'b0;
++
++//       default:           alu_input_a = 32'hxxxxxxxx;
++//     endcase
++//   end
++
++//   always @(*) begin
++//     case (__tmp_ALUSrcB)
++//       ALU_SRC_B__RD2:     alu_input_b = dataB;
++//       ALU_SRC_B__IMM_EXT: alu_input_b = imm_ext;
++//       ALU_SRC_B__4:       alu_input_b = 32'd4;
++//       default:            alu_input_b = 32'hxxxxxxxx;
++//     endcase
++//   end
++
++//   always @(*) begin
++//     case (cfsm__result_src)
++//       RESULT_SRC__ALU_OUT:    result = alu_out;
++//       RESULT_SRC__DATA:       result = data;
++//       RESULT_SRC__ALU_RESULT: result = alu_result;
++//       default:                result = 32'hxxxxxxxx;
++//     endcase
++//   end
++
++//   always @(posedge clk) begin
++//     dataA <= rd1;
++//     dataB <= rd2;
++//   end
++
++// `ifndef UTOSS_RISCV_SYNTHESIS
++//   Logger CoreLog
++//   (
++//     .clk              ( clk              )
++//   , .pc_cur           ( pc_cur           )
++//   , .instruction      ( instruction      )
++//   , .FSM_State        ( __tmp_FSMState   )
++//   , .opcode           ( opcode           )
++//   , .funct3           ( funct3           )
++//   , .funct7           ( funct7           )
++//   , .rs1              ( rs1              )
++//   , .rs2              ( rs2              )
++//   , .rd               ( rd               )
++//   , .imm_ext          ( imm_ext          )
++//   , .memory_address   ( memory__address  )
++//   , .memory_data      ( mem_load_result  )
++//   , .write_enable     ( memory__write_enable )
++//   , .rd1              ( rd1              )
++//   , .rd2              ( rd2              )
++//   , .result           ( result           )
++//   , .regWrite         ( cfsm__reg_write  )
++//   );
++// `endif
++
++// endmodule
+\ No newline at end of file
+
+From e5856d4b74f6cc70bab5f65bac970cf8124e4865 Mon Sep 17 00:00:00 2001
+From: TonyZhu <1207555640@qq.com>
+Date: Sun, 7 Dec 2025 18:01:34 -0500
+Subject: [PATCH 02/14] Fix the timing issue and Loop PoC can work now with
+ inferred ram
+
+---
+ envs/de1-soc/memory_map.sv             |  41 +++--
+ envs/de1-soc/poc/Makefile              |  20 ++-
+ envs/de1-soc/poc/poc                   | Bin 0 -> 15776 bytes
+ envs/de1-soc/poc/poc.c                 |  17 +-
+ envs/de1-soc/poc/poc0.mem              |  20 +++
+ envs/de1-soc/poc/poc1.mem              |  20 +++
+ envs/de1-soc/poc/poc2.mem              |  20 +++
+ envs/de1-soc/poc/poc3.mem              |  20 +++
+ envs/de1-soc/top.sv                    |   4 +-
+ src/ControlFSM.sv                      |   2 +
+ src/Instruction_Decode/MemoryLoader.sv | 115 +-------------
+ src/Instruction_Decode/RegisterFile.v  |   3 +-
+ src/utoss_riscv.sv                     | 211 +------------------------
+ 13 files changed, 144 insertions(+), 349 deletions(-)
+ create mode 100755 envs/de1-soc/poc/poc
+ create mode 100644 envs/de1-soc/poc/poc0.mem
+ create mode 100644 envs/de1-soc/poc/poc1.mem
+ create mode 100644 envs/de1-soc/poc/poc2.mem
+ create mode 100644 envs/de1-soc/poc/poc3.mem
+
+diff --git a/envs/de1-soc/memory_map.sv b/envs/de1-soc/memory_map.sv
+index a5b53a6..ec3e667 100644
+--- a/envs/de1-soc/memory_map.sv
++++ b/envs/de1-soc/memory_map.sv
+@@ -10,17 +10,29 @@ module memory_map #( parameter SIZE = 1024 )
+ 
+   , output reg    [9:0] LEDR
+   );
++  
++	 reg [7:0] M0 [0:SIZE-1];  // byte lane 0
++    reg [7:0] M1 [0:SIZE-1];  // byte lane 1
++    reg [7:0] M2 [0:SIZE-1];  // byte lane 2
++    reg [7:0] M3 [0:SIZE-1];  // byte lane 3
+ 
+-    reg [31:0] M[0:SIZE -1];
+-	  reg [31:0] mem_rdata;
++	 reg [31:0] M [0:SIZE-1];
++    reg [31:0] mem_rdata;
+ 
+-    // need to run make in the poc directory before this command can succeed
+-    initial $readmemh("poc/poc.mem", M);
++    initial begin
++		$readmemh("poc/poc0.mem", M0);
++		$readmemh("poc/poc1.mem", M1);
++		$readmemh("poc/poc2.mem", M2);
++		$readmemh("poc/poc3.mem", M3);
++	 end
+ 
+     localparam bit [31:0] LEDR_ADDRESS = 32'h10000000;
+ 
+-    wire [31:0] mem_index = address[31:2] % SIZE;
+-
++    //wire [31:0] mem_index = address[31:2] % SIZE;
++	 localparam int ADDR_LSB   = 2;
++	 localparam int ADDR_WIDTH = $clog2(SIZE);
++	 wire [ADDR_WIDTH-1:0] mem_index = address[ADDR_LSB + ADDR_WIDTH - 1 : ADDR_LSB];  // I think this way may save some resources
++	 
+     always @(*) begin
+       case (address)
+         LEDR_ADDRESS: read_data = {22'b0, LEDR};
+@@ -30,16 +42,23 @@ module memory_map #( parameter SIZE = 1024 )
+     end
+ 
+     always @(posedge clk) begin
+-	   mem_rdata <= M[mem_index];
++	   mem_rdata <= { M3[mem_index], M2[mem_index], M1[mem_index], M0[mem_index] };
+       case (address)
+         LEDR_ADDRESS: begin
+           if (|write_enable) LEDR <= write_data[9:0];
+         end
+         default: begin
+-          // this is not compliant with our write_enable mechanism, and essentially breaks the
+-          // sub-word writing instructions (e.g. sb); however i could not get the per-byte writes on
+-          // de1-soc for some reason
+-          if (|write_enable) M[mem_index] <= write_data;
++          if (write_enable[0])
++            M0[mem_index] <= write_data[7:0];
++
++          if (write_enable[1])
++            M1[mem_index] <= write_data[15:8];
++
++          if (write_enable[2])
++            M2[mem_index] <= write_data[23:16];
++
++          if (write_enable[3])
++            M3[mem_index] <= write_data[31:24];
+         end
+       endcase
+     end
+diff --git a/envs/de1-soc/poc/Makefile b/envs/de1-soc/poc/Makefile
+index c5bfa10..0e3380a 100644
+--- a/envs/de1-soc/poc/Makefile
++++ b/envs/de1-soc/poc/Makefile
+@@ -1,8 +1,8 @@
+-RISCV_PREFIX := riscv32-unknown-elf
+-RISCV_GCC := $(RISCV_PREFIX)-gcc
++RISCV_PREFIX  := riscv32-unknown-elf
++RISCV_GCC     := $(RISCV_PREFIX)-gcc
+ RISCV_OBJCOPY := $(RISCV_PREFIX)-objcopy
+ 
+-all: poc.mem
++all: poc0.mem poc1.mem poc2.mem poc3.mem
+ 
+ poc.elf: poc.c link.ld
+ 	$(RISCV_GCC) -march=rv32i -mabi=ilp32 -mno-relax \
+@@ -15,7 +15,19 @@ poc.elf: poc.c link.ld
+ poc.mem: poc.elf
+ 	$(RISCV_OBJCOPY) -O verilog --verilog-data-width=4 $< $@
+ 
++poc0.mem poc1.mem poc2.mem poc3.mem: poc.mem
++	rm -f poc0.mem poc1.mem poc2.mem poc3.mem
++	@awk '/^@/ { next } \
++	      { for (i = 1; i <= NF; i++) { \
++	          w = $$i; \
++	          print substr(w,7,2) >> "poc0.mem"; \
++	          print substr(w,5,2) >> "poc1.mem"; \
++	          print substr(w,3,2) >> "poc2.mem"; \
++	          print substr(w,1,2) >> "poc3.mem"; \
++	        } \
++	      }' poc.mem
++
+ clean:
+-	rm poc.elf poc.mem
++	rm -f poc.elf poc.mem poc0.mem poc1.mem poc2.mem poc3.mem
+ 
+ .PHONY: clean
+diff --git a/envs/de1-soc/poc/poc b/envs/de1-soc/poc/poc
+new file mode 100755
+index 0000000000000000000000000000000000000000..e1fdaac9a19c55806e7cf202ad4b84bddd377374
+GIT binary patch
+literal 15776
+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
+
+literal 0
+HcmV?d00001
+
+diff --git a/envs/de1-soc/poc/poc.c b/envs/de1-soc/poc/poc.c
+index a326539..9a11d43 100644
+--- a/envs/de1-soc/poc/poc.c
++++ b/envs/de1-soc/poc/poc.c
+@@ -1,20 +1,15 @@
+ #define LEDR ((volatile int*)0x10000000)
+ 
+-static void delay(void) {
+-    volatile int i;
+-    for (i = 0; i < 1000000; i++) {
+-        // take some time
+-    }
+-}
+-
+ int main(void) {
+-    int cnt = 0;
++    register int cnt = 0;
+ 
+     while (1) {
+-        cnt = (cnt + 1) & 0x3FF;  // 10 bits
+-        *LEDR = cnt;              // update LED
++        cnt = (cnt + 1) & 0x3FF;   
++        *LEDR = cnt;               
+ 
+-        delay();   
++        for (volatile int i = 0; i<1000000; i++){
++            //delay
++        }
+     }
+ 
+     return 0;
+diff --git a/envs/de1-soc/poc/poc0.mem b/envs/de1-soc/poc/poc0.mem
+new file mode 100644
+index 0000000..8579aa8
+--- /dev/null
++++ b/envs/de1-soc/poc/poc0.mem
+@@ -0,0 +1,20 @@
++13
++23
++23
++23
++13
++93
++93
++93
++B7
++23
++23
++6F
++83
++93
++23
++03
++B7
++93
++E3
++6F
+diff --git a/envs/de1-soc/poc/poc1.mem b/envs/de1-soc/poc/poc1.mem
+new file mode 100644
+index 0000000..7ebeb94
+--- /dev/null
++++ b/envs/de1-soc/poc/poc1.mem
+@@ -0,0 +1,20 @@
++01
++2E
++2C
++2A
++04
++04
++87
++F4
++07
++A0
++26
++00
++27
++87
++26
++27
++47
++87
++D4
++F0
+diff --git a/envs/de1-soc/poc/poc2.mem b/envs/de1-soc/poc/poc2.mem
+new file mode 100644
+index 0000000..8ac56c2
+--- /dev/null
++++ b/envs/de1-soc/poc/poc2.mem
+@@ -0,0 +1,20 @@
++01
++11
++81
++91
++01
++00
++14
++F7
++00
++97
++04
++00
++C4
++17
++F4
++C4
++0F
++F7
++E7
++DF
+diff --git a/envs/de1-soc/poc/poc3.mem b/envs/de1-soc/poc/poc3.mem
+new file mode 100644
+index 0000000..7c29bd2
+--- /dev/null
++++ b/envs/de1-soc/poc/poc3.mem
+@@ -0,0 +1,20 @@
++FE
++00
++00
++00
++02
++00
++00
++3F
++10
++00
++FE
++01
++FE
++00
++FE
++FE
++00
++23
++FE
++FC
+diff --git a/envs/de1-soc/top.sv b/envs/de1-soc/top.sv
+index abba7d7..9ef60de 100644
+--- a/envs/de1-soc/top.sv
++++ b/envs/de1-soc/top.sv
+@@ -4,6 +4,8 @@ module top
+   , output wire [9:0] LEDR
+   );
+ 
++`define UTOSS_RISCV_SYNTHESIS 1
++
+   addr_t       memory__address;
+   data_t       memory__write_data;
+   logic  [3:0] memory__write_enable;
+@@ -23,7 +25,7 @@ module top
+ 
+   utoss_riscv core
+     ( .clk   ( CLOCK_50 )
+-    , .reset ( KEY[0]   )
++    , .reset ( ~KEY[0]   )
+ 
+     , .memory__address      ( memory__address      )
+     , .memory__write_data   ( memory__write_data   )
+diff --git a/src/ControlFSM.sv b/src/ControlFSM.sv
+index e36e99d..11df377 100644
+--- a/src/ControlFSM.sv
++++ b/src/ControlFSM.sv
+@@ -230,6 +230,8 @@ module ControlFSM
+ 
+         ALUSrcA = ALU_SRC_A__RD1;
+         ALUSrcB = ALU_SRC_B__IMM_EXT;
++        AdrSrc    = ADR_SRC__RESULT;
++        ResultSrc = RESULT_SRC__ALU_RESULT;
+ 
+       end
+ 
+diff --git a/src/Instruction_Decode/MemoryLoader.sv b/src/Instruction_Decode/MemoryLoader.sv
+index 79bd61d..5fc6433 100644
+--- a/src/Instruction_Decode/MemoryLoader.sv
++++ b/src/Instruction_Decode/MemoryLoader.sv
+@@ -14,9 +14,9 @@ module MemoryLoader
+     assign byteindex = memory_address[1:0];
+ 
+     typedef enum logic [1:0]
+-    { BYTE = 'b00
+-    , HALF = 'b01
+-    , WORD = 'b10
++    { BYTE = 2'b00
++    , HALF = 2'b01
++    , WORD = 2'b10
+     } transfersize_t;
+ 
+     logic signed_mode;
+@@ -85,111 +85,4 @@ module MemoryLoader
+                 MemWriteByteAddress = 4'bxxxx;
+             end
+         endcase
+-endmodule
+-// `include "src/types.svh"
+-
+-// module MemoryLoader
+-// ( input  wire   clk
+-// , input  data_t memory_data
+-// , input  addr_t memory_address
+-// , input  opcode_t opcode
+-// , input  logic [2:0]  funct3
+-// , input  logic [31:0] dataB
+-// , output data_t mem_load_result
+-// , output logic [3:0] MemWriteByteAddress
+-// , output logic [31:0] __tmp_MemData
+-// );
+-//     logic [1:0] byteindex_for_store;
+-//     logic [1:0] byteindex_for_load;
+-
+-//     // we need different logic for retrieving byteindex depending on whether we are planning to
+-//     // store or to load; if we are planning to store -- we need to use the byteindex from the
+-//     // current memory address, since its the one that alu computed for the store to proceed; however
+-//     // for load instruction we need to use the memory address from the previous clock cycle since
+-//     // its the address that was used to retrieve the current memory data
+-//     assign byteindex_for_store = memory_address[1:0];
+-//     always @(posedge clk) begin
+-//       byteindex_for_load <= memory_address[1:0];
+-//     end
+-
+-//     logic [1:0] byteindex;
+-//     always @(*) begin
+-//       case (opcode)
+-//         SType: byteindex <= byteindex_for_store;
+-//         IType_load: byteindex <= byteindex_for_load;
+-//       endcase
+-//     end
+-
+-//     typedef enum logic [1:0]
+-//     { BYTE = 2'b00
+-//     , HALF = 2'b01
+-//     , WORD = 2'b10
+-//     } transfersize_t;
+-
+-//     logic signed_mode;
+-//     assign signed_mode = ~funct3[2];
+-
+-//     always @(*) // cannot use always_comb yet: https://github.com/steveicarus/iverilog/issues/734
+-//         case (funct3[1:0])
+-//             BYTE: begin
+-//                 __tmp_MemData = { dataB[7:0], dataB[7:0], dataB[7:0], dataB[7:0] };
+-//                 case (byteindex)
+-//                     2'd0: begin
+-//                         mem_load_result = {{24{signed_mode & memory_data[7]}}, memory_data[7:0]};
+-//                         MemWriteByteAddress = 4'b0001;
+-//                     end
+-//                     2'd1: begin
+-//                         mem_load_result = {{24{signed_mode & memory_data[15]}}, memory_data[15:8]};
+-//                         MemWriteByteAddress = 4'b0010;
+-//                     end
+-//                     2'd2: begin
+-//                         mem_load_result = {{24{signed_mode & memory_data[23]}}, memory_data[23:16]};
+-//                         MemWriteByteAddress = 4'b0100;
+-//                     end
+-//                     2'd3: begin
+-//                         mem_load_result = {{24{signed_mode & memory_data[31]}}, memory_data[31:24]};
+-//                         MemWriteByteAddress = 4'b1000;
+-//                     end
+-//                     default: begin
+-//                         mem_load_result = 32'hxxxxxxxx;
+-//                         MemWriteByteAddress = 4'bxxxx;
+-//                     end
+-//                 endcase
+-//             end
+-//             HALF: begin
+-//                 __tmp_MemData = { dataB[15:0], dataB[15:0] };
+-//                 case (byteindex)
+-//                     2'd0: begin
+-//                         mem_load_result = {{16{signed_mode & memory_data[15]}}, memory_data[15:0]};
+-//                         MemWriteByteAddress = 4'b0011;
+-//                     end
+-//                     2'd2: begin
+-//                         mem_load_result = {{16{signed_mode & memory_data[31]}}, memory_data[31:16]};
+-//                         MemWriteByteAddress = 4'b1100;
+-//                     end
+-//                     default: begin
+-//                         mem_load_result = 32'hxxxxxxxx;
+-//                         MemWriteByteAddress = 4'bxxxx;
+-//                     end
+-//                 endcase
+-//             end
+-//             WORD: begin
+-//                 __tmp_MemData = { dataB[31:0] };
+-//                 case (byteindex)
+-//                     2'd0: begin
+-//                         mem_load_result = memory_data;
+-//                         MemWriteByteAddress = 4'b1111;
+-//                     end
+-//                     default: begin
+-//                         mem_load_result = 32'hxxxxxxxx;
+-//                         MemWriteByteAddress = 4'bxxxx;
+-//                     end
+-//                 endcase
+-//             end
+-//             default: begin
+-//                 __tmp_MemData = 32'hxxxxxxxx;
+-//                 mem_load_result = 32'hxxxxxxxx;
+-//                 MemWriteByteAddress = 4'bxxxx;
+-//             end
+-//         endcase
+-// endmodule
++endmodule
+\ No newline at end of file
+diff --git a/src/Instruction_Decode/RegisterFile.v b/src/Instruction_Decode/RegisterFile.v
+index 70aeb22..34fc803 100644
+--- a/src/Instruction_Decode/RegisterFile.v
++++ b/src/Instruction_Decode/RegisterFile.v
+@@ -35,7 +35,8 @@ module registerFile
+ 
+     if (reset) begin
+ `ifndef TESTBENCH
+-      for (int i = 0; i < 32; i = i + 1) begin
++		  integer i;
++      for (i = 0; i < 32; i = i + 1) begin
+             RFMem[i] <= 32'b0;
+         end
+ `else 
+diff --git a/src/utoss_riscv.sv b/src/utoss_riscv.sv
+index 870578b..d3cb17a 100644
+--- a/src/utoss_riscv.sv
++++ b/src/utoss_riscv.sv
+@@ -210,213 +210,4 @@ module utoss_riscv
+   );
+ `endif
+ 
+-endmodule
+-// `include "src/types.svh"
+-
+-// module utoss_riscv
+-//   ( input wire clk
+-//   , input wire reset
+-
+-//   // memory interface begin
+-//   , output addr_t       memory__address
+-//   , output data_t       memory__write_data
+-//   , output logic  [3:0] memory__write_enable
+-//   , input  data_t       memory__read_data
+-//   // memory interface end
+-//   );
+-
+-//   wire         cfsm__pc_update;
+-//   wire         cfsm__reg_write;
+-//   wire         cfsm__ir_write;
+-//   pc_src_t     cfsm__pc_src;
+-//   result_src_t cfsm__result_src;
+-
+-//   addr_t   pc_cur;
+-//   data_t   data;
+-//   instr_t  instruction;
+-//   opcode_t opcode;
+-//   imm_t    imm_ext;
+-//   reg [2:0] funct3;
+-//   reg [6:0] funct7;
+-
+-//   integer byteindex;
+-
+-//   data_t result;
+-//   data_t mem_load_result;
+-
+-//   data_t rd1;
+-//   data_t rd2;
+-
+-//   data_t alu_input_a;
+-//   data_t alu_input_b;
+-//   data_t alu_result;
+-//   data_t alu_out;
+-
+-//   addr_t pc_old;
+-
+-//   wire alu__zero_flag;
+-
+-//   adr_src_t cfsm__adr_src;
+-//   wire __tmp_Branch;
+-//   wire [1:0] __tmp_ALUSrcA, __tmp_ALUSrcB;
+-//   wire [3:0] __tmp_ALUControl;
+-//   wire [1:0] __tmp_ResultSrc;
+-//   wire [4:0] __tmp_FSMState;
+-//   data_t     dataA, dataB;
+-//   reg  [4:0] rd, rs1, rs2;
+-
+-//   logic [3:0] MemWriteByteAddress;
+-
+-//   ControlFSM control_fsm
+-//     ( .opcode     ( opcode               )
+-//     , .clk        ( clk                  )
+-//     , .reset      ( reset                )
+-//     , .zero_flag  ( alu__zero_flag       )
+-//     , .MemWriteByteAddress ( MemWriteByteAddress )
+-//     , .funct3     ( funct3               )
+-//     , .alu_result ( alu_result           )
+-//     , .AdrSrc     ( cfsm__adr_src        )
+-//     , .IRWrite    ( cfsm__ir_write       )
+-//     , .RegWrite   ( cfsm__reg_write      )
+-//     , .PCUpdate   ( cfsm__pc_update      )
+-//     , .pc_src     ( cfsm__pc_src         )
+-//     , .MemWrite   ( memory__write_enable )
+-//     , .Branch     ( __tmp_Branch         )
+-//     , .ALUSrcA    ( __tmp_ALUSrcA        )
+-//     , .ALUSrcB    ( __tmp_ALUSrcB        )
+-//     , .ResultSrc  ( cfsm__result_src     )
+-//     , .FSMState   ( __tmp_FSMState       )
+-//     );
+-
+-//   fetch fetch
+-//     ( .clk             ( clk             )
+-//     , .reset           ( reset           )
+-//     , .cfsm__pc_update ( cfsm__pc_update )
+-//     , .alu_result_for_pc ( alu_out )
+-//     , .cfsm__pc_src    ( cfsm__pc_src    )
+-//     , .cfsm__ir_write  ( cfsm__ir_write  )
+-//     , .imm_ext         ( imm_ext         )
+-
+-//     // outputs
+-//     , .pc_cur          ( pc_cur          )
+-//     , .pc_old          ( pc_old          )
+-//     );
+-
+-//   always @(*) begin
+-//     case (cfsm__adr_src)
+-//       ADR_SRC__PC:     memory__address = pc_cur;
+-//       ADR_SRC__RESULT: memory__address = result;
+-//     endcase
+-//   end
+-
+-// assign instruction = cfsm__ir_write ? memory__read_data : instruction;
+-
+-//   MemoryLoader MemLoad
+-//   ( .clk                  ( clk                 )
+-//   , .memory_data          ( memory__read_data   )
+-//   , .memory_address       ( memory__address     )
+-//   , .mem_load_result      ( mem_load_result     )
+-//   , .opcode               ( opcode              )
+-//   , .funct3               ( funct3              )
+-//   , .dataB                ( dataB               )
+-//   , .MemWriteByteAddress  ( MemWriteByteAddress )
+-//   , .__tmp_MemData        ( memory__write_data  )
+-//   );
+-
+-//   assign data = mem_load_result;
+-
+-//   Instruction_Decode instruction_decode
+-//     ( .instr           ( instruction      )
+-//     , .opcode          ( opcode           )
+-//     , .funct3          ( funct3           )
+-//     , .funct7          ( funct7           )
+-//     , .ALUControl      ( __tmp_ALUControl )
+-//     , .imm_ext         ( imm_ext          )
+-//     , .rd              ( rd               )
+-//     , .rs1             ( rs1              )
+-//     , .rs2             ( rs2              )
+-//     );
+-
+-//   registerFile RegFile
+-//     ( .Addr1           ( rs1              )
+-//     , .Addr2           ( rs2              )
+-//     , .Addr3           ( rd               )
+-//     , .clk             ( clk              )
+-//     , .reset           ( reset            )
+-//     , .regWrite        ( cfsm__reg_write  )
+-//     , .dataIn          ( result           )
+-//     , .baseAddr        ( rd1              )
+-//     , .writeData       ( rd2              )
+-//     );
+-
+-//   ALU alu
+-//     ( .a              ( alu_input_a      )
+-//     , .b              ( alu_input_b      )
+-//     , .alu_control    ( __tmp_ALUControl )
+-//     , .out            ( alu_result       )
+-//     , .zeroE          ( alu__zero_flag   )
+-//     );
+-
+-//   always @(posedge clk) begin
+-//     alu_out <= alu_result;
+-//   end
+-
+-//   always @(*) begin
+-//     case (__tmp_ALUSrcA)
+-//       ALU_SRC_A__PC:     alu_input_a = pc_cur;
+-//       ALU_SRC_A__OLD_PC: alu_input_a = pc_old;
+-//       ALU_SRC_A__RD1:    alu_input_a = dataA;
+-//       ALU_SRC_A__ZERO:   alu_input_a = 32'b0;
+-
+-//       default:           alu_input_a = 32'hxxxxxxxx;
+-//     endcase
+-//   end
+-
+-//   always @(*) begin
+-//     case (__tmp_ALUSrcB)
+-//       ALU_SRC_B__RD2:     alu_input_b = dataB;
+-//       ALU_SRC_B__IMM_EXT: alu_input_b = imm_ext;
+-//       ALU_SRC_B__4:       alu_input_b = 32'd4;
+-//       default:            alu_input_b = 32'hxxxxxxxx;
+-//     endcase
+-//   end
+-
+-//   always @(*) begin
+-//     case (cfsm__result_src)
+-//       RESULT_SRC__ALU_OUT:    result = alu_out;
+-//       RESULT_SRC__DATA:       result = data;
+-//       RESULT_SRC__ALU_RESULT: result = alu_result;
+-//       default:                result = 32'hxxxxxxxx;
+-//     endcase
+-//   end
+-
+-//   always @(posedge clk) begin
+-//     dataA <= rd1;
+-//     dataB <= rd2;
+-//   end
+-
+-// `ifndef UTOSS_RISCV_SYNTHESIS
+-//   Logger CoreLog
+-//   (
+-//     .clk              ( clk              )
+-//   , .pc_cur           ( pc_cur           )
+-//   , .instruction      ( instruction      )
+-//   , .FSM_State        ( __tmp_FSMState   )
+-//   , .opcode           ( opcode           )
+-//   , .funct3           ( funct3           )
+-//   , .funct7           ( funct7           )
+-//   , .rs1              ( rs1              )
+-//   , .rs2              ( rs2              )
+-//   , .rd               ( rd               )
+-//   , .imm_ext          ( imm_ext          )
+-//   , .memory_address   ( memory__address  )
+-//   , .memory_data      ( mem_load_result  )
+-//   , .write_enable     ( memory__write_enable )
+-//   , .rd1              ( rd1              )
+-//   , .rd2              ( rd2              )
+-//   , .result           ( result           )
+-//   , .regWrite         ( cfsm__reg_write  )
+-//   );
+-// `endif
+-
+-// endmodule
+\ No newline at end of file
++endmodule
+\ No newline at end of file
+
+From 47e89e52ec1545b6c1941832641716920ab0ea74 Mon Sep 17 00:00:00 2001
+From: Boris <boris.potapov@mail.utoronto.ca>
+Date: Sun, 21 Dec 2025 15:27:58 +0000
+Subject: [PATCH 03/14] fix vcd output
+
+---
+ Makefile | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/Makefile b/Makefile
+index 4aed222..6c66ed7 100644
+--- a/Makefile
++++ b/Makefile
+@@ -33,6 +33,7 @@ SRCS := $(shell find $(SRC_DIR) -name "*.sv" -o -name "*.v") \
+ TB_SRCS := $(wildcard $(TB_DIR)/*_tb.sv)
+ TB_UTILS := $(TB_DIR)/utils.svh
+ TB_BINS := $(patsubst $(TB_DIR)/%_tb.sv, $(OUT_DIR)/%_tb_sim, $(TB_SRCS))
++TB_VCD_BASE_PATH := test/vcd
+ 
+ # ===========================
+ # Default
+
+From 43d5140b0e220358556a606dca6e934f86f3f5f0 Mon Sep 17 00:00:00 2001
+From: Boris <boris.potapov@mail.utoronto.ca>
+Date: Sun, 21 Dec 2025 15:28:16 +0000
+Subject: [PATCH 04/14] log fetch wait state properly
+
+---
+ src/Logger.sv | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/Logger.sv b/src/Logger.sv
+index 5d2ef88..ce19b34 100644
+--- a/src/Logger.sv
++++ b/src/Logger.sv
+@@ -49,6 +49,7 @@ module Logger
+             5'b01101: $display("FSM State: JALR_CALC");
+             5'b01110: $display("FSM State: JALR_STEP2");
+             5'b01111: $display("FSM State: BRANCHCOMP");
++            5'b10000: $display("FSM State: FETCH_WAIT");
+         endcase
+ 
+         // Parse the instruction we are executing
+
+From d7011d1e95e0f4b1460de78a9d8917861308379f Mon Sep 17 00:00:00 2001
+From: Boris <boris.potapov@mail.utoronto.ca>
+Date: Sun, 21 Dec 2025 15:29:25 +0000
+Subject: [PATCH 05/14] fix testbenches
+
+---
+ test/addi_tb.sv       | 5 +++++
+ test/auipc_tb.sv      | 5 +++++
+ test/beq_tb.sv        | 8 ++++++++
+ test/jal_tb.sv        | 3 +++
+ test/jalr_tb.sv       | 6 ++++++
+ test/lui_tb.sv        | 5 +++++
+ test/lw_tb.sv         | 5 +++++
+ test/memoryload_tb.sv | 2 ++
+ test/nop_tb.sv        | 3 +++
+ test/or_tb.sv         | 3 +++
+ test/srli_tb.sv       | 5 +++++
+ test/sw_tb.sv         | 5 +++++
+ 12 files changed, 55 insertions(+)
+
+diff --git a/test/addi_tb.sv b/test/addi_tb.sv
+index fa8fb6f..d4c4812 100644
+--- a/test/addi_tb.sv
++++ b/test/addi_tb.sv
+@@ -38,6 +38,8 @@ module addi_tb;
+ 
+     reset <= `FALSE;
+ 
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
++
+     // --- Instruction 1: addi x1, x2, 0 ---
+     wait_till_next_cfsm_state(uut.core.control_fsm.DECODE);
+     `assert_equal(uut.core.opcode, 7'b0010011)
+@@ -53,6 +55,7 @@ module addi_tb;
+     wait_till_next_cfsm_state(uut.core.control_fsm.ALUWB);
+ 
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+     `assert_equal(uut.core.RegFile.RFMem[1], 42)
+     `assert_equal(uut.core.fetch.pc_cur, 4)
+ 
+@@ -66,6 +69,7 @@ module addi_tb;
+     wait_till_next_cfsm_state(uut.core.control_fsm.ALUWB);
+ 
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+     `assert_equal(uut.core.RegFile.RFMem[1], 46)
+     `assert_equal(uut.core.fetch.pc_cur, 8)
+ 
+@@ -79,6 +83,7 @@ module addi_tb;
+     wait_till_next_cfsm_state(uut.core.control_fsm.ALUWB);
+ 
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+     `assert_equal(uut.core.RegFile.RFMem[1], 34)
+ 
+     // Final assertions
+diff --git a/test/auipc_tb.sv b/test/auipc_tb.sv
+index d36a71c..01421d1 100644
+--- a/test/auipc_tb.sv
++++ b/test/auipc_tb.sv
+@@ -42,6 +42,8 @@ module auipc_tb;
+ 
+     reset <= `FALSE;
+ 
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
++
+     wait_till_next_cfsm_state(uut.core.control_fsm.DECODE);
+ 
+     //imm ext should be changed to add a new case
+@@ -69,6 +71,7 @@ module auipc_tb;
+ 
+     //Exe lui x2, 200
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+ 
+     `assert_equal(uut.core.RegFile.RFMem[1], 32'h00014000 + tb_pc_old)
+     //x1 at this moment should be updated
+@@ -93,6 +96,7 @@ module auipc_tb;
+ 
+     //Exe lui x3, 1023
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+ 
+     `assert_equal(uut.core.RegFile.RFMem[2], 32'h000c8000 + tb_pc_old)
+ 
+@@ -115,6 +119,7 @@ module auipc_tb;
+     `assert_equal(uut.core.instruction_decode.rd, 3)
+ 
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+ 
+     `assert_equal(uut.core.RegFile.RFMem[3], 32'h003ff000 + tb_pc_old)
+ 
+diff --git a/test/beq_tb.sv b/test/beq_tb.sv
+index 642e1d0..eda627d 100644
+--- a/test/beq_tb.sv
++++ b/test/beq_tb.sv
+@@ -38,6 +38,8 @@ module beq_tb;
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
+     reset <= `FALSE;
+ 
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
++
+     wait_till_next_cfsm_state(uut.core.control_fsm.DECODE);
+ 
+     assert (uut.core.opcode == 7'b1100011) else $fatal(1, "`uut.core.opcode` is `%0b`", uut.core.opcode);
+@@ -64,6 +66,7 @@ module beq_tb;
+       else $fatal(1, "`uut.core.fetch.pc_cur` is `%0h`", uut.core.fetch.pc_cur);
+ 
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+ 
+     assert (uut.core.fetch.pc_cur == 32'hFFFFFFF4)
+       else $fatal(1, "`uut.core.fetch.pc_cur` is `%0h`", uut.core.fetch.pc_cur);
+@@ -79,6 +82,8 @@ module beq_tb;
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
+     reset <= `FALSE;
+ 
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
++
+     wait_till_next_cfsm_state(uut.core.control_fsm.DECODE);
+ 
+     assert (uut.core.opcode == 7'b1100011) else $fatal(1, "`uut.core.opcode` is `%0b`", uut.core.opcode);
+@@ -102,6 +107,7 @@ module beq_tb;
+       else $fatal(1, "`uut.core.fetch.pc_cur` is `%0h`", uut.core.fetch.pc_cur);
+ 
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+ 
+     assert (uut.core.fetch.pc_cur == 32'h00000004)
+       else $fatal(1, "`uut.core.fetch.pc_cur` is `%0h`", uut.core.fetch.pc_cur);
+@@ -115,6 +121,8 @@ module beq_tb;
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
+     reset <= `FALSE;
+ 
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
++
+     wait_till_next_cfsm_state(uut.core.control_fsm.DECODE);
+ 
+     assert (uut.core.fetch.pc_cur == 32'h00000004)
+diff --git a/test/jal_tb.sv b/test/jal_tb.sv
+index 1e61dc5..bef0ac8 100644
+--- a/test/jal_tb.sv
++++ b/test/jal_tb.sv
+@@ -40,6 +40,8 @@ module jal_tb;
+     // Release reset
+     reset <= `FALSE;
+ 
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
++
+     // -------- Single instruction: JAL x1, +16 --------
+ 
+     // DECODE: verify opcode, rd and immediate
+@@ -61,6 +63,7 @@ module jal_tb;
+ 
+     // Back to FETCH: PC should be 16; x1 should be 4
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+     `assert_equal(uut.core.RegFile.RFMem[1], 32'd4)  // rd = link = 4
+     `assert_equal(uut.core.fetch.pc_cur, 32'd16)                                 // PC jumped to 16
+ 
+diff --git a/test/jalr_tb.sv b/test/jalr_tb.sv
+index 7845222..98a265d 100644
+--- a/test/jalr_tb.sv
++++ b/test/jalr_tb.sv
+@@ -47,6 +47,8 @@ module jalr_tb;
+     // Release reset
+     reset <= `FALSE;
+ 
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
++
+     // DECODE: opcode/rs1/rd/imm must match
+     wait_till_next_cfsm_state(uut.core.control_fsm.DECODE);
+     `assert_equal(uut.core.opcode, 7'b1100111)                  // JALR opcode
+@@ -74,6 +76,7 @@ module jalr_tb;
+ 
+     // Back to FETCH: PC should be (100+5)&~1 = 104, x1 should be 4
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+     `assert_equal(uut.core.RegFile.RFMem[1], 32'd4)
+     `assert_equal(uut.core.fetch.pc_cur, 32'd104)
+ 
+@@ -98,6 +101,8 @@ module jalr_tb;
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
+     reset <= `FALSE;
+ 
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
++
+     // DECODE checks
+     wait_till_next_cfsm_state(uut.core.control_fsm.DECODE);
+     `assert_equal(uut.core.opcode, 7'b1100111)
+@@ -122,6 +127,7 @@ module jalr_tb;
+     // Writeback then check PC/link
+     wait_till_next_cfsm_state(uut.core.control_fsm.ALUWB);
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+     `assert_equal(uut.core.RegFile.RFMem[1], 32'd4)
+     `assert_equal(uut.core.fetch.pc_cur, 32'd192)
+ 
+diff --git a/test/lui_tb.sv b/test/lui_tb.sv
+index 150ed03..d288692 100644
+--- a/test/lui_tb.sv
++++ b/test/lui_tb.sv
+@@ -40,6 +40,8 @@ module lui_tb;
+ 
+     reset <= `FALSE;
+ 
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
++
+     wait_till_next_cfsm_state(uut.core.control_fsm.DECODE);
+ 
+     //imm ext should be changed to add a new case
+@@ -67,6 +69,7 @@ module lui_tb;
+ 
+     //Exe lui x2, 200
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+ 
+     `assert_equal(uut.core.RegFile.RFMem[1], 32'h00014000)
+     //x1 at this moment should be updated
+@@ -91,6 +94,7 @@ module lui_tb;
+ 
+     //Exe lui x3, 1023
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+ 
+     `assert_equal(uut.core.RegFile.RFMem[2], 32'h000c8000)
+ 
+@@ -113,6 +117,7 @@ module lui_tb;
+     `assert_equal(uut.core.instruction_decode.rd, 3)
+ 
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+ 
+     `assert_equal(uut.core.RegFile.RFMem[3], 32'h003ff000)
+ 
+diff --git a/test/lw_tb.sv b/test/lw_tb.sv
+index 67fae8b..bf6baa9 100644
+--- a/test/lw_tb.sv
++++ b/test/lw_tb.sv
+@@ -42,6 +42,8 @@ module lw_tb;
+ 
+     reset <= `FALSE;
+ 
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
++
+     wait_till_next_cfsm_state(uut.core.control_fsm.DECODE);
+ 
+     `assert_equal(uut.core.opcode, 7'b0000011)
+@@ -67,6 +69,7 @@ module lw_tb;
+     `assert_equal(uut.core.result, 32'hdeadbeef)
+ 
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+ 
+     `assert_equal(uut.core.RegFile.RFMem[1], 32'hdeadbeef)
+     `assert_equal(uut.core.RegFile.RFMem[2], 32'ha8)
+@@ -97,6 +100,7 @@ module lw_tb;
+     `assert_equal(uut.core.result, 32'hcafebabe)
+ 
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+ 
+     `assert_equal(uut.core.RegFile.RFMem[1], 32'hcafebabe)
+     `assert_equal(uut.core.RegFile.RFMem[2], 32'ha8)
+@@ -127,6 +131,7 @@ module lw_tb;
+     `assert_equal(uut.core.result, 32'hbadab00f)
+ 
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+ 
+     `assert_equal(uut.core.RegFile.RFMem[1], 32'hbadab00f)
+     `assert_equal(uut.core.RegFile.RFMem[2], 32'ha8)
+diff --git a/test/memoryload_tb.sv b/test/memoryload_tb.sv
+index fd803d9..774c438 100644
+--- a/test/memoryload_tb.sv
++++ b/test/memoryload_tb.sv
+@@ -24,6 +24,8 @@ module memoryload_tb;
+   endtask
+ 
+   task check_next_memory_read(input [31:0] expected_addr, input [31:0] expected_word);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
++
+     wait_till_next_cfsm_state(uut.core.control_fsm.DECODE);
+ 
+     `assert_equal(uut.core.opcode, 7'b0000011)
+diff --git a/test/nop_tb.sv b/test/nop_tb.sv
+index 1644a9d..5d427e1 100644
+--- a/test/nop_tb.sv
++++ b/test/nop_tb.sv
+@@ -37,6 +37,8 @@ module nop_tb;
+ 
+         reset <= `FALSE;
+ 
++        wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
++
+         wait_till_next_cfsm_state(uut.core.control_fsm.DECODE);
+ 
+         `assert_equal(uut.core.opcode, 7'b0010011)
+@@ -52,6 +54,7 @@ module nop_tb;
+         wait_till_next_cfsm_state(uut.core.control_fsm.ALUWB);
+ 
+         wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++        wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+         `assert_equal(uut.core.RegFile.RFMem[0], 32'h0)
+         `assert_equal(uut.core.fetch.pc_cur, 4)
+ 
+diff --git a/test/or_tb.sv b/test/or_tb.sv
+index e8447e7..fb523b3 100644
+--- a/test/or_tb.sv
++++ b/test/or_tb.sv
+@@ -34,6 +34,8 @@ module or_tb;
+ 
+     reset <= `FALSE;
+ 
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
++
+     wait_till_next_cfsm_state(uut.core.control_fsm.DECODE);
+ 
+     `assert_equal(uut.core.opcode, 7'b0110011)
+@@ -53,6 +55,7 @@ module or_tb;
+     `assert_equal(uut.core.result, 32'hfbfbfbfb)
+ 
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+ 
+     `assert_equal(uut.core.RegFile.RFMem[1], 32'hfbfbfbfb)
+     `assert_equal(uut.core.fetch.pc_cur, 4)
+diff --git a/test/srli_tb.sv b/test/srli_tb.sv
+index 93ad7a6..2d38960 100644
+--- a/test/srli_tb.sv
++++ b/test/srli_tb.sv
+@@ -38,6 +38,8 @@ module srli_tb;
+ 
+     reset <= `FALSE;
+ 
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
++
+     wait_till_next_cfsm_state(uut.core.control_fsm.DECODE);
+ 
+     `assert_equal(uut.core.opcode, 7'b0010011)
+@@ -56,6 +58,7 @@ module srli_tb;
+     `assert_equal(uut.core.instruction_decode.rd, 1)
+ 
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+ 
+     `assert_equal(uut.core.RegFile.RFMem[1], 21)
+     `assert_equal(uut.core.RegFile.RFMem[2], 42)
+@@ -79,6 +82,7 @@ module srli_tb;
+     `assert_equal(uut.core.instruction_decode.rd, 1)
+ 
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+ 
+     `assert_equal(uut.core.RegFile.RFMem[1], 10)
+     `assert_equal(uut.core.RegFile.RFMem[2], 42)
+@@ -102,6 +106,7 @@ module srli_tb;
+     `assert_equal(uut.core.instruction_decode.rd, 1)
+ 
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+ 
+     `assert_equal(uut.core.RegFile.RFMem[1], 5)
+     `assert_equal(uut.core.RegFile.RFMem[2], 42)
+diff --git a/test/sw_tb.sv b/test/sw_tb.sv
+index 2ed42e6..998d529 100644
+--- a/test/sw_tb.sv
++++ b/test/sw_tb.sv
+@@ -42,6 +42,8 @@ module sw_tb;
+ 
+     reset <= `FALSE;
+ 
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
++
+     // --- Instruction 1: sw x5, 0(x6) ---
+     wait_till_next_cfsm_state(uut.core.control_fsm.DECODE);
+     `assert_equal(uut.core.opcode, 7'b0100011)
+@@ -56,6 +58,7 @@ module sw_tb;
+     `assert_equal(uut.core.memory__address, 44)
+ 
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+ 
+     `assert_equal(uut.memory.M[11], 256)
+     `assert_equal(uut.core.fetch.pc_cur, 4)
+@@ -72,6 +75,7 @@ module sw_tb;
+     wait_till_next_cfsm_state(uut.core.control_fsm.MEMWRITE);
+ 
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+ 
+     `assert_equal(uut.memory.M[12], 256)
+     `assert_equal(uut.core.fetch.pc_cur, 8)
+@@ -91,6 +95,7 @@ module sw_tb;
+     wait_till_next_cfsm_state(uut.core.control_fsm.MEMWRITE);
+ 
+     wait_till_next_cfsm_state(uut.core.control_fsm.FETCH);
++    wait_till_next_cfsm_state(uut.core.control_fsm.FETCH_WAIT);
+ 
+     `assert_equal(uut.memory.M[13], 256)
+ 
+
+From ee80e4494d6be0d8c65cb1726db36763a14d6a39 Mon Sep 17 00:00:00 2001
+From: Boris <boris.potapov@mail.utoronto.ca>
+Date: Sun, 21 Dec 2025 15:30:06 +0000
+Subject: [PATCH 06/14] fix fsm state check task
+
+---
+ test/beq_tb.sv  | 2 +-
+ test/jal_tb.sv  | 2 +-
+ test/jalr_tb.sv | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/test/beq_tb.sv b/test/beq_tb.sv
+index eda627d..f2424e4 100644
+--- a/test/beq_tb.sv
++++ b/test/beq_tb.sv
+@@ -19,7 +19,7 @@ module beq_tb;
+     forever #5 clk = ~clk;
+   end
+ 
+-  task wait_till_next_cfsm_state(input [5:0] expected_state);
++  task wait_till_next_cfsm_state(input [4:0] expected_state);
+     @(posedge clk); #1;
+     `assert_equal(uut.core.control_fsm.current_state, expected_state)
+   endtask
+diff --git a/test/jal_tb.sv b/test/jal_tb.sv
+index bef0ac8..d7145e3 100644
+--- a/test/jal_tb.sv
++++ b/test/jal_tb.sv
+@@ -21,7 +21,7 @@ module jal_tb;
+   end
+ 
+   // helper: wait one cycle then assert expected FSM state
+-  task wait_till_next_cfsm_state(input [3:0] expected_state);
++  task wait_till_next_cfsm_state(input [4:0] expected_state);
+     @(posedge clk); #1;
+     `assert_equal(uut.core.control_fsm.current_state, expected_state)
+   endtask
+diff --git a/test/jalr_tb.sv b/test/jalr_tb.sv
+index 98a265d..e870a49 100644
+--- a/test/jalr_tb.sv
++++ b/test/jalr_tb.sv
+@@ -21,7 +21,7 @@ module jalr_tb;
+   end
+ 
+   // helper: wait to next FSM state and assert it
+-  task wait_till_next_cfsm_state(input [3:0] expected_state);
++  task wait_till_next_cfsm_state(input [4:0] expected_state);
+     @(posedge clk); #1;
+     `assert_equal(uut.core.control_fsm.current_state, expected_state)
+   endtask
+
+From 68a2cbff39eb6eab329abb807063812da01ef664 Mon Sep 17 00:00:00 2001
+From: Boris <boris.potapov@mail.utoronto.ca>
+Date: Sun, 21 Dec 2025 15:32:16 +0000
+Subject: [PATCH 07/14] make reads clocked in simulation env
+
+---
+ envs/simulation/MA.sv | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/envs/simulation/MA.sv b/envs/simulation/MA.sv
+index 64cb094..88a614f 100644
+--- a/envs/simulation/MA.sv
++++ b/envs/simulation/MA.sv
+@@ -18,8 +18,9 @@ module MA #( parameter SIZE = 1024 )
+     end
+   end
+ 
+-  assign read_data = M[address[31:2]]; // 2 LSBs used for byte addressing
+   always @(posedge clk) begin
++    read_data <= M[address[31:2]]; // 2 LSBs used for byte addressing
++
+     if (write_enable[0]) M[address[31:2]][7:0]   <= write_data[7:0];
+     if (write_enable[1]) M[address[31:2]][15:8]  <= write_data[15:8];
+     if (write_enable[2]) M[address[31:2]][23:16] <= write_data[23:16];
+
+From 4022e146f5b4719061e22555c64b90c111c8b8a0 Mon Sep 17 00:00:00 2001
+From: Boris <boris.potapov@mail.utoronto.ca>
+Date: Sun, 21 Dec 2025 15:34:11 +0000
+Subject: [PATCH 08/14] address svlint infractions
+
+---
+ src/ControlFSM.sv | 26 +++++++++++++-------------
+ 1 file changed, 13 insertions(+), 13 deletions(-)
+
+diff --git a/src/ControlFSM.sv b/src/ControlFSM.sv
+index 11df377..71502c8 100644
+--- a/src/ControlFSM.sv
++++ b/src/ControlFSM.sv
+@@ -48,7 +48,7 @@ module ControlFSM
+ 
+   // new state for remaining branch instructions
+   parameter BRANCHCOMP = 5'b01111;
+-  
++
+   parameter FETCH_WAIT  = 5'b10000;
+ 
+ 
+@@ -60,8 +60,8 @@ module ControlFSM
+ 
+     case (current_state)
+ 
+-		FETCH:      next_state = FETCH_WAIT;
+-		FETCH_WAIT: next_state = DECODE;
++      FETCH:      next_state = FETCH_WAIT;
++      FETCH_WAIT: next_state = DECODE;
+ 
+       DECODE: begin
+ 
+@@ -155,16 +155,16 @@ module ControlFSM
+ 
+     case (current_state)
+ 
+-		FETCH: begin
+-			AdrSrc   = ADR_SRC__PC;
+-		end
+-		
+-		FETCH_WAIT: begin
+-			AdrSrc   = ADR_SRC__PC;            
+-			IRWrite  = 1'b1;                   
+-			PCUpdate = 1'b1;                   
+-			pc_src   = PC_SRC__INCREMENT;      
+-		end
++      FETCH: begin
++        AdrSrc   = ADR_SRC__PC;
++      end
++
++      FETCH_WAIT: begin
++        AdrSrc   = ADR_SRC__PC;
++        IRWrite  = 1'b1;
++        PCUpdate = 1'b1;
++        pc_src   = PC_SRC__INCREMENT;
++      end
+ 
+ 
+       DECODE: begin
+
+From e39d5095fd6ea7617b5547643a491c470a8cdbf6 Mon Sep 17 00:00:00 2001
+From: Boris <boris.potapov@mail.utoronto.ca>
+Date: Sun, 21 Dec 2025 15:37:25 +0000
+Subject: [PATCH 09/14] remove generated .mem files from repo
+
+---
+ .gitignore                |  2 +-
+ envs/de1-soc/poc/poc0.mem | 20 --------------------
+ envs/de1-soc/poc/poc1.mem | 20 --------------------
+ envs/de1-soc/poc/poc2.mem | 20 --------------------
+ envs/de1-soc/poc/poc3.mem | 20 --------------------
+ 5 files changed, 1 insertion(+), 81 deletions(-)
+ delete mode 100644 envs/de1-soc/poc/poc0.mem
+ delete mode 100644 envs/de1-soc/poc/poc1.mem
+ delete mode 100644 envs/de1-soc/poc/poc2.mem
+ delete mode 100644 envs/de1-soc/poc/poc3.mem
+
+diff --git a/.gitignore b/.gitignore
+index aa97424..f8eb021 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -10,7 +10,7 @@ riscof/sail_cSim/__pycache__
+ riscof/config.ini
+ riscof/dut_sim
+ 
+-envs/de1-soc/poc/poc.mem
++envs/de1-soc/poc/poc*.mem
+ envs/de1-soc/poc/poc.elf
+ envs/de1-soc/quartus/db/
+ envs/de1-soc/quartus/incremental_db/
+diff --git a/envs/de1-soc/poc/poc0.mem b/envs/de1-soc/poc/poc0.mem
+deleted file mode 100644
+index 8579aa8..0000000
+--- a/envs/de1-soc/poc/poc0.mem
++++ /dev/null
+@@ -1,20 +0,0 @@
+-13
+-23
+-23
+-23
+-13
+-93
+-93
+-93
+-B7
+-23
+-23
+-6F
+-83
+-93
+-23
+-03
+-B7
+-93
+-E3
+-6F
+diff --git a/envs/de1-soc/poc/poc1.mem b/envs/de1-soc/poc/poc1.mem
+deleted file mode 100644
+index 7ebeb94..0000000
+--- a/envs/de1-soc/poc/poc1.mem
++++ /dev/null
+@@ -1,20 +0,0 @@
+-01
+-2E
+-2C
+-2A
+-04
+-04
+-87
+-F4
+-07
+-A0
+-26
+-00
+-27
+-87
+-26
+-27
+-47
+-87
+-D4
+-F0
+diff --git a/envs/de1-soc/poc/poc2.mem b/envs/de1-soc/poc/poc2.mem
+deleted file mode 100644
+index 8ac56c2..0000000
+--- a/envs/de1-soc/poc/poc2.mem
++++ /dev/null
+@@ -1,20 +0,0 @@
+-01
+-11
+-81
+-91
+-01
+-00
+-14
+-F7
+-00
+-97
+-04
+-00
+-C4
+-17
+-F4
+-C4
+-0F
+-F7
+-E7
+-DF
+diff --git a/envs/de1-soc/poc/poc3.mem b/envs/de1-soc/poc/poc3.mem
+deleted file mode 100644
+index 7c29bd2..0000000
+--- a/envs/de1-soc/poc/poc3.mem
++++ /dev/null
+@@ -1,20 +0,0 @@
+-FE
+-00
+-00
+-00
+-02
+-00
+-00
+-3F
+-10
+-00
+-FE
+-01
+-FE
+-00
+-FE
+-FE
+-00
+-23
+-FE
+-FC
+
+From 40a50b4e361627ca9934ea3006e9c5c27fb4086f Mon Sep 17 00:00:00 2001
+From: Boris <boris.potapov@mail.utoronto.ca>
+Date: Sun, 21 Dec 2025 15:40:20 +0000
+Subject: [PATCH 10/14] remove old poc files
+
+---
+ envs/de1-soc/poc/poc    | Bin 15776 -> 0 bytes
+ envs/de1-soc/poc/poc2.c |   9 ---------
+ 2 files changed, 9 deletions(-)
+ delete mode 100755 envs/de1-soc/poc/poc
+ delete mode 100644 envs/de1-soc/poc/poc2.c
+
+diff --git a/envs/de1-soc/poc/poc b/envs/de1-soc/poc/poc
+deleted file mode 100755
+index e1fdaac9a19c55806e7cf202ad4b84bddd377374..0000000000000000000000000000000000000000
+GIT binary patch
+literal 0
+HcmV?d00001
+
+literal 15776
+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
+
+diff --git a/envs/de1-soc/poc/poc2.c b/envs/de1-soc/poc/poc2.c
+deleted file mode 100644
+index 7fbba3d..0000000
+--- a/envs/de1-soc/poc/poc2.c
++++ /dev/null
+@@ -1,9 +0,0 @@
+-#define LEDR ((volatile int*)0x10000000)
+-
+-int main() {
+-  int cnt = 0;
+-  cnt += 42;
+-  cnt += 22;
+-  *LEDR = cnt;
+-  return 0;
+-}
+
+From 1670efee1ea43a9018a8a782e89c90f9c133dc4c Mon Sep 17 00:00:00 2001
+From: Boris <boris.potapov@mail.utoronto.ca>
+Date: Sun, 21 Dec 2025 15:43:49 +0000
+Subject: [PATCH 11/14] fix another svlint infraction
+
+---
+ src/Instruction_Decode/Instruction_Decode.sv | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/Instruction_Decode/Instruction_Decode.sv b/src/Instruction_Decode/Instruction_Decode.sv
+index 00331d6..67827b5 100644
+--- a/src/Instruction_Decode/Instruction_Decode.sv
++++ b/src/Instruction_Decode/Instruction_Decode.sv
+@@ -121,7 +121,7 @@ module Instruction_Decode
+       JType       : imm_ext = {{12{instr[31]}}, instr[19:12], instr[20], instr[30:21], 1'b0};
+       UType_auipc  : imm_ext = {instr[31:12], 12'b0};
+       UType_lui  : imm_ext = {instr[31:12], 12'b0};
+-      default    : imm_ext = 32'b0;
++      default:     imm_ext = 32'b0;
+     endcase
+   end
+ 
+
+From b974f4610cf90d1deeac947e786b34336be4b242 Mon Sep 17 00:00:00 2001
+From: Boris <boris.potapov@mail.utoronto.ca>
+Date: Sun, 21 Dec 2025 15:46:20 +0000
+Subject: [PATCH 12/14] clean up memory map
+
+---
+ envs/de1-soc/memory_map.sv | 97 +++++++++++++++++---------------------
+ 1 file changed, 44 insertions(+), 53 deletions(-)
+
+diff --git a/envs/de1-soc/memory_map.sv b/envs/de1-soc/memory_map.sv
+index ec3e667..3ab9ebe 100644
+--- a/envs/de1-soc/memory_map.sv
++++ b/envs/de1-soc/memory_map.sv
+@@ -10,57 +10,48 @@ module memory_map #( parameter SIZE = 1024 )
+ 
+   , output reg    [9:0] LEDR
+   );
+-  
+-	 reg [7:0] M0 [0:SIZE-1];  // byte lane 0
+-    reg [7:0] M1 [0:SIZE-1];  // byte lane 1
+-    reg [7:0] M2 [0:SIZE-1];  // byte lane 2
+-    reg [7:0] M3 [0:SIZE-1];  // byte lane 3
+ 
+-	 reg [31:0] M [0:SIZE-1];
+-    reg [31:0] mem_rdata;
+-
+-    initial begin
+-		$readmemh("poc/poc0.mem", M0);
+-		$readmemh("poc/poc1.mem", M1);
+-		$readmemh("poc/poc2.mem", M2);
+-		$readmemh("poc/poc3.mem", M3);
+-	 end
+-
+-    localparam bit [31:0] LEDR_ADDRESS = 32'h10000000;
+-
+-    //wire [31:0] mem_index = address[31:2] % SIZE;
+-	 localparam int ADDR_LSB   = 2;
+-	 localparam int ADDR_WIDTH = $clog2(SIZE);
+-	 wire [ADDR_WIDTH-1:0] mem_index = address[ADDR_LSB + ADDR_WIDTH - 1 : ADDR_LSB];  // I think this way may save some resources
+-	 
+-    always @(*) begin
+-      case (address)
+-        LEDR_ADDRESS: read_data = {22'b0, LEDR};
+-		  //default: read_data = M[mem_index];
+-        default: read_data = mem_rdata;
+-      endcase
+-    end
+-
+-    always @(posedge clk) begin
+-	   mem_rdata <= { M3[mem_index], M2[mem_index], M1[mem_index], M0[mem_index] };
+-      case (address)
+-        LEDR_ADDRESS: begin
+-          if (|write_enable) LEDR <= write_data[9:0];
+-        end
+-        default: begin
+-          if (write_enable[0])
+-            M0[mem_index] <= write_data[7:0];
+-
+-          if (write_enable[1])
+-            M1[mem_index] <= write_data[15:8];
+-
+-          if (write_enable[2])
+-            M2[mem_index] <= write_data[23:16];
+-
+-          if (write_enable[3])
+-            M3[mem_index] <= write_data[31:24];
+-        end
+-      endcase
+-    end
+-
+-endmodule
+\ No newline at end of file
++  reg [7:0] M0 [0:SIZE - 1];  // byte lane 0
++  reg [7:0] M1 [0:SIZE - 1];  // byte lane 1
++  reg [7:0] M2 [0:SIZE - 1];  // byte lane 2
++  reg [7:0] M3 [0:SIZE - 1];  // byte lane 3
++
++  reg [31:0] M [0:SIZE - 1];
++  reg [31:0] mem_rdata;
++
++  initial begin
++    $readmemh("poc/poc0.mem", M0);
++    $readmemh("poc/poc1.mem", M1);
++    $readmemh("poc/poc2.mem", M2);
++    $readmemh("poc/poc3.mem", M3);
++  end
++
++  localparam bit [31:0] LEDR_ADDRESS = 32'h10000000;
++
++  localparam int ADDR_LSB   = 2;
++  localparam int ADDR_WIDTH = $clog2(SIZE);
++  wire [ADDR_WIDTH - 1:0] mem_index = address[ADDR_LSB + ADDR_WIDTH - 1 : ADDR_LSB];  // I think this way may save some resources
++
++  always @(*) begin
++    case (address)
++      LEDR_ADDRESS: read_data = {22'b0, LEDR};
++      default: read_data = mem_rdata;
++    endcase
++  end
++
++  always @(posedge clk) begin
++    mem_rdata <= { M3[mem_index], M2[mem_index], M1[mem_index], M0[mem_index] };
++    case (address)
++      LEDR_ADDRESS: begin
++        if (|write_enable) LEDR <= write_data[9:0];
++      end
++      default: begin
++        if (write_enable[0]) M0[mem_index] <= write_data[7:0];
++        if (write_enable[1]) M1[mem_index] <= write_data[15:8];
++        if (write_enable[2]) M2[mem_index] <= write_data[23:16];
++        if (write_enable[3]) M3[mem_index] <= write_data[31:24];
++      end
++    endcase
++  end
++
++endmodule
+
+From 00bd694861d2c17b5639104c3e1e921a05c05328 Mon Sep 17 00:00:00 2001
+From: Boris <boris.potapov@mail.utoronto.ca>
+Date: Sun, 21 Dec 2025 17:07:36 +0000
+Subject: [PATCH 13/14] fix top tb for de1-soc
+
+---
+ envs/de1-soc/top_tb.sv | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/envs/de1-soc/top_tb.sv b/envs/de1-soc/top_tb.sv
+index 442d386..0888052 100644
+--- a/envs/de1-soc/top_tb.sv
++++ b/envs/de1-soc/top_tb.sv
+@@ -20,7 +20,7 @@ module top_tb;
+   initial begin
+     integer i;
+ 
+-    reset <= 4'b1111;
++    reset <= 4'b0000;
+ 
+     for (i = 0; i < 32; i = i + 1) begin
+       uut.core.RegFile.RFMem[i] = 32'h0;
+@@ -28,11 +28,11 @@ module top_tb;
+ 
+     #100;
+ 
+-    reset <= 4'b0000;
++    reset <= 4'b1111;
+ 
+-    #10000;
++    #1000;
+ 
+-    assert (ledr === 10'h40) else $fatal(1, "Top TB failed");
++    assert (ledr !== 10'b0) else $fatal(1, "Top TB failed");
+ 
+     $finish;
+   end
+
+From 1e0c94f8ac6b98a86415c016dc903830eb97d883 Mon Sep 17 00:00:00 2001
+From: Boris <boris.potapov@mail.utoronto.ca>
+Date: Sun, 21 Dec 2025 17:34:22 +0000
+Subject: [PATCH 14/14] drop synthesis def since its built into the quartus
+ project
+
+---
+ envs/de1-soc/top.sv | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/envs/de1-soc/top.sv b/envs/de1-soc/top.sv
+index 9ef60de..d5f222f 100644
+--- a/envs/de1-soc/top.sv
++++ b/envs/de1-soc/top.sv
+@@ -4,8 +4,6 @@ module top
+   , output wire [9:0] LEDR
+   );
+ 
+-`define UTOSS_RISCV_SYNTHESIS 1
+-
+   addr_t       memory__address;
+   data_t       memory__write_data;
+   logic  [3:0] memory__write_enable;

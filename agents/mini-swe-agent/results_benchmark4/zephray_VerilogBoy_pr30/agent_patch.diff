@@ -1,0 +1,30 @@
+diff --git a/rtl/ppu.v b/rtl/ppu.v
+index 38dbda9..f440894 100644
+--- a/rtl/ppu.v
++++ b/rtl/ppu.v
+@@ -320,6 +320,7 @@ module ppu(
+     reg [4:0] r_next_backup;
+     reg [4:0] r_next_state;
+     wire is_in_v_blank = ((v_count >= PPU_V_ACTIVE) && (v_count < PPU_V_ACTIVE + PPU_V_BLANK));
++    wire is_in_h_blank = (h_count >= PPU_H_ACTIVE);
+     
+     reg window_triggered; // Indicate whether window has been triggered, should be replaced by a edge detector
+     wire render_window_or_bg = window_triggered;
+@@ -460,7 +461,7 @@ module ppu(
+         end
+         else begin
+             case (r_state)
+-            S_IDLE: reg_stat[1:0] <= PPU_MODE_V_BLANK;
++            S_IDLE: reg_stat[1:0] <= (is_in_v_blank) ? (PPU_MODE_V_BLANK) : (PPU_MODE_H_BLANK);
+             S_BLANK: reg_stat[1:0] <= (is_in_v_blank) ? (PPU_MODE_V_BLANK) : (PPU_MODE_H_BLANK);
+             S_OAMX: reg_stat[1:0] <= PPU_MODE_OAM_SEARCH;
+             S_OAMY: reg_stat[1:0] <= PPU_MODE_OAM_SEARCH;
+@@ -718,7 +719,7 @@ module ppu(
+     always @(*)
+     begin
+         case (r_state)
+-            S_IDLE: r_next_state = ((reg_lcd_en)&(is_in_v_blank)) ? (S_BLANK) : (S_IDLE);
++            S_IDLE: r_next_state = (reg_lcd_en) ? ((is_in_v_blank) ? (S_BLANK) : ((is_in_h_blank) ? (S_BLANK) : (S_IDLE))) : (S_IDLE);
+             S_BLANK: r_next_state = 
+                 (reg_lcd_en) ? (
+                     (is_in_v_blank) ? 

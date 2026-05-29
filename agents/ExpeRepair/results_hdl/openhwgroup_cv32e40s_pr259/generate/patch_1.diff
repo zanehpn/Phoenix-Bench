@@ -1,0 +1,21 @@
+diff --git a/rtl/cv32e40s_pmp.sv b/rtl/cv32e40s_pmp.sv
+index c366814..bbadd12 100644
+--- a/rtl/cv32e40s_pmp.sv
++++ b/rtl/cv32e40s_pmp.sv
+@@ -197,9 +197,13 @@ module cv32e40s_pmp import cv32e40s_pkg::*;
+ 
+   // Access fault prioritization
+   always_comb begin
+-    // When MSECCFG.MMWP is set default deny always, otherwise allow for M-mode, deny for other
+-    // modes
+-    access_fault = csr_pmp_i.mseccfg.mmwp || (priv_lvl_i != PRIV_LVL_M);
++    // Default deny policy:
++    // - MSECCFG.MMWP denies unmatched accesses for all modes.
++    // - Non-M-mode unmatched accesses are denied.
++    // - With MSECCFG.MML set, unmatched execute accesses are denied (including M-mode).
++    access_fault = csr_pmp_i.mseccfg.mmwp ||
++                   (priv_lvl_i != PRIV_LVL_M) ||
++                   (csr_pmp_i.mseccfg.mml && (pmp_req_type_i == PMP_ACC_EXEC));
+ 
+     // PMP entries are statically prioritized, from 0 to N-1
+     // The lowest-numbered PMP entry which matches an address determines accessability

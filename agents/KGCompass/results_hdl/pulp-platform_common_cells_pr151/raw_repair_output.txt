@@ -1,0 +1,97 @@
+The issue is localized in `src/stream_join.sv`.
+
+### What’s wrong
+Current `stream_join` is a pure combinational AND-reduction join:
+- it always waits for **all** input `valid`s
+- it grants **all** `ready`s simultaneously
+
+That matches the old “specular to fork” behavior, but it does **not** support:
+1. selecting only a subset of inputs to join dynamically
+2. independent input handshakes
+
+To fix the feature request, the join must be extended into a dynamic-select join with per-input independent ready generation, analogous to `stream_fork_dynamic`.
+
+---
+
+### SEARCH/REPLACE edit
+
+```systemverilog
+### src/stream_join.sv
+<<<<<<< SEARCH
+/// Stream join: Joins a parametrizable number of input streams (i.e., valid-ready handshaking with
+/// dependency rules as in AXI4) to a single output stream.  The output handshake happens only once
+/// all inputs are valid.  The data channel flows outside of this module.
+module stream_join #(
+  /// Number of input streams
+  parameter int unsigned N_INP = 32'd0 // Synopsys DC requires a default value for parameters.
+) (
+  /// Input streams valid handshakes
+  input  logic  [N_INP-1:0] inp_valid_i,
+  /// Input streams ready handshakes
+  output logic  [N_INP-1:0] inp_ready_o,
+  /// Output stream valid handshake
+  output logic              oup_valid_o,
+  /// Output stream ready handshake
+  input  logic              oup_ready_i
+);
+
+  assign oup_valid_o = (&inp_valid_i);
+  for (genvar i = 0; i < N_INP; i++) begin : gen_inp_ready
+    assign inp_ready_o[i] = oup_valid_o & oup_ready_i;
+  end
+
+// pragma translate_off
+`ifndef VERILATOR
+  initial begin: p_assertions
+    assert (N_INP >= 1) else $fatal(1, "N_INP must be at least 1!");
+  end
+`endif
+// pragma translate_on
+endmodule
+=======
+/// Dynamic stream join: Joins a dynamically selected subset of input streams to a single output
+/// stream.  The selection is provided through a bitmask, and selected inputs handshakes are
+/// granted independently.  The output handshake happens only once all selected inputs are valid.
+/// The data channel flows outside of this module.
+module stream_join_dynamic #(
+  /// Number of input streams
+  parameter int unsigned N_INP = 32'd0 // Synopsys DC requires a default value for parameters.
+) (
+  /// Input streams valid handshakes
+  input  logic  [N_INP-1:0] inp_valid_i,
+  /// Input streams ready handshakes
+  output logic  [N_INP-1:0] inp_ready_o,
+  /// Selection mask for the join
+  input  logic  [N_INP-1:0] sel_i,
+  /// Selection mask valid
+  input  logic              sel_valid_i,
+  /// Selection mask ready
+  output logic              sel_ready_o,
+  /// Output stream valid handshake
+  output logic              oup_valid_o,
+  /// Output stream ready handshake
+  input  logic              oup_ready_i
+);
+
+  logic [N_INP-1:0] inp_valid_sel;
+
+  assign inp_valid_sel = inp_valid_i & sel_i;
+  assign oup_valid_o   = sel_valid_i & (&(inp_valid_i | ~sel_i));
+
+  for (genvar i = 0; i < N_INP; i++) begin : gen_inp_ready
+    assign inp_ready_o[i] = sel_valid_i & sel_i[i] & oup_ready_i & oup_valid_o;
+  end
+
+  assign sel_ready_o = oup_ready_i & oup_valid_o;
+
+// pragma translate_off
+`ifndef VERILATOR
+  initial begin: p_assertions
+    assert (N_INP >= 1) else $fatal(1, "N_INP must be at least 1!");
+  end
+`endif
+// pragma translate_on
+endmodule
+>>>>>>> REPLACE
+```
+

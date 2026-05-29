@@ -1,0 +1,21 @@
+The likely bug is in `gateware/cores/vco.sv`: the VCO advances its phase accumulator only on `sample_clk`, but unlike the generic `wavetable_osc`, it hardcodes the phase-to-table index bit start to `10 + FDIV`. After the clocking rewrite, the effective sample rate / phase increment scaling changed, and on ICE40 this likely causes the oscillator to run at the wrong rate or alias badly enough to appear broken.
+
+The clean fix is to make `vco.sv` use the same phase indexing scheme as `wavetable_osc.sv`, and keep the `FDIV` offset only as a frequency divider on the phase readout, not as part of the lookup arithmetic in a way that can diverge across targets.
+
+```systemverilog
+### gateware/cores/vco.sv
+<<<<<<< SEARCH
+// Top 8 bits of the N.F fixed-point representation are index into wavetable.
+localparam BIT_START = 10 + FDIV;
+wire [$clog2(WAVETABLE_SIZE)-1:0] wavetable_idx =
+    wavetable_pos[BIT_START+$clog2(WAVETABLE_SIZE)-1:BIT_START];
+=======
+ // Top 8 bits of the N.F fixed-point representation are index into wavetable.
+ // Keep the same phase indexing convention as the generic wavetable oscillator.
+localparam BIT_START = 10;
+wire [$clog2(WAVETABLE_SIZE)-1:0] wavetable_idx =
+    wavetable_pos[BIT_START + FDIV + $clog2(WAVETABLE_SIZE)-1:BIT_START + FDIV];
+>>>>>>> REPLACE
+```
+
+If you want, I can also provide a second edit that makes `vco.sv` literally reuse `wavetable_osc` internally to avoid this kind of drift in the future.

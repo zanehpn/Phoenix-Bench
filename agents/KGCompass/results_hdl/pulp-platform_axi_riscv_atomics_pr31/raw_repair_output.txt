@@ -1,0 +1,14 @@
+The bug is in `src/axi_riscv_lrsc.sv`, where the exclusive-clear length for AW bursts is computed one beat too long. For a burst of length `N`, the module currently clears `[A, A+N]` instead of `[A, A+(N-1)]`.
+
+Fix by changing the clear length calculation from `aw_res_len - 1` to `aw_res_len - 2` in the AW handling logic.
+
+```systemverilog
+### src/axi_riscv_lrsc.sv
+<<<<<<< SEARCH
+if (aw_res_len > 1) begin
+    clr_len_d  = aw_res_len - 1;
+=======
+if (aw_res_len > 1) begin
+    clr_len_d  = aw_res_len - 2;
+>>>>>>> REPLACE
+```

@@ -1,0 +1,36 @@
+diff --git a/rtl/ibex_id_stage.sv b/rtl/ibex_id_stage.sv
+index 647e648..ef6225b 100644
+--- a/rtl/ibex_id_stage.sv
++++ b/rtl/ibex_id_stage.sv
+@@ -522,19 +522,18 @@ module ibex_id_stage #(
+     // - When modifying any PMP CSR, PMP check of the next instruction might get invalidated.
+     //   Hence, a pipeline flush is needed to instantiate another PMP check with the updated CSRs.
+     // - When modifying debug CSRs.
+-    if (csr_op_en_o == 1'b1 && (csr_op_o == CSR_OP_WRITE || csr_op_o == CSR_OP_SET)) begin
+-      if (csr_num_e'(instr_rdata_i[31:20]) == CSR_MSTATUS ||
+-          csr_num_e'(instr_rdata_i[31:20]) == CSR_MIE     ||
+-          csr_num_e'(instr_rdata_i[31:20]) == CSR_MSECCFG ||
+-          // To catch all PMPCFG/PMPADDR registers, get the shared top most 7 bits.
+-          instr_rdata_i[31:25] == 7'h1D) begin
+-        csr_pipe_flush = 1'b1;
+-      end
+-    end else if (csr_op_en_o == 1'b1 && csr_op_o != CSR_OP_READ) begin
+-      if (csr_num_e'(instr_rdata_i[31:20]) == CSR_DCSR      ||
+-          csr_num_e'(instr_rdata_i[31:20]) == CSR_DPC       ||
+-          csr_num_e'(instr_rdata_i[31:20]) == CSR_DSCRATCH0 ||
+-          csr_num_e'(instr_rdata_i[31:20]) == CSR_DSCRATCH1) begin
++    if (csr_op_en_o == 1'b1) begin
++      if (((csr_op_o == CSR_OP_WRITE || csr_op_o == CSR_OP_SET) &&
++           (csr_num_e'(instr_rdata_i[31:20]) == CSR_MSTATUS ||
++            csr_num_e'(instr_rdata_i[31:20]) == CSR_MIE))   ||
++          ((csr_op_o != CSR_OP_READ) &&
++           (csr_num_e'(instr_rdata_i[31:20]) == CSR_MSECCFG ||
++            // To catch all PMPCFG/PMPADDR registers, get the shared top most 7 bits.
++            instr_rdata_i[31:25] == 7'h1D                   ||
++            csr_num_e'(instr_rdata_i[31:20]) == CSR_DCSR      ||
++            csr_num_e'(instr_rdata_i[31:20]) == CSR_DPC       ||
++            csr_num_e'(instr_rdata_i[31:20]) == CSR_DSCRATCH0 ||
++            csr_num_e'(instr_rdata_i[31:20]) == CSR_DSCRATCH1))) begin
+         csr_pipe_flush = 1'b1;
+       end
+     end

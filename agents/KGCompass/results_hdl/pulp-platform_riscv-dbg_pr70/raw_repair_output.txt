@@ -1,0 +1,49 @@
+The bug is in `src/dm_sba.sv`.
+
+### Localization
+In the `Read` state, `be` is set to `be_mask`, but `be_mask` is only driven in a separate `always_comb` block and `be_idx` is also assigned in `p_fsm`. As written, the byte-enable generation can end up not behaving like the `Write` path, especially for reads where `_be` should reflect the selected access size and address alignment just like writes.
+
+The issue text suggests the read path should use the same `_be` handling as write. The clean fix is to initialize and compute `be_mask` deterministically in the same combinational flow, so reads and writes both use the same byte-enable value.
+
+### Edit
+```systemverilog
+### src/dm_sba.sv
+<<<<<<< SEARCH
+  always_comb begin : p_be_mask
+    // generate byte enable mask
+    unique case (sbaccess_i)
+      3'b000: begin
+        be_mask[be_idx] = '1;
+      end
+      3'b001: begin
+        be_mask[int'({be_idx[$high(be_idx):1], 1'b0}) +: 2] = '1;
+      end
+      3'b010: begin
+        if (BusWidth == 32'd64) be_mask[int'({be_idx[$high(be_idx)], 2'b0}) +: 4] = '1;
+        else                    be_mask = '1;
+      end
+      3'b011: be_mask = '1;
+      default: ;
+    endcase
+  end
+=======
+  always_comb begin : p_be_mask
+    // generate byte enable mask
+    be_mask = '0;
+    unique case (sbaccess_i)
+      3'b000: begin
+        be_mask[be_idx] = '1;
+      end
+      3'b001: begin
+        be_mask[int'({be_idx[$high(be_idx):1], 1'b0}) +: 2] = '1;
+      end
+      3'b010: begin
+        if (BusWidth == 32'd64) be_mask[int'({be_idx[$high(be_idx)], 2'b0}) +: 4] = '1;
+        else                    be_mask = '1;
+      end
+      3'b011: be_mask = '1;
+      default: ;
+    endcase
+  end
+>>>>>>> REPLACE
+```

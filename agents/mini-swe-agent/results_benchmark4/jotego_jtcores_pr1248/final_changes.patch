@@ -1,0 +1,16 @@
+diff --git a/cores/ngp/hdl/jtngp_game.v b/cores/ngp/hdl/jtngp_game.v
+index a8cebf4..9d92cfb 100644
+--- a/cores/ngp/hdl/jtngp_game.v
++++ b/cores/ngp/hdl/jtngp_game.v
+@@ -40,7 +40,11 @@ assign ioctl_rest = ioctl_ram && ioctl_wr && ioctl_addr[13:0]>14'h3000; // ports
+ assign rom_addr = cpu_addr[15:1];
+ assign dip_flip = 0;
+ assign {pxl_cen,pxl2_cen}={v1_cen,v0_cen}; // ideally the framework should do this for me
++`ifdef NGP_PWR_OFF_COMBO
++assign pwr_button = coin[0] & cab_1p & ~&{~ioctl_cart,cart_l,halted}; // active low, positive edge triggered
++`else
+ assign pwr_button = coin[0] & ~&{~ioctl_cart,cart_l,halted}; // active low, positive edge triggered
++`endif
+ // Flash 1 is only operative for 4 MByte cartridges
+ assign f1g_gcs  = cart_size[3] & flash1_cs;
+ assign f1g_dout = cart_size[3] ? flash1_dout : 16'd0;

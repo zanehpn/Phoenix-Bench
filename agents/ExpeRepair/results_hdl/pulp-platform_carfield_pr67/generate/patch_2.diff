@@ -1,0 +1,33 @@
+diff --git a/hw/carfield.sv b/hw/carfield.sv
+index 3585d78..863ad68 100755
+--- a/hw/carfield.sv
++++ b/hw/carfield.sv
+@@ -66,7 +66,7 @@ module carfield
+   // unused by safety island -- tdo pad always out mode
+   output  logic                                       jtag_safe_isln_tdo_oe_o,
+   // Safety Island BOOT pins
+-  input   logic [1:0]                                 bootmode_safe_isln_i,
++  input   logic [SafetyIslandBootmodeWidth-1:0]       bootmode_safe_isln_i,
+   // Host UART Interface
+   output logic                                        uart_tx_o,
+   input  logic                                        uart_rx_i,
+@@ -1071,10 +1071,6 @@ l2_wrap #(
+ // Safety Island
+ logic [SafetyIslandCfg.NumInterrupts-1:0] safed_intrs;
+ 
+-// TODO: propagate to top
+-safety_island_pkg::bootmode_e safety_island_bootmode;
+-assign safety_island_bootmode = safety_island_pkg::Preloaded;
+-
+ assign safed_intrs  = {
+   59'h0,
+   spatzcl_safed_mbox_intr, // from spatzcl
+@@ -1125,7 +1121,7 @@ safety_island_synth_wrapper #(
+   .rst_ni                 ( safety_rst_n                             ),
+   .pwr_on_rst_ni          ( safety_pwr_on_rst_n                      ),
+   .test_enable_i          ( '0                                       ),
+-  .bootmode_i             ( safety_island_bootmode                   ),
++  .bootmode_i             ( bootmode_safe_isln_i                     ),
+   .fetch_en_i             ( car_regs_reg2hw.safety_island_fetch_enable ), // To SoC Bus
+   .axi_isolate_i          ( slave_isolate_req [SafetyIslandSlvIdx]   ), // To SoC Bus
+   .axi_isolated_o         ( master_isolated_rsp [SafetyIslandMstIdx] ),

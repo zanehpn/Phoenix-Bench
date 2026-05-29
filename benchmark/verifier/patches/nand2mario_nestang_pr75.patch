@@ -1,0 +1,29 @@
+From 5a2c8fa2934a3eca5207cd58026465f847358cdf Mon Sep 17 00:00:00 2001
+From: nikitalita <69168929+nikitalita@users.noreply.github.com>
+Date: Wed, 22 May 2024 20:01:31 -0700
+Subject: [PATCH] Fix NES controllers
+
+---
+ src/controller_snes.v | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/src/controller_snes.v b/src/controller_snes.v
+index 61f4620..fea99af 100644
+--- a/src/controller_snes.v
++++ b/src/controller_snes.v
+@@ -111,7 +111,14 @@ always @(posedge clk) begin
+                 bits <= bits + 1;
+                 if (bits == 4'd15) begin     // scan complete
+                     state <= 3;
+-                    buttons <= buttons_buf[11:0];
++                    // check if buttons_buf[15:12] are 0; if not, this is an NES controller
++                    if (buttons_buf[15:12] != 4'b0000) begin
++                        // NES controller
++                        buttons <= {0, 0, 0, 0, buttons_buf[7:0]};
++                    end else begin
++                        // SNES controller
++                        buttons <= buttons_buf[11:0];
++                    end
+                 end else
+                     state <= 1;
+             end

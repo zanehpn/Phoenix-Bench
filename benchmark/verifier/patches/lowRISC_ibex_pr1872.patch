@@ -1,0 +1,110 @@
+From b2790682686f4235df6aac10d4952c527156ba0b Mon Sep 17 00:00:00 2001
+From: Greg Chadwick <gac@lowrisc.org>
+Date: Tue, 25 Oct 2022 17:02:17 +0100
+Subject: [PATCH 1/3] [rtl] Fix ebreak debug cause
+
+We should only indicate an ebreak debug cause if an ebreak leads to a
+debug entry (otherwise when single stepping over an ebreak that traps to
+an exception we incorrectly enter debug mode with an ebreak cause).
+---
+ rtl/ibex_controller.sv | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/rtl/ibex_controller.sv b/rtl/ibex_controller.sv
+index 4becb9e65..036a4d7d3 100644
+--- a/rtl/ibex_controller.sv
++++ b/rtl/ibex_controller.sv
+@@ -430,11 +430,11 @@ module ibex_controller #(
+   // The decision to enter debug_mode and the write of the cause to DCSR happen
+   // in seperate steps within the FSM. Hence, there are a small number of cycles
+   // where a change in external stimulus can cause the cause to be recorded incorrectly.
+-  assign debug_cause_d = trigger_match_i   ? DBG_CAUSE_TRIGGER :
+-                         ebrk_insn_prio    ? DBG_CAUSE_EBREAK  :
+-                         debug_req_i       ? DBG_CAUSE_HALTREQ :
+-                         do_single_step_d  ? DBG_CAUSE_STEP    :
+-                                             DBG_CAUSE_NONE ;
++  assign debug_cause_d = trigger_match_i                    ? DBG_CAUSE_TRIGGER :
++                         ebrk_insn_prio & ebreak_into_debug ? DBG_CAUSE_EBREAK  :
++                         debug_req_i                        ? DBG_CAUSE_HALTREQ :
++                         do_single_step_d                   ? DBG_CAUSE_STEP    :
++                                                              DBG_CAUSE_NONE ;
+ 
+   always_ff @(posedge clk_i or negedge rst_ni) begin
+     if (!rst_ni) begin
+
+From 06a7b5c32c319cba92bc6dc46b25009942f70900 Mon Sep 17 00:00:00 2001
+From: Greg Chadwick <gac@lowrisc.org>
+Date: Tue, 25 Oct 2022 17:22:55 +0100
+Subject: [PATCH 2/3] [dv] Remove `cp_insn_trigger_exception` coverpoint
+
+This coverpoint does not make sense. The hardware breakpoint is
+triggered as the instruction moves into the ID/EX stage so it never has
+a chance to take an exception (it effectively never begins executing).
+---
+ doc/03_reference/coverage_plan.rst         | 3 ---
+ dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv | 2 --
+ 2 files changed, 5 deletions(-)
+
+diff --git a/doc/03_reference/coverage_plan.rst b/doc/03_reference/coverage_plan.rst
+index 49cea59f7..67204af9a 100644
+--- a/doc/03_reference/coverage_plan.rst
++++ b/doc/03_reference/coverage_plan.rst
+@@ -223,9 +223,6 @@ Furthermore they can all occur together and must be appropriately prioritised (c
+ * ``cp_debug_req`` - External debug request.
+ * ``cp_single_step_taken`` - Instruction executed when debug single step enabled.
+ * ``cp_insn_trigger_enter_debug`` - Instruction matches hardware trigger point.
+-
+-  * ``cp_insn_trigger_exception`` - Instruction matching trigger point causes exception
+-
+ * ``cp_debug_mode`` - Ibex operating in debug mode.
+ * ``irq_wfi_cross``, ``debug_wfi_cross`` - Debug and Interrupt whilst sleeping with WFI
+ 
+diff --git a/dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv b/dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv
+index bf457fb7a..43a16be86 100644
+--- a/dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv
++++ b/dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv
+@@ -499,8 +499,6 @@ interface core_ibex_fcov_if import ibex_pkg::*; (
+     `DV_FCOV_EXPR_SEEN(pipe_flush, id_stage_i.controller_i.fcov_pipe_flush)
+     `DV_FCOV_EXPR_SEEN(single_step_taken, id_stage_i.controller_i.fcov_debug_single_step_taken)
+     `DV_FCOV_EXPR_SEEN(insn_trigger_enter_debug, instr_id_matches_trigger_q)
+-    `DV_FCOV_EXPR_SEEN(insn_trigger_exception, instr_id_matches_trigger_q &&
+-                                               id_stage_i.controller_i.fcov_pipe_flush)
+ 
+     cp_nmi_taken: coverpoint ((fcov_irqs[5] || fcov_irqs[4])) iff
+                              (id_stage_i.controller_i.fcov_interrupt_taken);
+
+From 87009e6100be7f8ca73cec5b0932f7252eadbedb Mon Sep 17 00:00:00 2001
+From: Greg Chadwick <gac@lowrisc.org>
+Date: Tue, 25 Oct 2022 17:36:31 +0100
+Subject: [PATCH 3/3] [dv] Add single step over exception coverpoint
+
+---
+ doc/03_reference/coverage_plan.rst         | 1 +
+ dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv | 2 ++
+ 2 files changed, 3 insertions(+)
+
+diff --git a/doc/03_reference/coverage_plan.rst b/doc/03_reference/coverage_plan.rst
+index 67204af9a..9eae30caa 100644
+--- a/doc/03_reference/coverage_plan.rst
++++ b/doc/03_reference/coverage_plan.rst
+@@ -222,6 +222,7 @@ Furthermore they can all occur together and must be appropriately prioritised (c
+ 
+ * ``cp_debug_req`` - External debug request.
+ * ``cp_single_step_taken`` - Instruction executed when debug single step enabled.
++* ``cp_single_step_exception`` - Single step over an instruction that takes an exception.
+ * ``cp_insn_trigger_enter_debug`` - Instruction matches hardware trigger point.
+ * ``cp_debug_mode`` - Ibex operating in debug mode.
+ * ``irq_wfi_cross``, ``debug_wfi_cross`` - Debug and Interrupt whilst sleeping with WFI
+diff --git a/dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv b/dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv
+index 43a16be86..ac5aa1c4b 100644
+--- a/dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv
++++ b/dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv
+@@ -498,6 +498,8 @@ interface core_ibex_fcov_if import ibex_pkg::*; (
+     `DV_FCOV_EXPR_SEEN(debug_entry_id, id_stage_i.controller_i.fcov_debug_entry_id)
+     `DV_FCOV_EXPR_SEEN(pipe_flush, id_stage_i.controller_i.fcov_pipe_flush)
+     `DV_FCOV_EXPR_SEEN(single_step_taken, id_stage_i.controller_i.fcov_debug_single_step_taken)
++    `DV_FCOV_EXPR_SEEN(single_step_exception, id_stage_i.controller_i.do_single_step_d &&
++                                              id_stage_i.controller_i.fcov_pipe_flush)
+     `DV_FCOV_EXPR_SEEN(insn_trigger_enter_debug, instr_id_matches_trigger_q)
+ 
+     cp_nmi_taken: coverpoint ((fcov_irqs[5] || fcov_irqs[4])) iff

@@ -1,0 +1,61 @@
+From 9cdf41380fadbac4cc204471df79acfbd4c61ffe Mon Sep 17 00:00:00 2001
+From: Boris <boris.potapov@mail.utoronto.ca>
+Date: Tue, 28 Oct 2025 16:45:46 +0000
+Subject: [PATCH] update iverilog to latest snapshot
+
+---
+ Dockerfile.ci     |  4 ++--
+ src/ControlFSM.sv | 10 +++++++---
+ 2 files changed, 9 insertions(+), 5 deletions(-)
+
+diff --git a/Dockerfile.ci b/Dockerfile.ci
+index 60918c1..3d94a1b 100644
+--- a/Dockerfile.ci
++++ b/Dockerfile.ci
+@@ -23,9 +23,9 @@ RUN useradd --create-home dev && \
+ 
+ # build and install icarus verilog
+ USER dev
+-ARG ICARUS_SRC_TAR=v12_0.tar.gz
++ARG ICARUS_SRC_TAR=s20251012.tar.gz
+ ARG ICARUS_SRC_URL=https://github.com/steveicarus/iverilog/archive/refs/tags/${ICARUS_SRC_TAR}
+-ARG ICARUS_SRC_HASH="a68cb1ef7c017ef090ebedb2bc3e39ef90ecc70a3400afb4aa94303bc3beaa7d  ${ICARUS_SRC_TAR}"
++ARG ICARUS_SRC_HASH="97776c5dd1ee09157f7cb9f48978c7687b9157b09fa7029c0f9378aac9a6f58c  ${ICARUS_SRC_TAR}"
+ RUN sudo apt update && sudo apt install -y autoconf gperf make gcc g++ bison flex && \
+     cd /tmp && \
+     wget ${ICARUS_SRC_URL} && \
+diff --git a/src/ControlFSM.sv b/src/ControlFSM.sv
+index a88a4b2..c613711 100644
+--- a/src/ControlFSM.sv
++++ b/src/ControlFSM.sv
+@@ -2,6 +2,7 @@
+ //A Moore Type Finite State Machine for the RV32I Microprocessor Control Unit
+ 
+ `include "src/types.svh"
++`include "src/params.vh"
+ 
+ module ControlFSM(
+ 
+@@ -120,7 +121,7 @@ module ControlFSM(
+   //output logic
+   always@(*) begin
+     Branch <= 1'b0;
+-    pc_src <= 1'b0;
++    pc_src <= PC_SRC__INCREMENT;
+     PCUpdate <= 1'b0;
+     IRWrite <= 1'b0;
+     MemWrite <= 1'b0;
+@@ -220,8 +221,11 @@ module ControlFSM(
+         ALUOp <= 2'b01;
+         ResultSrc <= RESULT_SRC__ALU_OUT;
+         Branch <= 1'b1;
+-            pc_src <= zero_flag ? PC_SRC__JUMP : PC_SRC__INCREMENT;
+-            PCUpdate <= 1'b1;
++        if (zero_flag)
++          pc_src <= PC_SRC__JUMP;
++        else
++          pc_src <= PC_SRC__INCREMENT;
++        PCUpdate <= 1'b1;
+ 
+       end
+ 

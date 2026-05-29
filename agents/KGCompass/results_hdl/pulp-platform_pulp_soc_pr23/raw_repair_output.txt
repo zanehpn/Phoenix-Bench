@@ -1,0 +1,39 @@
+The bug is in `rtl/pulp_soc/pulp_soc.sv`, where the AXI bus instances for the cluster use `AXI_ID_OUT_WIDTH` for both the input/slave-side and output/master-side buses. Per the issue, the cluster-facing slave buses should use `AXI_ID_IN_WIDTH` for `s_data_slave` and `s_data_in_bus`.
+
+Here is the fix as SEARCH/REPLACE edits:
+
+```systemverilog
+### rtl/pulp_soc/pulp_soc.sv
+<<<<<<< SEARCH
+    AXI_BUS_ASYNC #(
+        .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+        .AXI_DATA_WIDTH ( AXI_DATA_IN_WIDTH ),
+        .AXI_ID_WIDTH   ( AXI_ID_OUT_WIDTH  ),
+        .AXI_USER_WIDTH ( AXI_USER_WIDTH     ),
+        .BUFFER_WIDTH   ( BUFFER_WIDTH       )
+    ) s_data_slave ();
+
+    AXI_BUS #(
+        .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+        .AXI_DATA_WIDTH ( AXI_DATA_IN_WIDTH ),
+        .AXI_ID_WIDTH   ( AXI_ID_OUT_WIDTH  ),
+        .AXI_USER_WIDTH ( AXI_USER_WIDTH    )
+    ) s_data_in_bus ();
+=======
+    AXI_BUS_ASYNC #(
+        .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+        .AXI_DATA_WIDTH ( AXI_DATA_IN_WIDTH ),
+        .AXI_ID_WIDTH   ( AXI_ID_IN_WIDTH   ),
+        .AXI_USER_WIDTH ( AXI_USER_WIDTH    ),
+        .BUFFER_WIDTH   ( BUFFER_WIDTH      )
+    ) s_data_slave ();
+
+    AXI_BUS #(
+        .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+        .AXI_DATA_WIDTH ( AXI_DATA_IN_WIDTH ),
+        .AXI_ID_WIDTH   ( AXI_ID_IN_WIDTH   ),
+        .AXI_USER_WIDTH ( AXI_USER_WIDTH    )
+    ) s_data_in_bus ();
+>>>>>>> REPLACE
+```
+

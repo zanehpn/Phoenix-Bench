@@ -1,0 +1,36 @@
+# axi_slave_sub_driver don't reset response_queue
+
+- Source URL: https://github.com/taichi-ishitani/tvip-axi/issues/49
+
+Hi Taichi! 
+I have a problemlem connected with AXI Slave
+
+ 
+![Screenshot from 2023-04-11 11-27-07](https://user-images.githubusercontent.com/35744340/231102389-6b30e00d-b5be-4bf6-8aaa-79f85fd04db2.png)
+
+After reset i see response on R channel... 
+
+I find a problem 
+https://github.com/taichi-ishitani/tvip-axi/blob/master/src/tvip_axi_slave_driver.svh#L147
+
+must delete in task 
+https://github.com/taichi-ishitani/tvip-axi/blob/master/src/tvip_axi_slave_driver.svh#L196
+
+```
+
+    protected task do_reset();
+    start_delay_consumer.do_reset();
+
+    ...............................................
+
+    active_responses.delete();
+    active_ids.delete();
+    
+    response_queue.delete();    <-------- !
+
+
+    reset_if();
+    @(posedge vif.areset_n);
+  endtask
+
+```

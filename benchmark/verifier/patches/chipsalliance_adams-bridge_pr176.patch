@@ -1,0 +1,1460 @@
+From 42c7f3a3305bc66d65f1b03dd22dc4dadcc73f58 Mon Sep 17 00:00:00 2001
+From: Michael Norris <michnorris@microsoft.com>
+Date: Tue, 29 Jul 2025 08:56:05 -0700
+Subject: [PATCH 1/9] fix gh issue 167 	the write address was not clearing
+ after done, which could cause a second decompress call to terminate
+ immediately
+
+---
+ src/decompress/rtl/decompress_ctrl.sv | 5 ++++-
+ src/decompress/rtl/decompress_top.sv  | 6 ++++--
+ 2 files changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/src/decompress/rtl/decompress_ctrl.sv b/src/decompress/rtl/decompress_ctrl.sv
+index fb17f266..25b412da 100644
+--- a/src/decompress/rtl/decompress_ctrl.sv
++++ b/src/decompress/rtl/decompress_ctrl.sv
+@@ -43,6 +43,9 @@ module decompress_ctrl
+         else if (zeroize) begin
+             mem_wr_addr <= '0;
+         end
++        else if (last_poly_last_addr_wr) begin
++            mem_wr_addr <= '0;
++        end
+         else if (decompress_enable) begin
+             mem_wr_addr <= dest_base_addr;
+         end
+@@ -62,4 +65,4 @@ module decompress_ctrl
+             done <= last_poly_last_addr_wr;
+     end
+ 
+-endmodule
+\ No newline at end of file
++endmodule
+diff --git a/src/decompress/rtl/decompress_top.sv b/src/decompress/rtl/decompress_top.sv
+index b5d1018b..260b2de3 100644
+--- a/src/decompress/rtl/decompress_top.sv
++++ b/src/decompress/rtl/decompress_top.sv
+@@ -42,13 +42,15 @@ module decompress_top
+         output logic decompress_done
+     );
+ 
++    localparam DECOMP_DATA_W = MLKEM_Q_WIDTH;
++
+     logic api_rd_en_f;
+     logic piso_hold_o;
+     logic read_done;
+     logic [3:0] d; // Decompression count
+     logic piso_data_valid;
+-    logic [48-1:0] piso_data_o; //FIXME magic number
+-    logic [COEFF_PER_CLK-1:0][12-1:0] decompress_data_i; //FIXME magic number
++    logic [(COEFF_PER_CLK*DECOMP_DATA_W)-1:0] piso_data_o;
++    logic [COEFF_PER_CLK-1:0][DECOMP_DATA_W-1:0] decompress_data_i;
+     logic [COEFF_PER_CLK-1:0][MLKEM_Q_WIDTH-1:0] decompress_data_o;
+     logic [ABR_MEM_ADDR_WIDTH-1:0] mem_wr_addr;
+     logic write_done;
+
+From e24eca81073ce5fceee27978619bd61bb29c4fbe Mon Sep 17 00:00:00 2001
+From: Michael Norris <michnorris@microsoft.com>
+Date: Tue, 29 Jul 2025 08:57:54 -0700
+Subject: [PATCH 2/9] fix gh issue 166 	done signal asserts early due to
+ uncovered pipe stages in done calculation
+
+---
+ src/compress/rtl/compress_top.sv | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/src/compress/rtl/compress_top.sv b/src/compress/rtl/compress_top.sv
+index 6f08c162..6e73c413 100644
+--- a/src/compress/rtl/compress_top.sv
++++ b/src/compress/rtl/compress_top.sv
+@@ -46,11 +46,11 @@ module compress_top
+         output logic compress_done
+     );
+ 
+-    localparam COMP_DATA_W = 12; //FIXME magic number
++    localparam COMP_DATA_W = MLKEM_Q_WIDTH;
+ 
+     logic [COEFF_PER_CLK-1:0][MLKEM_Q_WIDTH-1:0] compress_data_i, compress_data_o, compress_data;
+     logic [COEFF_PER_CLK-1:0][MLKEM_Q_WIDTH-1:0] mem_rd_data_stalled;
+-    logic [11:0] compress_data_valid; //FIXME magic number
++    logic [COMP_DATA_W-1:0] compress_data_valid;
+     logic read_done;
+     logic mem_rd_data_valid;
+     logic mem_rd_data_hold,mem_rd_data_hold_f ;
+@@ -58,7 +58,7 @@ module compress_top
+     logic [DATA_WIDTH-1:0] buffer_data, buffer_data_f;
+     logic compress_busy;
+ 
+-    always_comb compress_done = compress_busy & read_done & ~(|api_rw_en) & ~buffer_valid_f;
++    always_comb compress_done = compress_busy & read_done & ~(mem_rd_data_valid | (|api_rw_en) | buffer_valid | buffer_valid_f);
+ 
+     always_ff @(posedge clk or negedge reset_n) begin
+         if (!reset_n) begin
+@@ -191,4 +191,4 @@ module compress_top
+         end
+     end
+ 
+-endmodule
+\ No newline at end of file
++endmodule
+
+From 8c41a4f6b012784d9f8e1ac7a8d8b994f21003c9 Mon Sep 17 00:00:00 2001
+From: Michael Norris <michnorris@microsoft.com>
+Date: Tue, 29 Jul 2025 08:58:59 -0700
+Subject: [PATCH 3/9] rename reset/zeroize states of sequencer with ABR prefix
+ since they are common add input check for encaps and decaps flows
+
+---
+ src/abr_top/rtl/abr_ctrl.sv     |  39 +++++++-----
+ src/abr_top/rtl/abr_ctrl_pkg.sv |   8 +--
+ src/abr_top/rtl/abr_seq.sv      | 107 ++++++++++++++++----------------
+ 3 files changed, 80 insertions(+), 74 deletions(-)
+
+diff --git a/src/abr_top/rtl/abr_ctrl.sv b/src/abr_top/rtl/abr_ctrl.sv
+index e52a896f..814e5021 100644
+--- a/src/abr_top/rtl/abr_ctrl.sv
++++ b/src/abr_top/rtl/abr_ctrl.sv
+@@ -480,6 +480,8 @@ always_comb kv_mlkem_msg_write_data = '0;
+   logic signature_valid, set_signature_valid, clear_signature_valid;
+   logic verify_valid, set_verify_valid, clear_verify_valid;
+   logic decaps_valid, set_decaps_valid, clear_decaps_valid;
++  logic encaps_input_check_failure;
++  logic decaps_input_check_failure;
+ 
+   //per controller enable/busy for ntt
+   logic [ABR_NUM_NTT-1:0] ntt_en; //This is the pulse we drive to NTT to start it
+@@ -595,7 +597,7 @@ always_comb kv_mlkem_msg_write_data = '0;
+   //ABR Ready allows writes to api registers
+   //No writes allowed during operation or when keyvault reads are in progress
+   `ifdef CALIPTRA
+-  always_comb abr_ready = (abr_prog_cntr == MLDSA_RESET) & 
++  always_comb abr_ready = (abr_prog_cntr == ABR_RESET) & 
+                           ~kv_mlkem_seed_write_en &
+                           ~kv_mlkem_msg_write_en &
+                           ~kv_mldsa_seed_write_en;
+@@ -604,7 +606,7 @@ always_comb kv_mlkem_msg_write_data = '0;
+                                    ((mlkem_encaps_process & mlkem_encaps_done) |
+                                     (mlkem_decaps_process & mlkem_decaps_done));   
+   `else
+-  always_comb abr_ready = (abr_prog_cntr == MLDSA_RESET);
++  always_comb abr_ready = (abr_prog_cntr == ABR_RESET);
+   `endif
+ 
+   //without zeroize to make it more complex
+@@ -1453,12 +1455,15 @@ always_comb kv_mlkem_msg_write_data = '0;
+   always_comb clear_decaps_valid = mlkem_decaps_process & abr_instr.opcode.aux_en & (abr_instr.opcode.mode.aux_mode == MLKEM_COMPRESS) &
+                                    compress_compare_mode_o & compress_compare_failed_i;
+ 
++  always_comb encaps_input_check_failure = mlkem_encaps_process & abr_instr.opcode.aux_en & (abr_instr.opcode.mode.aux_mode == MLKEM_COMPRESS) & compress_compare_mode_o & compress_compare_failed_i;
++  always_comb decaps_input_check_failure = mlkem_decaps_process & sampler_state_dv_i & (abr_instr.operand3 == MLKEM_DEST_TR_REG_ID) & (sampler_state_data_i[0][255:0] != abr_scratch_reg.mlkem_enc.tr);
++
+   //ML-DSA sequencer, instruction is busy
+   always_comb subcomponent_busy = !(abr_ctrl_fsm_ns inside {ABR_CTRL_IDLE, ABR_CTRL_MSG_WAIT}) |
+                                   sampler_busy_i | ntt_busy[0];
+ `ifdef CALIPTRA
+   always_comb pcr_sign_input_invalid = (mldsa_cmd_reg inside {MLDSA_KEYGEN, MLDSA_SIGN, MLDSA_VERIFY}) & pcr_sign_mode;
+-  always_comb error_flag = skdecode_error_i | pcr_sign_input_invalid;
++  always_comb error_flag = skdecode_error_i | pcr_sign_input_invalid | encaps_input_check_failure | decaps_input_check_failure;
+ `else
+   always_comb error_flag = skdecode_error_i;
+ `endif                                  
+@@ -1478,14 +1483,14 @@ always_comb kv_mlkem_msg_write_data = '0;
+   //program counter
+   always_ff @(posedge clk or negedge rst_b) begin
+     if(!rst_b) begin
+-      abr_prog_cntr <= MLDSA_RESET;
++      abr_prog_cntr <= ABR_RESET;
+     end
+     else if(zeroize) begin
+-      abr_prog_cntr <= MLDSA_ZEROIZE;
++      abr_prog_cntr <= ABR_ZEROIZE;
+     end
+     else begin
+       if (error_flag_edge) begin
+-        abr_prog_cntr <= MLDSA_ERROR;
++        abr_prog_cntr <= ABR_ERROR;
+       end
+       else begin
+         abr_prog_cntr <= abr_prog_cntr_nxt;
+@@ -1514,12 +1519,12 @@ always_comb kv_mlkem_msg_write_data = '0;
+     mlkem_keygen_done = 0;
+     mlkem_encaps_done = 0;
+     mlkem_decaps_done = 0;
+-    abr_prog_cntr_nxt = MLDSA_RESET;
++    abr_prog_cntr_nxt = ABR_RESET;
+     abr_seq_en = !zeroize;
+     set_entropy = 0;
+ 
+     unique case (abr_prog_cntr) inside
+-      MLDSA_RESET : begin 
++      ABR_RESET : begin 
+         // Waiting for new valid command
+         unique case ({mlkem_cmd_reg,mldsa_cmd_reg}) inside
+           {MLKEM_NONE,MLDSA_KEYGEN} : begin  // keygen
+@@ -1566,17 +1571,17 @@ always_comb kv_mlkem_msg_write_data = '0;
+             set_decaps_valid = 1;
+           end
+           default : begin
+-            abr_prog_cntr_nxt = MLDSA_RESET;
++            abr_prog_cntr_nxt = ABR_RESET;
+             abr_seq_en = 0;
+             external_mu_mode_nxt = 0;
+           end
+         endcase
+       end
+-      MLDSA_ZEROIZE : begin
++      ABR_ZEROIZE : begin
+         if (zeroize_mem_done)
+-          abr_prog_cntr_nxt = MLDSA_RESET;
++          abr_prog_cntr_nxt = ABR_RESET;
+         else
+-          abr_prog_cntr_nxt = MLDSA_ZEROIZE;
++          abr_prog_cntr_nxt = ABR_ZEROIZE;
+         abr_seq_en = 0;  
+       end     
+       MLDSA_KG_JUMP_SIGN : begin
+@@ -1591,7 +1596,7 @@ always_comb kv_mlkem_msg_write_data = '0;
+         end
+       end
+       MLDSA_KG_E : begin // end of keygen
+-        //abr_prog_cntr_nxt = MLDSA_RESET;
++        //abr_prog_cntr_nxt = ABR_RESET;
+         mldsa_keygen_done = 1;
+       end
+       MLDSA_SIGN_CHECK_MODE : begin
+@@ -1690,7 +1695,7 @@ always_comb kv_mlkem_msg_write_data = '0;
+   always_comb compress_mode_o = (abr_instr.opcode.aux_en & (abr_instr.opcode.mode.aux_mode == MLKEM_COMPRESS)) ? abr_instr.imm[1:0] : '0;
+   always_comb compress_num_poly_o = (abr_instr.opcode.aux_en & (abr_instr.opcode.mode.aux_mode == MLKEM_COMPRESS)) ? abr_instr.imm[10:8] : '0;
+   always_comb compress_compare_mode_o = abr_instr.opcode.aux_en & (abr_instr.opcode.mode.aux_mode == MLKEM_COMPRESS) & 
+-                                        abr_instr.operand3 inside {MLKEM_DEST_C1_MEM_OFFSET,MLKEM_DEST_C2_MEM_OFFSET} & mlkem_decaps_process; 
++                                        ((abr_instr.imm[4] & mlkem_encaps_process) | (abr_instr.imm[5] & mlkem_decaps_process)); 
+   always_comb decompress_mode_o = (abr_instr.opcode.aux_en & (abr_instr.opcode.mode.aux_mode == MLKEM_DECOMPRESS)) ? abr_instr.imm[1:0] : '0;
+   always_comb decompress_num_poly_o = (abr_instr.opcode.aux_en & (abr_instr.opcode.mode.aux_mode == MLKEM_DECOMPRESS)) ? abr_instr.imm[10:8] : '0;
+   
+@@ -2014,7 +2019,7 @@ always_comb begin
+ end
+ 
+ //Zeroizer
+-always_comb abr_instr = ((abr_prog_cntr == MLDSA_ZEROIZE) | (abr_prog_cntr == MLDSA_RESET)) ? '0 : abr_instr_o;
++always_comb abr_instr = ((abr_prog_cntr == ABR_ZEROIZE) | (abr_prog_cntr == ABR_RESET)) ? '0 : abr_instr_o;
+ 
+ always_ff @(posedge clk or negedge rst_b) begin
+   if (!rst_b) begin
+@@ -2025,7 +2030,7 @@ always_ff @(posedge clk or negedge rst_b) begin
+     zeroize_mem_addr <= 0;
+     zeroize_mem_done <= 0;
+   end
+-  else if (abr_prog_cntr == MLDSA_ZEROIZE) begin
++  else if (abr_prog_cntr == ABR_ZEROIZE) begin
+     if (zeroize_mem_addr == ABR_MEM_MAX_DEPTH) begin
+       zeroize_mem_addr <= 0;
+       zeroize_mem_done <= 1;
+@@ -2038,7 +2043,7 @@ always_ff @(posedge clk or negedge rst_b) begin
+   end
+ end
+ 
+-always_comb zeroize_mem_we = (abr_prog_cntr == MLDSA_ZEROIZE);
++always_comb zeroize_mem_we = (abr_prog_cntr == ABR_ZEROIZE);
+ 
+ always_comb zeroize_mem_o.rd_wr_en = zeroize_mem_we? RW_WRITE : RW_IDLE;
+ always_comb zeroize_mem_o.addr = zeroize_mem_addr;
+diff --git a/src/abr_top/rtl/abr_ctrl_pkg.sv b/src/abr_top/rtl/abr_ctrl_pkg.sv
+index 8d09cf31..75a8593d 100644
+--- a/src/abr_top/rtl/abr_ctrl_pkg.sv
++++ b/src/abr_top/rtl/abr_ctrl_pkg.sv
+@@ -529,9 +529,9 @@ package abr_ctrl_pkg;
+ 
+     // MLDSA Subroutine listing
+     //KG
+-    localparam [ABR_PROG_ADDR_W-1 : 0] MLDSA_RESET        = 'd0;
+-    localparam [ABR_PROG_ADDR_W-1 : 0] MLDSA_ZEROIZE      = MLDSA_RESET + 1;
+-    localparam [ABR_PROG_ADDR_W-1 : 0] MLDSA_KG_S         = MLDSA_ZEROIZE + 1;
++    localparam [ABR_PROG_ADDR_W-1 : 0] ABR_RESET          = 'd0;
++    localparam [ABR_PROG_ADDR_W-1 : 0] ABR_ZEROIZE        = ABR_RESET + 1;
++    localparam [ABR_PROG_ADDR_W-1 : 0] MLDSA_KG_S         = ABR_ZEROIZE + 1;
+     localparam [ABR_PROG_ADDR_W-1 : 0] MLDSA_KG_JUMP_SIGN = MLDSA_KG_S + 101;
+     localparam [ABR_PROG_ADDR_W-1 : 0] MLDSA_KG_E         = MLDSA_KG_JUMP_SIGN + 1;
+     //Signing
+@@ -561,7 +561,7 @@ package abr_ctrl_pkg;
+     localparam [ABR_PROG_ADDR_W-1 : 0] MLDSA_VERIFY_RES        = MLDSA_VERIFY_EXP_A + 80;
+     localparam [ABR_PROG_ADDR_W-1 : 0] MLDSA_VERIFY_E          = MLDSA_VERIFY_RES + 4;
+ 
+-    localparam [ABR_PROG_ADDR_W-1 : 0] MLDSA_ERROR             = '1;
++    localparam [ABR_PROG_ADDR_W-1 : 0] ABR_ERROR               = '1;
+ 
+     localparam [ABR_PROG_ADDR_W-1 : 0] MLKEM_RESET = 'd0;
+     localparam [ABR_PROG_ADDR_W-1 : 0] MLKEM_KG_S = MLDSA_VERIFY_E + 1;
+diff --git a/src/abr_top/rtl/abr_seq.sv b/src/abr_top/rtl/abr_seq.sv
+index f43700be..a94852bb 100644
+--- a/src/abr_top/rtl/abr_seq.sv
++++ b/src/abr_top/rtl/abr_seq.sv
+@@ -46,10 +46,10 @@ module abr_seq
+         if (en_i) begin
+             unique case(addr_i)
+                 //RESET
+-                MLDSA_RESET      : data_o_rom <= '{opcode:ABR_UOP_NOP, imm:'h0000, length:'d00, operand1:ABR_NOP, operand2:ABR_NOP, operand3:ABR_NOP};
++                ABR_RESET        : data_o_rom <= '{opcode:ABR_UOP_NOP, imm:'h0000, length:'d00, operand1:ABR_NOP, operand2:ABR_NOP, operand3:ABR_NOP};
+ 
+                 //ZEROIZE
+-                MLDSA_ZEROIZE    : data_o_rom <= '{opcode:ABR_UOP_NOP, imm:'h0000, length:'d00, operand1:ABR_NOP, operand2:ABR_NOP, operand3:ABR_NOP};
++                ABR_ZEROIZE      : data_o_rom <= '{opcode:ABR_UOP_NOP, imm:'h0000, length:'d00, operand1:ABR_NOP, operand2:ABR_NOP, operand3:ABR_NOP};
+ 
+                 //KEYGEN
+                 //rnd_seed=Keccak(entropy||counter)
+@@ -661,57 +661,58 @@ module abr_seq
+                 MLKEM_DECAPS_S + 13: data_o_rom <= '{opcode:ABR_UOP_MLKEM_PWS, imm:'h0000, length:'d34, operand1:MLKEM_SU_BASE, operand2:MLKEM_V_BASE, operand3:MLKEM_V_BASE};
+                 MLKEM_DECAPS_S + 14: data_o_rom <= '{opcode:ABR_UOP_COMPRESS, imm:'h0100, length:'d00, operand1:MLKEM_V_BASE, operand2:ABR_NOP, operand3:MLKEM_DEST_MSG_MEM_OFFSET};
+                 //MLKEM Encaps
+-                MLKEM_ENCAPS_S + 0 : data_o_rom <= '{opcode:ABR_UOP_SHA256, imm:'h0000, length:EK_NUM_BYTES, operand1:MLKEM_EK_REG_ID, operand2:ABR_NOP, operand3:MLKEM_DEST_TR_REG_ID};
+-                MLKEM_ENCAPS_S + 1 : data_o_rom <= '{opcode:ABR_UOP_LD_SHA512, imm:'h0000, length:'d32, operand1:MLKEM_MSG_ID, operand2:ABR_NOP, operand3:ABR_NOP};
+-                MLKEM_ENCAPS_S + 2 : data_o_rom <= '{opcode:ABR_UOP_SHA512, imm:'h0000, length:'d32, operand1:MLKEM_TR_ID, operand2:ABR_NOP, operand3:MLKEM_DEST_K_R_REG_ID};
+-                MLKEM_ENCAPS_S + 3 : data_o_rom <= '{opcode:ABR_UOP_DECOMPRESS, imm:'h0403, length:'d00, operand1:MLKEM_SRC_EK_MEM_OFFSET, operand2:ABR_NOP, operand3:MLKEM_T0_BASE};
+-                MLKEM_ENCAPS_S + 4 : data_o_rom <= '{opcode:ABR_UOP_CBD, imm:'h0000, length:'d33, operand1:MLKEM_R_ID, operand2:ABR_NOP, operand3:MLKEM_Y0_BASE};
+-                MLKEM_ENCAPS_S + 5 : data_o_rom <= '{opcode:ABR_UOP_CBD, imm:'h0001, length:'d33, operand1:MLKEM_R_ID, operand2:ABR_NOP, operand3:MLKEM_Y1_BASE};
+-                MLKEM_ENCAPS_S + 6 : data_o_rom <= '{opcode:ABR_UOP_CBD, imm:'h0002, length:'d33, operand1:MLKEM_R_ID, operand2:ABR_NOP, operand3:MLKEM_Y2_BASE};
+-                MLKEM_ENCAPS_S + 7 : data_o_rom <= '{opcode:ABR_UOP_CBD, imm:'h0003, length:'d33, operand1:MLKEM_R_ID, operand2:ABR_NOP, operand3:MLKEM_Y3_BASE};
+-                MLKEM_ENCAPS_S + 8 : data_o_rom <= '{opcode:ABR_UOP_CBD, imm:'h0004, length:'d33, operand1:MLKEM_R_ID, operand2:ABR_NOP, operand3:MLKEM_E0_BASE};
+-                MLKEM_ENCAPS_S + 9 : data_o_rom <= '{opcode:ABR_UOP_CBD, imm:'h0005, length:'d33, operand1:MLKEM_R_ID, operand2:ABR_NOP, operand3:MLKEM_E1_BASE};
+-                MLKEM_ENCAPS_S + 10: data_o_rom <= '{opcode:ABR_UOP_CBD, imm:'h0006, length:'d33, operand1:MLKEM_R_ID, operand2:ABR_NOP, operand3:MLKEM_E2_BASE};
+-                MLKEM_ENCAPS_S + 11: data_o_rom <= '{opcode:ABR_UOP_CBD, imm:'h0007, length:'d33, operand1:MLKEM_R_ID, operand2:ABR_NOP, operand3:MLKEM_E3_BASE};
+-                MLKEM_ENCAPS_S + 12: data_o_rom <= '{opcode:ABR_UOP_CBD, imm:'h0008, length:'d33, operand1:MLKEM_R_ID, operand2:ABR_NOP, operand3:MLKEM_E_2_BASE};
+-                MLKEM_ENCAPS_S + 13: data_o_rom <= '{opcode:ABR_UOP_MLKEM_NTT, imm:'h0000, length:'d00, operand1:MLKEM_Y0_BASE, operand2:ABR_NOP, operand3:MLKEM_Y0_BASE};
+-                MLKEM_ENCAPS_S + 14: data_o_rom <= '{opcode:ABR_UOP_MLKEM_NTT, imm:'h0000, length:'d00, operand1:MLKEM_Y1_BASE, operand2:ABR_NOP, operand3:MLKEM_Y1_BASE};
+-                MLKEM_ENCAPS_S + 15: data_o_rom <= '{opcode:ABR_UOP_MLKEM_NTT, imm:'h0000, length:'d00, operand1:MLKEM_Y2_BASE, operand2:ABR_NOP, operand3:MLKEM_Y2_BASE};
+-                MLKEM_ENCAPS_S + 16: data_o_rom <= '{opcode:ABR_UOP_MLKEM_NTT, imm:'h0000, length:'d00, operand1:MLKEM_Y3_BASE, operand2:ABR_NOP, operand3:MLKEM_Y3_BASE};
+-                MLKEM_ENCAPS_S + 17: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWM, imm:'h0000, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y0_BASE, operand3:MLKEM_AY0_BASE};
+-                MLKEM_ENCAPS_S + 18: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWMA, imm:'h0100, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y1_BASE, operand3:MLKEM_AY0_BASE};
+-                MLKEM_ENCAPS_S + 19: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWMA, imm:'h0200, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y2_BASE, operand3:MLKEM_AY0_BASE};
+-                MLKEM_ENCAPS_S + 20: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWMA, imm:'h0300, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y3_BASE, operand3:MLKEM_AY0_BASE};
+-                MLKEM_ENCAPS_S + 21: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_INTT, imm:'h0000, length:'d00, operand1:MLKEM_AY0_BASE, operand2:ABR_NOP, operand3:MLKEM_AY0_BASE};
+-                MLKEM_ENCAPS_S + 22: data_o_rom <= '{opcode:ABR_UOP_MLKEM_PWA, imm:'h0000, length:'d00, operand1:MLKEM_AY0_BASE, operand2:MLKEM_E0_BASE, operand3:MLKEM_U0_BASE};
+-                MLKEM_ENCAPS_S + 23: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWM, imm:'h0001, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y0_BASE, operand3:MLKEM_AY0_BASE};
+-                MLKEM_ENCAPS_S + 24: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWMA, imm:'h0101, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y1_BASE, operand3:MLKEM_AY0_BASE};
+-                MLKEM_ENCAPS_S + 25: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWMA, imm:'h0201, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y2_BASE, operand3:MLKEM_AY0_BASE};
+-                MLKEM_ENCAPS_S + 26: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWMA, imm:'h0301, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y3_BASE, operand3:MLKEM_AY0_BASE};
+-                MLKEM_ENCAPS_S + 27: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_INTT, imm:'h0000, length:'d00, operand1:MLKEM_AY0_BASE, operand2:ABR_NOP, operand3:MLKEM_AY0_BASE};
+-                MLKEM_ENCAPS_S + 28: data_o_rom <= '{opcode:ABR_UOP_MLKEM_PWA, imm:'h0000, length:'d00, operand1:MLKEM_AY0_BASE, operand2:MLKEM_E1_BASE, operand3:MLKEM_U1_BASE};
+-                MLKEM_ENCAPS_S + 29: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWM, imm:'h0002, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y0_BASE, operand3:MLKEM_AY0_BASE};
+-                MLKEM_ENCAPS_S + 30: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWMA, imm:'h0102, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y1_BASE, operand3:MLKEM_AY0_BASE};
+-                MLKEM_ENCAPS_S + 31: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWMA, imm:'h0202, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y2_BASE, operand3:MLKEM_AY0_BASE};
+-                MLKEM_ENCAPS_S + 32: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWMA, imm:'h0302, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y3_BASE, operand3:MLKEM_AY0_BASE};
+-                MLKEM_ENCAPS_S + 33: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_INTT, imm:'h0000, length:'d00, operand1:MLKEM_AY0_BASE, operand2:ABR_NOP, operand3:MLKEM_AY0_BASE};
+-                MLKEM_ENCAPS_S + 34: data_o_rom <= '{opcode:ABR_UOP_MLKEM_PWA, imm:'h0000, length:'d00, operand1:MLKEM_AY0_BASE, operand2:MLKEM_E2_BASE, operand3:MLKEM_U2_BASE};
+-                MLKEM_ENCAPS_S + 35: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWM, imm:'h0003, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y0_BASE, operand3:MLKEM_AY0_BASE};
+-                MLKEM_ENCAPS_S + 36: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWMA, imm:'h0103, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y1_BASE, operand3:MLKEM_AY0_BASE};
+-                MLKEM_ENCAPS_S + 37: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWMA, imm:'h0203, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y2_BASE, operand3:MLKEM_AY0_BASE};
+-                MLKEM_ENCAPS_S + 38: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWMA, imm:'h0303, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y3_BASE, operand3:MLKEM_AY0_BASE};
+-                MLKEM_ENCAPS_S + 39: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_INTT, imm:'h0000, length:'d00, operand1:MLKEM_AY0_BASE, operand2:ABR_NOP, operand3:MLKEM_AY0_BASE};
+-                MLKEM_ENCAPS_S + 40: data_o_rom <= '{opcode:ABR_UOP_MLKEM_PWA, imm:'h0000, length:'d00, operand1:MLKEM_AY0_BASE, operand2:MLKEM_E3_BASE, operand3:MLKEM_U3_BASE};
+-                MLKEM_ENCAPS_S + 41: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_PWM, imm:'h0000, length:'d00, operand1:MLKEM_T0_BASE, operand2:MLKEM_Y0_BASE, operand3:MLKEM_TY_MASKED_BASE};
+-                MLKEM_ENCAPS_S + 42: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_PWMA, imm:'h0000, length:'d00, operand1:MLKEM_T1_BASE, operand2:MLKEM_Y1_BASE, operand3:MLKEM_TY_MASKED_BASE};
+-                MLKEM_ENCAPS_S + 43: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_PWMA, imm:'h0000, length:'d00, operand1:MLKEM_T2_BASE, operand2:MLKEM_Y2_BASE, operand3:MLKEM_TY_MASKED_BASE};
+-                MLKEM_ENCAPS_S + 44: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_PWMA, imm:'h0000, length:'d00, operand1:MLKEM_T3_BASE, operand2:MLKEM_Y3_BASE, operand3:MLKEM_TY_MASKED_BASE};
+-                MLKEM_ENCAPS_S + 45: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_INTT, imm:'h0000, length:'d00, operand1:MLKEM_TY_MASKED_BASE, operand2:ABR_NOP, operand3:MLKEM_V_BASE};
+-                MLKEM_ENCAPS_S + 46: data_o_rom <= '{opcode:ABR_UOP_DECOMPRESS, imm:'h0100, length:'d00, operand1:MLKEM_SRC_MSG_MEM_OFFSET, operand2:ABR_NOP, operand3:MLKEM_MU_BASE};
+-                MLKEM_ENCAPS_S + 47: data_o_rom <= '{opcode:ABR_UOP_MLKEM_PWA, imm:'h0000, length:'d00, operand1:MLKEM_MU_BASE, operand2:MLKEM_E_2_BASE, operand3:MLKEM_E_2_BASE};
+-                MLKEM_ENCAPS_S + 48: data_o_rom <= '{opcode:ABR_UOP_MLKEM_PWA, imm:'h0000, length:'d00, operand1:MLKEM_V_BASE, operand2:MLKEM_E_2_BASE, operand3:MLKEM_V_BASE};
+-                MLKEM_ENCAPS_S + 49: data_o_rom <= '{opcode:ABR_UOP_COMPRESS, imm:'h0402, length:'d04, operand1:MLKEM_U0_BASE, operand2:ABR_NOP, operand3:MLKEM_DEST_C1_MEM_OFFSET};
+-                MLKEM_ENCAPS_S + 50: data_o_rom <= '{opcode:ABR_UOP_COMPRESS, imm:'h0101, length:'d00, operand1:MLKEM_V_BASE, operand2:ABR_NOP, operand3:MLKEM_DEST_C2_MEM_OFFSET};
++                MLKEM_ENCAPS_S + 0 : data_o_rom <= '{opcode:ABR_UOP_DECOMPRESS, imm:'h0403, length:'d00, operand1:MLKEM_SRC_EK_MEM_OFFSET, operand2:ABR_NOP, operand3:MLKEM_T0_BASE};
++                MLKEM_ENCAPS_S + 1 : data_o_rom <= '{opcode:ABR_UOP_COMPRESS, imm:'h0413, length:'d00, operand1:MLKEM_T0_BASE, operand2:ABR_NOP, operand3:MLKEM_DEST_EK_MEM_OFFSET};
++                MLKEM_ENCAPS_S + 2 : data_o_rom <= '{opcode:ABR_UOP_SHA256, imm:'h0000, length:EK_NUM_BYTES, operand1:MLKEM_EK_REG_ID, operand2:ABR_NOP, operand3:MLKEM_DEST_TR_REG_ID};
++                MLKEM_ENCAPS_S + 3 : data_o_rom <= '{opcode:ABR_UOP_LD_SHA512, imm:'h0000, length:'d32, operand1:MLKEM_MSG_ID, operand2:ABR_NOP, operand3:ABR_NOP};
++                MLKEM_ENCAPS_S + 4 : data_o_rom <= '{opcode:ABR_UOP_SHA512, imm:'h0000, length:'d32, operand1:MLKEM_TR_ID, operand2:ABR_NOP, operand3:MLKEM_DEST_K_R_REG_ID};
++                MLKEM_ENCAPS_S + 5 : data_o_rom <= '{opcode:ABR_UOP_CBD, imm:'h0000, length:'d33, operand1:MLKEM_R_ID, operand2:ABR_NOP, operand3:MLKEM_Y0_BASE};
++                MLKEM_ENCAPS_S + 6 : data_o_rom <= '{opcode:ABR_UOP_CBD, imm:'h0001, length:'d33, operand1:MLKEM_R_ID, operand2:ABR_NOP, operand3:MLKEM_Y1_BASE};
++                MLKEM_ENCAPS_S + 7 : data_o_rom <= '{opcode:ABR_UOP_CBD, imm:'h0002, length:'d33, operand1:MLKEM_R_ID, operand2:ABR_NOP, operand3:MLKEM_Y2_BASE};
++                MLKEM_ENCAPS_S + 8 : data_o_rom <= '{opcode:ABR_UOP_CBD, imm:'h0003, length:'d33, operand1:MLKEM_R_ID, operand2:ABR_NOP, operand3:MLKEM_Y3_BASE};
++                MLKEM_ENCAPS_S + 9 : data_o_rom <= '{opcode:ABR_UOP_CBD, imm:'h0004, length:'d33, operand1:MLKEM_R_ID, operand2:ABR_NOP, operand3:MLKEM_E0_BASE};
++                MLKEM_ENCAPS_S + 10: data_o_rom <= '{opcode:ABR_UOP_CBD, imm:'h0005, length:'d33, operand1:MLKEM_R_ID, operand2:ABR_NOP, operand3:MLKEM_E1_BASE};
++                MLKEM_ENCAPS_S + 11: data_o_rom <= '{opcode:ABR_UOP_CBD, imm:'h0006, length:'d33, operand1:MLKEM_R_ID, operand2:ABR_NOP, operand3:MLKEM_E2_BASE};
++                MLKEM_ENCAPS_S + 12: data_o_rom <= '{opcode:ABR_UOP_CBD, imm:'h0007, length:'d33, operand1:MLKEM_R_ID, operand2:ABR_NOP, operand3:MLKEM_E3_BASE};
++                MLKEM_ENCAPS_S + 13: data_o_rom <= '{opcode:ABR_UOP_CBD, imm:'h0008, length:'d33, operand1:MLKEM_R_ID, operand2:ABR_NOP, operand3:MLKEM_E_2_BASE};
++                MLKEM_ENCAPS_S + 14: data_o_rom <= '{opcode:ABR_UOP_MLKEM_NTT, imm:'h0000, length:'d00, operand1:MLKEM_Y0_BASE, operand2:ABR_NOP, operand3:MLKEM_Y0_BASE};
++                MLKEM_ENCAPS_S + 15: data_o_rom <= '{opcode:ABR_UOP_MLKEM_NTT, imm:'h0000, length:'d00, operand1:MLKEM_Y1_BASE, operand2:ABR_NOP, operand3:MLKEM_Y1_BASE};
++                MLKEM_ENCAPS_S + 16: data_o_rom <= '{opcode:ABR_UOP_MLKEM_NTT, imm:'h0000, length:'d00, operand1:MLKEM_Y2_BASE, operand2:ABR_NOP, operand3:MLKEM_Y2_BASE};
++                MLKEM_ENCAPS_S + 17: data_o_rom <= '{opcode:ABR_UOP_MLKEM_NTT, imm:'h0000, length:'d00, operand1:MLKEM_Y3_BASE, operand2:ABR_NOP, operand3:MLKEM_Y3_BASE};
++                MLKEM_ENCAPS_S + 18: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWM, imm:'h0000, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y0_BASE, operand3:MLKEM_AY0_BASE};
++                MLKEM_ENCAPS_S + 19: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWMA, imm:'h0100, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y1_BASE, operand3:MLKEM_AY0_BASE};
++                MLKEM_ENCAPS_S + 20: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWMA, imm:'h0200, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y2_BASE, operand3:MLKEM_AY0_BASE};
++                MLKEM_ENCAPS_S + 21: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWMA, imm:'h0300, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y3_BASE, operand3:MLKEM_AY0_BASE};
++                MLKEM_ENCAPS_S + 22: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_INTT, imm:'h0000, length:'d00, operand1:MLKEM_AY0_BASE, operand2:ABR_NOP, operand3:MLKEM_AY0_BASE};
++                MLKEM_ENCAPS_S + 23: data_o_rom <= '{opcode:ABR_UOP_MLKEM_PWA, imm:'h0000, length:'d00, operand1:MLKEM_AY0_BASE, operand2:MLKEM_E0_BASE, operand3:MLKEM_U0_BASE};
++                MLKEM_ENCAPS_S + 24: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWM, imm:'h0001, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y0_BASE, operand3:MLKEM_AY0_BASE};
++                MLKEM_ENCAPS_S + 25: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWMA, imm:'h0101, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y1_BASE, operand3:MLKEM_AY0_BASE};
++                MLKEM_ENCAPS_S + 26: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWMA, imm:'h0201, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y2_BASE, operand3:MLKEM_AY0_BASE};
++                MLKEM_ENCAPS_S + 27: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWMA, imm:'h0301, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y3_BASE, operand3:MLKEM_AY0_BASE};
++                MLKEM_ENCAPS_S + 28: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_INTT, imm:'h0000, length:'d00, operand1:MLKEM_AY0_BASE, operand2:ABR_NOP, operand3:MLKEM_AY0_BASE};
++                MLKEM_ENCAPS_S + 29: data_o_rom <= '{opcode:ABR_UOP_MLKEM_PWA, imm:'h0000, length:'d00, operand1:MLKEM_AY0_BASE, operand2:MLKEM_E1_BASE, operand3:MLKEM_U1_BASE};
++                MLKEM_ENCAPS_S + 30: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWM, imm:'h0002, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y0_BASE, operand3:MLKEM_AY0_BASE};
++                MLKEM_ENCAPS_S + 31: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWMA, imm:'h0102, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y1_BASE, operand3:MLKEM_AY0_BASE};
++                MLKEM_ENCAPS_S + 32: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWMA, imm:'h0202, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y2_BASE, operand3:MLKEM_AY0_BASE};
++                MLKEM_ENCAPS_S + 33: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWMA, imm:'h0302, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y3_BASE, operand3:MLKEM_AY0_BASE};
++                MLKEM_ENCAPS_S + 34: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_INTT, imm:'h0000, length:'d00, operand1:MLKEM_AY0_BASE, operand2:ABR_NOP, operand3:MLKEM_AY0_BASE};
++                MLKEM_ENCAPS_S + 35: data_o_rom <= '{opcode:ABR_UOP_MLKEM_PWA, imm:'h0000, length:'d00, operand1:MLKEM_AY0_BASE, operand2:MLKEM_E2_BASE, operand3:MLKEM_U2_BASE};
++                MLKEM_ENCAPS_S + 36: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWM, imm:'h0003, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y0_BASE, operand3:MLKEM_AY0_BASE};
++                MLKEM_ENCAPS_S + 37: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWMA, imm:'h0103, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y1_BASE, operand3:MLKEM_AY0_BASE};
++                MLKEM_ENCAPS_S + 38: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWMA, imm:'h0203, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y2_BASE, operand3:MLKEM_AY0_BASE};
++                MLKEM_ENCAPS_S + 39: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_REJS_PWMA, imm:'h0303, length:'d34, operand1:MLKEM_RHO_ID, operand2:MLKEM_Y3_BASE, operand3:MLKEM_AY0_BASE};
++                MLKEM_ENCAPS_S + 40: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_INTT, imm:'h0000, length:'d00, operand1:MLKEM_AY0_BASE, operand2:ABR_NOP, operand3:MLKEM_AY0_BASE};
++                MLKEM_ENCAPS_S + 41: data_o_rom <= '{opcode:ABR_UOP_MLKEM_PWA, imm:'h0000, length:'d00, operand1:MLKEM_AY0_BASE, operand2:MLKEM_E3_BASE, operand3:MLKEM_U3_BASE};
++                MLKEM_ENCAPS_S + 42: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_PWM, imm:'h0000, length:'d00, operand1:MLKEM_T0_BASE, operand2:MLKEM_Y0_BASE, operand3:MLKEM_TY_MASKED_BASE};
++                MLKEM_ENCAPS_S + 43: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_PWMA, imm:'h0000, length:'d00, operand1:MLKEM_T1_BASE, operand2:MLKEM_Y1_BASE, operand3:MLKEM_TY_MASKED_BASE};
++                MLKEM_ENCAPS_S + 44: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_PWMA, imm:'h0000, length:'d00, operand1:MLKEM_T2_BASE, operand2:MLKEM_Y2_BASE, operand3:MLKEM_TY_MASKED_BASE};
++                MLKEM_ENCAPS_S + 45: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_PWMA, imm:'h0000, length:'d00, operand1:MLKEM_T3_BASE, operand2:MLKEM_Y3_BASE, operand3:MLKEM_TY_MASKED_BASE};
++                MLKEM_ENCAPS_S + 46: data_o_rom <= '{opcode:ABR_UOP_MLKEM_MASKED_INTT, imm:'h0000, length:'d00, operand1:MLKEM_TY_MASKED_BASE, operand2:ABR_NOP, operand3:MLKEM_V_BASE};
++                MLKEM_ENCAPS_S + 47: data_o_rom <= '{opcode:ABR_UOP_DECOMPRESS, imm:'h0100, length:'d00, operand1:MLKEM_SRC_MSG_MEM_OFFSET, operand2:ABR_NOP, operand3:MLKEM_MU_BASE};
++                MLKEM_ENCAPS_S + 48: data_o_rom <= '{opcode:ABR_UOP_MLKEM_PWA, imm:'h0000, length:'d00, operand1:MLKEM_MU_BASE, operand2:MLKEM_E_2_BASE, operand3:MLKEM_E_2_BASE};
++                MLKEM_ENCAPS_S + 49: data_o_rom <= '{opcode:ABR_UOP_MLKEM_PWA, imm:'h0000, length:'d00, operand1:MLKEM_V_BASE, operand2:MLKEM_E_2_BASE, operand3:MLKEM_V_BASE};
++                MLKEM_ENCAPS_S + 50: data_o_rom <= '{opcode:ABR_UOP_COMPRESS, imm:'h0422, length:'d00, operand1:MLKEM_U0_BASE, operand2:ABR_NOP, operand3:MLKEM_DEST_C1_MEM_OFFSET};
++                MLKEM_ENCAPS_S + 51: data_o_rom <= '{opcode:ABR_UOP_COMPRESS, imm:'h0121, length:'d00, operand1:MLKEM_V_BASE, operand2:ABR_NOP, operand3:MLKEM_DEST_C2_MEM_OFFSET};
+                 MLKEM_ENCAPS_E + 0 : data_o_rom <= '{opcode:ABR_UOP_NOP, imm:'h0000, length:'d00, operand1:ABR_NOP, operand2:ABR_NOP, operand3:ABR_NOP};
+                 MLKEM_DECAPS_CHK + 0: data_o_rom <= '{opcode:ABR_UOP_LD_SHAKE256,  imm:'h0000, length:'d32, operand1:MLKEM_SEED_Z_ID, operand2:ABR_NOP, operand3:ABR_NOP};
+                 MLKEM_DECAPS_CHK + 1: data_o_rom <= '{opcode:ABR_UOP_SHAKE256,  imm:'h0000, length:CT_NUM_BYTES, operand1:MLKEM_CIPHERTEXT_ID, operand2:ABR_NOP, operand3:MLKEM_DEST_K_REG_ID};
+
+From ff458442b4e569e6890661fc7b5b8e637902bd36 Mon Sep 17 00:00:00 2001
+From: Michael Norris <michnorris@microsoft.com>
+Date: Tue, 29 Jul 2025 09:00:05 -0700
+Subject: [PATCH 4/9] fix flop coding that was causing synthesis issues
+
+---
+ src/abr_libs/rtl/abr_piso_multi.sv | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/src/abr_libs/rtl/abr_piso_multi.sv b/src/abr_libs/rtl/abr_piso_multi.sv
+index f6a6918b..882a9189 100644
+--- a/src/abr_libs/rtl/abr_piso_multi.sv
++++ b/src/abr_libs/rtl/abr_piso_multi.sv
+@@ -61,7 +61,10 @@ module abr_piso_multi #(
+ 
+   // Storage element
+   always_ff @(posedge clk or negedge rst_b) begin
+-    if (!rst_b || zeroize) begin
++    if (!rst_b) begin
++      buffer <= '0;
++      buffer_wr_ptr <= '0;
++    end else if (zeroize) begin
+       buffer <= '0;
+       buffer_wr_ptr <= '0;
+     end else if (update_buffer) begin
+
+From b30a625cfc5a933151aca00e4b3e240d1a2d475e Mon Sep 17 00:00:00 2001
+From: Michael Norris <michnorris@microsoft.com>
+Date: Tue, 29 Jul 2025 12:35:19 -0700
+Subject: [PATCH 5/9] correct the decompress change, can't use the 1/5/11
+ decomp logic for d of 12. Instead just check for out of range inputs and zero
+ them so that compress check will fail
+
+---
+ src/decompress/rtl/decompress.sv             | 11 ++++-------
+ src/decompress/rtl/decompress_defines_pkg.sv |  8 ++++----
+ src/decompress/rtl/decompress_top.sv         | 18 +++++++++---------
+ 3 files changed, 17 insertions(+), 20 deletions(-)
+
+diff --git a/src/decompress/rtl/decompress.sv b/src/decompress/rtl/decompress.sv
+index 6035d9e8..c2ad6d85 100644
+--- a/src/decompress/rtl/decompress.sv
++++ b/src/decompress/rtl/decompress.sv
+@@ -16,9 +16,6 @@
+ // decompress.sv
+ // --------
+ // Converts d-bit coefficients into 12-bit representation where d is the decompression level.
+-// Based on input mode, d is selected and the following equation is performed:
+-// ((data[11:0] << d) + q/2) / q
+-// To efficiently perform /q operation, barrett reduction is used.
+ 
+ module decompress
+     import abr_params_pkg::*;
+@@ -34,12 +31,12 @@ module decompress
+     
+     always_comb begin
+         if (mode == 3) begin
+-            op_o = op_i; // No decompression, just pass through
++            op_o = (op_i < MLKEM_Q) ? op_i : '0; // No decompression, just pass through if < MLKEM_Q
+         end else begin
+             unique case(mode)
+-                0: d = 1;
+-                1: d = 5;
+-                2: d = 11;
++                DECOMPRESS1:  d = 1;
++                DECOMPRESS5:  d = 5;
++                DECOMPRESS11: d = 11;
+                 default: d = 1;
+             endcase
+ 
+diff --git a/src/decompress/rtl/decompress_defines_pkg.sv b/src/decompress/rtl/decompress_defines_pkg.sv
+index 3c0ff20e..747f637a 100644
+--- a/src/decompress/rtl/decompress_defines_pkg.sv
++++ b/src/decompress/rtl/decompress_defines_pkg.sv
+@@ -26,10 +26,10 @@ package decompress_defines_pkg;
+     typedef enum logic {DCMP_RD_IDLE, DCMP_RD_MEM} decomp_read_state_e;
+     typedef enum logic {DCMP_WR_IDLE, DCMP_WR_MEM} decomp_write_state_e;
+ 
+-    localparam decompress1 = 'h0,
+-               decompress5 = 'h1,
+-               decompress11 = 'h2,
+-               decompress12 = 'h3;
++    localparam DECOMPRESS1 = 'h0,
++               DECOMPRESS5 = 'h1,
++               DECOMPRESS11 = 'h2,
++               DECOMPRESS12 = 'h3;
+ 
+     typedef logic [1:0] decompress_mode_t;
+ endpackage
+diff --git a/src/decompress/rtl/decompress_top.sv b/src/decompress/rtl/decompress_top.sv
+index 260b2de3..56f8faa8 100644
+--- a/src/decompress/rtl/decompress_top.sv
++++ b/src/decompress/rtl/decompress_top.sv
+@@ -97,20 +97,20 @@ module decompress_top
+         .data_o(piso_data_o)
+       );
+ 
+-    //Cast the API bitstream into integers for decomp block
++    //Cast the API bitstream into 12 bit vectors per coefficient
+     always_comb begin
+         for (int i = 0; i < COEFF_PER_CLK; i++) begin
+             unique case (mode)
+-                decompress1: begin
++                DECOMPRESS1: begin
+                     decompress_data_i[i] = 12'(piso_data_o[i*1 +: 1]);
+                 end
+-                decompress5: begin
++                DECOMPRESS5: begin
+                     decompress_data_i[i] = 12'(piso_data_o[i*5 +: 5]);
+                 end
+-                decompress11: begin
++                DECOMPRESS11: begin
+                     decompress_data_i[i] = 12'(piso_data_o[i*11 +: 11]);
+                 end
+-                decompress12: begin
++                DECOMPRESS12: begin
+                     decompress_data_i[i] = 12'(piso_data_o[i*12 +: 12]);
+                 end
+                 default: begin
+@@ -166,10 +166,10 @@ module decompress_top
+ 
+     always_comb begin
+         unique case (mode)
+-            decompress1: d = 1;
+-            decompress5: d = 5;
+-            decompress11: d = 11;
+-            decompress12: d = 12;
++            DECOMPRESS1: d = 1;
++            DECOMPRESS5: d = 5;
++            DECOMPRESS11: d = 11;
++            DECOMPRESS12: d = 12;
+             default: d = 12; // Default case
+         endcase
+     end
+
+From c35db6fa0351991d1067b932cfa9bac22e42045f Mon Sep 17 00:00:00 2001
+From: Michael Norris <michnorris@microsoft.com>
+Date: Tue, 29 Jul 2025 12:37:05 -0700
+Subject: [PATCH 6/9] add error status result for input check failures
+
+---
+ src/abr_top/rtl/abr_ctrl.sv    | 17 ++++++----
+ src/abr_top/rtl/abr_reg.rdl    |  8 +++--
+ src/abr_top/rtl/abr_reg.sv     | 62 ++++++++++++++++++++++++++++++++--
+ src/abr_top/rtl/abr_reg_pkg.sv | 20 +++++++++++
+ src/abr_top/rtl/abr_reg_uvm.sv | 10 ++++++
+ 5 files changed, 107 insertions(+), 10 deletions(-)
+
+diff --git a/src/abr_top/rtl/abr_ctrl.sv b/src/abr_top/rtl/abr_ctrl.sv
+index 814e5021..b6c053f2 100644
+--- a/src/abr_top/rtl/abr_ctrl.sv
++++ b/src/abr_top/rtl/abr_ctrl.sv
+@@ -648,6 +648,7 @@ always_comb kv_mlkem_msg_write_data = '0;
+ 
+     abr_reg_hwif_in.MLDSA_STATUS.READY.next = abr_ready;
+     abr_reg_hwif_in.MLDSA_STATUS.VALID.next = mldsa_valid_reg;
++    abr_reg_hwif_in.MLDSA_STATUS.ERROR.next = error_flag_reg;
+     abr_reg_hwif_in.MLDSA_STATUS.MSG_STREAM_READY.next = stream_msg_rdy;
+ 
+     stream_msg_mode = abr_reg_hwif_out.MLDSA_CTRL.STREAM_MSG.value;
+@@ -725,6 +726,7 @@ always_comb kv_mlkem_msg_write_data = '0;
+ 
+     abr_reg_hwif_in.MLKEM_STATUS.READY.next = abr_ready;
+     abr_reg_hwif_in.MLKEM_STATUS.VALID.next = mlkem_valid_reg;
++    abr_reg_hwif_in.MLKEM_STATUS.ERROR.next = error_flag_reg;
+ 
+     for (int dword=0; dword < SEED_NUM_DWORDS; dword++) begin
+       mlkem_seed_d_reg[dword] = abr_reg_hwif_out.MLKEM_SEED_D[dword].SEED.value;
+@@ -1461,12 +1463,15 @@ always_comb kv_mlkem_msg_write_data = '0;
+   //ML-DSA sequencer, instruction is busy
+   always_comb subcomponent_busy = !(abr_ctrl_fsm_ns inside {ABR_CTRL_IDLE, ABR_CTRL_MSG_WAIT}) |
+                                   sampler_busy_i | ntt_busy[0];
+-`ifdef CALIPTRA
+-  always_comb pcr_sign_input_invalid = (mldsa_cmd_reg inside {MLDSA_KEYGEN, MLDSA_SIGN, MLDSA_VERIFY}) & pcr_sign_mode;
+-  always_comb error_flag = skdecode_error_i | pcr_sign_input_invalid | encaps_input_check_failure | decaps_input_check_failure;
+-`else
+-  always_comb error_flag = skdecode_error_i;
+-`endif                                  
++
++always_comb begin
++  error_flag = skdecode_error_i | encaps_input_check_failure | decaps_input_check_failure;
++  `ifdef CALIPTRA
++  //extra error condition for caliptra
++  pcr_sign_input_invalid = (mldsa_cmd_reg inside {MLDSA_KEYGEN, MLDSA_SIGN, MLDSA_VERIFY}) & pcr_sign_mode;
++  error_flag |= pcr_sign_input_invalid;
++  `endif
++end                              
+ 
+   always_ff @(posedge clk or negedge rst_b) 
+   begin : error_detection
+diff --git a/src/abr_top/rtl/abr_reg.rdl b/src/abr_top/rtl/abr_reg.rdl
+index 10088ec0..d0022266 100644
+--- a/src/abr_top/rtl/abr_reg.rdl
++++ b/src/abr_top/rtl/abr_reg.rdl
+@@ -92,8 +92,9 @@ addrmap abr_reg {
+                 [br]                a control command and process the inputs.  
+                 [br]bit #1: VALID : ​Indicates if the process is done and the
+                 [br]                result is valid. 
+-                [br]bit #2: MSG_STREAM_READY: indicates if the core is ready 
++                [br]bit #2: MSG_STREAM_READY: Indicates if the core is ready 
+                 [br]                          to recieve the message in streaming mode.
++                [br]bit #3: ERROR: Indicates the process ended with an error
+                 ";
+ 
+         default sw = r;
+@@ -102,6 +103,7 @@ addrmap abr_reg {
+         field {desc = "Status ready bit";} READY = 1'b0;
+         field {hw = rw; desc = "Status valid bit";} VALID = 1'b0;
+         field {desc = "The core is ready to recieve the message in streaming mode";} MSG_STREAM_READY = 1'b0;
++        field {hw = rw; desc = "Status error bit";} ERROR = 1'b0;
+     
+     } MLDSA_STATUS;
+ 
+@@ -337,7 +339,8 @@ addrmap abr_reg {
+                 [br]bit #0: READY : ​Indicates if the core is ready to take
+                 [br]                a control command and process the inputs.  
+                 [br]bit #1: VALID : ​Indicates if the process is done and the
+-                [br]                result is valid. 
++                [br]                result is valid.  
++                [br]bit #2: ERROR : ​Indicates the process ended in an error. 
+                 ";
+ 
+         default sw = r;
+@@ -345,6 +348,7 @@ addrmap abr_reg {
+         default resetsignal = reset_b;
+         field {desc = "Status ready bit";} READY = 1'b0;
+         field {hw = rw; desc = "Status valid bit";} VALID = 1'b0;
++        field {hw = rw; desc = "Status error bit";} ERROR = 1'b0;
+     
+     } MLKEM_STATUS;
+     
+diff --git a/src/abr_top/rtl/abr_reg.sv b/src/abr_top/rtl/abr_reg.sv
+index f6843ced..37e60603 100644
+--- a/src/abr_top/rtl/abr_reg.sv
++++ b/src/abr_top/rtl/abr_reg.sv
+@@ -278,6 +278,10 @@ module abr_reg (
+                 logic next;
+                 logic load_next;
+             } VALID;
++            struct packed{
++                logic next;
++                logic load_next;
++            } ERROR;
+         } MLDSA_STATUS;
+         struct packed{
+             struct packed{
+@@ -372,6 +376,10 @@ module abr_reg (
+                 logic next;
+                 logic load_next;
+             } VALID;
++            struct packed{
++                logic next;
++                logic load_next;
++            } ERROR;
+         } MLKEM_STATUS;
+         struct packed{
+             struct packed{
+@@ -596,6 +604,9 @@ module abr_reg (
+             struct packed{
+                 logic value;
+             } VALID;
++            struct packed{
++                logic value;
++            } ERROR;
+         } MLDSA_STATUS;
+         struct packed{
+             struct packed{
+@@ -673,6 +684,9 @@ module abr_reg (
+             struct packed{
+                 logic value;
+             } VALID;
++            struct packed{
++                logic value;
++            } ERROR;
+         } MLKEM_STATUS;
+         struct packed{
+             struct packed{
+@@ -971,6 +985,27 @@ module abr_reg (
+         end
+     end
+     assign hwif_out.MLDSA_STATUS.VALID.value = field_storage.MLDSA_STATUS.VALID.value;
++    // Field: abr_reg.MLDSA_STATUS.ERROR
++    always_comb begin
++        automatic logic [0:0] next_c;
++        automatic logic load_next_c;
++        next_c = field_storage.MLDSA_STATUS.ERROR.value;
++        load_next_c = '0;
++        
++        // HW Write
++        next_c = hwif_in.MLDSA_STATUS.ERROR.next;
++        load_next_c = '1;
++        field_combo.MLDSA_STATUS.ERROR.next = next_c;
++        field_combo.MLDSA_STATUS.ERROR.load_next = load_next_c;
++    end
++    always_ff @(posedge clk or negedge hwif_in.reset_b) begin
++        if(~hwif_in.reset_b) begin
++            field_storage.MLDSA_STATUS.ERROR.value <= 1'h0;
++        end else if(field_combo.MLDSA_STATUS.ERROR.load_next) begin
++            field_storage.MLDSA_STATUS.ERROR.value <= field_combo.MLDSA_STATUS.ERROR.next;
++        end
++    end
++    assign hwif_out.MLDSA_STATUS.ERROR.value = field_storage.MLDSA_STATUS.ERROR.value;
+     for(genvar i0=0; i0<16; i0++) begin
+         // Field: abr_reg.ABR_ENTROPY[].ENTROPY
+         always_comb begin
+@@ -1410,6 +1445,27 @@ module abr_reg (
+         end
+     end
+     assign hwif_out.MLKEM_STATUS.VALID.value = field_storage.MLKEM_STATUS.VALID.value;
++    // Field: abr_reg.MLKEM_STATUS.ERROR
++    always_comb begin
++        automatic logic [0:0] next_c;
++        automatic logic load_next_c;
++        next_c = field_storage.MLKEM_STATUS.ERROR.value;
++        load_next_c = '0;
++        
++        // HW Write
++        next_c = hwif_in.MLKEM_STATUS.ERROR.next;
++        load_next_c = '1;
++        field_combo.MLKEM_STATUS.ERROR.next = next_c;
++        field_combo.MLKEM_STATUS.ERROR.load_next = load_next_c;
++    end
++    always_ff @(posedge clk or negedge hwif_in.reset_b) begin
++        if(~hwif_in.reset_b) begin
++            field_storage.MLKEM_STATUS.ERROR.value <= 1'h0;
++        end else if(field_combo.MLKEM_STATUS.ERROR.load_next) begin
++            field_storage.MLKEM_STATUS.ERROR.value <= field_combo.MLKEM_STATUS.ERROR.next;
++        end
++    end
++    assign hwif_out.MLKEM_STATUS.ERROR.value = field_storage.MLKEM_STATUS.ERROR.value;
+     for(genvar i0=0; i0<8; i0++) begin
+         // Field: abr_reg.MLKEM_SEED_D[].SEED
+         always_comb begin
+@@ -2368,7 +2424,8 @@ module abr_reg (
+     assign readback_array[4][0:0] = (decoded_reg_strb.MLDSA_STATUS && !decoded_req_is_wr) ? hwif_in.MLDSA_STATUS.READY.next : '0;
+     assign readback_array[4][1:1] = (decoded_reg_strb.MLDSA_STATUS && !decoded_req_is_wr) ? field_storage.MLDSA_STATUS.VALID.value : '0;
+     assign readback_array[4][2:2] = (decoded_reg_strb.MLDSA_STATUS && !decoded_req_is_wr) ? hwif_in.MLDSA_STATUS.MSG_STREAM_READY.next : '0;
+-    assign readback_array[4][31:3] = '0;
++    assign readback_array[4][3:3] = (decoded_reg_strb.MLDSA_STATUS && !decoded_req_is_wr) ? field_storage.MLDSA_STATUS.ERROR.value : '0;
++    assign readback_array[4][31:4] = '0;
+     for(genvar i0=0; i0<16; i0++) begin
+         assign readback_array[i0*1 + 5][31:0] = (decoded_reg_strb.MLDSA_VERIFY_RES[i0] && !decoded_req_is_wr) ? field_storage.MLDSA_VERIFY_RES[i0].VERIFY_RES.value : '0;
+     end
+@@ -2392,7 +2449,8 @@ module abr_reg (
+     end
+     assign readback_array[31][0:0] = (decoded_reg_strb.MLKEM_STATUS && !decoded_req_is_wr) ? hwif_in.MLKEM_STATUS.READY.next : '0;
+     assign readback_array[31][1:1] = (decoded_reg_strb.MLKEM_STATUS && !decoded_req_is_wr) ? field_storage.MLKEM_STATUS.VALID.value : '0;
+-    assign readback_array[31][31:2] = '0;
++    assign readback_array[31][2:2] = (decoded_reg_strb.MLKEM_STATUS && !decoded_req_is_wr) ? field_storage.MLKEM_STATUS.ERROR.value : '0;
++    assign readback_array[31][31:3] = '0;
+     for(genvar i0=0; i0<8; i0++) begin
+         assign readback_array[i0*1 + 32] = hwif_in.MLKEM_SHARED_KEY[i0].rd_ack ? hwif_in.MLKEM_SHARED_KEY[i0].rd_data : '0;
+     end
+diff --git a/src/abr_top/rtl/abr_reg_pkg.sv b/src/abr_top/rtl/abr_reg_pkg.sv
+index c3d0e62c..89e9ac5f 100644
+--- a/src/abr_top/rtl/abr_reg_pkg.sv
++++ b/src/abr_top/rtl/abr_reg_pkg.sv
+@@ -57,10 +57,15 @@ package abr_reg_pkg;
+         logic next;
+     } abr_reg__MLDSA_STATUS__MSG_STREAM_READY__in_t;
+ 
++    typedef struct packed{
++        logic next;
++    } abr_reg__MLDSA_STATUS__ERROR__in_t;
++
+     typedef struct packed{
+         abr_reg__MLDSA_STATUS__READY__in_t READY;
+         abr_reg__MLDSA_STATUS__VALID__in_t VALID;
+         abr_reg__MLDSA_STATUS__MSG_STREAM_READY__in_t MSG_STREAM_READY;
++        abr_reg__MLDSA_STATUS__ERROR__in_t ERROR;
+     } abr_reg__MLDSA_STATUS__in_t;
+ 
+     typedef struct packed{
+@@ -229,9 +234,14 @@ package abr_reg_pkg;
+         logic next;
+     } abr_reg__MLKEM_STATUS__VALID__in_t;
+ 
++    typedef struct packed{
++        logic next;
++    } abr_reg__MLKEM_STATUS__ERROR__in_t;
++
+     typedef struct packed{
+         abr_reg__MLKEM_STATUS__READY__in_t READY;
+         abr_reg__MLKEM_STATUS__VALID__in_t VALID;
++        abr_reg__MLKEM_STATUS__ERROR__in_t ERROR;
+     } abr_reg__MLKEM_STATUS__in_t;
+ 
+     typedef struct packed{
+@@ -382,8 +392,13 @@ package abr_reg_pkg;
+         logic value;
+     } abr_reg__MLDSA_STATUS__VALID__out_t;
+ 
++    typedef struct packed{
++        logic value;
++    } abr_reg__MLDSA_STATUS__ERROR__out_t;
++
+     typedef struct packed{
+         abr_reg__MLDSA_STATUS__VALID__out_t VALID;
++        abr_reg__MLDSA_STATUS__ERROR__out_t ERROR;
+     } abr_reg__MLDSA_STATUS__out_t;
+ 
+     typedef struct packed{
+@@ -531,8 +546,13 @@ package abr_reg_pkg;
+         logic value;
+     } abr_reg__MLKEM_STATUS__VALID__out_t;
+ 
++    typedef struct packed{
++        logic value;
++    } abr_reg__MLKEM_STATUS__ERROR__out_t;
++
+     typedef struct packed{
+         abr_reg__MLKEM_STATUS__VALID__out_t VALID;
++        abr_reg__MLKEM_STATUS__ERROR__out_t ERROR;
+     } abr_reg__MLKEM_STATUS__out_t;
+ 
+     typedef struct packed{
+diff --git a/src/abr_top/rtl/abr_reg_uvm.sv b/src/abr_top/rtl/abr_reg_uvm.sv
+index fcf6c014..95946251 100644
+--- a/src/abr_top/rtl/abr_reg_uvm.sv
++++ b/src/abr_top/rtl/abr_reg_uvm.sv
+@@ -123,10 +123,12 @@ package abr_reg_uvm;
+         abr_reg__MLDSA_STATUS_bit_cg READY_bit_cg[1];
+         abr_reg__MLDSA_STATUS_bit_cg VALID_bit_cg[1];
+         abr_reg__MLDSA_STATUS_bit_cg MSG_STREAM_READY_bit_cg[1];
++        abr_reg__MLDSA_STATUS_bit_cg ERROR_bit_cg[1];
+         abr_reg__MLDSA_STATUS_fld_cg fld_cg;
+         rand uvm_reg_field READY;
+         rand uvm_reg_field VALID;
+         rand uvm_reg_field MSG_STREAM_READY;
++        rand uvm_reg_field ERROR;
+ 
+         function new(string name = "abr_reg__MLDSA_STATUS");
+             super.new(name, 32, build_coverage(UVM_CVR_ALL));
+@@ -144,10 +146,13 @@ package abr_reg_uvm;
+             this.VALID.configure(this, 1, 1, "RO", 1, 'h0, 1, 1, 0);
+             this.MSG_STREAM_READY = new("MSG_STREAM_READY");
+             this.MSG_STREAM_READY.configure(this, 1, 2, "RO", 1, 'h0, 1, 1, 0);
++            this.ERROR = new("ERROR");
++            this.ERROR.configure(this, 1, 3, "RO", 1, 'h0, 1, 1, 0);
+             if (has_coverage(UVM_CVR_REG_BITS)) begin
+                 foreach(READY_bit_cg[bt]) READY_bit_cg[bt] = new();
+                 foreach(VALID_bit_cg[bt]) VALID_bit_cg[bt] = new();
+                 foreach(MSG_STREAM_READY_bit_cg[bt]) MSG_STREAM_READY_bit_cg[bt] = new();
++                foreach(ERROR_bit_cg[bt]) ERROR_bit_cg[bt] = new();
+             end
+             if (has_coverage(UVM_CVR_FIELD_VALS))
+                 fld_cg = new();
+@@ -676,9 +681,11 @@ package abr_reg_uvm;
+ 
+         abr_reg__MLKEM_STATUS_bit_cg READY_bit_cg[1];
+         abr_reg__MLKEM_STATUS_bit_cg VALID_bit_cg[1];
++        abr_reg__MLKEM_STATUS_bit_cg ERROR_bit_cg[1];
+         abr_reg__MLKEM_STATUS_fld_cg fld_cg;
+         rand uvm_reg_field READY;
+         rand uvm_reg_field VALID;
++        rand uvm_reg_field ERROR;
+ 
+         function new(string name = "abr_reg__MLKEM_STATUS");
+             super.new(name, 32, build_coverage(UVM_CVR_ALL));
+@@ -694,9 +701,12 @@ package abr_reg_uvm;
+             this.READY.configure(this, 1, 0, "RO", 1, 'h0, 1, 1, 0);
+             this.VALID = new("VALID");
+             this.VALID.configure(this, 1, 1, "RO", 1, 'h0, 1, 1, 0);
++            this.ERROR = new("ERROR");
++            this.ERROR.configure(this, 1, 2, "RO", 1, 'h0, 1, 1, 0);
+             if (has_coverage(UVM_CVR_REG_BITS)) begin
+                 foreach(READY_bit_cg[bt]) READY_bit_cg[bt] = new();
+                 foreach(VALID_bit_cg[bt]) VALID_bit_cg[bt] = new();
++                foreach(ERROR_bit_cg[bt]) ERROR_bit_cg[bt] = new();
+             end
+             if (has_coverage(UVM_CVR_FIELD_VALS))
+                 fld_cg = new();
+
+From 809b31ef289a2ef245254ea87fc8d92fd482458d Mon Sep 17 00:00:00 2001
+From: Michael Norris <michnorris@microsoft.com>
+Date: Tue, 29 Jul 2025 12:37:23 -0700
+Subject: [PATCH 7/9] test cases for encap/decap input errors
+
+---
+ .../abr_top_nightly_random_regression.yml     |  2 +
+ .../mldsa/tb/sequences/mldsa_sequences_pkg.sv |  2 +
+ .../tb/sequences/src/ML_KEM_base_sequence.svh | 48 ++++++++++-
+ ...M_randomized_decap_input_fail_sequence.svh | 78 ++++++++++++++++++
+ ...M_randomized_encap_input_fail_sequence.svh | 82 +++++++++++++++++++
+ .../mldsa/tb/tests/mldsa_tests_pkg.sv         |  2 +
+ ...L_KEM_randomized_decap_input_fail_test.svh | 62 ++++++++++++++
+ ...L_KEM_randomized_decap_input_fail_test.yml |  8 ++
+ ...L_KEM_randomized_encap_input_fail_test.svh | 62 ++++++++++++++
+ ...L_KEM_randomized_encap_input_fail_test.yml |  8 ++
+ 10 files changed, 350 insertions(+), 4 deletions(-)
+ create mode 100644 src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/sequences/src/ML_KEM_randomized_decap_input_fail_sequence.svh
+ create mode 100644 src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/sequences/src/ML_KEM_randomized_encap_input_fail_sequence.svh
+ create mode 100644 src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/src/ML_KEM_randomized_decap_input_fail_test.svh
+ create mode 100644 src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/src/ML_KEM_randomized_decap_input_fail_test.yml
+ create mode 100644 src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/src/ML_KEM_randomized_encap_input_fail_test.svh
+ create mode 100644 src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/src/ML_KEM_randomized_encap_input_fail_test.yml
+
+diff --git a/src/abr_top/stimulus/testsuites/abr_top_nightly_random_regression.yml b/src/abr_top/stimulus/testsuites/abr_top_nightly_random_regression.yml
+index 2793454c..4f22afaa 100644
+--- a/src/abr_top/stimulus/testsuites/abr_top_nightly_random_regression.yml
++++ b/src/abr_top/stimulus/testsuites/abr_top_nightly_random_regression.yml
+@@ -22,5 +22,7 @@ contents:
+         $ADAMSBRIDGE_ROOT/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/src/ML_DSA_randomized_KeySign_stream_msg_test   : { weight 40 }
+         $ADAMSBRIDGE_ROOT/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/src/ML_KEM_randomized_keygen_test   : { weight 40 }
+         $ADAMSBRIDGE_ROOT/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/src/ML_KEM_randomized_encap_test   : { weight 40 }
++        $ADAMSBRIDGE_ROOT/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/src/ML_KEM_randomized_encap_input_fail_test   : { weight 1 }
+         $ADAMSBRIDGE_ROOT/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/src/ML_KEM_randomized_decap_test   : { weight 40 }
++        $ADAMSBRIDGE_ROOT/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/src/ML_KEM_randomized_decap_input_fail_test   : { weight 1 }
+         $ADAMSBRIDGE_ROOT/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/src/ML_KEM_randomized_keygen_decap_test   : { weight 40 }
+diff --git a/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/sequences/mldsa_sequences_pkg.sv b/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/sequences/mldsa_sequences_pkg.sv
+index ab402f57..b66d095b 100644
+--- a/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/sequences/mldsa_sequences_pkg.sv
++++ b/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/sequences/mldsa_sequences_pkg.sv
+@@ -60,7 +60,9 @@ package mldsa_sequences_pkg;
+   `include "src/ML_KEM_base_sequence.svh"
+   `include "src/ML_KEM_randomized_keygen_sequence.svh"
+   `include "src/ML_KEM_randomized_encap_sequence.svh"
++  `include "src/ML_KEM_randomized_encap_input_fail_sequence.svh"
+   `include "src/ML_KEM_randomized_decap_sequence.svh"
++  `include "src/ML_KEM_randomized_decap_input_fail_sequence.svh"
+   `include "src/ML_KEM_randomized_keygen_decap_sequence.svh"
+   `include "src/ML_KEM_randomized_all_sequence.svh"
+ 
+diff --git a/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/sequences/src/ML_KEM_base_sequence.svh b/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/sequences/src/ML_KEM_base_sequence.svh
+index 73c46452..f89dd8d7 100644
+--- a/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/sequences/src/ML_KEM_base_sequence.svh
++++ b/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/sequences/src/ML_KEM_base_sequence.svh
+@@ -24,6 +24,7 @@ class ML_KEM_base_sequence extends mldsa_bench_sequence_base;
+   bit [31:0] seed_d [];
+   bit [31:0] seed_z [];
+   bit [31:0] ek [];
++  bit [11:0] ek_error [];
+   bit [31:0] dk [];
+   bit [31:0] msg [];
+   bit [31:0] ciphertext [];
+@@ -131,7 +132,30 @@ class ML_KEM_base_sequence extends mldsa_bench_sequence_base;
+   endtask
+ 
+ 
+-  task write_ek();
++  task write_ek(bit error_inject = 0);
++    if (error_inject) begin
++      int chunk_index;
++      int bit_index;
++      bit [(384*32)-1:0] ek_flat;
++      for (int i = 0; i < 384; i++) begin
++        ek_flat[i*32 +: 32] = ek[i];
++      end
++
++      // Pick a random chunk index between 0 and 1023
++      chunk_index = $urandom_range(0, 1023);
++      bit_index = chunk_index * 12;
++
++      // Assign 3329 to the selected 12-bit chunk to cause an error
++      // Use part-select across the array
++      ek_flat[bit_index +: 12] = 12'd3329;
++
++      // Reconstruct the ek array from the flat representation
++      for (int i = 0; i < 384; i++) begin
++        ek[i] = ek_flat[i*32 +: 32];
++      end
++      `uvm_info("EK_ERROR", $sformatf("Injected out of range value at chunk %0d", chunk_index), UVM_LOW);
++    end
++
+     // Write MLKEM_ENCAPS_KEY
+     for(int j = 0; j < reg_model.MLKEM_ENCAPS_KEY.m_mem.get_size(); j++) begin
+       reg_model.MLKEM_ENCAPS_KEY.m_mem.write(status, j, ek[j], UVM_FRONTDOOR, reg_model.default_map, this);
+@@ -155,7 +179,20 @@ class ML_KEM_base_sequence extends mldsa_bench_sequence_base;
+     end
+   endtask
+ 
+-  task write_dk();
++  task write_dk(bit error_inject = 0);
++    if (error_inject) begin
++      int dword_index;
++      int bit_index;
++
++      // Pick a random dword and bit in the ek/hash of ek range of dk
++      dword_index = $urandom_range(384, 783);
++      bit_index = $urandom_range(0, 31);
++
++      //inject a bit flip on that bit
++      dk[dword_index][bit_index] = ~dk[dword_index][bit_index];
++
++      `uvm_info("EK_ERROR", $sformatf("Injected DK bit flip at dword %0d bit %0d", dword_index, bit_index), UVM_LOW);
++    end
+     // Write MLKEM_DECAPS_KEY
+     for(int j = 0; j < reg_model.MLKEM_DECAPS_KEY.m_mem.get_size(); j++) begin
+       reg_model.MLKEM_DECAPS_KEY.m_mem.write(status, j, dk[j], UVM_FRONTDOOR, reg_model.default_map, this);
+@@ -384,9 +421,10 @@ class ML_KEM_base_sequence extends mldsa_bench_sequence_base;
+     $fclose(fd);
+   endtask
+ 
+-  task compare_encap_vectors();
++  task compare_encap_vectors(bit error_flag = 0);
+     // Compare Shared Key (K)
+     foreach (expected_shared_key[i]) begin
++      if (error_flag) expected_shared_key[i] = '0;
+       if (actual_shared_key[i] !== expected_shared_key[i]) begin
+         `uvm_error("K_MISMATCH",
+           $sformatf("K[%0d] mismatch: expected %08h, actual %08h",
+@@ -400,6 +438,7 @@ class ML_KEM_base_sequence extends mldsa_bench_sequence_base;
+   
+     // Compare Ciphertext (c)
+     foreach (expected_ciphertext[j]) begin
++      if (error_flag) expected_ciphertext[j] = '0;
+       if (actual_ciphertext[j] !== expected_ciphertext[j]) begin
+         `uvm_error("c_MISMATCH",
+           $sformatf("c[%0d] mismatch: expected %08h, actual %08h",
+@@ -460,9 +499,10 @@ class ML_KEM_base_sequence extends mldsa_bench_sequence_base;
+     $fclose(fd);
+   endtask
+ 
+-  task compare_decap_vectors();
++  task compare_decap_vectors(bit error_flag = 0);
+     // Compare Shared Key (K)
+     foreach (expected_shared_key[i]) begin
++      if (error_flag) expected_shared_key[i] = '0;
+       if (actual_shared_key[i] !== expected_shared_key[i]) begin
+         `uvm_error("K_MISMATCH",
+           $sformatf("K[%0d] mismatch: expected %08h, actual %08h",
+diff --git a/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/sequences/src/ML_KEM_randomized_decap_input_fail_sequence.svh b/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/sequences/src/ML_KEM_randomized_decap_input_fail_sequence.svh
+new file mode 100644
+index 00000000..36069609
+--- /dev/null
++++ b/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/sequences/src/ML_KEM_randomized_decap_input_fail_sequence.svh
+@@ -0,0 +1,78 @@
++//----------------------------------------------------------------------
++// Created with uvmf_gen version 2022.3
++//----------------------------------------------------------------------
++// pragma uvmf custom header begin
++// pragma uvmf custom header end
++//----------------------------------------------------------------------
++//
++//----------------------------------------------------------------------
++//                                          
++// DESCRIPTION: This file contains the top level sequence used in  example_derived_test.
++// It is an example of a sequence that is extended from %(benchName)_bench_sequence_base
++// and can override %(benchName)_bench_sequence_base.
++//
++//----------------------------------------------------------------------
++//----------------------------------------------------------------------
++//
++
++class ML_KEM_randomized_decap_input_fail_sequence extends ML_KEM_base_sequence;
++
++  `uvm_object_utils(ML_KEM_randomized_decap_input_fail_sequence);
++
++  
++
++  function new(string name = "");
++    super.new(name);
++  endfunction
++
++  virtual task body();
++    reg_model.reset();
++    #400;
++
++
++    if (reg_model.default_map == null) begin
++      `uvm_fatal("MAP_ERROR", "mldsa_uvm_rm.default_map map is not initialized");
++    end else begin
++      `uvm_info("MAP_INIT", "mldsa_uvm_rm.default_map is initialized", UVM_LOW);
++    end
++    //run with error injection, expect error
++    run_model_for_decap_with_rand_val();
++    wait_for_done(0, "ready");
++    write_dk(1);
++    write_ciphertext();
++    wait_for_done(0, "ready");
++    run_operation(32'h3, "decap Operation");
++    wait_for_done(2, "error");
++    read_shared_key();
++    compare_decap_vectors(1);
++    zeroize();
++    wait_for_done(0, "ready");
++    //run without error to ensure we recover
++    run_model_for_decap_with_rand_val();
++    wait_for_done(0, "ready");
++    write_dk();
++    write_ciphertext();
++    wait_for_done(0, "ready");
++    run_operation(32'h3, "decap Operation");
++    wait_for_done(1, "valid");
++    read_shared_key();
++    compare_decap_vectors();
++    zeroize();
++    wait_for_done(0, "ready");
++
++    `uvm_info("Randomized decap", $sformatf("ML-KEM decapsulation validation completed"), UVM_LOW);
++
++
++  endtask  
++
++
++  endclass
++
++
++
++
++// pragma uvmf custom external begin
++// pragma uvmf custom external end
++
++
++
+diff --git a/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/sequences/src/ML_KEM_randomized_encap_input_fail_sequence.svh b/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/sequences/src/ML_KEM_randomized_encap_input_fail_sequence.svh
+new file mode 100644
+index 00000000..bbc7b7f7
+--- /dev/null
++++ b/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/sequences/src/ML_KEM_randomized_encap_input_fail_sequence.svh
+@@ -0,0 +1,82 @@
++//----------------------------------------------------------------------
++// Created with uvmf_gen version 2022.3
++//----------------------------------------------------------------------
++// pragma uvmf custom header begin
++// pragma uvmf custom header end
++//----------------------------------------------------------------------
++//
++//----------------------------------------------------------------------
++//                                          
++// DESCRIPTION: This file contains the top level sequence used in  example_derived_test.
++// It is an example of a sequence that is extended from %(benchName)_bench_sequence_base
++// and can override %(benchName)_bench_sequence_base.
++//
++//----------------------------------------------------------------------
++//----------------------------------------------------------------------
++//
++
++class ML_KEM_randomized_encap_input_fail_sequence extends ML_KEM_base_sequence;
++
++  `uvm_object_utils(ML_KEM_randomized_encap_input_fail_sequence);
++
++  
++
++  function new(string name = "");
++    super.new(name);
++  endfunction
++
++  virtual task body();
++    reg_model.reset();
++    #400;
++
++
++    if (reg_model.default_map == null) begin
++      `uvm_fatal("MAP_ERROR", "mldsa_uvm_rm.default_map map is not initialized");
++    end else begin
++      `uvm_info("MAP_INIT", "mldsa_uvm_rm.default_map is initialized", UVM_LOW);
++    end
++
++    run_model_for_encap_with_rand_val();
++    wait_for_done(0, "ready");
++    write_msg();
++    write_ek(1);
++    wait_for_done(0, "ready");
++    run_operation(32'h2, "Encap Operation");
++    wait_for_done(2, "error");
++    read_ciphertext();
++    read_shared_key();
++    compare_encap_vectors(1);
++    zeroize();
++    wait_for_done(0, "ready");
++
++    //Run without error to ensure we recover
++    run_model_for_encap_with_rand_val();
++    wait_for_done(0, "ready");
++    write_msg();
++    write_ek();
++    wait_for_done(0, "ready");
++    run_operation(32'h2, "Encap Operation");
++    wait_for_done(1, "valid");
++    read_ciphertext();
++    read_shared_key();
++    compare_encap_vectors();
++    zeroize();
++    wait_for_done(0, "ready");
++
++
++    `uvm_info("Randomized Encap", $sformatf("ML-KEM Encapsulation validation completed"), UVM_LOW);
++
++
++  endtask  
++
++
++  endclass
++
++
++
++
++// pragma uvmf custom external begin
++// pragma uvmf custom external end
++
++
++
+diff --git a/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/mldsa_tests_pkg.sv b/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/mldsa_tests_pkg.sv
+index 399f679d..87d449b3 100644
+--- a/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/mldsa_tests_pkg.sv
++++ b/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/mldsa_tests_pkg.sv
+@@ -63,7 +63,9 @@ package mldsa_tests_pkg;
+    `include "src/ML_KEM_keygen_decaps_self_check_test.svh"
+    `include "src/ML_KEM_randomized_keygen_test.svh"
+    `include "src/ML_KEM_randomized_encap_test.svh"
++   `include "src/ML_KEM_randomized_encap_input_fail_test.svh"
+    `include "src/ML_KEM_randomized_decap_test.svh"
++   `include "src/ML_KEM_randomized_decap_input_fail_test.svh"
+    `include "src/ML_KEM_randomized_keygen_decap_test.svh"
+    `include "src/ML_KEM_randomized_all_test.svh"
+ 
+diff --git a/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/src/ML_KEM_randomized_decap_input_fail_test.svh b/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/src/ML_KEM_randomized_decap_input_fail_test.svh
+new file mode 100644
+index 00000000..20c6a3fb
+--- /dev/null
++++ b/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/src/ML_KEM_randomized_decap_input_fail_test.svh
+@@ -0,0 +1,62 @@
++//----------------------------------------------------------------------
++// Created with uvmf_gen version 2022.3
++//----------------------------------------------------------------------
++// pragma uvmf custom header begin
++// pragma uvmf custom header end
++//----------------------------------------------------------------------
++//----------------------------------------------------------------------
++//                                          
++// DESCRIPTION: This test extends test_top and makes 
++//    changes to test_top using the UVM factory type_override:
++//
++//    Test scenario: 
++//      Test uses a random seed to generate a public and private key pair
++//      Next it signs a random message with the private key
++//      Next it verifies that signature using the public key
++//----------------------------------------------------------------------
++//----------------------------------------------------------------------
++//
++
++class ML_KEM_randomized_decap_input_fail_test extends test_top;
++
++  `uvm_component_utils(ML_KEM_randomized_decap_input_fail_test);
++
++  bit disable_scrboard_from_test;
++  bit disable_pred_from_test;
++  
++  function new(string name = "", uvm_component parent = null);
++    super.new(name, parent);
++  endfunction
++
++  virtual function void build_phase(uvm_phase phase);
++    // The factory override below is an example of how to replace the mldsa_bench_sequence_base 
++    // sequence with the ML_KEM_randomized_decap_input_fail_sequence.
++    mldsa_bench_sequence_base::type_id::set_type_override(ML_KEM_randomized_decap_input_fail_sequence::get_type());
++    // Execute the build_phase of test_top AFTER all factory overrides have been created.
++    super.build_phase(phase);
++    // pragma uvmf custom configuration_settings_post_randomize begin
++    // UVMF_CHANGE_ME Test specific configuration values can be set here.  
++
++    disable_scrboard_from_test = 1;
++    disable_pred_from_test = 1;
++
++    uvm_config_db#(bit)::set(null, "*", "disable_scrboard_from_test", disable_scrboard_from_test);
++    uvm_config_db#(bit)::set(null, "*", "disable_pred_from_test", disable_pred_from_test);
++    // The configuration structure has already been randomized.
++    // The configuration structure has already been randomized.
++    // pragma uvmf custom configuration_settings_post_randomize end
++  endfunction
++
++  virtual task main_phase(uvm_phase phase);
++    // Start the ML_KEM_randomized_decap_input_fail_sequence
++    ML_KEM_randomized_decap_input_fail_sequence seq;
++    seq = ML_KEM_randomized_decap_input_fail_sequence::type_id::create("ML_KEM_randomized_decap_input_fail_sequence");
++    seq.start(null); // You may need to specify a sequencer if your environment requires it
++  endtask
++
++endclass
++
++// pragma uvmf custom external begin
++// pragma uvmf custom external end
++
++
+diff --git a/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/src/ML_KEM_randomized_decap_input_fail_test.yml b/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/src/ML_KEM_randomized_decap_input_fail_test.yml
+new file mode 100644
+index 00000000..2b2393da
+--- /dev/null
++++ b/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/src/ML_KEM_randomized_decap_input_fail_test.yml
+@@ -0,0 +1,8 @@
++---
++# Random seed desired...
++# seed: 11516
++plusargs:
++  - '+UVM_TESTNAME=ML_KEM_randomized_decap_input_fail_test'
++testname: ML_KEM_randomized_decap_input_fail_test
++parameters:
++  dilithium_command: "test_dilithium5"
+\ No newline at end of file
+diff --git a/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/src/ML_KEM_randomized_encap_input_fail_test.svh b/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/src/ML_KEM_randomized_encap_input_fail_test.svh
+new file mode 100644
+index 00000000..e26ba88b
+--- /dev/null
++++ b/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/src/ML_KEM_randomized_encap_input_fail_test.svh
+@@ -0,0 +1,62 @@
++//----------------------------------------------------------------------
++// Created with uvmf_gen version 2022.3
++//----------------------------------------------------------------------
++// pragma uvmf custom header begin
++// pragma uvmf custom header end
++//----------------------------------------------------------------------
++//----------------------------------------------------------------------
++//                                          
++// DESCRIPTION: This test extends test_top and makes 
++//    changes to test_top using the UVM factory type_override:
++//
++//    Test scenario: 
++//      Test uses a random seed to generate a public and private key pair
++//      Next it signs a random message with the private key
++//      Next it verifies that signature using the public key
++//----------------------------------------------------------------------
++//----------------------------------------------------------------------
++//
++
++class ML_KEM_randomized_encap_input_fail_test extends test_top;
++
++  `uvm_component_utils(ML_KEM_randomized_encap_input_fail_test);
++
++  bit disable_scrboard_from_test;
++  bit disable_pred_from_test;
++  
++  function new(string name = "", uvm_component parent = null);
++    super.new(name, parent);
++  endfunction
++
++  virtual function void build_phase(uvm_phase phase);
++    // The factory override below is an example of how to replace the mldsa_bench_sequence_base 
++    // sequence with the ML_KEM_randomized_encap_input_fail_sequence.
++    mldsa_bench_sequence_base::type_id::set_type_override(ML_KEM_randomized_encap_input_fail_sequence::get_type());
++    // Execute the build_phase of test_top AFTER all factory overrides have been created.
++    super.build_phase(phase);
++    // pragma uvmf custom configuration_settings_post_randomize begin
++    // UVMF_CHANGE_ME Test specific configuration values can be set here.  
++
++    disable_scrboard_from_test = 1;
++    disable_pred_from_test = 1;
++
++    uvm_config_db#(bit)::set(null, "*", "disable_scrboard_from_test", disable_scrboard_from_test);
++    uvm_config_db#(bit)::set(null, "*", "disable_pred_from_test", disable_pred_from_test);
++    // The configuration structure has already been randomized.
++    // The configuration structure has already been randomized.
++    // pragma uvmf custom configuration_settings_post_randomize end
++  endfunction
++
++  virtual task main_phase(uvm_phase phase);
++    // Start the ML_KEM_randomized_encap_input_fail_sequence
++    ML_KEM_randomized_encap_input_fail_sequence seq;
++    seq = ML_KEM_randomized_encap_input_fail_sequence::type_id::create("ML_KEM_randomized_encap_input_fail_sequence");
++    seq.start(null); // You may need to specify a sequencer if your environment requires it
++  endtask
++
++endclass
++
++// pragma uvmf custom external begin
++// pragma uvmf custom external end
++
++
+diff --git a/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/src/ML_KEM_randomized_encap_input_fail_test.yml b/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/src/ML_KEM_randomized_encap_input_fail_test.yml
+new file mode 100644
+index 00000000..2611d069
+--- /dev/null
++++ b/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/tests/src/ML_KEM_randomized_encap_input_fail_test.yml
+@@ -0,0 +1,8 @@
++---
++# Random seed desired...
++# seed: 11516
++plusargs:
++  - '+UVM_TESTNAME=ML_KEM_randomized_encap_input_fail_test'
++testname: ML_KEM_randomized_encap_input_fail_test
++parameters:
++  dilithium_command: "test_dilithium5"
+\ No newline at end of file
+
+From fbab0caab43831f12d8d5a70e36e9308db3948a4 Mon Sep 17 00:00:00 2001
+From: Michael Norris <michnorris@microsoft.com>
+Date: Tue, 29 Jul 2025 13:00:52 -0700
+Subject: [PATCH 8/9] stay in error state until zeroize
+
+---
+ src/abr_top/rtl/abr_ctrl.sv | 13 +++++--------
+ 1 file changed, 5 insertions(+), 8 deletions(-)
+
+diff --git a/src/abr_top/rtl/abr_ctrl.sv b/src/abr_top/rtl/abr_ctrl.sv
+index b6c053f2..1a3e36e3 100644
+--- a/src/abr_top/rtl/abr_ctrl.sv
++++ b/src/abr_top/rtl/abr_ctrl.sv
+@@ -796,7 +796,7 @@ always_comb kv_mlkem_msg_write_data = '0;
+   assign notif_intr = abr_reg_hwif_out.intr_block_rf.notif_global_intr_r.intr;
+ 
+   always_comb begin
+-    abr_reg_hwif_in.intr_block_rf.error_internal_intr_r.error_internal_sts.hwset = error_flag_edge; //TODO
++    abr_reg_hwif_in.intr_block_rf.error_internal_intr_r.error_internal_sts.hwset = error_flag_edge;
+     abr_reg_hwif_in.intr_block_rf.notif_internal_intr_r.notif_cmd_done_sts.hwset = abr_status_done;
+   end
+ 
+@@ -1493,13 +1493,10 @@ end
+     else if(zeroize) begin
+       abr_prog_cntr <= ABR_ZEROIZE;
+     end
+-    else begin
+-      if (error_flag_edge) begin
+-        abr_prog_cntr <= ABR_ERROR;
+-      end
+-      else begin
+-        abr_prog_cntr <= abr_prog_cntr_nxt;
+-      end
++    else if (error_flag_reg) begin
++      abr_prog_cntr <= ABR_ERROR;
++    end else begin
++      abr_prog_cntr <= abr_prog_cntr_nxt;
+     end
+   end
+ 
+
+From 9dadd9a28d797fd31c995baea76c06ee362c6fd3 Mon Sep 17 00:00:00 2001
+From: Michael Norris <michnorris@microsoft.com>
+Date: Wed, 30 Jul 2025 02:13:36 +0000
+Subject: [PATCH 9/9] MICROSOFT AUTOMATED PIPELINE: Stamp
+ 'user/dev/michnorris/mlkem_issues' with updated timestamp and hash after
+ successful run
+
+---
+ .github/workflow_metadata/pr_hash      | 2 +-
+ .github/workflow_metadata/pr_timestamp | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/.github/workflow_metadata/pr_hash b/.github/workflow_metadata/pr_hash
+index 42370796..b617593b 100644
+--- a/.github/workflow_metadata/pr_hash
++++ b/.github/workflow_metadata/pr_hash
+@@ -1 +1 @@
+-18b10d55ab7e9af615fe0f4fdf2f72fcfd54f9e662fe9dbac5c65e541bead360fe1800c747f9ec525adf6b277dc6984c
+\ No newline at end of file
++06c65ea9b5d455c2b5736fad7436e7573dfbf0d2200402fca8916408065eeaf198793e5c1b9599d96008ee5fcd122176
+\ No newline at end of file
+diff --git a/.github/workflow_metadata/pr_timestamp b/.github/workflow_metadata/pr_timestamp
+index 6bbe2e4b..552804b6 100644
+--- a/.github/workflow_metadata/pr_timestamp
++++ b/.github/workflow_metadata/pr_timestamp
+@@ -1 +1 @@
+-1753809869
+\ No newline at end of file
++1753841614
+\ No newline at end of file

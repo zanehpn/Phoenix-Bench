@@ -1,0 +1,10 @@
+{
+    "task_info": {
+        "base_commit": "e2e68fed8d080e704edad4c716d519f975599ad6",
+        "problem_statement": "# CVFPU incorrectly sets inexact flag on `F2F` conversions of infinity\n\nAccording to IEEE 754-2008, operations on infinite operands usually do not signal exceptions:\n\n![image](https://github.com/user-attachments/assets/f0985380-26c2-42b5-9641-4ac95065f1b9)\n\nHowever, CVFPU sets the `NX` flag on `F2F` conversions of infinite values.\n\nhttps://github.com/openhwgroup/cvfpu/blob/a6af691551ffbd76d5d9cf30774d3295a41615e4/src/fpnew_cast_multi.sv#L727-L728\n\nThe expression above suppresses the `NX` flag upon overflow if the operand is infinity, but not if any of the `fp_round_sticky_bits` are set. These sticky bits are extracted from the destination mantissa, which in turn is derived from `preshift_mant`:\n\nhttps://github.com/openhwgroup/cvfpu/blob/a6af691551ffbd76d5d9cf30774d3295a41615e4/src/fpnew_cast_multi.sv#L486-L494\n\nHowever, the bits of `preshift_mant` are all `'1` if the operand is infinity:\n\nhttps://github.com/openhwgroup/cvfpu/blob/a6af691551ffbd76d5d9cf30774d3295a41615e4/src/fpnew_cast_multi.sv#L462-L467\n\nAs a result, the bits in `fp_round_sticky_bits` are always set if the operand is infinity and consequently the `NX` flag is incorrectly set.\n",
+        "instance_id": "openhwgroup_cvfpu_pr140"
+    },
+    "setup_info": {
+        "repo_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/openhwgroup_cvfpu_pr140"
+    }
+}

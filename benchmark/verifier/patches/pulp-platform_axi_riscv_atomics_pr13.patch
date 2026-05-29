@@ -1,0 +1,47 @@
+From 52e8454754c7b54d04190f7ab12bda6ba716f9b5 Mon Sep 17 00:00:00 2001
+From: Florian Zaruba <zarubaf@iis.ee.ethz.ch>
+Date: Wed, 12 May 2021 11:50:16 +0200
+Subject: [PATCH] amos: Change to incremental burst type
+
+It seems that the most widely supported burst types are INCR and WRAP bursts, at least on
+the Xilinx infrastructure. I am pretty confident that most of the infrastructure should have
+INCR bursts implemented since this is one of the main benefits of having an AXI-based
+infrastructure.
+
+In particular this change fixes the burst type to incremental of the split RMW sequence, essentially
+mitigating an issue of the Xilinx SmartConnect blocks which do not support FIXED bursts.
+---
+ src/axi_riscv_amos.sv | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/src/axi_riscv_amos.sv b/src/axi_riscv_amos.sv
+index fafdb4f..db4fe32 100644
+--- a/src/axi_riscv_amos.sv
++++ b/src/axi_riscv_amos.sv
+@@ -392,7 +392,7 @@ module axi_riscv_amos #(
+                     mst_aw_len_o    = 8'h00;
+                     mst_aw_id_o     = id_q;
+                     mst_aw_size_o   = size_q;
+-                    mst_aw_burst_o  = 2'b00;
++                    mst_aw_burst_o  = axi_pkg::BURST_INCR;
+                     mst_aw_lock_o   = 1'b0;
+                     mst_aw_cache_o  = cache_q;
+                     mst_aw_prot_o   = prot_q;
+@@ -732,7 +732,7 @@ module axi_riscv_amos #(
+                             mst_ar_id_o     = slv_aw_id_i;
+                             mst_ar_len_o    = 8'h00;
+                             mst_ar_size_o   = slv_aw_size_i;
+-                            mst_ar_burst_o  = 2'b00;
++                            mst_ar_burst_o  = axi_pkg::BURST_INCR;
+                             mst_ar_lock_o   = 1'h0;
+                             mst_ar_cache_o  = slv_aw_cache_i;
+                             mst_ar_prot_o   = slv_aw_prot_i;
+@@ -760,7 +760,7 @@ module axi_riscv_amos #(
+                     mst_ar_id_o     = id_q;
+                     mst_ar_len_o    = 8'h00;
+                     mst_ar_size_o   = size_q;
+-                    mst_ar_burst_o  = 2'b00;
++                    mst_ar_burst_o  = axi_pkg::BURST_INCR;
+                     mst_ar_lock_o   = 1'h0;
+                     mst_ar_cache_o  = cache_q;
+                     mst_ar_prot_o   = prot_q;

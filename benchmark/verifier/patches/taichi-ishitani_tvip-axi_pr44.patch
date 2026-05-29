@@ -1,0 +1,64 @@
+From da6fdc87c39b81d327189fa1f8a7be7db0d267da Mon Sep 17 00:00:00 2001
+From: Taichi Ishitani <taichi730@gmail.com>
+Date: Mon, 25 Jul 2022 11:08:21 +0900
+Subject: [PATCH] fix *E,EXPRPA error reported by Cadence Xceium simulator
+
+(refs: #43)
+---
+ src/tvip_axi_slave_default_sequence.svh | 28 ++++++++++++++-----------
+ 1 file changed, 16 insertions(+), 12 deletions(-)
+
+diff --git a/src/tvip_axi_slave_default_sequence.svh b/src/tvip_axi_slave_default_sequence.svh
+index c936c67..d1584a2 100644
+--- a/src/tvip_axi_slave_default_sequence.svh
++++ b/src/tvip_axi_slave_default_sequence.svh
+@@ -22,26 +22,21 @@ class tvip_axi_slave_default_sequence extends tvip_axi_slave_sequence_base;
+     tvip_axi_slave_item   item
+   );
+     int response_size;
+-    int delay;
+ 
+     if (!item.randomize()) begin
+       `uvm_fatal("RNDFLD", "Randomization failed")
+     end
+ 
++    overwrite_delay(item.address_ready_delay, get_address_ready_delay(item));
++    overwrite_delay(item.start_delay, get_response_start_delay(item));
++
+     response_size = (item.is_read()) ? item.burst_length : 1;
+-    if ((delay = get_address_ready_delay(item)) >= 0) begin
+-      item.address_ready_delay  = delay;
+-    end
+-    if ((delay = get_response_start_delay(item)) >= 0) begin
+-      item.start_delay  = delay;
+-    end
+     for (int i = 0;i < response_size;++i) begin
+-      if (item.is_write() && ((delay = get_write_data_ready_delay(item, i)) >= 0)) begin
+-        item.write_data_ready_delay[i]  = delay;
+-      end
+-      if ((delay = get_response_delay(item, i)) >= 0) begin
+-        item.response_delay[i]  = delay;
++      overwrite_delay(item.response_delay[i], get_response_delay(item, i));
++      if (item.is_write()) begin
++        overwrite_delay(item.write_data_ready_delay[i], get_write_data_ready_delay(item, i));
+       end
++
+       if (get_response_existence(item, i)) begin
+         item.response[i]  = get_response_status(item, i);
+       end
+@@ -90,6 +85,15 @@ class tvip_axi_slave_default_sequence extends tvip_axi_slave_sequence_base;
+     return status.memory.exists(item.burst_size, item.address, index);
+   endfunction
+ 
++  protected function void overwrite_delay(
++    ref   int delay,
++    input int new_delay
++  );
++    if (new_delay >= 0) begin
++      delay = new_delay;
++    end
++  endfunction
++
+   `tue_object_default_constructor(tvip_axi_slave_default_sequence)
+   `uvm_object_utils(tvip_axi_slave_default_sequence)
+ endclass

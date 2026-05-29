@@ -1,0 +1,51 @@
+The bug is localized in **`rtl/cv32e40s_pmp.sv`**, in the **access-fault prioritization** logic.
+
+### Root cause
+When `mseccfg.MML` is set and **no PMP region matches**, the current code still leaves `access_fault` at:
+
+- `mmwp || (priv_lvl_i != PRIV_LVL_M)`
+
+So for **M-mode with `MMWP=0`**, `access_fault` becomes `0` by default, which incorrectly allows execution through unmapped memory.  
+Per Smepmp, with **MML set**, access should be denied unless a matching rule explicitly allows it.
+
+### Fix
+Make the default deny behavior apply whenever **MML is set**, even if no region matches.
+
+---
+
+```systemverilog
+### rtl/cv32e40s_pmp.sv
+<<<<<<< SEARCH
+  always_comb begin
+    // When MSECCFG.MMWP is set default deny always, otherwise allow for M-mode, deny for other
+    // modes
+    access_fault = csr_pmp_i.mseccfg.mmwp || (priv_lvl_i != PRIV_LVL_M);
+
+    // PMP entries are statically prioritized, from 0 to N-1
+    // The lowest-numbered PMP entry which matches an address determines accessability
+    for (int i_r = PMP_NUM_REGIONS-1; i_r >= 0; i_r--) begin
+      if (region_match_all[i_r]) begin
+        access_fault = access_fault_all[i_r];
+      end
+    end
+  end
+=======
+  always_comb begin
+    // When MSECCFG.MMWP or MSECCFG.MML is set, default deny always. Otherwise allow for M-mode,
+    // deny for other modes.
+    access_fault = csr_pmp_i.mseccfg.mmwp ||
+                   csr_pmp_i.mseccfg.mml  ||
+                   (priv_lvl_i != PRIV_LVL_M);
+
+    // PMP entries are statically prioritized, from 0 to N-1
+    // The lowest-numbered PMP entry which matches an address determines accessability
+    for (int i_r = PMP_NUM_REGIONS-1; i_r >= 0; i_r--) begin
+      if (region_match_all[i_r]) begin
+        access_fault = access_fault_all[i_r];
+      end
+    end
+  end
+>>>>>>> REPLACE
+```
+
+This ensures that after setting `mseccfg.MML`, a fetch with no matching PMP rule is properly denied.

@@ -1,0 +1,98 @@
+From 2abdd32393f3d8b598863d344d05b004a82d9219 Mon Sep 17 00:00:00 2001
+From: roman022285 <roman329@gmail.com>
+Date: Wed, 21 Feb 2024 18:14:26 +0200
+Subject: [PATCH 1/2] fix ref_model didnt stopped after ebreak
+
+---
+ verif/rv32i_ref/tb/rv32i_ref.sv | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/verif/rv32i_ref/tb/rv32i_ref.sv b/verif/rv32i_ref/tb/rv32i_ref.sv
+index ea3d33e7..acf8c03d 100644
+--- a/verif/rv32i_ref/tb/rv32i_ref.sv
++++ b/verif/rv32i_ref/tb/rv32i_ref.sv
+@@ -183,7 +183,7 @@ always_comb begin
+     //=======================
+     // default assignments       
+     //=======================
+-    next_pc             = pc + 4;
++    next_pc             = (en_end_of_simulation) ? pc : pc + 4;
+     next_regfile        = regfile;
+     reg_wr_en           = 1'b0;
+     illegal_instruction = 1'b0;
+
+From 8e0c07f03e729813cae15ac9d2d1f78e9f484af8 Mon Sep 17 00:00:00 2001
+From: roman022285 <roman329@gmail.com>
+Date: Wed, 21 Feb 2024 18:14:45 +0200
+Subject: [PATCH 2/2] remove nop
+
+---
+ .github/workflows/mafia_sanity.yml      | 2 +-
+ app/crt0/crt0_mini_rv32e.s              | 1 -
+ verif/core_rrv/tb/core_rrv_no_ref_tb.sv | 2 +-
+ verif/core_rrv/tb/core_rrv_tb.sv        | 2 +-
+ verif/mini_core/regress/rv32i_level0    | 2 +-
+ 5 files changed, 4 insertions(+), 5 deletions(-)
+
+diff --git a/.github/workflows/mafia_sanity.yml b/.github/workflows/mafia_sanity.yml
+index 4e0ef27b..3434ce0d 100644
+--- a/.github/workflows/mafia_sanity.yml
++++ b/.github/workflows/mafia_sanity.yml
+@@ -29,7 +29,7 @@ jobs:
+       - name: MINI_CORE at rv32e mode
+         run:  python build.py -dut 'mini_core' -regress rv32e_level0 -cfg mini_rv32e -app -hw -sim -keep_going
+ 
+-      - name: MINI_CORE at rv3i mode
++      - name: MINI_CORE at rv32i mode
+         run:  python build.py -dut 'mini_core' -regress rv32i_level0 -app -hw -sim -keep_going
+ 
+       - name: SC_CORE - rv32i_level0 
+diff --git a/app/crt0/crt0_mini_rv32e.s b/app/crt0/crt0_mini_rv32e.s
+index 131c127f..e51a7c90 100644
+--- a/app/crt0/crt0_mini_rv32e.s
++++ b/app/crt0/crt0_mini_rv32e.s
+@@ -28,7 +28,6 @@ reset_handler:
+   jal x1, main  //jump to main
+   nop
+   ebreak        //end
+-  nop
+   .section .text
+ 
+ 
+diff --git a/verif/core_rrv/tb/core_rrv_no_ref_tb.sv b/verif/core_rrv/tb/core_rrv_no_ref_tb.sv
+index 9bf592bf..c7a8eb69 100644
+--- a/verif/core_rrv/tb/core_rrv_no_ref_tb.sv
++++ b/verif/core_rrv/tb/core_rrv_no_ref_tb.sv
+@@ -113,7 +113,7 @@ initial begin: test_seq
+ end // test_seq
+ 
+ parameter V_TIMEOUT = 500000;
+-parameter RF_NUM_MSB = 31; // NOTE!!!: auto inserted from script ovrd_params.py
++parameter RF_NUM_MSB = 15; // NOTE!!!: auto inserted from script ovrd_params.py
+ initial begin: detect_timeout
+     //=======================================
+     // timeout
+diff --git a/verif/core_rrv/tb/core_rrv_tb.sv b/verif/core_rrv/tb/core_rrv_tb.sv
+index 959ca9ba..40df9711 100644
+--- a/verif/core_rrv/tb/core_rrv_tb.sv
++++ b/verif/core_rrv/tb/core_rrv_tb.sv
+@@ -140,7 +140,7 @@ initial begin: test_seq
+ end // test_seq
+ 
+ parameter V_TIMEOUT = 100000;
+-parameter RF_NUM_MSB = 31; // NOTE!!!: auto inserted from script ovrd_params.py
++parameter RF_NUM_MSB = 15; // NOTE!!!: auto inserted from script ovrd_params.py
+ initial begin: detect_timeout
+     //=======================================
+     // timeout
+diff --git a/verif/mini_core/regress/rv32i_level0 b/verif/mini_core/regress/rv32i_level0
+index eb63d4c4..2a31f4e4 100644
+--- a/verif/mini_core/regress/rv32i_level0
++++ b/verif/mini_core/regress/rv32i_level0
+@@ -1,5 +1,5 @@
+-alive.c -gMINI_RF_NUM_MSB=31
+ bubblesort.c -gMINI_RF_NUM_MSB=31
++alive.c -gMINI_RF_NUM_MSB=31
+ gcd.c -gMINI_RF_NUM_MSB=31
+ stress.c -gV_TIMEOUT=500000 -gMINI_RF_NUM_MSB=31
+ non_local_bubble.c -gMINI_RF_NUM_MSB=31

@@ -1,0 +1,572 @@
+From 7e0f46c7f71f9576c71c20d4506ae994d0641709 Mon Sep 17 00:00:00 2001
+From: Pirmin Vogel <vogelpi@lowrisc.org>
+Date: Fri, 21 Oct 2022 17:23:08 +0200
+Subject: [PATCH] [rtl] Protect core_busy_o with a multi-bit encoding
+
+This commit protects the core_busy_o signal using a multi-bit encoding
+to reduce the chances of an adversary for glitching this signal to low,
+thereby putting the core to sleep and e.g. not handling an alert.
+
+Without this commit, the glitch would only be detected once both the
+main core and the shadow core wake up again and the comparison of the
+core_busy_o signals continues.
+
+This resolves lowRISC/Ibex#1827.
+
+Signed-off-by: Pirmin Vogel <vogelpi@lowrisc.org>
+---
+ doc/02_user/integration.rst                   |  2 +-
+ .../rtl/ibex_riscv_compliance.sv              | 96 +++++++++----------
+ .../core_ibex/env/core_ibex_dut_probe_if.sv   |  2 +-
+ dv/uvm/core_ibex/tests/core_ibex_base_test.sv |  6 +-
+ .../core_ibex/tests/core_ibex_new_seq_lib.sv  | 12 +--
+ dv/uvm/core_ibex/tests/core_ibex_test_lib.sv  |  4 +-
+ .../simple_system/rtl/ibex_simple_system.sv   |  2 +-
+ rtl/ibex_core.sv                              | 49 +++++++---
+ rtl/ibex_lockstep.sv                          |  8 +-
+ rtl/ibex_pkg.sv                               | 16 ++--
+ rtl/ibex_top.sv                               | 51 ++++++----
+ rtl/ibex_top_tracing.sv                       |  2 +-
+ syn/syn_yosys.sh                              |  2 +
+ 13 files changed, 148 insertions(+), 104 deletions(-)
+
+diff --git a/doc/02_user/integration.rst b/doc/02_user/integration.rst
+index f92ed2527..36aeedd3f 100644
+--- a/doc/02_user/integration.rst
++++ b/doc/02_user/integration.rst
+@@ -215,7 +215,7 @@ Interfaces
+ |                            |                         |     | instructions in the ID/EX and WB       |
+ |                            |                         |     | stages have finished. A multi-bit      |
+ |                            |                         |     | encoding scheme is used. See           |
+-|                            |                         |     | `FetchEnableOn` / `FetchEnableOff` in  |
++|                            |                         |     | `IbexMuBiOn` / `IbexMuBiOff` in        |
+ |                            |                         |     | :file:`rtl/ibex_pkg.sv`                |
+ +----------------------------+-------------------------+-----+----------------------------------------+
+ | ``core_sleep_o``           | 1                       | out | Core in WFI with no outstanding data   |
+diff --git a/dv/riscv_compliance/rtl/ibex_riscv_compliance.sv b/dv/riscv_compliance/rtl/ibex_riscv_compliance.sv
+index dd1c0942d..8d3669ef3 100644
+--- a/dv/riscv_compliance/rtl/ibex_riscv_compliance.sv
++++ b/dv/riscv_compliance/rtl/ibex_riscv_compliance.sv
+@@ -158,57 +158,57 @@ module ibex_riscv_compliance (
+       .DmHaltAddr       (32'h00000000      ),
+       .DmExceptionAddr  (32'h00000000      )
+     ) u_top (
+-      .clk_i                  (clk_sys                ),
+-      .rst_ni                 (rst_sys_n              ),
++      .clk_i                  (clk_sys              ),
++      .rst_ni                 (rst_sys_n            ),
+ 
+-      .test_en_i              ('b0                    ),
+-      .scan_rst_ni            (1'b1                   ),
+-      .ram_cfg_i              ('b0                    ),
++      .test_en_i              ('b0                  ),
++      .scan_rst_ni            (1'b1                 ),
++      .ram_cfg_i              ('b0                  ),
+ 
+-      .hart_id_i              (32'b0                  ),
++      .hart_id_i              (32'b0                ),
+       // First instruction executed is at 0x0 + 0x80
+-      .boot_addr_i            (32'h00000000           ),
+-
+-      .instr_req_o            (host_req[CoreI]        ),
+-      .instr_gnt_i            (host_gnt[CoreI]        ),
+-      .instr_rvalid_i         (host_rvalid[CoreI]     ),
+-      .instr_addr_o           (host_addr[CoreI]       ),
+-      .instr_rdata_i          (host_rdata[CoreI]      ),
+-      .instr_rdata_intg_i     (ibex_instr_rdata_intg  ),
+-      .instr_err_i            (host_err[CoreI]        ),
+-
+-      .data_req_o             (host_req[CoreD]        ),
+-      .data_gnt_i             (host_gnt[CoreD]        ),
+-      .data_rvalid_i          (host_rvalid[CoreD]     ),
+-      .data_we_o              (host_we[CoreD]         ),
+-      .data_be_o              (host_be[CoreD]         ),
+-      .data_addr_o            (host_addr[CoreD]       ),
+-      .data_wdata_o           (host_wdata[CoreD]      ),
+-      .data_wdata_intg_o      (                       ),
+-      .data_rdata_i           (host_rdata[CoreD]      ),
+-      .data_rdata_intg_i      (ibex_data_rdata_intg   ),
+-      .data_err_i             (host_err[CoreD]        ),
+-
+-      .irq_software_i         (1'b0                   ),
+-      .irq_timer_i            (1'b0                   ),
+-      .irq_external_i         (1'b0                   ),
+-      .irq_fast_i             (15'b0                  ),
+-      .irq_nm_i               (1'b0                   ),
+-
+-      .scramble_key_valid_i   ('0                     ),
+-      .scramble_key_i         ('0                     ),
+-      .scramble_nonce_i       ('0                     ),
+-      .scramble_req_o         (                       ),
+-
+-      .debug_req_i            ('b0                    ),
+-      .crash_dump_o           (                       ),
+-      .double_fault_seen_o    (                       ),
+-
+-      .fetch_enable_i         (ibex_pkg::FetchEnableOn),
+-      .alert_minor_o          (                       ),
+-      .alert_major_internal_o (                       ),
+-      .alert_major_bus_o      (                       ),
+-      .core_sleep_o           (                       )
++      .boot_addr_i            (32'h00000000         ),
++
++      .instr_req_o            (host_req[CoreI]      ),
++      .instr_gnt_i            (host_gnt[CoreI]      ),
++      .instr_rvalid_i         (host_rvalid[CoreI]   ),
++      .instr_addr_o           (host_addr[CoreI]     ),
++      .instr_rdata_i          (host_rdata[CoreI]    ),
++      .instr_rdata_intg_i     (ibex_instr_rdata_intg),
++      .instr_err_i            (host_err[CoreI]      ),
++
++      .data_req_o             (host_req[CoreD]      ),
++      .data_gnt_i             (host_gnt[CoreD]      ),
++      .data_rvalid_i          (host_rvalid[CoreD]   ),
++      .data_we_o              (host_we[CoreD]       ),
++      .data_be_o              (host_be[CoreD]       ),
++      .data_addr_o            (host_addr[CoreD]     ),
++      .data_wdata_o           (host_wdata[CoreD]    ),
++      .data_wdata_intg_o      (                     ),
++      .data_rdata_i           (host_rdata[CoreD]    ),
++      .data_rdata_intg_i      (ibex_data_rdata_intg ),
++      .data_err_i             (host_err[CoreD]      ),
++
++      .irq_software_i         (1'b0                 ),
++      .irq_timer_i            (1'b0                 ),
++      .irq_external_i         (1'b0                 ),
++      .irq_fast_i             (15'b0                ),
++      .irq_nm_i               (1'b0                 ),
++
++      .scramble_key_valid_i   ('0                   ),
++      .scramble_key_i         ('0                   ),
++      .scramble_nonce_i       ('0                   ),
++      .scramble_req_o         (                     ),
++
++      .debug_req_i            ('b0                  ),
++      .crash_dump_o           (                     ),
++      .double_fault_seen_o    (                     ),
++
++      .fetch_enable_i         (ibex_pkg::IbexMuBiOn ),
++      .alert_minor_o          (                     ),
++      .alert_major_internal_o (                     ),
++      .alert_major_bus_o      (                     ),
++      .core_sleep_o           (                     )
+     );
+ 
+   // SRAM block for instruction and data storage
+diff --git a/dv/uvm/core_ibex/env/core_ibex_dut_probe_if.sv b/dv/uvm/core_ibex/env/core_ibex_dut_probe_if.sv
+index 08171139d..06bb44111 100644
+--- a/dv/uvm/core_ibex/env/core_ibex_dut_probe_if.sv
++++ b/dv/uvm/core_ibex/env/core_ibex_dut_probe_if.sv
+@@ -11,7 +11,7 @@ interface core_ibex_dut_probe_if(input logic clk);
+   logic                    ebreak;
+   logic                    dret;
+   logic                    mret;
+-  ibex_pkg::fetch_enable_t fetch_enable;
++  ibex_pkg::ibex_mubi_t    fetch_enable;
+   logic                    core_sleep;
+   logic                    alert_minor;
+   logic                    alert_major_internal;
+diff --git a/dv/uvm/core_ibex/tests/core_ibex_base_test.sv b/dv/uvm/core_ibex/tests/core_ibex_base_test.sv
+index 358001b99..5b45f767e 100644
+--- a/dv/uvm/core_ibex/tests/core_ibex_base_test.sv
++++ b/dv/uvm/core_ibex/tests/core_ibex_base_test.sv
+@@ -164,10 +164,10 @@ class core_ibex_base_test extends uvm_test;
+     enable_irq_seq = cfg.enable_irq_single_seq || cfg.enable_irq_multiple_seq;
+     phase.raise_objection(this);
+     cur_run_phase = phase;
+-    dut_vif.dut_cb.fetch_enable <= ibex_pkg::FetchEnableOff;
++    dut_vif.dut_cb.fetch_enable <= ibex_pkg::IbexMuBiOff;
+     clk_vif.wait_clks(100);
+     load_binary_to_mem();
+-    dut_vif.dut_cb.fetch_enable <= ibex_pkg::FetchEnableOn;
++    dut_vif.dut_cb.fetch_enable <= ibex_pkg::IbexMuBiOn;
+     send_stimulus();
+     wait_for_test_done();
+     cur_run_phase = null;
+@@ -257,7 +257,7 @@ class core_ibex_base_test extends uvm_test;
+     check_perf_stats();
+     // De-assert fetch enable to finish the test
+     clk_vif.wait_clks(10);
+-    dut_vif.dut_cb.fetch_enable <= ibex_pkg::FetchEnableOff;
++    dut_vif.dut_cb.fetch_enable <= ibex_pkg::IbexMuBiOff;
+     // Wait some time for the remaining instruction to finish
+     clk_vif.wait_clks(3000);
+   endtask
+diff --git a/dv/uvm/core_ibex/tests/core_ibex_new_seq_lib.sv b/dv/uvm/core_ibex/tests/core_ibex_new_seq_lib.sv
+index 6b372ea5d..b33693788 100644
+--- a/dv/uvm/core_ibex/tests/core_ibex_new_seq_lib.sv
++++ b/dv/uvm/core_ibex/tests/core_ibex_new_seq_lib.sv
+@@ -258,21 +258,21 @@ class fetch_enable_seq extends core_base_new_seq#(irq_seq_item);
+       all_off_values = 0;
+     end
+ 
+-    dut_vif.dut_cb.fetch_enable <= ibex_pkg::FetchEnableOn;
++    dut_vif.dut_cb.fetch_enable <= ibex_pkg::IbexMuBiOn;
+     super.body();
+   endtask: body
+ 
+   virtual task send_req();
+-    ibex_pkg::fetch_enable_t fetch_enable_off;
+-    int unsigned             off_delay;
++    ibex_pkg::ibex_mubi_t fetch_enable_off;
++    int unsigned          off_delay;
+ 
+     if (all_off_values) begin
+       // Randomise the MUBI fetch_enable value to be one of the many possible off values
+       `DV_CHECK_STD_RANDOMIZE_WITH_FATAL(fetch_enable_off,
+-        fetch_enable_off != ibex_pkg::FetchEnableOn;)
++        fetch_enable_off != ibex_pkg::IbexMuBiOn;)
+     end else begin
+       // Otherwise use single fixed off value
+-      fetch_enable_off = ibex_pkg::FetchEnableOff;
++      fetch_enable_off = ibex_pkg::IbexMuBiOff;
+     end
+ 
+     `DV_CHECK_STD_RANDOMIZE_WITH_FATAL(off_delay,
+@@ -280,7 +280,7 @@ class fetch_enable_seq extends core_base_new_seq#(irq_seq_item);
+ 
+     dut_vif.dut_cb.fetch_enable <= fetch_enable_off;
+     clk_vif.wait_clks(off_delay);
+-    dut_vif.dut_cb.fetch_enable <= ibex_pkg::FetchEnableOn;
++    dut_vif.dut_cb.fetch_enable <= ibex_pkg::IbexMuBiOn;
+ 
+   endtask
+ 
+diff --git a/dv/uvm/core_ibex/tests/core_ibex_test_lib.sv b/dv/uvm/core_ibex/tests/core_ibex_test_lib.sv
+index d4dc0a131..487b711bd 100644
+--- a/dv/uvm/core_ibex/tests/core_ibex_test_lib.sv
++++ b/dv/uvm/core_ibex/tests/core_ibex_test_lib.sv
+@@ -26,7 +26,7 @@ class core_ibex_reset_test extends core_ibex_base_test;
+       clk_vif.wait_clks($urandom_range(0, 50000));
+       fork
+         begin
+-          dut_vif.dut_cb.fetch_enable <= ibex_pkg::FetchEnableOff;
++          dut_vif.dut_cb.fetch_enable <= ibex_pkg::IbexMuBiOff;
+           clk_vif.apply_reset(.reset_width_clks (100));
+         end
+         begin
+@@ -40,7 +40,7 @@ class core_ibex_reset_test extends core_ibex_base_test;
+         end
+       join
+       // Assert fetch_enable to have the core start executing from boot address
+-      dut_vif.dut_cb.fetch_enable <= ibex_pkg::FetchEnableOn;
++      dut_vif.dut_cb.fetch_enable <= ibex_pkg::IbexMuBiOn;
+     end
+   endtask
+ 
+diff --git a/examples/simple_system/rtl/ibex_simple_system.sv b/examples/simple_system/rtl/ibex_simple_system.sv
+index a2a45f489..a67687b13 100644
+--- a/examples/simple_system/rtl/ibex_simple_system.sv
++++ b/examples/simple_system/rtl/ibex_simple_system.sv
+@@ -253,7 +253,7 @@ module ibex_simple_system (
+       .crash_dump_o           (),
+       .double_fault_seen_o    (),
+ 
+-      .fetch_enable_i         (ibex_pkg::FetchEnableOn),
++      .fetch_enable_i         (ibex_pkg::IbexMuBiOn),
+       .alert_minor_o          (),
+       .alert_major_internal_o (),
+       .alert_major_bus_o      (),
+diff --git a/rtl/ibex_core.sv b/rtl/ibex_core.sv
+index 895aad651..4a69e8032 100644
+--- a/rtl/ibex_core.sv
++++ b/rtl/ibex_core.sv
+@@ -147,11 +147,11 @@ module ibex_core import ibex_pkg::*; #(
+ 
+   // CPU Control Signals
+   // SEC_CM: FETCH.CTRL.LC_GATED
+-  input  fetch_enable_t                fetch_enable_i,
++  input  ibex_mubi_t                   fetch_enable_i,
+   output logic                         alert_minor_o,
+   output logic                         alert_major_internal_o,
+   output logic                         alert_major_bus_o,
+-  output logic                         core_busy_o
++  output ibex_mubi_t                   core_busy_o
+ );
+ 
+   localparam int unsigned PMPNumChan      = 3;
+@@ -368,7 +368,31 @@ module ibex_core import ibex_pkg::*; #(
+ 
+   // Before going to sleep, wait for I- and D-side
+   // interfaces to finish ongoing operations.
+-  assign core_busy_o = ctrl_busy | if_busy | lsu_busy;
++  if (SecureIbex) begin : g_core_busy_secure
++    // For secure Ibex, the individual bits of core_busy_o are generated from different copies of
++    // the various busy signal.
++    localparam int unsigned NumBusySignals = 3;
++    localparam int unsigned NumBusyBits = $bits(ibex_mubi_t) * NumBusySignals;
++    logic [NumBusyBits-1:0] busy_bits_buf;
++    prim_buf #(
++      .Width(NumBusyBits)
++    ) u_fetch_enable_buf (
++      .in_i ({$bits(ibex_mubi_t){ctrl_busy, if_busy, lsu_busy}}),
++      .out_o(busy_bits_buf)
++    );
++
++    // Set core_busy_o to IbexMuBiOn if even a single input is high.
++    for (genvar i = 0; i < $bits(ibex_mubi_t); i++) begin : g_core_busy_bits
++      if (IbexMuBiOn[i] == 1'b1) begin : g_pos
++        assign core_busy_o[i] =  |busy_bits_buf[i*NumBusySignals +: NumBusySignals];
++      end else begin : g_neg
++        assign core_busy_o[i] = ~|busy_bits_buf[i*NumBusySignals +: NumBusySignals];
++      end
++    end
++  end else begin : g_core_busy_non_secure
++    // For non secure Ibex, synthesis is allowed to optimize core_busy_o.
++    assign core_busy_o = (ctrl_busy || if_busy || lsu_busy) ? IbexMuBiOn : IbexMuBiOff;
++  end
+ 
+   //////////////
+   // IF stage //
+@@ -474,22 +498,21 @@ module ibex_core import ibex_pkg::*; #(
+ 
+   // Multi-bit fetch enable used when SecureIbex == 1. When SecureIbex == 0 only use the bottom-bit
+   // of fetch_enable_i. Ensure the multi-bit encoding has the bottom bit set for on and unset for
+-  // off so FetchEnableOn/FetchEnableOff can be used without needing to know the value of
+-  // SecureIbex.
+-  `ASSERT_INIT(FetchEnableSecureOnBottomBitSet,    FetchEnableOn[0] == 1'b1)
+-  `ASSERT_INIT(FetchEnableSecureOffBottomBitClear, FetchEnableOff[0] == 1'b0)
++  // off so IbexMuBiOn/IbexMuBiOff can be used without needing to know the value of SecureIbex.
++  `ASSERT_INIT(IbexMuBiSecureOnBottomBitSet,    IbexMuBiOn[0] == 1'b1)
++  `ASSERT_INIT(IbexMuBiSecureOffBottomBitClear, IbexMuBiOff[0] == 1'b0)
+ 
+   // fetch_enable_i can be used to stop the core fetching new instructions
+   if (SecureIbex) begin : g_instr_req_gated_secure
+     // For secure Ibex fetch_enable_i must be a specific multi-bit pattern to enable instruction
+     // fetch
+     // SEC_CM: FETCH.CTRL.LC_GATED
+-    assign instr_req_gated = instr_req_int & (fetch_enable_i == FetchEnableOn);
+-    assign instr_exec      = fetch_enable_i == FetchEnableOn;
++    assign instr_req_gated = instr_req_int & (fetch_enable_i == IbexMuBiOn);
++    assign instr_exec      = fetch_enable_i == IbexMuBiOn;
+   end else begin : g_instr_req_gated_non_secure
+     // For non secure Ibex only the bottom bit of fetch enable is considered
+     logic unused_fetch_enable;
+-    assign unused_fetch_enable = ^fetch_enable_i[$bits(fetch_enable_t)-1:1];
++    assign unused_fetch_enable = ^fetch_enable_i[$bits(ibex_mubi_t)-1:1];
+ 
+     assign instr_req_gated = instr_req_int & fetch_enable_i[0];
+     assign instr_exec      = fetch_enable_i[0];
+@@ -931,7 +954,7 @@ module ibex_core import ibex_pkg::*; #(
+ 
+   // Keep track of the PC last seen in the ID stage when fetch is disabled
+   logic [31:0]   pc_at_fetch_disable;
+-  fetch_enable_t last_fetch_enable;
++  ibex_mubi_t    last_fetch_enable;
+ 
+   always_ff @(posedge clk_i or negedge rst_ni) begin
+     if (!rst_ni) begin
+@@ -940,7 +963,7 @@ module ibex_core import ibex_pkg::*; #(
+     end else begin
+       last_fetch_enable <= fetch_enable_i;
+ 
+-      if ((fetch_enable_i != FetchEnableOn) && (last_fetch_enable == FetchEnableOn)) begin
++      if ((fetch_enable_i != IbexMuBiOn) && (last_fetch_enable == IbexMuBiOn)) begin
+         pc_at_fetch_disable <= pc_id;
+       end
+     end
+@@ -949,7 +972,7 @@ module ibex_core import ibex_pkg::*; #(
+   // When fetch is disabled no instructions should be executed. Once fetch is disabled either the
+   // ID/EX stage is not valid or the PC of the ID/EX stage must remain as it was at disable. The
+   // ID/EX valid should not ressert once it has been cleared.
+-  `ASSERT(NoExecWhenFetchEnableNotOn, fetch_enable_i != FetchEnableOn |=>
++  `ASSERT(NoExecWhenFetchEnableNotOn, fetch_enable_i != IbexMuBiOn |=>
+     (~instr_valid_id || (pc_id == pc_at_fetch_disable)) && ~$rose(instr_valid_id))
+ 
+   `endif
+diff --git a/rtl/ibex_lockstep.sv b/rtl/ibex_lockstep.sv
+index e6ab5fd0c..6db178d19 100644
+--- a/rtl/ibex_lockstep.sv
++++ b/rtl/ibex_lockstep.sv
+@@ -96,11 +96,11 @@ module ibex_lockstep import ibex_pkg::*; #(
+   input  crash_dump_t                  crash_dump_i,
+   input  logic                         double_fault_seen_i,
+ 
+-  input  fetch_enable_t                fetch_enable_i,
++  input  ibex_mubi_t                   fetch_enable_i,
+   output logic                         alert_minor_o,
+   output logic                         alert_major_internal_o,
+   output logic                         alert_major_bus_o,
+-  input  logic                         core_busy_i,
++  input  ibex_mubi_t                   core_busy_i,
+   input  logic                         test_en_i,
+   input  logic                         scan_rst_ni
+ );
+@@ -183,7 +183,7 @@ module ibex_lockstep import ibex_pkg::*; #(
+     logic [14:0]                 irq_fast;
+     logic                        irq_nm;
+     logic                        debug_req;
+-    fetch_enable_t               fetch_enable;
++    ibex_mubi_t                  fetch_enable;
+     logic                        ic_scr_key_valid;
+   } delayed_inputs_t;
+ 
+@@ -263,7 +263,7 @@ module ibex_lockstep import ibex_pkg::*; #(
+     logic                        irq_pending;
+     crash_dump_t                 crash_dump;
+     logic                        double_fault_seen;
+-    logic                        core_busy;
++    ibex_mubi_t                  core_busy;
+   } delayed_outputs_t;
+ 
+   delayed_outputs_t [OutputsOffset-1:0]  core_outputs_q;
+diff --git a/rtl/ibex_pkg.sv b/rtl/ibex_pkg.sv
+index 02e07383f..9a3c7faa9 100644
+--- a/rtl/ibex_pkg.sv
++++ b/rtl/ibex_pkg.sv
+@@ -653,14 +653,14 @@ package ibex_pkg;
+   parameter logic [SCRAMBLE_NONCE_W-1:0] RndCnstIbexNonceDefault =
+       64'hf79780bc735f3843;
+ 
+-  // Fetch enable. Mult-bit signal used for security hardening. For non-secure implementation all
+-  // bits other than the bottom bit are ignored.
+-  typedef logic [3:0] fetch_enable_t;
++  // Mult-bit signal used for security hardening. For non-secure implementation all bits other than
++  // the bottom bit are ignored.
++  typedef logic [3:0] ibex_mubi_t;
+ 
+   // Note that if adjusting these parameters it is assumed the bottom bit is set for On and unset
+-  // for Off. This allows the use of FetchEnableOn/FetchEnableOff to work for both secure and
+-  // non-secure Ibex. If this assumption is broken the RTL that uses the fetch_enable signal within
+-  // `ibex_core` may need adjusting.
+-  parameter fetch_enable_t FetchEnableOn  = 4'b0101;
+-  parameter fetch_enable_t FetchEnableOff = 4'b1010;
++  // for Off. This allows the use of IbexMuBiOn/IbexMuBiOff to work for both secure and non-secure
++  // Ibex. If this assumption is broken the RTL that uses ibex_mubi_t types such as the fetch_enable
++  // and core_busy signals within `ibex_core` may need adjusting.
++  parameter ibex_mubi_t IbexMuBiOn  = 4'b0101;
++  parameter ibex_mubi_t IbexMuBiOff = 4'b1010;
+ endpackage
+diff --git a/rtl/ibex_top.sv b/rtl/ibex_top.sv
+index ac48f50ca..dbdbfa9ed 100644
+--- a/rtl/ibex_top.sv
++++ b/rtl/ibex_top.sv
+@@ -126,7 +126,7 @@ module ibex_top import ibex_pkg::*; #(
+ `endif
+ 
+   // CPU Control Signals
+-  input  fetch_enable_t                fetch_enable_i,
++  input  ibex_mubi_t                   fetch_enable_i,
+   output logic                         alert_minor_o,
+   output logic                         alert_major_internal_o,
+   output logic                         alert_major_bus_o,
+@@ -154,7 +154,7 @@ module ibex_top import ibex_pkg::*; #(
+ 
+   // Clock signals
+   logic                        clk;
+-  logic                        core_busy_d, core_busy_q;
++  ibex_mubi_t                  core_busy_d, core_busy_q;
+   logic                        clock_en;
+   logic                        irq_pending;
+   // Core <-> Register file signals
+@@ -189,26 +189,45 @@ module ibex_top import ibex_pkg::*; #(
+   logic                        lockstep_alert_major_internal, lockstep_alert_major_bus;
+   logic                        lockstep_alert_minor;
+   // Scramble signals
+-  logic [SCRAMBLE_KEY_W-1:0]    scramble_key_q;
+-  logic [SCRAMBLE_NONCE_W-1:0]  scramble_nonce_q;
+-  logic                         scramble_key_valid_d, scramble_key_valid_q;
+-  logic                         scramble_req_d, scramble_req_q;
++  logic [SCRAMBLE_KEY_W-1:0]   scramble_key_q;
++  logic [SCRAMBLE_NONCE_W-1:0] scramble_nonce_q;
++  logic                        scramble_key_valid_d, scramble_key_valid_q;
++  logic                        scramble_req_d, scramble_req_q;
+ 
+-  fetch_enable_t fetch_enable_buf;
++  ibex_mubi_t                  fetch_enable_buf;
+ 
+   /////////////////////
+   // Main clock gate //
+   /////////////////////
+ 
+-  always_ff @(posedge clk_i or negedge rst_ni) begin
+-    if (!rst_ni) begin
+-      core_busy_q <= 1'b0;
+-    end else begin
+-      core_busy_q <= core_busy_d;
++  if (SecureIbex) begin : g_clock_en_secure
++    // For secure Ibex core_busy_q must be a specific multi-bit pattern to enable the clock.
++    prim_flop #(
++      .Width($bits(ibex_mubi_t)),
++      .ResetValue(IbexMuBiOff)
++    ) u_prim_core_busy_flop (
++      .clk_i (clk_i),
++      .rst_ni(rst_ni),
++      .d_i   (core_busy_d),
++      .q_o   (core_busy_q)
++    );
++    assign clock_en = (core_busy_q != IbexMuBiOff) | debug_req_i | irq_pending | irq_nm_i;
++  end else begin : g_clock_en_non_secure
++    // For non secure Ibex only the bottom bit of core_busy_q is considered. Other FFs can be
++    // optimized away during synthesis.
++    always_ff @(posedge clk_i or negedge rst_ni) begin
++      if (!rst_ni) begin
++        core_busy_q <= IbexMuBiOff;
++      end else begin
++        core_busy_q <= core_busy_d;
++      end
+     end
++    assign clock_en = core_busy_q[0] | debug_req_i | irq_pending | irq_nm_i;
++
++    logic unused_core_busy;
++    assign unused_core_busy = ^core_busy_q[$bits(ibex_mubi_t)-1:1];
+   end
+ 
+-  assign clock_en     = core_busy_q | debug_req_i | irq_pending | irq_nm_i;
+   assign core_sleep_o = ~clock_en;
+ 
+   prim_clock_gating core_clock_gate_i (
+@@ -223,7 +242,7 @@ module ibex_top import ibex_pkg::*; #(
+   ////////////////////////
+ 
+   // Buffer security critical signals to prevent synthesis optimisation removing them
+-  prim_buf #(.Width($bits(fetch_enable_t))) u_fetch_enable_buf (
++  prim_buf #(.Width($bits(ibex_mubi_t))) u_fetch_enable_buf (
+     .in_i (fetch_enable_i),
+     .out_o(fetch_enable_buf)
+   );
+@@ -771,9 +790,9 @@ module ibex_top import ibex_pkg::*; #(
+     logic                         debug_req_local;
+     crash_dump_t                  crash_dump_local;
+     logic                         double_fault_seen_local;
+-    fetch_enable_t                fetch_enable_local;
++    ibex_mubi_t                   fetch_enable_local;
+ 
+-    logic                         core_busy_local;
++    ibex_mubi_t                   core_busy_local;
+ 
+     assign buf_in = {
+       hart_id_i,
+diff --git a/rtl/ibex_top_tracing.sv b/rtl/ibex_top_tracing.sv
+index b830bc14f..abdaba228 100644
+--- a/rtl/ibex_top_tracing.sv
++++ b/rtl/ibex_top_tracing.sv
+@@ -83,7 +83,7 @@ module ibex_top_tracing import ibex_pkg::*; #(
+   output logic                         double_fault_seen_o,
+ 
+   // CPU Control Signals
+-  input  fetch_enable_t                fetch_enable_i,
++  input  ibex_mubi_t                   fetch_enable_i,
+   output logic                         alert_minor_o,
+   output logic                         alert_major_internal_o,
+   output logic                         alert_major_bus_o,
+diff --git a/syn/syn_yosys.sh b/syn/syn_yosys.sh
+index 4c9065f31..4ca53ba2e 100755
+--- a/syn/syn_yosys.sh
++++ b/syn/syn_yosys.sh
+@@ -34,6 +34,7 @@ source syn_setup.sh
+ 
+ LR_DEP_SOURCES=(
+     "../vendor/lowrisc_ip/ip/prim_generic/rtl/prim_generic_buf.sv"
++    "../vendor/lowrisc_ip/ip/prim_generic/rtl/prim_generic_flop.sv"
+ )
+ 
+ mkdir -p "$LR_SYNTH_OUT_DIR/generated"
+@@ -73,6 +74,7 @@ for file in ../rtl/*.sv; do
+ # Make sure auto-generated primitives are resolved to generic primitives
+ # where available.
+   sed -i 's/prim_buf/prim_generic_buf/g'  "$LR_SYNTH_OUT_DIR"/generated/"${module}".v
++  sed -i 's/prim_flop/prim_generic_flop/g' "$LR_SYNTH_OUT_DIR"/generated/"${module}".v
+ done
+ 
+ # remove tracer (not needed for synthesis)

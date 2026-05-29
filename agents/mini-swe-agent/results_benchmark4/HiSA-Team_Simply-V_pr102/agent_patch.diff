@@ -1,0 +1,41 @@
+diff --git a/hw/xilinx/rtl/peripheral_bus.sv b/hw/xilinx/rtl/peripheral_bus.sv
+index 74704d9..ab5a244 100644
+--- a/hw/xilinx/rtl/peripheral_bus.sv
++++ b/hw/xilinx/rtl/peripheral_bus.sv
+@@ -76,11 +76,32 @@ module peripheral_bus #(
+     // EMBEDDED ONLY
+     logic gpio_in_int;
+ 
++    logic [NUM_IRQ - 1 : 0] int_o_raw;
++
+     // Assign interrupt pins
+-    assign int_o[PBUS_GPIOIN_INTERRUPT] = gpio_in_int;
+-    assign int_o[PBUS_TIM0_INTERRUPT]   = tim0_int;
+-    assign int_o[PBUS_TIM1_INTERRUPT]   = tim1_int;
+-    assign int_o[PBUS_UART_INTERRUPT]   = uart_int;
++    assign int_o_raw[PBUS_GPIOIN_INTERRUPT] = gpio_in_int;
++    assign int_o_raw[PBUS_TIM0_INTERRUPT]   = tim0_int;
++    assign int_o_raw[PBUS_TIM1_INTERRUPT]   = tim1_int;
++    assign int_o_raw[PBUS_UART_INTERRUPT]   = uart_int;
++
++    // Re-synchronize interrupts into the MAIN_CLOCK_DOMAIN when PBUS is clocked separately
++    `ifdef PBUS_HAS_CLOCK_DOMAIN
++        genvar irq_i;
++        generate
++            for (irq_i = 0; irq_i < NUM_IRQ; irq_i++) begin : gen_pbus_irq_sync
++                xpm_cdc_async_rst #(
++                    .DEST_SYNC_FF    ( 4 ),
++                    .RST_ACTIVE_HIGH ( 0 )
++                ) xpm_cdc_async_rst_irq_u (
++                    .src_arst  ( int_o_raw[irq_i] ),
++                    .dest_clk  ( main_clock_i ),
++                    .dest_arst ( int_o[irq_i] )
++                );
++            end
++        endgenerate
++    `else
++        assign int_o = int_o_raw;
++    `endif
+ 
+ 
+     /////////////////////

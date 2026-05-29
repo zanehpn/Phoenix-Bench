@@ -1,0 +1,36 @@
+diff --git a/src/fpnew_noncomp.sv b/src/fpnew_noncomp.sv
+index 4dabfaa..dd60f69 100644
+--- a/src/fpnew_noncomp.sv
++++ b/src/fpnew_noncomp.sv
+@@ -260,10 +260,18 @@ module fpnew_noncomp #(
+     cmp_result = '0; // false
+     cmp_status = '0; // no flags
+ 
+-    // Signalling NaNs always compare as false and are illegal
+-    if (signalling_nan) cmp_status.NV = 1'b1; // invalid operation
+-    // Otherwise do comparisons
+-    else begin
++    // Signalling NaNs always raise NV.
++    // Result is cleared for signalling NaNs as well, except for "not equal" (op_mod=1 in EQ mode),
++    // which yields true on any NaN (in line with RISC-V compare semantics).
++    if (signalling_nan) begin
++      cmp_status.NV = 1'b1; // invalid operation
++      if ((inp_pipe_rnd_mode_q[NUM_INP_REGS] == fpnew_pkg::RDN) && inp_pipe_op_mod_q[NUM_INP_REGS]) begin
++        // NaN always not equal
++        cmp_result = 1'b1;
++      end else begin
++        cmp_result = 1'b0;
++      end
++    end else begin
+       unique case (inp_pipe_rnd_mode_q[NUM_INP_REGS])
+         fpnew_pkg::RNE: begin // Less than or equal
+           if (any_operand_nan) cmp_status.NV = 1'b1; // Signalling comparison: NaNs are invalid
+@@ -273,7 +281,7 @@ module fpnew_noncomp #(
+           if (any_operand_nan) cmp_status.NV = 1'b1; // Signalling comparison: NaNs are invalid
+           else cmp_result = (operand_a_smaller & ~operands_equal) ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+         end
+-        fpnew_pkg::RDN: begin // Equal
++        fpnew_pkg::RDN: begin // Equal (op_mod=1 => Not equal)
+           if (any_operand_nan) cmp_result = inp_pipe_op_mod_q[NUM_INP_REGS]; // NaN always not equal
+           else cmp_result = operands_equal ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+         end

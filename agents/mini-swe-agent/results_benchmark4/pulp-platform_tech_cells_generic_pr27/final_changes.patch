@@ -1,0 +1,44 @@
+diff --git a/README.md b/README.md
+index fd10adb..aae3a7f 100644
+--- a/README.md
++++ b/README.md
+@@ -26,6 +26,7 @@ Clock cells usually are care-fully designed cells which do not exhibit any glitc
+ | `tc_clk_gating`   | Integrated clock gating cell | active | :white_check_mark: |
+ | `tc_clk_inverter` | Clock inverter               | active | :white_check_mark: |
+ | `tc_clk_mux2`     | Clock Mux with two inputs    | active | :white_check_mark: |
++| `tc_clk_or2`      | Clock Or gate                | active | :white_check_mark: |
+ | `tc_clk_xor2`     | Clock Xor                    | active | :white_check_mark: |
+ | `tc_clk_delay`    | Programmable clock-delay     | active |                    |
+ 
+diff --git a/src/rtl/tc_clk.sv b/src/rtl/tc_clk.sv
+index e6aa1fd..8cf07c3 100644
+--- a/src/rtl/tc_clk.sv
++++ b/src/rtl/tc_clk.sv
+@@ -61,6 +61,16 @@ module tc_clk_inverter (
+ 
+ endmodule
+ 
++module tc_clk_or2 (
++  input  logic clk0_i,
++  input  logic clk1_i,
++  output logic clk_o
++);
++
++  assign clk_o = clk0_i | clk1_i;
++
++endmodule
++
+ module tc_clk_mux2 (
+   input  logic clk0_i,
+   input  logic clk1_i,
+@@ -68,6 +78,10 @@ module tc_clk_mux2 (
+   output logic clk_o
+ );
+ 
++  // Warning: Many standard-cell libraries implement clock muxes as simple
++  // combinational muxes, which are not glitch-free. Do not use this cell for
++  // dynamic switching between unrelated clocks without additional
++  // precautionary measures (e.g. clock gating / handshaking).
+   assign clk_o = (clk_sel_i) ? clk1_i : clk0_i;
+ 
+ endmodule

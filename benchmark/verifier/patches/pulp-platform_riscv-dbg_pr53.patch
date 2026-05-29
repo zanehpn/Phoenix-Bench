@@ -1,0 +1,4861 @@
+From 9253cf39a642743d2c4adef2f2a3fbad0374a4b4 Mon Sep 17 00:00:00 2001
+From: bluew <bluewww@users.noreply.github.com>
+Date: Tue, 25 Feb 2020 01:32:36 +0100
+Subject: [PATCH 1/4] Add tb running dm+ri5cy through OpenOCD compliance tests
+
+---
+ .travis.yml                        |  85 +++++
+ README.md                          |   5 +-
+ ci/download-pulp-gcc.sh            |  12 +
+ ci/get-openocd.sh                  |  40 ++
+ ci/install-verilator.sh            |  28 ++
+ ci/make-tmp.sh                     |   5 +
+ ci/openocd-to-junit.py             |  62 ++++
+ ci/run-openocd-compliance.sh       |  47 +++
+ ci/veri-run-openocd-compliance.sh  |  33 ++
+ tb/.clang-format                   |  35 ++
+ tb/.gitignore                      |  26 ++
+ tb/LICENSE.Berkeley                |  24 ++
+ tb/LICENSE.SiFive                  | 202 ++++++++++
+ tb/Makefile                        | 328 +++++++++++++++++
+ tb/README.md                       |  51 +++
+ tb/SimJTAG.sv                      |  85 +++++
+ tb/boot_rom.sv                     |  39 ++
+ tb/dm_compliance_test.cfg          |  31 ++
+ tb/dm_debug.cfg                    |  32 ++
+ tb/dm_tb_pkg.sv                    |  58 +++
+ tb/dp_ram.sv                       |  84 +++++
+ tb/mm_ram.sv                       | 571 +++++++++++++++++++++++++++++
+ tb/prog/crt0.S                     |  66 ++++
+ tb/prog/link.ld                    | 385 +++++++++++++++++++
+ tb/prog/syscalls.c                 | 270 ++++++++++++++
+ tb/prog/test.c                     |   6 +
+ tb/prog/vectors.S                  | 152 ++++++++
+ tb/remote_bitbang/.gitignore       |   3 +
+ tb/remote_bitbang/Makefile         | 124 +++++++
+ tb/remote_bitbang/rbs_test.c       |  34 ++
+ tb/remote_bitbang/remote_bitbang.c | 275 ++++++++++++++
+ tb/remote_bitbang/remote_bitbang.h |  52 +++
+ tb/remote_bitbang/sim_jtag.c       |  29 ++
+ tb/tb_test_env.sv                  | 338 +++++++++++++++++
+ tb/tb_top.sv                       | 138 +++++++
+ tb/tb_top_verilator.cpp            | 105 ++++++
+ tb/tb_top_verilator.sv             | 330 +++++++++++++++++
+ tb/unused/SimDTM.sv                |  81 ++++
+ tb/vsim_batch.tcl                  |  15 +
+ tb/vsim_gui.tcl                    |  16 +
+ tb/waves.tcl                       | 117 ++++++
+ 41 files changed, 4416 insertions(+), 3 deletions(-)
+ create mode 100644 .travis.yml
+ create mode 100755 ci/download-pulp-gcc.sh
+ create mode 100755 ci/get-openocd.sh
+ create mode 100755 ci/install-verilator.sh
+ create mode 100755 ci/make-tmp.sh
+ create mode 100755 ci/openocd-to-junit.py
+ create mode 100755 ci/run-openocd-compliance.sh
+ create mode 100755 ci/veri-run-openocd-compliance.sh
+ create mode 100644 tb/.clang-format
+ create mode 100644 tb/.gitignore
+ create mode 100644 tb/LICENSE.Berkeley
+ create mode 100644 tb/LICENSE.SiFive
+ create mode 100644 tb/Makefile
+ create mode 100644 tb/README.md
+ create mode 100644 tb/SimJTAG.sv
+ create mode 100644 tb/boot_rom.sv
+ create mode 100644 tb/dm_compliance_test.cfg
+ create mode 100644 tb/dm_debug.cfg
+ create mode 100644 tb/dm_tb_pkg.sv
+ create mode 100644 tb/dp_ram.sv
+ create mode 100644 tb/mm_ram.sv
+ create mode 100644 tb/prog/crt0.S
+ create mode 100644 tb/prog/link.ld
+ create mode 100644 tb/prog/syscalls.c
+ create mode 100644 tb/prog/test.c
+ create mode 100644 tb/prog/vectors.S
+ create mode 100644 tb/remote_bitbang/.gitignore
+ create mode 100644 tb/remote_bitbang/Makefile
+ create mode 100644 tb/remote_bitbang/rbs_test.c
+ create mode 100644 tb/remote_bitbang/remote_bitbang.c
+ create mode 100644 tb/remote_bitbang/remote_bitbang.h
+ create mode 100644 tb/remote_bitbang/sim_jtag.c
+ create mode 100644 tb/tb_test_env.sv
+ create mode 100644 tb/tb_top.sv
+ create mode 100644 tb/tb_top_verilator.cpp
+ create mode 100644 tb/tb_top_verilator.sv
+ create mode 100644 tb/unused/SimDTM.sv
+ create mode 100644 tb/vsim_batch.tcl
+ create mode 100644 tb/vsim_gui.tcl
+ create mode 100644 tb/waves.tcl
+
+diff --git a/.travis.yml b/.travis.yml
+new file mode 100644
+index 0000000..7d8bce5
+--- /dev/null
++++ b/.travis.yml
+@@ -0,0 +1,85 @@
++language: cpp
++# run on new infrastructure
++dist: xenial
++sudo: false
++cache:
++  apt: true
++  directories:
++    $RISCV
++    $VERILATOR_ROOT
++  timeout: 1000
++
++# required packages to install
++addons:
++  apt:
++    sources:
++      - ubuntu-toolchain-r-test
++    packages:
++      - gcc-7
++      - g++-7
++      - gperf
++      - autoconf
++      - automake
++      - autotools-dev
++      - libmpc-dev
++      - libmpfr-dev
++      - libgmp-dev
++      - gawk
++      - build-essential
++      - bison
++      - flex
++      - texinfo
++      - python-pexpect
++      - libusb-1.0-0-dev
++      - default-jdk
++      - zlib1g-dev
++      - valgrind
++env:
++  global:
++    - RISCV="/home/travis/riscv_install"
++    - VERILATOR_ROOT="/home/travis/verilator-4.018"
++
++
++before_install:
++  - export CXX=g++-7 CC=gcc-7
++  # setup dependent paths
++  - export PATH=$RISCV/bin:$VERILATOR_ROOT/bin:$PATH
++  - export LIBRARY_PATH=$RISCV/lib
++  - export LD_LIBRARY_PATH=$RISCV/lib
++  - export C_INCLUDE_PATH=$RISCV/include:$VERILATOR_ROOT/share/verilator/include
++  - export CPLUS_INCLUDE_PATH=$RISCV/include:$VERILATOR_ROOT/share/verilator/include
++  - export PKG_CONFIG_PATH=$VERILATOR_ROOT/share/pkgconfig
++  # number of parallel jobs to use for make commands and simulation
++  - export NUM_JOBS=4
++  - ci/make-tmp.sh
++  - git submodule update --init --recursive
++
++stages:
++  - download
++  - compile1
++  - compile2
++  - test
++
++jobs:
++  include:
++    - stage: download
++      name: download pulp gcc
++      script:
++        - ci/download-pulp-gcc.sh
++
++    - stage: compile2
++      name: build verilator
++      script:
++        - ci/install-verilator.sh
++    - stage: compile2
++      name: build openocd
++      script:
++        - ci/get-openocd.sh
++
++    - stage: test
++      name: run openocd debug module tests
++      script:
++        - ci/veri-run-openocd-compliance.sh
++
++# extra time during long builds
++install: travis_wait
+diff --git a/README.md b/README.md
+index a5662d5..295fa9d 100644
+--- a/README.md
++++ b/README.md
+@@ -33,6 +33,5 @@ These are not implemented (yet)
+ 
+ We use OpenOCD's [RISC-V compliance
+ tests](https://github.com/riscv/riscv-openocd/blob/riscv/src/target/riscv/riscv-013.c),
+-our custom testbench in
+-[PULPissimo](https://github.com/pulp-platform/pulpissimo) and
+-[riscv-tests/debug](https://github.com/riscv/riscv-tests/tree/master/debug).
+\ No newline at end of file
++our custom testbench in `tb/` and
++[riscv-tests/debug](https://github.com/riscv/riscv-tests/tree/master/debug).
+diff --git a/ci/download-pulp-gcc.sh b/ci/download-pulp-gcc.sh
+new file mode 100755
+index 0000000..eaab8ad
+--- /dev/null
++++ b/ci/download-pulp-gcc.sh
+@@ -0,0 +1,12 @@
++#!/bin/bash
++set -o pipefail
++set -e
++
++ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
++VERSION="v1.0.16"
++
++# mkdir -p $RISCV
++
++wget https://github.com/pulp-platform/pulp-riscv-gnu-toolchain/releases/download/$VERSION/$VERSION-pulp-riscv-gcc-ubuntu-16.tar.bz2
++echo "unpacking pulp gcc and installing to $RISCV"
++tar -xvf $VERSION-pulp-riscv-gcc-ubuntu-16.tar.bz2 -C "$RISCV" --strip 1
+diff --git a/ci/get-openocd.sh b/ci/get-openocd.sh
+new file mode 100755
+index 0000000..5d37936
+--- /dev/null
++++ b/ci/get-openocd.sh
+@@ -0,0 +1,40 @@
++#!/usr/bin/env bash
++
++set -e
++
++VERSION="af3a034b57279d2a400d87e7508c9a92254ec165"
++
++mkdir -p $RISCV/
++cd $RISCV
++
++check_version() {
++    $1 --version | awk "NR==1 {if (\$NF>$2) {exit 0} exit 1}" || (
++	echo $3 requires at least version $2 of $1. Aborting.
++	exit 1
++    )
++}
++
++
++if [ -z ${NUM_JOBS} ]; then
++    NUM_JOBS=1
++fi
++
++if ! [ -e $RISCV/bin/openocd ]; then
++    if ! [ -e $RISCV/riscv-openocd ]; then
++	git clone https://github.com/riscv/riscv-openocd.git
++    fi
++    check_version automake 1.14 "OpenOCD build"
++    check_version autoconf 2.64 "OpenOCD build"
++
++    cd riscv-openocd
++    git checkout $VERSION
++    git submodule update --init --recursive
++
++    echo "Compiling OpenOCD"
++    ./bootstrap
++    ./configure --prefix=$RISCV --disable-werror --disable-wextra --enable-remote-bitbang
++    make -j${NUM_JOBS}
++    make install
++    echo "Compilation Finished"
++fi
++
+diff --git a/ci/install-verilator.sh b/ci/install-verilator.sh
+new file mode 100755
+index 0000000..2dae385
+--- /dev/null
++++ b/ci/install-verilator.sh
+@@ -0,0 +1,28 @@
++#!/bin/bash
++set -e
++ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
++cd $ROOT/tmp
++
++if [ -z ${NUM_JOBS} ]; then
++    NUM_JOBS=1
++fi
++
++if [ ! -e "$VERILATOR_ROOT/bin/verilator" ]; then
++    echo "Installing Verilator"
++    rm -f verilator*.tgz
++    wget https://www.veripool.org/ftp/verilator-4.018.tgz
++    tar xzf verilator*.tgz
++    rm -f verilator*.tgz
++    cd verilator-4.018
++    mkdir -p $VERILATOR_ROOT
++    # copy scripts
++    autoconf && ./configure --prefix="$VERILATOR_ROOT" && make -j${NUM_JOBS}
++    make install
++    # not obvious to me why these symlinks are missing
++    ln -s $VERILATOR_ROOT/share/verilator/include $VERILATOR_ROOT/include
++    ln -s $VERILATOR_ROOT/share/verilator/bin/verilator_includer \
++       $VERILATOR_ROOT/bin/verilator_includer
++    make test
++else
++    echo "Using Verilator from cached directory."
++fi
+diff --git a/ci/make-tmp.sh b/ci/make-tmp.sh
+new file mode 100755
+index 0000000..a3c34c1
+--- /dev/null
++++ b/ci/make-tmp.sh
+@@ -0,0 +1,5 @@
++#!/bin/bash
++set -e
++cd "$(dirname "${BASH_SOURCE[0]}")/.."
++[ -d tmp ] || rm -rf tmp
++mkdir -p tmp
+diff --git a/ci/openocd-to-junit.py b/ci/openocd-to-junit.py
+new file mode 100755
+index 0000000..392fb74
+--- /dev/null
++++ b/ci/openocd-to-junit.py
+@@ -0,0 +1,62 @@
++#!/usr/bin/env python3
++import sys, getopt
++from junit_xml import *
++
++
++def main(argv):
++    inputfile = ''
++    outputfile = ''
++
++    try:
++        opts, args = getopt.getopt(argv,"hi:o:",["ifile=","ofile="])
++    except getopt.GetoptError:
++        print ('openocd-to-junit.py -i <inputfile> -o <outputfile>')
++        sys.exit(2)
++    for opt, arg in opts:
++        if opt == '-h':
++            print ('openocd-to-junit.py -i <inputfile> -o <outputfile>')
++            sys.exit()
++        elif opt in ("-i", "--ifile"):
++            inputfile = arg
++        elif opt in ("-o", "--ofile"):
++            outputfile = arg
++
++    test_strings = defaultdict(list)
++    test_timestamps = {}
++    current_testname = ''
++
++    test_cases = []
++    current_test_case = None
++
++    ocd_stdout = ''
++
++    with open(inputfile, 'r') as infile:
++        for line in infile:
++            if 'Info' in line and 'riscv013_test_compliance()' in line:
++                print(line.split(' '))
++                current_testname = ' '.join(line.split(' ')[7:])
++                test_strings[current_testname].append(line)
++                test_timestamps[current_testname] = line.split(' ')[3]
++
++            ocd_stdout += line
++
++    for k,v in test_strings.items():
++        current_test_case = TestCase(k, stdout=''.join(v),
++                                     timestamp=test_timestamps[k])
++        error_msg = ""
++        for line in v:
++            if 'FAILED' in line:
++                error_msg += line;
++
++            if error_msg:
++                current_test_case.add_error_info(error_msg)
++
++        test_cases.append(current_test_case)
++
++    ts = TestSuite("openocd-compliance", test_cases, stdout=ocd_stdout)
++    # pretty printing is on by default but can be disabled using prettyprint=False
++    with open(outputfile, 'w') as outfile:
++        TestSuite.to_file(outfile, [ts])
++
++if __name__ == "__main__":
++    main(sys.argv[1:])
+diff --git a/ci/run-openocd-compliance.sh b/ci/run-openocd-compliance.sh
+new file mode 100755
+index 0000000..ad37aaa
+--- /dev/null
++++ b/ci/run-openocd-compliance.sh
+@@ -0,0 +1,47 @@
++#!/usr/bin/env bash
++
++set -e
++
++ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
++
++if [ -z "${RISCV}" ]
++then
++    echo "RISCV is empty"
++    exit 1
++fi
++
++function cleanup {
++  echo "cleaning up processes and tmp files"
++  sleep 2
++  echo "vsim pid is:${vsim_pid} pgid:${vsim_pgid}"
++  if ps -p "${vsim_pid}" > /dev/null
++  then
++      echo "vsim pid exists, killing it"
++      kill -- -"${vsim_pgid}"
++  fi
++  rm "${vsim_out}"
++}
++
++trap cleanup EXIT
++
++vsim_out=$(mktemp)
++openocd_out=openocd.log
++
++make -C "${ROOT}"/tb/dm vsim-run &> "${vsim_out}"&
++# record vsim pid/pgid to kill it if it survives this script
++vsim_pid=$!
++vsim_pgid=$(ps -o pgid= ${vsim_pid} | grep -o [0-9]*)
++
++# block until we get "Listening on port" so that we are safe to connect openocd
++coproc grep -m 1 "Listening on port"
++tail -f -n0 "${vsim_out}" --pid "$COPROC_PID" >&"${COPROC[1]}"
++
++echo "Starting openocd"
++"${RISCV}"/bin/openocd -f "${ROOT}"/tb/dm/dm_compliance_test.cfg |& tee "${openocd_out}"
++
++
++if grep -q "ALL TESTS PASSED" "${openocd_out}"; then
++    exit 0
++fi
++exit 1
++
+diff --git a/ci/veri-run-openocd-compliance.sh b/ci/veri-run-openocd-compliance.sh
+new file mode 100755
+index 0000000..09b5892
+--- /dev/null
++++ b/ci/veri-run-openocd-compliance.sh
+@@ -0,0 +1,33 @@
++#!/usr/bin/env bash
++
++set -e
++
++ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
++
++if [ -z "${RISCV}" ]
++then
++    echo "RISCV is empty"
++    exit 1
++fi
++
++
++veri_out=$(mktemp)
++openocd_out=openocd.log
++
++make -C "${ROOT}"/tb veri-run |& tee "${veri_out}"&
++# record veri pid/pgid to kill it if it survives this script
++veri_pid=$!
++veri_pgid=$(ps -o pgid= ${veri_pid} | grep -o [0-9]*)
++
++# block until we get "Listening on port" so that we are safe to connect openocd
++coproc grep -m 1 "Listening on port"
++tail -f -n0 "${veri_out}" --pid "$COPROC_PID" >&"${COPROC[1]}"
++
++echo "Starting openocd"
++"${RISCV}"/bin/openocd -f "${ROOT}"/tb/dm_compliance_test.cfg |& tee "${openocd_out}"
++
++if grep -q "ALL TESTS PASSED" "${openocd_out}"; then
++    exit 0
++fi
++exit 1
++
+diff --git a/tb/.clang-format b/tb/.clang-format
+new file mode 100644
+index 0000000..ab4772e
+--- /dev/null
++++ b/tb/.clang-format
+@@ -0,0 +1,35 @@
++---
++BasedOnStyle: LLVM
++IndentWidth: 4
++UseTab: Never
++BreakBeforeBraces: Linux
++AlwaysBreakBeforeMultilineStrings: true
++AllowShortIfStatementsOnASingleLine: false
++AllowShortLoopsOnASingleLine: false
++AllowShortFunctionsOnASingleLine: false
++IndentCaseLabels: false
++AlignEscapedNewlinesLeft: false
++AlignTrailingComments: true
++AlignOperands: true
++AllowAllParametersOfDeclarationOnNextLine: false
++AlignAfterOpenBracket: true
++SpaceAfterCStyleCast: false
++MaxEmptyLinesToKeep: 2
++BreakBeforeBinaryOperators: NonAssignment
++BreakStringLiterals: false
++SortIncludes: false
++ContinuationIndentWidth: 4
++ColumnLimit: 80
++IndentPPDirectives: AfterHash
++BinPackArguments: true
++BinPackParameters: true
++ForEachMacros:
++	- 'TAILQ_FOREACH'
++	- 'TAILQ_FOREACH_REVERSE'
++BreakBeforeBinaryOperators: None
++MaxEmptyLinesToKeep: 1
++AlwaysBreakAfterDefinitionReturnType: None
++AlwaysBreakAfterReturnType: None
++AlwaysBreakBeforeMultilineStrings: false
++AlignConsecutiveAssignments: true
++...
+diff --git a/tb/.gitignore b/tb/.gitignore
+new file mode 100644
+index 0000000..667cf44
+--- /dev/null
++++ b/tb/.gitignore
+@@ -0,0 +1,26 @@
++TAGS
++memory_dump.bin
++modelsim.ini
++*.o
++work/*
++*.vstf
++*.wlf
++*.log
++objdump
++.build-rtl
++.lib-rtl
++.opt-rtl
++*.elf
++*.hex
++riscv
++common_cells
++tech_cells_generic
++fpnew
++transcript
++.nfs*
++simv*
++ucli.key
++DVEfiles
++cobj_dir
++obj_dir
++testbench_verilator
+diff --git a/tb/LICENSE.Berkeley b/tb/LICENSE.Berkeley
+new file mode 100644
+index 0000000..5e890e5
+--- /dev/null
++++ b/tb/LICENSE.Berkeley
+@@ -0,0 +1,24 @@
++Copyright (c) 2011-2016, The Regents of the University of California
++(Regents).  All Rights Reserved.
++
++Redistribution and use in source and binary forms, with or without
++modification, are permitted provided that the following conditions are met:
++1. Redistributions of source code must retain the above copyright
++   notice, this list of conditions and the following disclaimer.
++2. Redistributions in binary form must reproduce the above copyright
++   notice, this list of conditions and the following disclaimer in the
++   documentation and/or other materials provided with the distribution.
++3. Neither the name of the Regents nor the
++   names of its contributors may be used to endorse or promote products
++   derived from this software without specific prior written permission.
++
++IN NO EVENT SHALL REGENTS BE LIABLE TO ANY PARTY FOR DIRECT, INDIRECT,
++SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, INCLUDING LOST PROFITS, ARISING
++OUT OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN IF REGENTS HAS
++BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++REGENTS SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
++THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
++PURPOSE. THE SOFTWARE AND ACCOMPANYING DOCUMENTATION, IF ANY, PROVIDED
++HEREUNDER IS PROVIDED "AS IS". REGENTS HAS NO OBLIGATION TO PROVIDE
++MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
+diff --git a/tb/LICENSE.SiFive b/tb/LICENSE.SiFive
+new file mode 100644
+index 0000000..7e70933
+--- /dev/null
++++ b/tb/LICENSE.SiFive
+@@ -0,0 +1,202 @@
++
++                                 Apache License
++                           Version 2.0, January 2004
++                        http://www.apache.org/licenses/
++
++   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
++
++   1. Definitions.
++
++      "License" shall mean the terms and conditions for use, reproduction,
++      and distribution as defined by Sections 1 through 9 of this document.
++
++      "Licensor" shall mean the copyright owner or entity authorized by
++      the copyright owner that is granting the License.
++
++      "Legal Entity" shall mean the union of the acting entity and all
++      other entities that control, are controlled by, or are under common
++      control with that entity. For the purposes of this definition,
++      "control" means (i) the power, direct or indirect, to cause the
++      direction or management of such entity, whether by contract or
++      otherwise, or (ii) ownership of fifty percent (50%) or more of the
++      outstanding shares, or (iii) beneficial ownership of such entity.
++
++      "You" (or "Your") shall mean an individual or Legal Entity
++      exercising permissions granted by this License.
++
++      "Source" form shall mean the preferred form for making modifications,
++      including but not limited to software source code, documentation
++      source, and configuration files.
++
++      "Object" form shall mean any form resulting from mechanical
++      transformation or translation of a Source form, including but
++      not limited to compiled object code, generated documentation,
++      and conversions to other media types.
++
++      "Work" shall mean the work of authorship, whether in Source or
++      Object form, made available under the License, as indicated by a
++      copyright notice that is included in or attached to the work
++      (an example is provided in the Appendix below).
++
++      "Derivative Works" shall mean any work, whether in Source or Object
++      form, that is based on (or derived from) the Work and for which the
++      editorial revisions, annotations, elaborations, or other modifications
++      represent, as a whole, an original work of authorship. For the purposes
++      of this License, Derivative Works shall not include works that remain
++      separable from, or merely link (or bind by name) to the interfaces of,
++      the Work and Derivative Works thereof.
++
++      "Contribution" shall mean any work of authorship, including
++      the original version of the Work and any modifications or additions
++      to that Work or Derivative Works thereof, that is intentionally
++      submitted to Licensor for inclusion in the Work by the copyright owner
++      or by an individual or Legal Entity authorized to submit on behalf of
++      the copyright owner. For the purposes of this definition, "submitted"
++      means any form of electronic, verbal, or written communication sent
++      to the Licensor or its representatives, including but not limited to
++      communication on electronic mailing lists, source code control systems,
++      and issue tracking systems that are managed by, or on behalf of, the
++      Licensor for the purpose of discussing and improving the Work, but
++      excluding communication that is conspicuously marked or otherwise
++      designated in writing by the copyright owner as "Not a Contribution."
++
++      "Contributor" shall mean Licensor and any individual or Legal Entity
++      on behalf of whom a Contribution has been received by Licensor and
++      subsequently incorporated within the Work.
++
++   2. Grant of Copyright License. Subject to the terms and conditions of
++      this License, each Contributor hereby grants to You a perpetual,
++      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
++      copyright license to reproduce, prepare Derivative Works of,
++      publicly display, publicly perform, sublicense, and distribute the
++      Work and such Derivative Works in Source or Object form.
++
++   3. Grant of Patent License. Subject to the terms and conditions of
++      this License, each Contributor hereby grants to You a perpetual,
++      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
++      (except as stated in this section) patent license to make, have made,
++      use, offer to sell, sell, import, and otherwise transfer the Work,
++      where such license applies only to those patent claims licensable
++      by such Contributor that are necessarily infringed by their
++      Contribution(s) alone or by combination of their Contribution(s)
++      with the Work to which such Contribution(s) was submitted. If You
++      institute patent litigation against any entity (including a
++      cross-claim or counterclaim in a lawsuit) alleging that the Work
++      or a Contribution incorporated within the Work constitutes direct
++      or contributory patent infringement, then any patent licenses
++      granted to You under this License for that Work shall terminate
++      as of the date such litigation is filed.
++
++   4. Redistribution. You may reproduce and distribute copies of the
++      Work or Derivative Works thereof in any medium, with or without
++      modifications, and in Source or Object form, provided that You
++      meet the following conditions:
++
++      (a) You must give any other recipients of the Work or
++          Derivative Works a copy of this License; and
++
++      (b) You must cause any modified files to carry prominent notices
++          stating that You changed the files; and
++
++      (c) You must retain, in the Source form of any Derivative Works
++          that You distribute, all copyright, patent, trademark, and
++          attribution notices from the Source form of the Work,
++          excluding those notices that do not pertain to any part of
++          the Derivative Works; and
++
++      (d) If the Work includes a "NOTICE" text file as part of its
++          distribution, then any Derivative Works that You distribute must
++          include a readable copy of the attribution notices contained
++          within such NOTICE file, excluding those notices that do not
++          pertain to any part of the Derivative Works, in at least one
++          of the following places: within a NOTICE text file distributed
++          as part of the Derivative Works; within the Source form or
++          documentation, if provided along with the Derivative Works; or,
++          within a display generated by the Derivative Works, if and
++          wherever such third-party notices normally appear. The contents
++          of the NOTICE file are for informational purposes only and
++          do not modify the License. You may add Your own attribution
++          notices within Derivative Works that You distribute, alongside
++          or as an addendum to the NOTICE text from the Work, provided
++          that such additional attribution notices cannot be construed
++          as modifying the License.
++
++      You may add Your own copyright statement to Your modifications and
++      may provide additional or different license terms and conditions
++      for use, reproduction, or distribution of Your modifications, or
++      for any such Derivative Works as a whole, provided Your use,
++      reproduction, and distribution of the Work otherwise complies with
++      the conditions stated in this License.
++
++   5. Submission of Contributions. Unless You explicitly state otherwise,
++      any Contribution intentionally submitted for inclusion in the Work
++      by You to the Licensor shall be under the terms and conditions of
++      this License, without any additional terms or conditions.
++      Notwithstanding the above, nothing herein shall supersede or modify
++      the terms of any separate license agreement you may have executed
++      with Licensor regarding such Contributions.
++
++   6. Trademarks. This License does not grant permission to use the trade
++      names, trademarks, service marks, or product names of the Licensor,
++      except as required for reasonable and customary use in describing the
++      origin of the Work and reproducing the content of the NOTICE file.
++
++   7. Disclaimer of Warranty. Unless required by applicable law or
++      agreed to in writing, Licensor provides the Work (and each
++      Contributor provides its Contributions) on an "AS IS" BASIS,
++      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
++      implied, including, without limitation, any warranties or conditions
++      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
++      PARTICULAR PURPOSE. You are solely responsible for determining the
++      appropriateness of using or redistributing the Work and assume any
++      risks associated with Your exercise of permissions under this License.
++
++   8. Limitation of Liability. In no event and under no legal theory,
++      whether in tort (including negligence), contract, or otherwise,
++      unless required by applicable law (such as deliberate and grossly
++      negligent acts) or agreed to in writing, shall any Contributor be
++      liable to You for damages, including any direct, indirect, special,
++      incidental, or consequential damages of any character arising as a
++      result of this License or out of the use or inability to use the
++      Work (including but not limited to damages for loss of goodwill,
++      work stoppage, computer failure or malfunction, or any and all
++      other commercial damages or losses), even if such Contributor
++      has been advised of the possibility of such damages.
++
++   9. Accepting Warranty or Additional Liability. While redistributing
++      the Work or Derivative Works thereof, You may choose to offer,
++      and charge a fee for, acceptance of support, warranty, indemnity,
++      or other liability obligations and/or rights consistent with this
++      License. However, in accepting such obligations, You may act only
++      on Your own behalf and on Your sole responsibility, not on behalf
++      of any other Contributor, and only if You agree to indemnify,
++      defend, and hold each Contributor harmless for any liability
++      incurred by, or claims asserted against, such Contributor by reason
++      of your accepting any such warranty or additional liability.
++
++   END OF TERMS AND CONDITIONS
++
++   APPENDIX: How to apply the Apache License to your work.
++
++      To apply the Apache License to your work, attach the following
++      boilerplate notice, with the fields enclosed by brackets "[]"
++      replaced with your own identifying information. (Don't include
++      the brackets!)  The text should be enclosed in the appropriate
++      comment syntax for the file format. We also recommend that a
++      file or class name and description of purpose be included on the
++      same "printed page" as the copyright notice for easier
++      identification within third-party archives.
++
++   Copyright 2016-2017 SiFive, Inc.
++
++   Licensed under the Apache License, Version 2.0 (the "License");
++   you may not use this file except in compliance with the License.
++   You may obtain a copy of the License at
++
++       http://www.apache.org/licenses/LICENSE-2.0
++
++   Unless required by applicable law or agreed to in writing, software
++   distributed under the License is distributed on an "AS IS" BASIS,
++   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++   See the License for the specific language governing permissions and
++   limitations under the License.
+diff --git a/tb/Makefile b/tb/Makefile
+new file mode 100644
+index 0000000..285b508
+--- /dev/null
++++ b/tb/Makefile
+@@ -0,0 +1,328 @@
++# Copyright 2019 Clifford Wolf
++# Copyright 2019 Robert Balas
++# Copyright 2020 ETH Zurich and University of Bologna.
++# Permission to use, copy, modify, and/or distribute this software for any
++# purpose with or without fee is hereby granted, provided that the above
++# copyright notice and this permission notice appear in all copies.
++#
++# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
++# REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
++# AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
++# INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
++# LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
++# OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
++# PERFORMANCE OF THIS SOFTWARE.
++
++# Author: Robert Balas (balasr@iis.ee.ethz.ch)
++# Description: All in one. Uses parts of picorv32's makefile.
++
++MAKE			= make
++CTAGS			= ctags
++
++# vsim configuration
++VVERSION                = "10.7b"
++
++VLIB			= vlib-$(VVERSION)
++VWORK			= work
++
++VLOG			= vlog-$(VVERSION)
++VLOG_FLAGS		= -pedanticerrors -suppress 2577 -suppress 2583
++VLOG_LOG                = vloggy
++
++VOPT			= vopt-$(VVERSION)
++VOPT_FLAGS		= -debugdb -fsmdebug -pedanticerrors #=mnprft
++
++VSIM			= vsim-$(VVERSION)
++VSIM_HOME               = /usr/pack/modelsim-$(VVERSION)-kgf/questasim
++VSIM_FLAGS              =  # user defined
++ALL_VSIM_FLAGS		= $(VSIM_FLAGS) -sv_lib remote_bitbang/librbs_vsim
++VSIM_DEBUG_FLAGS	= -debugdb
++VSIM_GUI_FLAGS          = -gui -debugdb
++VSIM_SCRIPT_BATCH       = vsim_batch.tcl
++VSIM_SCRIPT_GUI         = vsim_gui.tcl
++
++VCS                     = vcs-2017.03-kgf vcs
++VCS_HOME                = /usr/pack/vcs-2017.03-kgf
++VCS_FLAGS               =
++SIMV_FLAGS              =
++
++# verilator configuration
++VERILATOR		= verilator
++VERI_FLAGS              =
++VERI_COMPILE_FLAGS      =
++VERI_TRACE              =
++VERI_DIR                = cobj_dir
++VERI_CFLAGS             = -O2
++
++# RTL source files
++RTLSRC_TB_PKG		:=
++RTLSRC_TB_TOP		:= tb_top.sv
++RTLSRC_TB		:= boot_rom.sv \
++				dp_ram.sv \
++				mm_ram.sv \
++				SimJTAG.sv \
++				tb_test_env.sv \
++				tb_top.sv
++
++RTLSRC_VERI_TB          := boot_rom.sv \
++				dp_ram.sv \
++				mm_ram.sv \
++				SimJTAG.sv \
++				tb_test_env.sv \
++				tb_top_verilator.sv
++
++RTLSRC_INCDIR           := riscv/rtl/include
++
++RTLSRC_FPNEW_PKG	:= fpnew/src/fpnew_pkg.sv
++RTLSRC_RISCV_PKG	+= $(addprefix riscv/rtl/include/,\
++				apu_core_package.sv riscv_defines.sv \
++				riscv_tracer_defines.sv)
++RTLSRC_DM_PKG		+= ../src/dm_pkg.sv
++
++RTLSRC_PKG 		= $(RTLSRC_FPNEW_PKG) dm_tb_pkg.sv $(RTLSRC_RISCV_PKG) $(RTLSRC_DM_PKG)
++RTLSRC_RISCV		:= $(addprefix riscv/rtl/,\
++				cv32e40p_sim_clock_gating.sv \
++				register_file_test_wrap.sv \
++				riscv_tracer.sv \
++				riscv_register_file.sv \
++				riscv_alu.sv \
++				riscv_alu_basic.sv \
++				riscv_alu_div.sv \
++				riscv_compressed_decoder.sv \
++				riscv_controller.sv \
++				riscv_cs_registers.sv \
++				riscv_decoder.sv \
++				riscv_int_controller.sv \
++				riscv_ex_stage.sv \
++				riscv_hwloop_controller.sv \
++				riscv_hwloop_regs.sv \
++				riscv_id_stage.sv \
++				riscv_if_stage.sv \
++				riscv_load_store_unit.sv \
++				riscv_mult.sv \
++				riscv_prefetch_buffer.sv \
++				riscv_prefetch_L0_buffer.sv \
++				riscv_core.sv \
++				riscv_apu_disp.sv \
++				riscv_fetch_fifo.sv \
++				riscv_L0_buffer.sv \
++				riscv_pmp.sv)
++RTLSRC_COMMON           := $(addprefix common_cells/src/,\
++				cdc_2phase.sv fifo_v2.sv fifo_v3.sv\
++				rstgen.sv rstgen_bypass.sv)
++RTLSRC_TECH		:= $(addprefix tech_cells_generic/src/,\
++				cluster_clock_inverter.sv pulp_clock_mux2.sv\
++				cluster_clock_gating.sv)
++RTLSRC_DEBUG            := ../debug_rom/debug_rom.sv
++RTLSRC_DEBUG		+= $(addprefix ../src/,\
++				dm_csrs.sv dmi_cdc.sv dmi_jtag.sv \
++				dmi_jtag_tap.sv dm_mem.sv \
++				dm_sba.sv dm_top.sv)
++
++RTLSRC			+= $(RTLSRC_RISCV) $(RTLSRC_COMMON) $(RTLSRC_TECH) $(RTLSRC_DEBUG)
++
++# versions for this tb
++RI5CY_SHA               = d049690e7867291830631db7dbeb47c92718ed9e
++FPU_SHA                 = v0.6.1
++COMMON_SHA              = 337f54a7cdfdad78b124cbdd2a627db3e0939141
++TECH_SHA                = b35652608124b7ea813818b14a00ca76edd7599d
++
++RAM_START_ADDR          = 0x1c000000
++
++# TODO: clean this up
++RTLSRC_VLOG_TB_TOP	:= $(basename $(notdir $(RTLSRC_TB_TOP)))
++RTLSRC_VOPT_TB_TOP	:= $(addsuffix _vopt, $(RTLSRC_VLOG_TB_TOP))
++
++# riscv toolchain install path
++RISCV                    ?= ~/.riscv
++RISCV_EXE_PREFIX         = $(RISCV)/bin/riscv32-unknown-elf-
++
++# assume verilator if no target chosen
++.DEFAULT_GOAL := veri-run
++
++all: veri-run
++
++# vsim testbench compilation and optimization
++vlib: .lib-rtl
++
++.lib-rtl:
++	$(VLIB) $(VWORK)
++	touch .lib-rtl
++
++# rebuild if we change some sourcefile
++.build-rtl: .lib-rtl $(RTLSRC_PKG) $(RTLSRC) $(RTLSRC_TB_PKG) $(RTLSRC_TB)
++	$(VLOG) -work $(VWORK) +incdir+$(RTLSRC_INCDIR) $(VLOG_FLAGS) \
++	$(RTLSRC_PKG) $(RTLSRC) $(RTLSRC_TB_PKG) $(RTLSRC_TB)
++	touch .build-rtl
++
++vsim-all: .opt-rtl
++
++.opt-rtl: .build-rtl
++	$(VOPT) -work $(VWORK) $(VOPT_FLAGS) $(RTLSRC_VLOG_TB_TOP) -o \
++	$(RTLSRC_VOPT_TB_TOP)
++	touch .opt-rtl
++
++# vcs testbench compilation
++
++vcsify: $(RTLSRC_PKG) $(RTLSRC) $(RTLSRC_TB_PKG) $(RTLSRC_TB) remote_bitbang/librbs_vcs.so
++	$(VCS) +vc -sverilog -race=all -ignore unique_checks -full64 \
++		-timescale=1ns/1ps \
++		-CC "-I$(VCS_HOME)/include -O3 -march=native" $(VCS_FLAGS) \
++		$(RTLSRC_PKG) $(RTLSRC) $(RTLSRC_TB_PKG) $(RTLSRC_TB) \
++		+incdir+$(RTLSRC_INCDIR)
++
++vcs-clean:
++	rm -rf simv* *.daidir *.vpd *.db csrc ucli.key vc_hdrs.h
++
++# verilator testbench compilation
++
++# We first test if the user wants to to vcd dumping. This hacky part is required
++# because we need to conditionally compile the testbench (-DVCD_TRACE) and pass
++# the --trace flags to the verilator call
++ifeq ($(findstring +vcd,$(VERI_FLAGS)),+vcd)
++VERI_TRACE="--trace"
++VERI_CFLAGS+="-DVCD_TRACE"
++endif
++VPATH += ../
++verilate: testbench_verilator
++
++# We set the RUNPATH (not RPATH, allows LD_LIBRARY_PATH to overwrite) to
++# remote_bitbang and manually link against librbs_veri since putting in
++# librbs_veri.so as parameter doesn't work because it searches in the build
++# directory
++testbench_verilator: $(RTLSRC_VERI_TB) $(RTLSRC_PKG) $(RTLSRC) \
++			remote_bitbang/librbs_veri.so
++	$(VERILATOR) --cc --sv --exe $(VERI_TRACE) \
++		--Wno-lint --Wno-UNOPTFLAT --Wno-BLKANDNBLK \
++		--Wno-MODDUP +incdir+$(RTLSRC_INCDIR) --top-module \
++		tb_top_verilator --Mdir $(VERI_DIR) \
++		-CFLAGS "-std=gnu++11 $(VERI_CFLAGS)" $(VERI_COMPILE_FLAGS) \
++		$(RTLSRC_PKG) $(RTLSRC_VERI_TB) $(RTLSRC) \
++		-LDFLAGS "-L../remote_bitbang \
++		-Wl,--enable-new-dtags -Wl,-rpath,remote_bitbang -lrbs_veri" \
++		tb_top_verilator.cpp
++	cd $(VERI_DIR) && $(MAKE) -f Vtb_top_verilator.mk
++	cp $(VERI_DIR)/Vtb_top_verilator testbench_verilator
++
++verilate-clean:
++	if [ -d $(VERI_DIR) ]; then rm -r $(VERI_DIR); fi
++	rm -rf testbench_verilator
++
++# git dependencies
++download_deps: fpnew/src/fpnew_pkg.sv $(RTLSRC_COMMON) $(RTLSRC_TECH) $(RTLSRC_RISCV)
++
++fpnew/src/fpnew_pkg.sv:
++	git clone https://github.com/pulp-platform/fpnew.git --recurse -b v0.6.1
++
++$(RTLSRC_COMMON):
++	git clone https://github.com/pulp-platform/common_cells.git
++	cd common_cells/ && git checkout $(COMMON_SHA)
++
++$(RTLSRC_TECH):
++	git clone https://github.com/pulp-platform/tech_cells_generic.git
++	cd tech_cells_generic/ && git checkout $(TECH_SHA)
++
++$(RTLSRC_RISCV_PKG) $(RTLSRC_RISCV):
++	git clone https://github.com/openhwgroup/cv32e40p.git riscv
++	cd riscv/ && git checkout $(RI5CY_SHA)
++
++# openocd server
++remote_bitbang/librbs_veri.so: INCLUDE_DIRS =./ $(VSIM_HOME)/include
++remote_bitbang/librbs_veri.so:
++	$(MAKE) -C remote_bitbang all
++	mv remote_bitbang/librbs.so $@
++
++remote_bitbang/librbs_vsim.so: INCLUDE_DIRS =./ $(VSIM_HOME)/include
++remote_bitbang/librbs_vsim.so:
++	$(MAKE) -C remote_bitbang all
++	mv remote_bitbang/librbs.so $@
++
++remote_bitbang/librbs_vcs.so: INCLUDE_DIRS =./ $(VCS_HOME)/include
++remote_bitbang/librbs_vcs.so:
++	$(MAKE) -C remote_bitbang all
++	mv remote_bitbang/librbs.so $@
++
++rbs-clean:
++	$(MAKE) -C remote_bitbang clean
++	rm -rf remote_bitbang/librbs_vsim.so remote_bitbang/librbs_vcs.so
++
++# run tb and exit
++.PHONY: vsim-tb-run
++vsim-tb-run: ALL_VSIM_FLAGS += -c
++vsim-tb-run: vsim-all remote_bitbang/librbs_vsim.so
++	$(VSIM) -work $(VWORK) $(ALL_VSIM_FLAGS) \
++	$(RTLSRC_VOPT_TB_TOP) -do 'source $(VSIM_SCRIPT_BATCH); exit -f'
++
++# run tb and drop into interactive shell
++.PHONY: vsim-tb-run-sh
++vsim-tb-run: ALL_VSIM_FLAGS += -c
++vsim-tb-run-sh: vsim-all remote_bitbang/librbs_vsim.so
++	$(VSIM) -work $(VWORK) $(ALL_VSIM_FLAGS) \
++	$(RTLSRC_VOPT_TB_TOP) -do $(VSIM_SCRIPT_BATCH)
++
++# run tb with simulator gui
++.PHONY: vsim-tb-run-gui
++vsim-tb-run-gui: ALL_VSIM_FLAGS += $(VSIM_GUI_FLAGS)
++vsim-tb-run-gui: vsim-all remote_bitbang/librbs_vsim.so
++	$(VSIM) -work $(VWORK) $(ALL_VSIM_FLAGS) \
++	$(RTLSRC_VOPT_TB_TOP) -do $(VSIM_SCRIPT_GUI)
++
++
++.PHONY: vsim-clean
++vsim-clean:
++	if [ -d $(VWORK) ]; then rm -r $(VWORK); fi
++	rm -f transcript vsim.wlf vsim.dbg trace_core*.log \
++	.build-rtl .opt-rtl .lib-rtl *.vcd objdump
++
++# compile and dump program
++prog/test.elf: prog/test.c prog/syscalls.c prog/start.S prog/vectors.S
++	$(RISCV_EXE_PREFIX)gcc -march=rv32imc -o $@ -w -Os -g -nostdlib \
++		-T prog/link.ld  \
++		-static \
++		prog/crt0.S \
++		prog/test.c prog/syscalls.c prog/vectors.S \
++		-I $(RISCV)/riscv32-unknown-elf/include \
++		-L $(RISCV)/riscv32-unknown-elf/lib \
++		-lc -lm -lgcc
++
++	chmod u+x prog/test.elf
++
++prog/test.hex: prog/test.elf
++	$(RISCV_EXE_PREFIX)objcopy -O verilog --change-addresses -$(RAM_START_ADDR) $< $@
++
++.PHONY: prog-clean
++prog-clean:
++	rm -vrf $(addprefix prog/,test.elf test.hex)
++
++# run program
++.PHONY: veri-run
++veri-run: verilate prog/test.hex
++	./testbench_verilator $(VERI_FLAGS) \
++		"+firmware=prog/test.hex"
++
++.PHONY: vsim-run
++vsim-run: vsim-all prog/test.hex
++vsim-run: ALL_VSIM_FLAGS += "+firmware=prog/test.hex"
++vsim-run: vsim-tb-run
++
++.PHONY: vsim-run-gui
++vsim-run-gui: vsim-all prog/test.hex
++vsim-run-gui: ALL_VSIM_FLAGS += "+firmware=prog/test.hex"
++vsim-run-gui: vsim-tb-run-gui
++
++.PHONY: vcs-run
++vcs-run: vcsify prog/test.hex
++	./simv -sv_lib remote_bitbang/librbs_vcs $(SIMV_FLAGS) "+firmware=prog/test.hex"
++
++.PHONY: vcs-run-gui
++vcs-run-gui: VCS_FLAGS+=-debug_all
++vcs-run-gui: vcsify prog/test.hex
++	./simv -sv_lib remote_bitbang/librbs_vcs $(SIMV_FLAGS) -gui "+firmware=prog/test.hex"
++
++# general targets
++.PHONY: clean
++clean: vsim-clean verilate-clean vcs-clean rbs-clean prog-clean
++
++.PHONY: distclean
++distclean: clean
++	rm -rf common_cells/ tech_cells_generic/ fpnew/ riscv/
+diff --git a/tb/README.md b/tb/README.md
+new file mode 100644
+index 0000000..59960eb
+--- /dev/null
++++ b/tb/README.md
+@@ -0,0 +1,51 @@
++Debug Unit plus RI5CY Testbench
++=====================
++
++This testbench tests RI5CY together with a v0.13.1 compliant [debug
++unit](https://www.github.com/pulp-platform/riscv-dbg). There are several tests
++that can be run, but for now it is just `riscv test_compliance` of
++[riscv-openocd](https://www.github.com/riscv/riscv-openocd) (see in
++`pulpissimo.cfg`) and a not yet scripted run of gdb connecting to openocd,
++loading and running a hello world program (see `prog/test.c`).
++
++You need `riscv-openocd`.
++
++Running the testbench with vsim
++----------------------
++Point you environment variable `RISCV` to your RISC-V toolchain. Call `make
++vsim-run` to build the testbench and the program, and run it with vsim. Use
++`VSIM_FLAGS` to configure the simulator e.g. `make vsim-run VSIM_FLAGS="-gui
++-debugdb"`.
++
++Running the testbench with vcs
++----------------------
++Point you environment variable `RISCV` to your RISC-V toolchain. Call `make
++vcs-run`. Use `VCS_FLAGS` and `SIMV_FLAGS` to configure vcs e.g. `make vcs-run
++VCS_FLAGS="-debug_all"`.
++
++
++Running the testbench with [verilator](https://www.veripool.org/wiki/verilator)
++----------------------
++Point you environment variable `RISCV` to your RISC-V toolchain. Call `make
++veri-run`. Use `VERI_FLAGS` to configure verilator e.g. `make firmware-veri-run
++VERI_FLAGS="+firmware=path_to_firmware +vcd"` to use a custom firmware and dump
++to a vcd file.
++
++
++Options
++----------------------
++A few plusarg options are supported.
++* `+verbose` to show all memory read and writes and other miscellaneous information.
++
++* `+vcd` to produce a vcd file called `riscy_tb.vcd`. Verilator always produces
++  a vcd file called `verilator_tb.vcd`.
++
++* `+firmware=path_to_firmware` to load a specific firmware. It is a bit tricky to
++build and link your own program. Look into the `prog` folder for an example.
++
++Example Run
++-----------------------
++1. `make veri-run`
++3. (in new terminal) `export JTAG_VPI_PORT=port_name_from 1.`
++2. (in new terminal) `openocd -f dm_compliance_test.cfg`
++4. Now you can connect with gdb and interact with the testbench
+diff --git a/tb/SimJTAG.sv b/tb/SimJTAG.sv
+new file mode 100644
+index 0000000..7c6c110
+--- /dev/null
++++ b/tb/SimJTAG.sv
+@@ -0,0 +1,85 @@
++// See LICENSE.SiFive for license details.
++//VCS coverage exclude_file
++import "DPI-C" function int jtag_tick
++(
++ input int port,
++ output bit jtag_TCK,
++ output bit jtag_TMS,
++ output bit jtag_TDI,
++ output bit jtag_TRSTn,
++
++ input bit  jtag_TDO
++);
++
++module SimJTAG #(
++                 parameter TICK_DELAY = 50,
++                 parameter PORT = 0
++                 )(
++
++                   input         clock,
++                   input         reset,
++
++                   input         enable,
++                   input         init_done,
++
++                   output        jtag_TCK,
++                   output        jtag_TMS,
++                   output        jtag_TDI,
++                   output        jtag_TRSTn,
++
++                   input         jtag_TDO_data,
++                   input         jtag_TDO_driven,
++
++                   output [31:0] exit
++                   );
++
++   reg [31:0]                    tickCounterReg;
++   wire [31:0]                   tickCounterNxt;
++
++   assign tickCounterNxt = (tickCounterReg == 0) ? TICK_DELAY :  (tickCounterReg - 1);
++
++   bit          r_reset;
++
++   wire [31:0]  random_bits = $random;
++
++   wire         #0.1 __jtag_TDO = jtag_TDO_driven ?
++                jtag_TDO_data : random_bits[0];
++
++   bit          __jtag_TCK;
++   bit          __jtag_TMS;
++   bit          __jtag_TDI;
++   bit          __jtag_TRSTn;
++   int          __exit;
++
++   reg          init_done_sticky;
++
++   assign #0.1 jtag_TCK   = __jtag_TCK;
++   assign #0.1 jtag_TMS   = __jtag_TMS;
++   assign #0.1 jtag_TDI   = __jtag_TDI;
++   assign #0.1 jtag_TRSTn = __jtag_TRSTn;
++
++   assign #0.1 exit = __exit;
++
++   always @(posedge clock) begin
++      r_reset <= reset;
++      if (reset || r_reset) begin
++         __exit = 0;
++         tickCounterReg <= TICK_DELAY;
++         init_done_sticky <= 1'b0;
++      end else begin
++         init_done_sticky <= init_done | init_done_sticky;
++         if (enable && init_done_sticky) begin
++            tickCounterReg <= tickCounterNxt;
++            if (tickCounterReg == 0) begin
++               __exit = jtag_tick(PORT,
++                                  __jtag_TCK,
++                                  __jtag_TMS,
++                                  __jtag_TDI,
++                                  __jtag_TRSTn,
++                                  __jtag_TDO);
++            end
++         end // if (enable && init_done_sticky)
++      end // else: !if(reset || r_reset)
++   end // always @ (posedge clock)
++
++endmodule
+diff --git a/tb/boot_rom.sv b/tb/boot_rom.sv
+new file mode 100644
+index 0000000..3610af4
+--- /dev/null
++++ b/tb/boot_rom.sv
+@@ -0,0 +1,39 @@
++// Copyright 2020 ETH Zurich and University of Bologna.
++// Copyright and related rights are licensed under the Solderpad Hardware
++// License, Version 0.51 (the "License"); you may not use this file except in
++// compliance with the License.  You may obtain a copy of the License at
++// http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
++// or agreed to in writing, software, hardware and materials distributed under
++// this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
++// CONDITIONS OF ANY KIND, either express or implied. See the License for the
++// specific language governing permissions and limitations under the License.
++
++// Author: Robert Balas <balasr@iis.ee.ethz.ch>
++// Description: Bootrom for firmware booting
++
++module boot_rom (
++    input logic         clk_i,
++    input logic         req_i,
++    input logic [31:0]  addr_i,
++    output logic [31:0] rdata_o
++);
++    localparam int          RomSize    = 2;
++    localparam logic [31:0] entry_addr = 32'h1c00_0080;
++
++    const logic [RomSize-1:0][31:0] mem = {
++        dm_tb_pkg::jalr(5'h0, 5'h1, entry_addr[11:0]),
++        dm_tb_pkg::lui(5'h1, entry_addr[31:12])
++    };
++
++  logic [$clog2(RomSize)-1:0]     addr_q;
++
++
++  assign rdata_o = (addr_q < RomSize) ? mem[addr_q] : '0;
++
++  always_ff @(posedge clk_i) begin
++      if (req_i) begin
++          addr_q <= addr_i[$clog2(RomSize)-1+3:2];
++      end
++  end
++
++endmodule
+diff --git a/tb/dm_compliance_test.cfg b/tb/dm_compliance_test.cfg
+new file mode 100644
+index 0000000..96c7ca6
+--- /dev/null
++++ b/tb/dm_compliance_test.cfg
+@@ -0,0 +1,31 @@
++debug_level 4
++adapter_khz     10000
++
++interface remote_bitbang
++remote_bitbang_host localhost
++
++remote_bitbang_port 9999
++
++set _CHIPNAME riscv
++jtag newtap $_CHIPNAME cpu -irlen 5 -expected-id 0x249511C3
++
++foreach t [jtag names] {
++    puts [format "TAP: %s\n" $t]
++}
++
++set _TARGETNAME $_CHIPNAME.cpu
++#target create $_TARGETNAME riscv -chain-position $_TARGETNAME -coreid 0x3e0
++target create $_TARGETNAME riscv -chain-position $_TARGETNAME -rtos riscv
++
++riscv set_reset_timeout_sec 2000
++riscv set_command_timeout_sec 2000
++
++# prefer to use sba for system bus access
++riscv set_prefer_sba on
++
++# dump jtag chain
++scan_chain
++
++init
++riscv test_compliance
++shutdown
+diff --git a/tb/dm_debug.cfg b/tb/dm_debug.cfg
+new file mode 100644
+index 0000000..1ac2555
+--- /dev/null
++++ b/tb/dm_debug.cfg
+@@ -0,0 +1,32 @@
++debug_level 4
++adapter_khz     10000
++
++interface remote_bitbang
++remote_bitbang_host localhost
++
++remote_bitbang_port $::env(JTAG_VPI_PORT)
++
++set _CHIPNAME riscv
++jtag newtap $_CHIPNAME cpu -irlen 5 -expected-id 0x249511C3
++
++foreach t [jtag names] {
++    puts [format "TAP: %s\n" $t]
++}
++
++set _TARGETNAME $_CHIPNAME.cpu
++#target create $_TARGETNAME riscv -chain-position $_TARGETNAME -coreid 0x3e0
++target create $_TARGETNAME riscv -chain-position $_TARGETNAME -rtos riscv
++
++riscv set_reset_timeout_sec 2000
++riscv set_command_timeout_sec 2000
++
++# prefer to use sba for system bus access
++riscv set_prefer_sba on
++
++# dump jtag chain
++scan_chain
++
++init
++
++halt
++echo "Ready for Remote Connections"
+diff --git a/tb/dm_tb_pkg.sv b/tb/dm_tb_pkg.sv
+new file mode 100644
+index 0000000..e0c5674
+--- /dev/null
++++ b/tb/dm_tb_pkg.sv
+@@ -0,0 +1,58 @@
++// Copyright 2020 ETH Zurich and University of Bologna.
++// Copyright and related rights are licensed under the Solderpad Hardware
++// License, Version 0.51 (the "License"); you may not use this file except in
++// compliance with the License.  You may obtain a copy of the License at
++// http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
++// or agreed to in writing, software, hardware and materials distributed under
++// this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
++// CONDITIONS OF ANY KIND, either express or implied. See the License for the
++// specific language governing permissions and limitations under the License.
++//
++// Contributor: Robert Balas <balasr@iis.ethz.ch>
++
++
++package dm_tb_pkg;
++
++    // PULPissimo-like memory map
++    typedef enum logic [31:0] {
++        ROM_BASE      = 32'h1A00_0000,
++        FLL_BASE      = 32'h1A10_0000,
++        GPIO_BASE     = 32'h1A10_1000,
++        UDMA_BASE     = 32'h1A10_2000,
++        CNTRL_BASE    = 32'h1A10_4000,
++        ADVTIMER_BASE = 32'h1A10_5000,
++        EVENT_BASE    = 32'h1A10_6000,
++        TIMER_BASE    = 32'h1A10_B000,
++        HWPE_BASE     = 32'h1A10_C000,
++        STDOUT_BASE   = 32'h1A10_F000,
++        DEBUG_BASE    = 32'h1A11_0000,
++        SRAM_BASE     = 32'h1C00_0000
++   } mmap_base_t;
++
++    localparam logic [31:0] ROM_LEN      = 32'h0010_0000;
++    localparam logic [31:0] FLL_LEN      = 32'h0000_1000;
++    localparam logic [31:0] GPIO_LEN     = 32'h0000_1000;
++    localparam logic [31:0] UDMA_LEN     = 32'h0000_2000;
++    localparam logic [31:0] CNTRL_LEN    = 32'h0000_1000;
++    localparam logic [31:0] ADVTIMER_LEN = 32'h0000_1000;
++    localparam logic [31:0] EVENT_LEN    = 32'h0000_5000;
++    localparam logic [31:0] TIMER_LEN    = 32'h0000_1000;
++    localparam logic [31:0] HWPE_LEN     = 32'h0000_3000;
++    localparam logic [31:0] STDOUT_LEN   = 32'h0000_1000;
++    localparam logic [31:0] DEBUG_LEN    = 32'h0000_1000;
++    localparam logic [31:0] SRAM_LEN     = 32'h000f_C000;
++
++    // helper functions
++    function automatic logic [31:0] jal (logic[4:0] rd, logic [20:0] imm);
++        return {imm[20], imm[10:1], imm[11], imm[19:12], rd, 7'h6f};
++    endfunction
++
++    function automatic logic [31:0] jalr (logic[4:0] rd, logic[4:0] rs1, logic [11:0] offset);
++        return {offset[11:0], rs1, 3'b0, rd, 7'h67};
++    endfunction
++
++    function automatic logic [31:0] lui (logic[4:0] rd, logic [19:0] uimm);
++        return {uimm, rd, 7'b0110111};
++    endfunction
++
++endpackage // riscv_tb_pkg
+diff --git a/tb/dp_ram.sv b/tb/dp_ram.sv
+new file mode 100644
+index 0000000..f7f224b
+--- /dev/null
++++ b/tb/dp_ram.sv
+@@ -0,0 +1,84 @@
++// Copyright 2020 ETH Zurich and University of Bologna.
++// Copyright 2017 Embecosm Limited <www.embecosm.com>
++// Copyright and related rights are licensed under the Solderpad Hardware
++// License, Version 0.51 (the "License"); you may not use this file except in
++// compliance with the License.  You may obtain a copy of the License at
++// http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
++// or agreed to in writing, software, hardware and materials distributed under
++// this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
++// CONDITIONS OF ANY KIND, either express or implied. See the License for the
++// specific language governing permissions and limitations under the License.
++
++module dp_ram #(
++    parameter int unsigned ADDR_WIDTH = 8,
++    parameter int unsigned INSTR_RDATA_WIDTH = 128
++) (
++    input logic                          clk_i,
++
++    input logic                          en_a_i,
++    input logic [ADDR_WIDTH-1:0]         addr_a_i,
++    input logic [31:0]                   wdata_a_i,
++    output logic [INSTR_RDATA_WIDTH-1:0] rdata_a_o,
++    input logic                          we_a_i,
++    input logic [3:0]                    be_a_i,
++
++    input logic                          en_b_i,
++    input logic [ADDR_WIDTH-1:0]         addr_b_i,
++    input logic [31:0]                   wdata_b_i,
++    output logic [31:0]                  rdata_b_o,
++    input logic                          we_b_i,
++    input logic [3:0]                    be_b_i
++);
++
++    localparam bytes = 2**ADDR_WIDTH;
++
++    logic [7:0]                      mem[bytes];
++    logic [ADDR_WIDTH-1:0]           addr_a_int;
++    logic [ADDR_WIDTH-1:0]           addr_b_int;
++
++    always_comb addr_a_int = {addr_a_i[ADDR_WIDTH-1:2], 2'b0};
++    always_comb addr_b_int = {addr_b_i[ADDR_WIDTH-1:2], 2'b0};
++
++    always @(posedge clk_i) begin
++        for (int i = 0; i < INSTR_RDATA_WIDTH/8; i++) begin
++            rdata_a_o[(i*8)+: 8] <= mem[addr_a_int +  i];
++        end
++
++        /* addr_b_i is the actual memory address referenced */
++        if (en_b_i) begin
++            /* handle writes */
++            if (we_b_i) begin
++                if (be_b_i[0]) mem[addr_b_int    ] <= wdata_b_i[ 0+:8];
++                if (be_b_i[1]) mem[addr_b_int + 1] <= wdata_b_i[ 8+:8];
++                if (be_b_i[2]) mem[addr_b_int + 2] <= wdata_b_i[16+:8];
++                if (be_b_i[3]) mem[addr_b_int + 3] <= wdata_b_i[24+:8];
++            end
++            /* handle reads */
++            else begin
++                if ($test$plusargs("verbose"))
++                    $display("read  addr=0x%08x: data=0x%08x", addr_b_int,
++                             {mem[addr_b_int + 3], mem[addr_b_int + 2],
++                              mem[addr_b_int + 1], mem[addr_b_int + 0]});
++
++                rdata_b_o[ 7: 0] <= mem[addr_b_int    ];
++                rdata_b_o[15: 8] <= mem[addr_b_int + 1];
++                rdata_b_o[23:16] <= mem[addr_b_int + 2];
++                rdata_b_o[31:24] <= mem[addr_b_int + 3];
++            end
++        end
++    end
++
++    export "DPI-C" function read_byte;
++    export "DPI-C" task write_byte;
++
++    function int read_byte(input logic [ADDR_WIDTH-1:0] byte_addr);
++        read_byte = mem[byte_addr];
++    endfunction
++
++    task write_byte(input integer byte_addr, logic [7:0] val, output logic [7:0] other);
++        mem[byte_addr] = val;
++        other          = mem[byte_addr];
++
++    endtask
++
++endmodule // dp_ram
+diff --git a/tb/mm_ram.sv b/tb/mm_ram.sv
+new file mode 100644
+index 0000000..887baa6
+--- /dev/null
++++ b/tb/mm_ram.sv
+@@ -0,0 +1,571 @@
++// Copyright 2020 ETH Zurich and University of Bologna.
++// Copyright and related rights are licensed under the Solderpad Hardware
++// License, Version 0.51 (the "License"); you may not use this file except in
++// compliance with the License.  You may obtain a copy of the License at
++// http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
++// or agreed to in writing, software, hardware and materials distributed under
++// this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
++// CONDITIONS OF ANY KIND, either express or implied. See the License for the
++// specific language governing permissions and limitations under the License.
++
++// RAM and MM wrapper for RI5CY
++// Contributor: Robert Balas <balasr@iis.ee.ethz.ch>
++//
++// This maps the dp_ram module to the instruction and data ports of the RI5CY
++// processor core and some pseudo peripherals
++
++module mm_ram #(
++    parameter int unsigned RAM_ADDR_WIDTH = 16,
++    parameter int unsigned INSTR_RDATA_WIDTH = 32,
++    parameter bit          JTAG_BOOT = 1
++) (
++    input logic                          clk_i,
++    input logic                          rst_ni,
++
++    input logic                          instr_req_i,
++    input logic [31:0]                   instr_addr_i,
++    output logic [INSTR_RDATA_WIDTH-1:0] instr_rdata_o,
++    output logic                         instr_rvalid_o,
++    output logic                         instr_gnt_o,
++
++    input logic                          data_req_i,
++    input logic [31:0]                   data_addr_i,
++    input logic                          data_we_i,
++    input logic [3:0]                    data_be_i,
++    input logic [31:0]                   data_wdata_i,
++    output logic [31:0]                  data_rdata_o,
++    output logic                         data_rvalid_o,
++    output logic                         data_gnt_o,
++
++    input logic                          sb_req_i,
++    input logic [31:0]                   sb_addr_i,
++    input logic                          sb_we_i,
++    input logic [3:0]                    sb_be_i,
++    input logic [31:0]                   sb_wdata_i,
++    output logic [31:0]                  sb_rdata_o,
++    output logic                         sb_rvalid_o,
++    output logic                         sb_gnt_o,
++
++    output logic                         dm_req_o,
++    output logic [31:0]                  dm_addr_o,
++    output logic                         dm_we_o,
++    output logic [3:0]                   dm_be_o,
++    output logic [31:0]                  dm_wdata_o,
++    input logic [31:0]                   dm_rdata_i,
++    input logic                          dm_rvalid_i,
++    input logic                          dm_gnt_i,
++
++
++    input logic [4:0]                    irq_id_i,
++    input logic                          irq_ack_i,
++    output logic [4:0]                   irq_id_o,
++    output logic                         irq_o,
++
++    output logic                         tests_passed_o,
++    output logic                         tests_failed_o
++);
++
++    import dm_tb_pkg::*;
++
++    localparam int                    TIMER_IRQ_ID = 3;
++
++    // mux for read and writes
++    enum logic [2:0]{RAM, DEBUG, ROM, UNMAP, IDLE_READ} select_rdata_d, select_rdata_q;
++
++    enum logic [1:0]{SB, CORE, IDLE_WRITE} select_wdata_d, select_wdata_q;
++
++    logic                          data_rvalid_d, data_rvalid_q;
++    logic                          sb_rvalid_d, sb_rvalid_q;
++    logic                          instr_rvalid_d, instr_rvalid_q;
++
++    // TODO: oof
++    logic [31:0]                   data_addr_aligned;
++
++    // signals to ram
++    logic                          ram_data_req;
++    logic [RAM_ADDR_WIDTH-1:0]     ram_data_addr;
++    logic [31:0]                   ram_data_wdata;
++    logic [31:0]                   ram_data_rdata;
++    logic                          ram_data_we;
++    logic [3:0]                    ram_data_be;
++
++    // signals to rom
++    logic                          rom_req;
++    logic [31:0]                   rom_addr;
++    logic [31:0]                   rom_rdata;
++
++    // signals to read access debug unit
++    logic                          dm_req;
++    logic [31:0]                   dm_addr;
++    logic                          dm_we;
++    logic [3:0]                    dm_be;
++    logic [31:0]                   dm_wdata;
++    logic [31:0]                   dm_rdata;
++    logic                          dm_rvalid;
++    logic                          dm_gnt;
++
++    logic                          ram_instr_req;
++    logic [31:0]                   ram_instr_addr;
++    logic [INSTR_RDATA_WIDTH-1:0]  ram_instr_rdata;
++
++
++
++
++    // signals to print peripheral
++    logic [31:0]                   print_wdata;
++    logic                          print_valid;
++
++    // signals to timer
++    logic [31:0]                   timer_irq_mask_q;
++    logic [31:0]                   timer_cnt_q;
++    logic                          irq_q;
++    logic                          timer_reg_valid;
++    logic                          timer_val_valid;
++    logic [31:0]                   timer_wdata;
++
++
++    // uhh, align?
++    always_comb data_addr_aligned = {data_addr_i[31:2], 2'b0};
++
++    // Handle system bus, core data accesses and instr access to rom, ram and
++    // debug unit. Someone make a for gen loop here.
++    always_comb begin
++        sb_gnt_o       = '0;
++        data_gnt_o     = '0;
++        instr_gnt_o    = '0;
++
++        ram_data_req   = '0;
++        ram_data_addr  = '0;
++        ram_data_wdata = '0;
++        ram_data_we    = '0;
++        ram_data_be    = '0;
++
++        ram_instr_req  = '0;
++        ram_instr_addr = '0;
++
++        dm_req         = '0;
++        dm_addr        = '0;
++        dm_we          = '0;
++        dm_be          = '0;
++        dm_wdata       = '0;
++
++        rom_req        = '0;
++        rom_addr       = '0;
++
++        print_wdata    = '0;
++        print_valid    = '0;
++
++        select_rdata_d = IDLE_READ;
++        select_wdata_d = IDLE_WRITE;
++
++        data_rvalid_d  = '0;
++        sb_rvalid_d    = '0;
++        instr_rvalid_d = '0;
++
++        tests_passed_o = '0;
++        tests_failed_o = '0;
++
++
++        // memory map:
++        // the ram is mapped from 0 to SRAM_LEN and SRAM_BASE to SRAM_BASE + SRAM_LEN
++        // this mirroring is the same as in pulpissimo
++
++        // instruction data reads to ram can always go
++        if (instr_req_i && ((instr_addr_i >= SRAM_BASE && instr_addr_i < SRAM_BASE + SRAM_LEN) ||
++                             (instr_addr_i >= 0 && instr_addr_i < SRAM_LEN))) begin
++            instr_gnt_o    = '1;
++            instr_rvalid_d = '1;
++            ram_instr_req  = '1;
++            ram_instr_addr = instr_addr_i;
++
++        end
++
++
++        // priority to sb access over data access
++        if (sb_req_i) begin
++            sb_gnt_o = '1;
++            sb_rvalid_d  = '1;
++
++            if (sb_we_i) begin // handle writes
++                if (sb_addr_i >= ROM_BASE && sb_addr_i < ROM_BASE + ROM_LEN) begin
++                end else if (sb_addr_i >= FLL_BASE && sb_addr_i < FLL_BASE + FLL_LEN) begin
++                end else if (sb_addr_i >= GPIO_BASE && sb_addr_i < GPIO_BASE + GPIO_LEN) begin
++                end else if (sb_addr_i >= UDMA_BASE && sb_addr_i < UDMA_BASE + UDMA_LEN) begin
++                end else if (sb_addr_i >= CNTRL_BASE && sb_addr_i < CNTRL_BASE + CNTRL_LEN) begin
++                end else if (sb_addr_i >= ADVTIMER_BASE && sb_addr_i < ADVTIMER_BASE + ADVTIMER_LEN) begin
++                end else if (sb_addr_i >= EVENT_BASE && sb_addr_i < EVENT_BASE + EVENT_LEN) begin
++                end else if (sb_addr_i >= TIMER_BASE && sb_addr_i < TIMER_BASE + TIMER_LEN) begin
++                end else if (sb_addr_i >= HWPE_BASE && sb_addr_i < HWPE_BASE + HWPE_LEN) begin
++                end else if (sb_addr_i >= STDOUT_BASE && sb_addr_i < STDOUT_BASE + STDOUT_LEN) begin
++                    select_wdata_d  = SB;
++                    print_wdata = sb_wdata_i;
++                    print_valid = '1;
++
++                end else if (sb_addr_i >= DEBUG_BASE && sb_addr_i < DEBUG_BASE + DEBUG_LEN) begin
++                end else if ((sb_addr_i >= SRAM_BASE && sb_addr_i < SRAM_BASE + SRAM_LEN) ||
++                                           (sb_addr_i >= 0 && sb_addr_i < SRAM_LEN)) begin
++                    select_wdata_d  = SB;
++                    ram_data_req = sb_req_i;
++                    ram_data_addr = sb_addr_i[RAM_ADDR_WIDTH-1:0]; // just clip higher bits
++                    ram_data_wdata = sb_wdata_i;
++                    ram_data_we = sb_we_i;
++                    ram_data_be = sb_be_i;
++
++                end else begin
++                    $error("Writing to unmapped memory at %x", sb_addr_i);
++                end
++
++            end else begin // handle reads
++                if (sb_addr_i >= ROM_BASE && sb_addr_i < ROM_BASE + ROM_LEN) begin
++                    select_rdata_d = ROM;
++
++                end else if (sb_addr_i >= FLL_BASE && sb_addr_i < FLL_BASE + FLL_LEN) begin
++                    select_rdata_d = UNMAP;
++                end else if (sb_addr_i >= GPIO_BASE && sb_addr_i < GPIO_BASE + GPIO_LEN) begin
++                    select_rdata_d = UNMAP;
++                end else if (sb_addr_i >= UDMA_BASE && sb_addr_i < UDMA_BASE + UDMA_LEN) begin
++                    select_rdata_d = UNMAP;
++                end else if (sb_addr_i >= CNTRL_BASE && sb_addr_i < CNTRL_BASE + CNTRL_LEN) begin
++                    select_rdata_d = UNMAP;
++                end else if (sb_addr_i >= ADVTIMER_BASE && sb_addr_i < ADVTIMER_BASE + ADVTIMER_LEN) begin
++                    select_rdata_d = UNMAP;
++                end else if (sb_addr_i >= EVENT_BASE && sb_addr_i < EVENT_BASE + EVENT_LEN) begin
++                    select_rdata_d = UNMAP;
++                end else if (sb_addr_i >= TIMER_BASE && sb_addr_i < TIMER_BASE + TIMER_LEN) begin
++                    select_rdata_d = UNMAP;
++                end else if (sb_addr_i >= HWPE_BASE && sb_addr_i < HWPE_BASE + HWPE_LEN) begin
++                    select_rdata_d = UNMAP;
++                end else if (sb_addr_i >= STDOUT_BASE && sb_addr_i < STDOUT_BASE + STDOUT_LEN) begin
++                    select_rdata_d = UNMAP;
++                end else if (sb_addr_i >= DEBUG_BASE && sb_addr_i < DEBUG_BASE + DEBUG_LEN) begin
++                    select_rdata_d = UNMAP;
++                end else if ((sb_addr_i >= SRAM_BASE && sb_addr_i < SRAM_BASE + SRAM_LEN) ||
++                                           (sb_addr_i >= 0 && sb_addr_i < SRAM_LEN)) begin
++                    select_rdata_d = RAM;
++                    ram_data_req = sb_req_i;
++                    ram_data_addr = sb_addr_i[RAM_ADDR_WIDTH-1:0];
++                    ram_data_wdata = sb_wdata_i;
++                    ram_data_we = sb_we_i;
++                    ram_data_be = sb_be_i;
++
++                end else begin
++                    select_rdata_d = UNMAP;
++                end
++
++            end
++        end else if (data_req_i) begin
++            data_gnt_o = '1;
++            data_rvalid_d  = '1;
++
++            if (data_we_i) begin // handle writes
++                if (data_addr_i >= ROM_BASE && data_addr_i < ROM_BASE + ROM_LEN) begin
++                end else if (data_addr_i >= FLL_BASE && data_addr_i < FLL_BASE + FLL_LEN) begin
++                end else if (data_addr_i >= GPIO_BASE && data_addr_i < GPIO_BASE + GPIO_LEN) begin
++                end else if (data_addr_i >= UDMA_BASE && data_addr_i < UDMA_BASE + UDMA_LEN) begin
++                end else if (data_addr_i >= CNTRL_BASE && data_addr_i < CNTRL_BASE + CNTRL_LEN) begin
++                    if(data_wdata_i === 32'hF00D)
++                        tests_passed_o = 1'b1;
++                    else
++                        tests_failed_o = 1'b1;
++
++                end else if (data_addr_i >= ADVTIMER_BASE && data_addr_i < ADVTIMER_BASE + ADVTIMER_LEN) begin
++                end else if (data_addr_i >= EVENT_BASE && data_addr_i < EVENT_BASE + EVENT_LEN) begin
++                end else if (data_addr_i >= TIMER_BASE && data_addr_i < TIMER_BASE + TIMER_LEN) begin
++                end else if (data_addr_i >= HWPE_BASE && data_addr_i < HWPE_BASE + HWPE_LEN) begin
++                end else if (data_addr_i >= STDOUT_BASE && data_addr_i < STDOUT_BASE + STDOUT_LEN) begin
++                    select_wdata_d  = CORE;
++                    print_wdata = data_wdata_i;
++                    print_valid = '1;
++
++                end else if (data_addr_i >= DEBUG_BASE && data_addr_i < DEBUG_BASE + DEBUG_LEN) begin
++                    select_wdata_d  = CORE;
++                    dm_req    = data_req_i;
++                    dm_addr   = data_addr_i;
++                    dm_we     = data_we_i;
++                    dm_be     = data_be_i;
++                    dm_wdata  = data_wdata_i;
++
++                end else if ((data_addr_i >= SRAM_BASE && data_addr_i < SRAM_BASE + SRAM_LEN) ||
++                                             (data_addr_i >= 0 && data_addr_i < SRAM_LEN)) begin
++                    select_wdata_d  = CORE;
++                    ram_data_req = data_req_i;
++                    ram_data_addr = data_addr_i[RAM_ADDR_WIDTH-1:0]; // just clip higher bits
++                    ram_data_wdata = data_wdata_i;
++                    ram_data_we = data_we_i;
++                    ram_data_be = data_be_i;
++
++                end else begin
++                end
++
++            end else begin // handle reads
++                if (data_addr_i >= ROM_BASE && data_addr_i < ROM_BASE + ROM_LEN) begin
++                    select_rdata_d = ROM;
++                    rom_req  = data_req_i;
++                    rom_addr = data_addr_i - ROM_BASE;
++                    // TODO data_be_i
++
++                end else if (data_addr_i >= FLL_BASE && data_addr_i < FLL_BASE + FLL_LEN) begin
++                    select_rdata_d = UNMAP;
++                end else if (data_addr_i >= GPIO_BASE && data_addr_i < GPIO_BASE + GPIO_LEN) begin
++                    select_rdata_d = UNMAP;
++                end else if (data_addr_i >= UDMA_BASE && data_addr_i < UDMA_BASE + UDMA_LEN) begin
++                    select_rdata_d = UNMAP;
++                end else if (data_addr_i >= CNTRL_BASE && data_addr_i < CNTRL_BASE + CNTRL_LEN) begin
++                    select_rdata_d = UNMAP;
++                end else if (data_addr_i >= ADVTIMER_BASE && data_addr_i < ADVTIMER_BASE + ADVTIMER_LEN) begin
++                    select_rdata_d = UNMAP;
++                end else if (data_addr_i >= EVENT_BASE && data_addr_i < EVENT_BASE + EVENT_LEN) begin
++                    select_rdata_d = UNMAP;
++                end else if (data_addr_i >= TIMER_BASE && data_addr_i < TIMER_BASE + TIMER_LEN) begin
++                    select_rdata_d = UNMAP;
++                end else if (data_addr_i >= HWPE_BASE && data_addr_i < HWPE_BASE + HWPE_LEN) begin
++                    select_rdata_d = UNMAP;
++                end else if (data_addr_i >= STDOUT_BASE && data_addr_i < STDOUT_BASE + STDOUT_LEN) begin
++                    select_rdata_d = UNMAP;
++                end else if (data_addr_i >= DEBUG_BASE && data_addr_i < DEBUG_BASE + DEBUG_LEN) begin
++                    select_rdata_d = DEBUG;
++                    dm_req    = data_req_i;
++                    dm_addr   = data_addr_i;
++                    dm_we     = data_we_i;
++                    dm_be     = data_be_i;
++
++                end else if ((data_addr_i >= SRAM_BASE && data_addr_i < SRAM_BASE + SRAM_LEN) ||
++                                             (data_addr_i >= 0 && data_addr_i < SRAM_LEN)) begin
++                    select_rdata_d = RAM;
++                    ram_data_req = data_req_i;
++                    ram_data_addr = data_addr_i[RAM_ADDR_WIDTH-1:0];
++                    ram_data_we = data_we_i;
++                    ram_data_be = data_be_i;
++
++                end else begin
++                    select_rdata_d = UNMAP;
++                end
++
++            end
++        end else if (instr_req_i) begin
++            instr_gnt_o = '1;
++            instr_rvalid_d  = '1;
++            // handle reads
++            if (instr_addr_i >= ROM_BASE && instr_addr_i < ROM_BASE + ROM_LEN) begin
++                select_rdata_d = ROM;
++                rom_req  = instr_req_i;
++                rom_addr = instr_addr_i - ROM_BASE - 32'h80;
++
++            end else if (instr_addr_i >= FLL_BASE && instr_addr_i < FLL_BASE + FLL_LEN) begin
++                select_rdata_d = UNMAP;
++            end else if (instr_addr_i >= GPIO_BASE && instr_addr_i < GPIO_BASE + GPIO_LEN) begin
++                select_rdata_d = UNMAP;
++            end else if (instr_addr_i >= UDMA_BASE && instr_addr_i < UDMA_BASE + UDMA_LEN) begin
++                select_rdata_d = UNMAP;
++            end else if (instr_addr_i >= CNTRL_BASE && instr_addr_i < CNTRL_BASE + CNTRL_LEN) begin
++                select_rdata_d = UNMAP;
++            end else if (instr_addr_i >= ADVTIMER_BASE && instr_addr_i < ADVTIMER_BASE + ADVTIMER_LEN) begin
++                select_rdata_d = UNMAP;
++            end else if (instr_addr_i >= EVENT_BASE && instr_addr_i < EVENT_BASE + EVENT_LEN) begin
++                select_rdata_d = UNMAP;
++            end else if (instr_addr_i >= TIMER_BASE && instr_addr_i < TIMER_BASE + TIMER_LEN) begin
++                select_rdata_d = UNMAP;
++            end else if (instr_addr_i >= HWPE_BASE && instr_addr_i < HWPE_BASE + HWPE_LEN) begin
++                select_rdata_d = UNMAP;
++            end else if (instr_addr_i >= STDOUT_BASE && instr_addr_i < STDOUT_BASE + STDOUT_LEN) begin
++                select_rdata_d = UNMAP;
++            end else if (instr_addr_i >= DEBUG_BASE && instr_addr_i < DEBUG_BASE + DEBUG_LEN) begin
++                select_rdata_d = DEBUG;
++                dm_req    = '1;
++                dm_addr   = instr_addr_i;
++                dm_we     = '0;
++                dm_be     = 4'b1111;
++
++            end else if ((instr_addr_i >= SRAM_BASE && instr_addr_i < SRAM_BASE + SRAM_LEN) ||
++                                          (instr_addr_i >=0 && instr_addr_i < SRAM_LEN)) begin
++                // handled separately
++                select_rdata_d = RAM;
++            end else begin
++                select_rdata_d = UNMAP;
++            end
++        end
++    end
++
++
++`ifndef VERILATOR
++    // make sure we don't access any unmapped memory
++
++    out_of_bounds_write: assert property
++    (@(posedge clk_i) disable iff (!rst_ni)
++        (data_req_i && data_gnt_o && data_we_i |->
++        (data_addr_i >= STDOUT_BASE && data_addr_i < STDOUT_BASE + STDOUT_LEN)
++        || (data_addr_i >= DEBUG_BASE && data_addr_i < DEBUG_BASE + DEBUG_LEN)
++        || (data_addr_i >= SRAM_BASE && data_addr_i < SRAM_BASE + SRAM_LEN)
++        || (data_addr_i >= 0 && data_addr_i < SRAM_LEN)))
++        else $error("out of bounds write to %08x with %08x",
++                    data_addr_i, data_wdata_i);
++
++   out_of_bounds_read: assert property
++    (@(posedge clk_i) disable iff (!rst_ni)
++        (select_rdata_q != UNMAP))
++        else $error("out of bounds read");
++`endif
++
++    // make sure we select the proper read data
++    always_comb begin: read_mux_sb_data_instr
++        data_rdata_o  = '0;
++        sb_rdata_o    = '0;
++        instr_rdata_o = ram_instr_rdata;
++
++        if(select_rdata_q == RAM) begin
++            data_rdata_o = ram_data_rdata;
++            sb_rdata_o   = ram_data_rdata;
++
++        end else if (select_rdata_q == DEBUG) begin
++            data_rdata_o  = dm_rdata;
++            sb_rdata_o    = dm_rdata; //TODO: not possible
++            instr_rdata_o = dm_rdata;
++
++        end else if (select_rdata_q == ROM) begin
++            // either we got into a loop for jtag booting or we jumpt to the l2
++            // boot address (1c00_0080 === 0000_0080) to run a firmware directly
++            if (JTAG_BOOT) begin
++                data_rdata_o    = 32'b00000000000000000000000001101111; //while(true)
++                sb_rdata_o      = 32'b00000000000000000000000001101111;
++                instr_rdata_o   = 32'b00000000000000000000000001101111;
++            end else begin
++                data_rdata_o  = rom_rdata; //jal(5'b0, 21'h80); // jump to 0x0 + 0x80
++                sb_rdata_o    = rom_rdata; //jal(5'b0, 21'h80);
++                instr_rdata_o = rom_rdata; //jal(5'b0, 21'h80);
++            end
++
++        end else if (select_rdata_q == IDLE_READ) begin
++        end
++    end
++
++    // print to stdout pseudo peripheral
++    always_ff @(posedge clk_i, negedge rst_ni) begin: print_peripheral
++        if(print_valid) begin
++            if ($test$plusargs("verbose")) begin
++                if (32 <= print_wdata && print_wdata < 128)
++                    $display("OUT: '%c'", print_wdata[7:0]);
++                else
++                    $display("OUT: %3d", print_wdata);
++
++            end else begin
++                $write("%c", print_wdata[7:0]);
++`ifndef VERILATOR
++                $fflush();
++`endif
++            end
++        end
++    end
++
++    assign irq_id_o = TIMER_IRQ_ID;
++    assign irq_o = irq_q;
++
++    // Control timer. We need one to have some kind of timeout for tests that
++    // get stuck in some loop. The riscv-tests also mandate that. Enable timer
++    // interrupt by writing 1 to timer_irq_mask_q. Write initial value to
++    // timer_cnt_q which gets counted down each cycle. When it transitions from
++    // 1 to 0, and interrupt request (irq_q) is made (masked by timer_irq_mask_q).
++    always_ff @(posedge clk_i, negedge rst_ni) begin: tb_timer
++        if(~rst_ni) begin
++            timer_irq_mask_q <= '0;
++            timer_cnt_q      <= '0;
++            irq_q            <= '0;
++
++        end else begin
++            // set timer irq mask
++            if(timer_reg_valid) begin
++                timer_irq_mask_q <= timer_wdata;
++
++            // write timer value
++            end else if(timer_val_valid) begin
++                timer_cnt_q <= timer_wdata;
++
++            end else begin
++                if(timer_cnt_q > 0)
++                    timer_cnt_q <= timer_cnt_q - 1;
++
++                if(timer_cnt_q == 1)
++                    irq_q <= 1'b1 && timer_irq_mask_q[TIMER_IRQ_ID];
++
++                if(irq_ack_i == 1'b1 && irq_id_i == TIMER_IRQ_ID)
++                    irq_q <= '0;
++
++            end
++        end
++    end
++
++    // show writes if requested
++    always_ff @(posedge clk_i, negedge rst_ni) begin: verbose_writes
++        if ($test$plusargs("verbose") && data_req_i && data_we_i)
++            $display("write addr=0x%08x: data=0x%08x",
++                     data_addr_i, data_wdata_i);
++    end
++
++    // debug rom for booting directly to the firmware
++    boot_rom boot_rom_i (
++        .clk_i  ( clk_i     ),
++        .req_i  ( rom_req   ),
++        .addr_i ( rom_addr  ),
++        .rdata_o( rom_rdata )
++    );
++
++
++    // instantiate the ram
++    dp_ram #(
++        .ADDR_WIDTH (RAM_ADDR_WIDTH),
++        .INSTR_RDATA_WIDTH (INSTR_RDATA_WIDTH)
++    ) dp_ram_i (
++        .clk_i     ( clk_i         ),
++
++        .en_a_i    ( ram_instr_req                      ),
++        .addr_a_i  ( ram_instr_addr[RAM_ADDR_WIDTH-1:0] ),
++        .wdata_a_i ( '0                                 ),	// Not writing so ignored
++        .rdata_a_o ( ram_instr_rdata                    ),
++        .we_a_i    ( '0                                 ),
++        .be_a_i    ( 4'b1111                            ),	// Always want 32-bits
++
++        .en_b_i    ( ram_data_req    ),
++        .addr_b_i  ( ram_data_addr   ),
++        .wdata_b_i ( ram_data_wdata  ),
++        .rdata_b_o ( ram_data_rdata  ),
++        .we_b_i    ( ram_data_we     ),
++        .be_b_i    ( ram_data_be     )
++     );
++
++    // do the handshacking stuff by assuming we always react in one cycle
++    assign dm_req_o    = dm_req;
++    assign dm_addr_o   = dm_addr;
++    assign dm_we_o     = dm_we;
++    assign dm_be_o     = dm_be;
++    assign dm_wdata_o  = dm_wdata;
++    assign dm_rdata    = dm_rdata_i;
++    assign dm_rvalid   = dm_rvalid_i; // TODO: we dont' care about this
++    assign dm_gnt      = dm_gnt_i; // TODO: we don't care about this
++
++
++    // sb and core rvalid
++    assign data_rvalid_o    = data_rvalid_q;
++    assign sb_rvalid_o      = sb_rvalid_q;
++    assign instr_rvalid_o   = instr_rvalid_q;
++
++
++    always_ff @(posedge clk_i, negedge rst_ni) begin
++        if (~rst_ni) begin
++            select_rdata_q <= IDLE_READ;
++            select_wdata_q <= IDLE_WRITE;
++
++            data_rvalid_q  <= '0;
++            sb_rvalid_q    <= '0;
++            instr_rvalid_q <= '0;
++
++        end else begin
++            select_rdata_q <= select_rdata_d;
++            select_wdata_q <= select_wdata_d;
++
++            data_rvalid_q  <= data_rvalid_d;
++            sb_rvalid_q    <= sb_rvalid_d;
++            instr_rvalid_q <= instr_rvalid_d;
++
++        end
++    end
++
++endmodule // ram
+diff --git a/tb/prog/crt0.S b/tb/prog/crt0.S
+new file mode 100644
+index 0000000..5f8d2b2
+--- /dev/null
++++ b/tb/prog/crt0.S
+@@ -0,0 +1,66 @@
++/* Copyright (c) 2017  SiFive Inc. All rights reserved.
++ * Copyright (c) 2019  ETH Zürich and University of Bologna
++ * This copyrighted material is made available to anyone wishing to use,
++ * modify, copy, or redistribute it subject to the terms and conditions
++ * of the FreeBSD License.   This program is distributed in the hope that
++ * it will be useful, but WITHOUT ANY WARRANTY expressed or implied,
++ * including the implied warranties of MERCHANTABILITY or FITNESS FOR
++ * A PARTICULAR PURPOSE.  A copy of this license is available at
++ * http://www.opensource.org/licenses.
++ */
++
++/* Entry point for bare metal programs */
++.section .text.start
++.global _start
++.type _start, @function
++
++_start:
++/* initialize global pointer */
++.option push
++.option norelax
++1:	auipc gp, %pcrel_hi(__global_pointer$)
++	addi  gp, gp, %pcrel_lo(1b)
++.option pop
++
++/* initialize stack pointer */
++	la sp, _sp
++
++/* set vector table address */
++	la a0, __vector_start
++	csrw mtvec, a0
++/* set vector table address for CLINTx */
++	la a0, __vector_x_start
++	csrw 0x307, a0
++
++/* clear the bss segment */
++	la a0, __bss_start
++	la a2, __bss_end
++	sub a2, a2, a0
++	li a1, 0
++	call memset
++
++/* new-style constructors and destructors */
++	la a0, __libc_fini_array
++	call atexit
++	call __libc_init_array
++
++/* call main */
++	lw a0, 0(sp)                    /* a0 = argc */
++	addi a1, sp, __SIZEOF_POINTER__ /* a1 = argv */
++	li a2, 0                        /* a2 = envp = NULL */
++	call main
++	tail exit
++
++.size  _start, .-_start
++
++.global _init
++.type   _init, @function
++.global _fini
++.type   _fini, @function
++_init:
++_fini:
++ /* These don't have to do anything since we use init_array/fini_array. Prevent
++    missing symbol error */
++	ret
++.size  _init, .-_init
++.size _fini, .-_fini
+diff --git a/tb/prog/link.ld b/tb/prog/link.ld
+new file mode 100644
+index 0000000..e8fb802
+--- /dev/null
++++ b/tb/prog/link.ld
+@@ -0,0 +1,385 @@
++/* Script for -z combreloc: combine and sort reloc sections */
++/* Copyright (C) 2014-2018 Free Software Foundation, Inc.
++   Copyright (C) 2019 ETH Zürich and University of Bologna
++   Copying and distribution of this script, with or without modification,
++   are permitted in any medium without royalty provided the copyright
++   notice and this notice are preserved.  */
++
++/* This linker script is derived from the default linker script of the RISC-V
++   gcc compiler. We have made a few changes to make it suitable for linking bare
++   metal programs. These are mostly removing dynamic linking related sections and
++   putting sections into our memory regions. */
++
++OUTPUT_FORMAT("elf32-littleriscv", "elf32-littleriscv",
++	      "elf32-littleriscv")
++OUTPUT_ARCH(riscv)
++ENTRY(_start)
++
++MEMORY
++{
++	/* the memory in the testbench is 1024k in size;
++	* set LENGTH=1008k and leave at least 16k for stack */
++	 ram (rwxai)         : ORIGIN = 0x1c000000, LENGTH = 0x000fc000
++}
++
++SECTIONS
++{
++  /* we want a fixed entry point */
++  PROVIDE(__boot_address = ORIGIN(ram) + 0x180);
++
++  /* stack and heap related settings */
++  __stack_size = DEFINED(__stack_size) ? __stack_size : 0x400;
++  PROVIDE(__stack_size = __stack_size);
++  __heap_size = DEFINED(__heap_size) ? __heap_size : 0x400;
++
++
++  /* Read-only sections, merged into text segment: */
++  PROVIDE (__executable_start = SEGMENT_START("text-segment", 0x10000)); . = SEGMENT_START("text-segment", 0x10000) + SIZEOF_HEADERS;
++
++
++  /* We don't do any dynamic linking so we remove everything related to it */
++/*
++  .interp         : { *(.interp) }
++  .note.gnu.build-id : { *(.note.gnu.build-id) }
++  .hash           : { *(.hash) }
++  .gnu.hash       : { *(.gnu.hash) }
++  .dynsym         : { *(.dynsym) }
++  .dynstr         : { *(.dynstr) }
++  .gnu.version    : { *(.gnu.version) }
++  .gnu.version_d  : { *(.gnu.version_d) }
++  .gnu.version_r  : { *(.gnu.version_r) }
++  .rela.dyn       :
++    {
++      *(.rela.init)
++      *(.rela.text .rela.text.* .rela.gnu.linkonce.t.*)
++      *(.rela.fini)
++      *(.rela.rodata .rela.rodata.* .rela.gnu.linkonce.r.*)
++      *(.rela.data .rela.data.* .rela.gnu.linkonce.d.*)
++      *(.rela.tdata .rela.tdata.* .rela.gnu.linkonce.td.*)
++      *(.rela.tbss .rela.tbss.* .rela.gnu.linkonce.tb.*)
++      *(.rela.ctors)
++      *(.rela.dtors)
++      *(.rela.got)
++      *(.rela.sdata .rela.sdata.* .rela.gnu.linkonce.s.*)
++      *(.rela.sbss .rela.sbss.* .rela.gnu.linkonce.sb.*)
++      *(.rela.sdata2 .rela.sdata2.* .rela.gnu.linkonce.s2.*)
++      *(.rela.sbss2 .rela.sbss2.* .rela.gnu.linkonce.sb2.*)
++      *(.rela.bss .rela.bss.* .rela.gnu.linkonce.b.*)
++      PROVIDE_HIDDEN (__rela_iplt_start = .);
++      *(.rela.iplt)
++      PROVIDE_HIDDEN (__rela_iplt_end = .);
++    }
++  .rela.plt       :
++    {
++      *(.rela.plt)
++    }
++*/
++
++  /* interrupt vectors */
++  .vectors (ORIGIN(ram)):
++  {
++    PROVIDE(__vector_start = .);
++    KEEP(*(.vectors));
++  } >ram
++
++  /* interrupt vectors x*/
++  .vectors_x (ORIGIN(ram) + 0x100):
++  {
++    PROVIDE(__vector_x_start = .);
++    KEEP(*(.vectors_x));
++  } >ram
++
++  /* crt0 init code */
++  .init (__boot_address):
++  {
++    KEEP (*(SORT_NONE(.init)))
++    KEEP (*(.text.start))
++  } >ram
++
++
++  /* More dynamic linking sections */
++/*
++  .plt            : { *(.plt) }
++  .iplt           : { *(.iplt) }
++*/
++
++
++  /* the bulk of the program: main, libc, functions etc. */
++  .text           :
++  {
++    *(.text.unlikely .text.*_unlikely .text.unlikely.*)
++    *(.text.exit .text.exit.*)
++    *(.text.startup .text.startup.*)
++    *(.text.hot .text.hot.*)
++    *(.text .stub .text.* .gnu.linkonce.t.*)
++    /* .gnu.warning sections are handled specially by elf32.em.  */
++    *(.gnu.warning)
++  } >ram
++
++
++  /* not used by RISC-V*/
++  .fini           :
++  {
++    KEEP (*(SORT_NONE(.fini)))
++  } >ram
++
++  PROVIDE (__etext = .);
++  PROVIDE (_etext = .);
++  PROVIDE (etext = .);
++
++
++  /* read-only sections */
++  .rodata         :
++  {
++    *(.rodata .rodata.* .gnu.linkonce.r.*)
++  } >ram
++  .rodata1        :
++  {
++    *(.rodata1)
++  } >ram
++
++
++  /* second level sbss and sdata, I don't think we need this */
++  /* .sdata2         : {*(.sdata2 .sdata2.* .gnu.linkonce.s2.*)} */
++  /* .sbss2          : { *(.sbss2 .sbss2.* .gnu.linkonce.sb2.*) } */
++
++
++  /* gcc language agnostic exception related sections (try-catch-finally) */
++  .eh_frame_hdr :
++  {
++    *(.eh_frame_hdr) *(.eh_frame_entry .eh_frame_entry.*)
++  } >ram
++  .eh_frame       : ONLY_IF_RO
++  {
++    KEEP (*(.eh_frame)) *(.eh_frame.*)
++  } >ram
++  .gcc_except_table   : ONLY_IF_RO
++  {
++    *(.gcc_except_table .gcc_except_table.*)
++  } >ram
++  .gnu_extab   : ONLY_IF_RO
++  {
++    *(.gnu_extab*)
++  } >ram
++  /* These sections are generated by the Sun/Oracle C++ compiler.  */
++  /*
++  .exception_ranges   : ONLY_IF_RO { *(.exception_ranges
++  .exception_ranges*) }
++  */
++  /* Adjust the address for the data segment.  We want to adjust up to
++     the same address within the page on the next page up.  */
++  . = DATA_SEGMENT_ALIGN (CONSTANT (MAXPAGESIZE), CONSTANT (COMMONPAGESIZE));
++
++
++  /* Exception handling  */
++  .eh_frame       : ONLY_IF_RW
++  {
++    KEEP (*(.eh_frame)) *(.eh_frame.*)
++  } >ram
++  .gnu_extab      : ONLY_IF_RW
++  {
++    *(.gnu_extab)
++  } >ram
++  .gcc_except_table   : ONLY_IF_RW
++  {
++    *(.gcc_except_table .gcc_except_table.*)
++  } >ram
++  .exception_ranges   : ONLY_IF_RW
++  {
++    *(.exception_ranges .exception_ranges*)
++  } >ram
++
++
++  /* Thread Local Storage sections  */
++  .tdata	  :
++  {
++    PROVIDE_HIDDEN (__tdata_start = .);
++    *(.tdata .tdata.* .gnu.linkonce.td.*)
++  } >ram
++  .tbss		  :
++  {
++    *(.tbss .tbss.* .gnu.linkonce.tb.*) *(.tcommon)
++  } >ram
++
++
++  /* initialization and termination routines */
++  .preinit_array     :
++  {
++    PROVIDE_HIDDEN (__preinit_array_start = .);
++    KEEP (*(.preinit_array))
++    PROVIDE_HIDDEN (__preinit_array_end = .);
++  } >ram
++  .init_array     :
++  {
++    PROVIDE_HIDDEN (__init_array_start = .);
++    KEEP (*(SORT_BY_INIT_PRIORITY(.init_array.*) SORT_BY_INIT_PRIORITY(.ctors.*)))
++    KEEP (*(.init_array EXCLUDE_FILE (*crtbegin.o *crtbegin?.o *crtend.o *crtend?.o ) .ctors))
++    PROVIDE_HIDDEN (__init_array_end = .);
++  } >ram
++  .fini_array     :
++  {
++    PROVIDE_HIDDEN (__fini_array_start = .);
++    KEEP (*(SORT_BY_INIT_PRIORITY(.fini_array.*) SORT_BY_INIT_PRIORITY(.dtors.*)))
++    KEEP (*(.fini_array EXCLUDE_FILE (*crtbegin.o *crtbegin?.o *crtend.o *crtend?.o ) .dtors))
++    PROVIDE_HIDDEN (__fini_array_end = .);
++  } >ram
++  .ctors          :
++  {
++    /* gcc uses crtbegin.o to find the start of
++       the constructors, so we make sure it is
++       first.  Because this is a wildcard, it
++       doesn't matter if the user does not
++       actually link against crtbegin.o; the
++       linker won't look for a file to match a
++       wildcard.  The wildcard also means that it
++       doesn't matter which directory crtbegin.o
++       is in.  */
++    KEEP (*crtbegin.o(.ctors))
++    KEEP (*crtbegin?.o(.ctors))
++    /* We don't want to include the .ctor section from
++       the crtend.o file until after the sorted ctors.
++       The .ctor section from the crtend file contains the
++       end of ctors marker and it must be last */
++    KEEP (*(EXCLUDE_FILE (*crtend.o *crtend?.o ) .ctors))
++    KEEP (*(SORT(.ctors.*)))
++    KEEP (*(.ctors))
++  } >ram
++  .dtors          :
++  {
++    KEEP (*crtbegin.o(.dtors))
++    KEEP (*crtbegin?.o(.dtors))
++    KEEP (*(EXCLUDE_FILE (*crtend.o *crtend?.o ) .dtors))
++    KEEP (*(SORT(.dtors.*)))
++    KEEP (*(.dtors))
++  } >ram
++
++  /* .jcr            : { KEEP (*(.jcr)) } */
++  /* .data.rel.ro : { *(.data.rel.ro.local* .gnu.linkonce.d.rel.ro.local.*) *(.data.rel.ro .data.rel.ro.* .gnu.linkonce.d.rel.ro.*) } */
++  /* .dynamic        : { *(.dynamic) } */
++  . = DATA_SEGMENT_RELRO_END (0, .);
++
++
++  /* data sections for initalized data */
++  .data           :
++  {
++    __DATA_BEGIN__ = .;
++    *(.data .data.* .gnu.linkonce.d.*)
++    SORT(CONSTRUCTORS)
++  } >ram
++  .data1          :
++  {
++    *(.data1)
++  } > ram
++
++  /* no dynamic linking, no object tables required */
++  /* .got            : { *(.got.plt) *(.igot.plt) *(.got) *(.igot) } */
++
++  /* We want the small data sections together, so single-instruction offsets
++     can access them all, and initialized data all before uninitialized, so
++     we can shorten the on-disk segment size.  */
++  .sdata          :
++  {
++    __SDATA_BEGIN__ = .;
++    *(.srodata.cst16) *(.srodata.cst8) *(.srodata.cst4) *(.srodata.cst2) *(.srodata .srodata.*)
++    *(.sdata .sdata.* .gnu.linkonce.s.*)
++  } >ram
++  _edata = .; PROVIDE (edata = .);
++  . = .;
++
++
++  /* zero initialized sections */
++  __bss_start = .;
++  .sbss           :
++  {
++    *(.dynsbss)
++    *(.sbss .sbss.* .gnu.linkonce.sb.*)
++    *(.scommon)
++  } >ram
++  .bss            :
++  {
++   *(.dynbss)
++   *(.bss .bss.* .gnu.linkonce.b.*)
++   *(COMMON)
++   /* Align here to ensure that the .bss section occupies space up to
++      _end.  Align after .bss to ensure correct alignment even if the
++      .bss section disappears because there are no input sections.
++      FIXME: Why do we need it? When there is no .bss section, we don't
++      pad the .data section.  */
++   . = ALIGN(. != 0 ? 32 / 8 : 1);
++  } >ram
++  . = ALIGN(32 / 8);
++  . = SEGMENT_START("ldata-segment", .);
++  . = ALIGN(32 / 8);
++  __BSS_END__ = .;
++  __bss_end = .;
++
++  /* The compiler uses this to access data in the .sdata, .data, .sbss and .bss
++     sections with fewer instructions (relaxation). This reduces code size. */
++    __global_pointer$ = MIN(__SDATA_BEGIN__ + 0x800,
++			    MAX(__DATA_BEGIN__ + 0x800, __BSS_END__ - 0x800));
++  _end = .; PROVIDE (end = .);
++  . = DATA_SEGMENT_END (.);
++
++
++  /* heap: we should consider putting this to the bottom of the address space */
++  .heap          :
++  {
++   PROVIDE(__heap_start = .);
++   . = __heap_size;
++   PROVIDE(__heap_end = .);
++  } >ram
++
++
++  /* stack: we should consider putting this further to the top of the address
++    space */
++  .stack         : ALIGN(16) /* this is a requirement of the ABI(?) */
++  {
++   PROVIDE(__stack_start = .);
++   . = __stack_size;
++   PROVIDE(_sp = .);
++   PROVIDE(__stack_end = .);
++  } >ram
++
++
++  /* Stabs debugging sections.  */
++  .stab          0 : { *(.stab) }
++  .stabstr       0 : { *(.stabstr) }
++  .stab.excl     0 : { *(.stab.excl) }
++  .stab.exclstr  0 : { *(.stab.exclstr) }
++  .stab.index    0 : { *(.stab.index) }
++  .stab.indexstr 0 : { *(.stab.indexstr) }
++  .comment       0 : { *(.comment) }
++  /* DWARF debug sections.
++     Symbols in the DWARF debugging sections are relative to the beginning
++     of the section so we begin them at 0.  */
++  /* DWARF 1 */
++  .debug          0 : { *(.debug) }
++  .line           0 : { *(.line) }
++  /* GNU DWARF 1 extensions */
++  .debug_srcinfo  0 : { *(.debug_srcinfo) }
++  .debug_sfnames  0 : { *(.debug_sfnames) }
++  /* DWARF 1.1 and DWARF 2 */
++  .debug_aranges  0 : { *(.debug_aranges) }
++  .debug_pubnames 0 : { *(.debug_pubnames) }
++  /* DWARF 2 */
++  .debug_info     0 : { *(.debug_info .gnu.linkonce.wi.*) }
++  .debug_abbrev   0 : { *(.debug_abbrev) }
++  .debug_line     0 : { *(.debug_line .debug_line.* .debug_line_end ) }
++  .debug_frame    0 : { *(.debug_frame) }
++  .debug_str      0 : { *(.debug_str) }
++  .debug_loc      0 : { *(.debug_loc) }
++  .debug_macinfo  0 : { *(.debug_macinfo) }
++  /* SGI/MIPS DWARF 2 extensions */
++  .debug_weaknames 0 : { *(.debug_weaknames) }
++  .debug_funcnames 0 : { *(.debug_funcnames) }
++  .debug_typenames 0 : { *(.debug_typenames) }
++  .debug_varnames  0 : { *(.debug_varnames) }
++  /* DWARF 3 */
++  .debug_pubtypes 0 : { *(.debug_pubtypes) }
++  .debug_ranges   0 : { *(.debug_ranges) }
++  /* DWARF Extension.  */
++  .debug_macro    0 : { *(.debug_macro) }
++  .debug_addr     0 : { *(.debug_addr) }
++  .gnu.attributes 0 : { KEEP (*(.gnu.attributes)) }
++  /DISCARD/ : { *(.note.GNU-stack) *(.gnu_debuglink) *(.gnu.lto_*) }
++}
+diff --git a/tb/prog/syscalls.c b/tb/prog/syscalls.c
+new file mode 100644
+index 0000000..31f0159
+--- /dev/null
++++ b/tb/prog/syscalls.c
+@@ -0,0 +1,270 @@
++/* An extremely minimalist syscalls.c for newlib
++ * Based on riscv newlib libgloss/riscv/sys_*.c
++ *
++ * Copyright 2019 Clifford Wolf
++ * Copyright 2019 ETH Zürich and University of Bologna
++ *
++ * Permission to use, copy, modify, and/or distribute this software for any
++ * purpose with or without fee is hereby granted, provided that the above
++ * copyright notice and this permission notice appear in all copies.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
++ * REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
++ * AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
++ * INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
++ * LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
++ * OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
++ * PERFORMANCE OF THIS SOFTWARE.
++ */
++
++#include <sys/stat.h>
++#include <newlib.h>
++#include <unistd.h>
++#include <errno.h>
++#undef errno
++extern int errno;
++
++/* write to this reg for outputting strings */
++#define STDOUT_REG 0x10000000
++/* write test result of program to this reg */
++#define RESULT_REG 0x20000000
++/* write exit value of program to this reg */
++#define EXIT_REG 0x20000004
++
++#define STDOUT_FILENO 1
++
++/* It turns out that older newlib versions use different symbol names which goes
++ * against newlib recommendations. Anyway this is fixed in later version.
++ */
++#if __NEWLIB__ <= 2 && __NEWLIB_MINOR__ <= 5
++#    define _sbrk sbrk
++#    define _write write
++#    define _close close
++#    define _lseek lseek
++#    define _read read
++#    define _fstat fstat
++#    define _isatty isatty
++#endif
++
++void unimplemented_syscall()
++{
++    const char *p = "Unimplemented system call called!\n";
++    while (*p)
++        *(volatile int *)STDOUT_REG = *(p++);
++}
++
++int nanosleep(const struct timespec *rqtp, struct timespec *rmtp)
++{
++    errno = ENOSYS;
++    return -1;
++}
++
++int _access(const char *file, int mode)
++{
++    errno = ENOSYS;
++    return -1;
++}
++
++int _chdir(const char *path)
++{
++    errno = ENOSYS;
++    return -1;
++}
++
++int _chmod(const char *path, mode_t mode)
++{
++    errno = ENOSYS;
++    return -1;
++}
++
++int _chown(const char *path, uid_t owner, gid_t group)
++{
++    errno = ENOSYS;
++    return -1;
++}
++
++int _close(int file)
++{
++    return -1;
++}
++
++int _execve(const char *name, char *const argv[], char *const env[])
++{
++    errno = ENOMEM;
++    return -1;
++}
++
++void _exit(int exit_status)
++{
++    *(volatile int *)EXIT_REG = exit_status;
++    asm volatile("wfi");
++}
++
++int _faccessat(int dirfd, const char *file, int mode, int flags)
++{
++    errno = ENOSYS;
++    return -1;
++}
++
++int _fork(void)
++{
++    errno = EAGAIN;
++    return -1;
++}
++
++int _fstat(int file, struct stat *st)
++{
++    st->st_mode = S_IFCHR;
++    return 0;
++    // errno = -ENOSYS;
++    // return -1;
++}
++
++int _fstatat(int dirfd, const char *file, struct stat *st, int flags)
++{
++    errno = ENOSYS;
++    return -1;
++}
++
++int _ftime(struct timeb *tp)
++{
++    errno = ENOSYS;
++    return -1;
++}
++
++char *_getcwd(char *buf, size_t size)
++{
++    errno = -ENOSYS;
++    return NULL;
++}
++
++int _getpid()
++{
++    return 1;
++}
++
++int _gettimeofday(struct timeval *tp, void *tzp)
++{
++    errno = -ENOSYS;
++    return -1;
++}
++
++int _isatty(int file)
++{
++    return (file == STDOUT_FILENO);
++}
++
++int _kill(int pid, int sig)
++{
++    errno = EINVAL;
++    return -1;
++}
++
++int _link(const char *old_name, const char *new_name)
++{
++    errno = EMLINK;
++    return -1;
++}
++
++off_t _lseek(int file, off_t ptr, int dir)
++{
++    return 0;
++}
++
++int _lstat(const char *file, struct stat *st)
++{
++    errno = ENOSYS;
++    return -1;
++}
++
++int _open(const char *name, int flags, int mode)
++{
++    return -1;
++}
++
++int _openat(int dirfd, const char *name, int flags, int mode)
++{
++    errno = ENOSYS;
++    return -1;
++}
++
++ssize_t _read(int file, void *ptr, size_t len)
++{
++    return 0;
++}
++
++int _stat(const char *file, struct stat *st)
++{
++    st->st_mode = S_IFCHR;
++    return 0;
++    // errno = ENOSYS;
++    // return -1;
++}
++
++long _sysconf(int name)
++{
++
++    return -1;
++}
++
++clock_t _times(struct tms *buf)
++{
++    return -1;
++}
++
++int _unlink(const char *name)
++{
++    errno = ENOENT;
++    return -1;
++}
++
++int _utime(const char *path, const struct utimbuf *times)
++{
++    errno = ENOSYS;
++    return -1;
++}
++
++int _wait(int *status)
++{
++    errno = ECHILD;
++    return -1;
++}
++
++ssize_t _write(int file, const void *ptr, size_t len)
++{
++    if (file != STDOUT_FILENO) {
++        errno = ENOSYS;
++        return -1;
++    }
++
++    const void *eptr = ptr + len;
++    while (ptr != eptr)
++        *(volatile int *)STDOUT_REG = *(char *)(ptr++);
++    return len;
++}
++
++extern char __heap_start[];
++extern char __heap_end[];
++static char *brk = __heap_start;
++
++int _brk(void *addr)
++{
++    brk = addr;
++    return 0;
++}
++
++void *_sbrk(ptrdiff_t incr)
++{
++    char *old_brk = brk;
++
++    if (__heap_start == __heap_end) {
++        return NULL;
++    }
++
++    if ((brk += incr) < __heap_end) {
++        brk += incr;
++    } else {
++        brk = __heap_end;
++    }
++    return old_brk;
++}
+diff --git a/tb/prog/test.c b/tb/prog/test.c
+new file mode 100644
+index 0000000..81a3579
+--- /dev/null
++++ b/tb/prog/test.c
+@@ -0,0 +1,6 @@
++#include <stdio.h>
++
++int main(){
++    printf("hello world!\n");
++    return 0;
++}
+diff --git a/tb/prog/vectors.S b/tb/prog/vectors.S
+new file mode 100644
+index 0000000..f23c057
+--- /dev/null
++++ b/tb/prog/vectors.S
+@@ -0,0 +1,152 @@
++/*
++* Copyright 2019 ETH Zürich and University of Bologna
++*
++* Licensed under the Apache License, Version 2.0 (the "License");
++* you may not use this file except in compliance with the License.
++* You may obtain a copy of the License at
++*
++*     http://www.apache.org/licenses/LICENSE-2.0
++*
++* Unless required by applicable law or agreed to in writing, software
++* distributed under the License is distributed on an "AS IS" BASIS,
++* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++* See the License for the specific language governing permissions and
++* limitations under the License.
++*/
++
++.section .vectors, "ax"
++.option norvc
++vector_table:
++	j sw_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j verification_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++	j __no_irq_handler
++
++/* this is fixed to 0x8000, used for PULP_SECURE=0. We redirect this entry to the
++new vector table (which is at mtvec) */
++/* .section .legacy_irq, "ax" */
++/*	j vector_table */
++/*	j __no_irq_handler */
++/*	j __no_irq_handler */
++/*	j __no_irq_handler */
++
++.section .text.vecs
++/* exception handling */
++__no_irq_handler:
++	la a0, no_exception_handler_msg
++	jal ra, puts
++	j __no_irq_handler
++
++
++sw_irq_handler:
++	csrr t0, mcause
++	slli t0, t0, 1  /* shift off the high bit */
++	srli t0, t0, 1
++	li t1, 2
++	beq t0, t1, handle_illegal_insn
++	li t1, 11
++	beq t0, t1, handle_ecall
++	li t1, 3
++	beq t0, t1, handle_ebreak
++	j handle_unknown
++
++handle_ecall:
++	la a0, ecall_msg
++	jal ra, puts
++	j end_handler
++
++handle_ebreak:
++	la a0, ebreak_msg
++	jal ra, puts
++	j end_handler
++
++handle_illegal_insn:
++	la a0, illegal_insn_msg
++	jal ra, puts
++	j end_handler
++
++handle_unknown:
++	la a0, unknown_msg
++	jal ra, puts
++	j end_handler
++
++end_handler:
++	csrr a0, mepc
++	addi a0, a0, 4
++	csrw mepc, a0
++	mret
++/* this interrupt can be generated for verification purposes, random or when the PC is equal to a given value*/
++verification_irq_handler:
++	mret
++
++.section .rodata
++illegal_insn_msg:
++	.string "illegal instruction exception handler entered\n"
++ecall_msg:
++	.string "ecall exception handler entered\n"
++ebreak_msg:
++	.string "ebreak exception handler entered\n"
++unknown_msg:
++	.string "unknown exception handler entered\n"
++no_exception_handler_msg:
++	.string "no exception handler installed\n"
+diff --git a/tb/remote_bitbang/.gitignore b/tb/remote_bitbang/.gitignore
+new file mode 100644
+index 0000000..0015e3f
+--- /dev/null
++++ b/tb/remote_bitbang/.gitignore
+@@ -0,0 +1,3 @@
++*.o
++*.d
++*.so
+\ No newline at end of file
+diff --git a/tb/remote_bitbang/Makefile b/tb/remote_bitbang/Makefile
+new file mode 100644
+index 0000000..8deb36a
+--- /dev/null
++++ b/tb/remote_bitbang/Makefile
+@@ -0,0 +1,124 @@
++# Copyright (C) 2020 ETH Zurich and University of Bologna
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++#
++#
++# Author: Robert Balas (balasr@iis.ee.ethz.ch)
++
++CFLAGS          = -Wall -Wextra -Wno-missing-field-initializers \
++			-Wno-unused-function -Wno-missing-braces \
++			-O2 -g -march=native \
++			-DENABLE_LOGGING -DNDEBUG
++CFLAGS_DBG      =
++# we need gnu11 and no-strict-aliasing
++ALL_CFLAGS      = -std=gnu11 -fno-strict-aliasing $(CFLAGS)
++ALL_CFLAGS_DBG  = -std=gnu11 -Wall -Wextra -Wno-missing-field-initializers \
++			-Wno-unused-function -Wno-missing-braces \
++			-O0 -g -fno-strict-aliasing \
++			-fsanitize=address -fno-omit-frame-pointer \
++			-DENABLE_LOGGING -DENABLE_DEBUG $(CFLAGS_DBG)\
++# -fsanitize=undefined \
++# -fsanitize=leak \
++
++
++# TODO: better path?
++LIB_DIRS        =
++LIBS            =
++INCLUDE_DIRS    = ./
++
++
++LDFLAGS         = $(addprefix -L, $(LIB_DIRS))
++LDLIBS          = $(addprefix -l, $(LIBS))
++
++SRCS            = remote_bitbang.c sim_jtag.c
++OBJS            = $(SRCS:.c=.o)
++INCLUDES        = $(addprefix -I, $(INCLUDE_DIRS))
++
++HEADERS         = $(wildcard *.h)
++
++# libs
++SV_LIB          = librbs.so
++
++# header file dependency generation
++DEPDIR          := .d
++DEPDIRS         := $(addsuffix /$(DEPDIR),.)
++# goal: make gcc put a dependency file called obj.Td (derived from subdir/obj.o)
++# in subdir/.d/
++DEPFLAGS        = -MT $@ -MMD -MP -MF $(@D)/$(DEPDIR)/$(patsubst %.o,%.Td,$(@F))
++# move gcc generated header dependencies to DEPDIR
++# this rename step is here to make the header dependency generation "atomic"
++POSTCOMPILE     = @mv -f $(@D)/$(DEPDIR)/$(patsubst %.o,%.Td,$(@F)) \
++			$(@D)/$(DEPDIR)/$(patsubst %.o,%.d,$(@F)) && touch $@
++
++# GNU recommendations for install targets
++prefix          = /usr/local
++exec_prefix     = $(prefix)
++bindir          = $(exec_prefix)/bin
++libdir          = $(exec_prefix)/lib
++includedir      = $(prefix)/include
++
++INSTALL         = install
++INSTALL_PROGRAM = $(INSTALL)
++INSTALL_DATA    = ${INSTALL} -m 644
++
++CTAGS           = ctags
++
++# compilation targets
++all: sv-lib
++
++debug: ALL_CFLAGS = $(ALL_CFLAGS_DBG)
++debug: all
++
++sv-lib: ALL_CFLAGS += -fPIC
++sv-lib: $(SV_LIB)
++
++#compilation boilerplate
++$(SV_LIB): $(OBJS)
++	$(LD) -shared -E --exclude-libs ALL -o $(SV_LIB) $(LDFLAGS) \
++		$(OBJS) $(LDLIBS)
++
++# $@ = name of target
++# $< = first dependency
++%.o: %.c
++%.o: %.c $(DEPDIR)/%.d $(DEPDIRS)
++	$(CC) $(DEPFLAGS) $(ALL_CFLAGS) $(INCLUDES) $(LDFLAGS) \
++		-c $(CPPFLAGS) $< -o $@ $(LDLIBS)
++	$(POSTCOMPILE)
++
++# check if we need to create the dependencies folders (gcc doesn't)
++$(DEPDIRS):
++	$(shell mkdir -p $(DEPDIRS) > /dev/null)
++# make won't fail if the dependency file doesn't exist
++$(addsuffix /$(DEPDIR)/%.d,. main benchmark test dpi): ;
++
++# prevent automatic deletion as intermediate file
++.PRECIOUS: $(addsuffix /$(DEPDIR)/%.d,. main benchmark test dpi)
++
++# emacs tag generation
++.PHONY: TAGS
++TAGS:
++	$(CTAGS) -R -e -h=".c.h" --tag-relative=always \
++		. $(LIB_DIRS) $(INCLUDE_DIRS) $(BINUTILS_PATH)/bfd
++
++# TODO: missing install targets
++# cleanup
++.PHONY: clean
++clean:
++	rm -rf $(SV_LIB) $(OBJS) $(DEPDIRS)
++
++.PHONY: distclean
++distclean: clean
++	rm -f TAGS
++
++# include auto generated header dependency information
++include $(wildcard $(addsuffix /*.d,$(DEPDIRS)))
+diff --git a/tb/remote_bitbang/rbs_test.c b/tb/remote_bitbang/rbs_test.c
+new file mode 100644
+index 0000000..328574e
+--- /dev/null
++++ b/tb/remote_bitbang/rbs_test.c
+@@ -0,0 +1,34 @@
++/* Copyright (C) 2020 ETH Zurich and University of Bologna
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ *
++ *
++ * Author: Robert Balas (balasr@iis.ee.ethz.ch)
++ */
++
++#include <stdio.h>
++#include "remote_bitbang.h"
++
++int main()
++{
++    unsigned char jtag_TCK, jtag_TMS, jtag_TDI, jtag_TRSTn;
++    unsigned char jtag_TDO = 0;
++
++    printf("calling rbs_init\n");
++    int v = rbs_init(0);
++
++    printf("tick 1\n");
++    rbs_tick(&jtag_TCK, &jtag_TMS, &jtag_TDI, &jtag_TRSTn, jtag_TDO);
++    printf("jtag exit is %d\n", rbs_done());
++    return 0;
++}
+diff --git a/tb/remote_bitbang/remote_bitbang.c b/tb/remote_bitbang/remote_bitbang.c
+new file mode 100644
+index 0000000..e77c00d
+--- /dev/null
++++ b/tb/remote_bitbang/remote_bitbang.c
+@@ -0,0 +1,275 @@
++// See LICENSE.Berkeley for license details.
++
++#include <arpa/inet.h>
++#include <errno.h>
++#include <fcntl.h>
++#include <stdlib.h>
++#include <string.h>
++#include <unistd.h>
++
++#include <assert.h>
++#include <stdio.h>
++#include <stdlib.h>
++
++#include "remote_bitbang.h"
++
++int rbs_init(uint16_t port)
++{
++    socket_fd  = 0;
++    client_fd  = 0;
++    recv_start = 0;
++    recv_end   = 0;
++    rbs_err    = 0;
++
++    socket_fd = socket(AF_INET, SOCK_STREAM, 0);
++    if (socket_fd == -1) {
++        fprintf(stderr, "remote_bitbang failed to make socket: %s (%d)\n",
++                strerror(errno), errno);
++        abort();
++    }
++
++    fcntl(socket_fd, F_SETFL, O_NONBLOCK);
++    int reuseaddr = 1;
++    if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &reuseaddr,
++                   sizeof(int)) == -1) {
++        fprintf(stderr, "remote_bitbang failed setsockopt: %s (%d)\n",
++                strerror(errno), errno);
++        abort();
++    }
++
++    struct sockaddr_in addr;
++    memset(&addr, 0, sizeof(addr));
++    addr.sin_family      = AF_INET;
++    addr.sin_addr.s_addr = INADDR_ANY;
++    addr.sin_port        = htons(port);
++
++    if (bind(socket_fd, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
++        fprintf(stderr, "remote_bitbang failed to bind socket: %s (%d)\n",
++                strerror(errno), errno);
++        abort();
++    }
++
++    if (listen(socket_fd, 1) == -1) {
++        fprintf(stderr, "remote_bitbang failed to listen on socket: %s (%d)\n",
++                strerror(errno), errno);
++        abort();
++    }
++
++    socklen_t addrlen = sizeof(addr);
++    if (getsockname(socket_fd, (struct sockaddr *)&addr, &addrlen) == -1) {
++        fprintf(stderr, "remote_bitbang getsockname failed: %s (%d)\n",
++                strerror(errno), errno);
++        abort();
++    }
++
++    tck   = 1;
++    tms   = 1;
++    tdi   = 1;
++    trstn = 1;
++    quit  = 0;
++
++    fprintf(stderr, "JTAG remote bitbang server is ready\n");
++    fprintf(stderr, "Listening on port %d\n", ntohs(addr.sin_port));
++    return 1;
++}
++
++void rbs_accept()
++{
++    fprintf(stderr, "Attempting to accept client socket\n");
++    int again = 1;
++    while (again != 0) {
++        client_fd = accept(socket_fd, NULL, NULL);
++        if (client_fd == -1) {
++            if (errno == EAGAIN) {
++                // No client waiting to connect right now.
++            } else {
++                fprintf(stderr, "failed to accept on socket: %s (%d)\n",
++                        strerror(errno), errno);
++                again = 0;
++                abort();
++            }
++        } else {
++            fcntl(client_fd, F_SETFL, O_NONBLOCK);
++            fprintf(stderr, "Accepted successfully.");
++            again = 0;
++        }
++    }
++}
++
++void rbs_tick(unsigned char *jtag_tck, unsigned char *jtag_tms,
++              unsigned char *jtag_tdi, unsigned char *jtag_trstn,
++              unsigned char jtag_tdo)
++{
++    if (client_fd > 0) {
++        tdo = jtag_tdo;
++        rbs_execute_command();
++    } else {
++        rbs_accept();
++    }
++
++    *jtag_tck   = tck;
++    *jtag_tms   = tms;
++    *jtag_tdi   = tdi;
++    *jtag_trstn = trstn;
++}
++
++void rbs_reset()
++{
++    // trstn = 0;
++}
++
++void rbs_set_pins(char _tck, char _tms, char _tdi)
++{
++    tck = _tck;
++    tms = _tms;
++    tdi = _tdi;
++}
++
++void rbs_execute_command()
++{
++    char command;
++    int again = 1;
++    while (again) {
++        ssize_t num_read = read(client_fd, &command, sizeof(command));
++        if (num_read == -1) {
++            if (errno == EAGAIN) {
++                // We'll try again the next call.
++                if (VERBOSE)
++                    fprintf(
++                        stderr,
++                        "Received no command. Will try again on the next call\n");
++            } else {
++                fprintf(stderr,
++                        "remote_bitbang failed to read on socket: %s (%d)\n",
++                        strerror(errno), errno);
++                again = 0;
++                abort();
++            }
++        } else if (num_read == 0) {
++            fprintf(stderr, "No command received. Stopping further reads.\n");
++            // again = 1;
++            return;
++        } else {
++            again = 0;
++        }
++    }
++
++    int dosend = 0;
++
++    char tosend = '?';
++
++    switch (command) {
++    case 'B':
++        if (VERBOSE)
++            fprintf(stderr, "*BLINK*\n");
++        break;
++    case 'b':
++        if (VERBOSE)
++            fprintf(stderr, "blink off\n");
++        break;
++    case 'r':
++        if (VERBOSE)
++            fprintf(stderr, "r-reset\n");
++        rbs_reset();
++        break; // This is wrong. 'r' has other bits that indicated TRST and
++               // SRST.
++    case 's':
++        if (VERBOSE)
++            fprintf(stderr, "s-reset\n");
++        rbs_reset();
++        break; // This is wrong.
++    case 't':
++        if (VERBOSE)
++            fprintf(stderr, "t-reset\n");
++        rbs_reset();
++        break; // This is wrong.
++    case 'u':
++        if (VERBOSE)
++            fprintf(stderr, "u-reset\n");
++        rbs_reset();
++        break; // This is wrong.
++    case '0':
++        if (VERBOSE)
++            fprintf(stderr, "Write 0 0 0\n");
++        rbs_set_pins(0, 0, 0);
++        break;
++    case '1':
++        if (VERBOSE)
++            fprintf(stderr, "Write 0 0 1\n");
++        rbs_set_pins(0, 0, 1);
++        break;
++    case '2':
++        if (VERBOSE)
++            fprintf(stderr, "Write 0 1 0\n");
++        rbs_set_pins(0, 1, 0);
++        break;
++    case '3':
++        if (VERBOSE)
++            fprintf(stderr, "Write 0 1 1\n");
++        rbs_set_pins(0, 1, 1);
++        break;
++    case '4':
++        if (VERBOSE)
++            fprintf(stderr, "Write 1 0 0\n");
++        rbs_set_pins(1, 0, 0);
++        break;
++    case '5':
++        if (VERBOSE)
++            fprintf(stderr, "Write 1 0 1\n");
++        rbs_set_pins(1, 0, 1);
++        break;
++    case '6':
++        if (VERBOSE)
++            fprintf(stderr, "Write 1 1 0\n");
++        rbs_set_pins(1, 1, 0);
++        break;
++    case '7':
++        if (VERBOSE)
++            fprintf(stderr, "Write 1 1 1\n");
++        rbs_set_pins(1, 1, 1);
++        break;
++    case 'R':
++        if (VERBOSE)
++            fprintf(stderr, "Read req\n");
++        dosend = 1;
++        tosend = tdo ? '1' : '0';
++        break;
++    case 'Q':
++        if (VERBOSE)
++            fprintf(stderr, "Quit req\n");
++        quit = 1;
++        break;
++    default:
++        fprintf(stderr, "remote_bitbang got unsupported command '%c'\n",
++                command);
++    }
++    if (dosend) {
++        while (1) {
++            ssize_t bytes = write(client_fd, &tosend, sizeof(tosend));
++            if (bytes == -1) {
++                fprintf(stderr, "failed to write to socket: %s (%d)\n",
++                        strerror(errno), errno);
++                abort();
++            }
++            if (bytes > 0) {
++                break;
++            }
++        }
++    }
++
++    if (quit) {
++        fprintf(stderr, "Remote end disconnected\n");
++        close(client_fd);
++        client_fd = 0;
++    }
++}
++
++unsigned char rbs_done()
++{
++    return quit;
++}
++
++int rbs_exit_code()
++{
++    return rbs_err;
++}
+diff --git a/tb/remote_bitbang/remote_bitbang.h b/tb/remote_bitbang/remote_bitbang.h
+new file mode 100644
+index 0000000..460819e
+--- /dev/null
++++ b/tb/remote_bitbang/remote_bitbang.h
+@@ -0,0 +1,52 @@
++// See LICENSE.Berkeley for license details.
++
++#ifndef REMOTE_BITBANG_H
++#define REMOTE_BITBANG_H
++
++#include <stdint.h>
++#include <sys/types.h>
++
++#define VERBOSE 0
++
++int rbs_err;
++
++unsigned char tck;
++unsigned char tms;
++unsigned char tdi;
++unsigned char trstn;
++unsigned char tdo;
++unsigned char quit;
++
++int socket_fd;
++int client_fd;
++
++static const ssize_t buf_size = 64 * 1024;
++char recv_buf[64 * 1024];
++ssize_t recv_start, recv_end;
++
++// Create a new server, listening for connections from localhost on the given
++// port.
++int rbs_init(uint16_t port);
++
++// Do a bit of work.
++void rbs_tick(unsigned char *jtag_tck, unsigned char *jtag_tms,
++              unsigned char *jtag_tdi, unsigned char *jtag_trstn,
++              unsigned char jtag_tdo);
++
++unsigned char rbs_done();
++
++int rbs_exit_code();
++
++// Check for a client connecting, and accept if there is one.
++void rbs_accept();
++// Execute any commands the client has for us.
++// But we only execute 1 because we need time for the
++// simulation to run.
++void rbs_execute_command();
++
++// Reset. Currently does nothing.
++void rbs_reset();
++
++void rbs_set_pins(char _tck, char _tms, char _tdi);
++
++#endif
+diff --git a/tb/remote_bitbang/sim_jtag.c b/tb/remote_bitbang/sim_jtag.c
+new file mode 100644
+index 0000000..769ba88
+--- /dev/null
++++ b/tb/remote_bitbang/sim_jtag.c
+@@ -0,0 +1,29 @@
++// See LICENSE.SiFive for license details.
++
++#include <stdlib.h>
++#include <stdio.h>
++#include <unistd.h>
++#include "remote_bitbang.h"
++
++int init = 0;
++
++int jtag_tick(int port, unsigned char *jtag_TCK, unsigned char *jtag_TMS,
++              unsigned char *jtag_TDI, unsigned char *jtag_TRSTn,
++              unsigned char jtag_TDO)
++
++{
++    if (!init) {
++	if (port < 0 || port > UINT16_MAX)
++	    fprintf(stderr, "Port number of out range: %d\n", port);
++        init = rbs_init(port);
++    }
++
++    rbs_tick(jtag_TCK, jtag_TMS, jtag_TDI, jtag_TRSTn, jtag_TDO);
++    if (VERBOSE)
++        fprintf(
++            stderr,
++            "Tick with: TCK=%hhd TMS=%hhd TDI=%hhd TRSTn=%hhd --> TDO=%hhd\n",
++            *jtag_TCK, *jtag_TMS, *jtag_TDI, *jtag_TRSTn, jtag_TDO);
++
++    return rbs_done() ? (rbs_exit_code() << 1 | 1) : 0;
++}
+diff --git a/tb/tb_test_env.sv b/tb/tb_test_env.sv
+new file mode 100644
+index 0000000..f9e72a8
+--- /dev/null
++++ b/tb/tb_test_env.sv
+@@ -0,0 +1,338 @@
++// Copyright 2020 ETH Zurich and University of Bologna.
++// Copyright and related rights are licensed under the Solderpad Hardware
++// License, Version 0.51 (the "License"); you may not use this file except in
++// compliance with the License.  You may obtain a copy of the License at
++// http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
++// or agreed to in writing, software, hardware and materials distributed under
++// this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
++// CONDITIONS OF ANY KIND, either express or implied. See the License for the
++// specific language governing permissions and limitations under the License.
++
++// Wrapper for a RI5CY testbench, containing RI5CY, Memory and stdout peripheral
++// Contributor: Robert Balas <balasr@iis.ee.ethz.ch>
++
++module tb_test_env #(
++    parameter int unsigned INSTR_RDATA_WIDTH = 32,
++    parameter int unsigned RAM_ADDR_WIDTH = 20,
++    parameter logic [31:0] BOOT_ADDR = 'h80,
++    parameter bit          PULP_SECURE = 1,
++    parameter bit          JTAG_BOOT = 1,
++    parameter int unsigned OPENOCD_PORT = 0,
++    parameter bit          A_EXTENSION = 0
++) (
++    input logic  clk_i,
++    input logic  rst_ni,
++
++    // currently we are not making use of those signals
++    input logic  fetch_enable_i,
++    output logic tests_passed_o,
++    output logic tests_failed_o);
++
++    // defs from pulpissimo
++    // localparam CLUSTER_ID         = 6'd31;
++    // localparam CORE_ID            = 4'd0;
++    // test defs
++    localparam CLUSTER_ID         = 6'd0;
++    localparam CORE_ID            = 4'd0;
++
++    localparam CORE_MHARTID       = {CLUSTER_ID, 1'b0, CORE_ID};
++    localparam NrHarts                               = 1;
++    localparam logic [NrHarts-1:0] SELECTABLE_HARTS  = 1 << CORE_MHARTID;
++
++    // signals connecting core to memory
++    logic                        instr_req;
++    logic                        instr_gnt;
++    logic                        instr_rvalid;
++    logic [31:0]                 instr_addr;
++    logic [INSTR_RDATA_WIDTH-1:0] instr_rdata;
++
++    logic                        data_req;
++    logic                        data_gnt;
++    logic                        data_rvalid;
++    logic [31:0]                 data_addr;
++    logic                        data_we;
++    logic [3:0]                  data_be;
++    logic [31:0]                 data_rdata;
++    logic [31:0]                 data_wdata;
++
++    // jtag openocd bridge signals
++    logic                        sim_jtag_tck;
++    logic                        sim_jtag_tms;
++    logic                        sim_jtag_tdi;
++    logic                        sim_jtag_trstn;
++    logic                        sim_jtag_tdo;
++    logic [31:0]                 sim_jtag_exit;
++    logic                        sim_jtag_enable;
++
++    // signals for debug unit
++    logic                        debug_req_ready;
++    dm::dmi_resp_t               debug_resp;
++    logic                        jtag_req_valid;
++    dm::dmi_req_t                jtag_dmi_req;
++    logic                        jtag_resp_ready;
++    logic                        jtag_resp_valid;
++    logic [NrHarts-1:0]          dm_debug_req;
++    logic                        ndmreset, ndmreset_n;
++
++    // debug unit slave interface
++    logic                        dm_grant;
++    logic                        dm_rvalid;
++    logic                        dm_req;
++    logic                        dm_we;
++    logic [31:0]                 dm_addr;
++    logic [31:0]                 dm_wdata;
++    logic [31:0]                 dm_rdata;
++    logic [3:0]                  dm_be;
++
++    // debug unit master interface (system bus access)
++    logic                        sb_req;
++    logic [31:0]                 sb_addr;
++    logic                        sb_we;
++    logic [31:0]                 sb_wdata;
++    logic [3:0]                  sb_be;
++    logic                        sb_gnt;
++    logic                        sb_rvalid;
++    logic [31:0]                 sb_rdata;
++
++    // irq signals (not used)
++    logic                        irq;
++    logic [0:4]                  irq_id_in;
++    logic                        irq_ack;
++    logic [0:4]                  irq_id_out;
++    logic                        irq_sec;
++
++    // make jtag bridge work
++    assign sim_jtag_enable = JTAG_BOOT;
++
++    // interrupts (only timer for now)
++    assign irq_sec = '0;
++
++    // instantiate the core
++    riscv_core #(
++        .INSTR_RDATA_WIDTH (INSTR_RDATA_WIDTH),
++        .PULP_SECURE(PULP_SECURE),
++        .A_EXTENSION(A_EXTENSION),
++        .FPU(0)
++    ) riscv_core_i (
++        .clk_i                  ( clk_i                 ),
++        .rst_ni                 ( ndmreset_n            ),
++
++        .clock_en_i             ( '1                    ),
++        .test_en_i              ( '0                    ),
++
++        .boot_addr_i            ( BOOT_ADDR             ),
++        .core_id_i              ( CORE_ID               ),
++        .cluster_id_i           ( CLUSTER_ID            ),
++
++        .instr_addr_o           ( instr_addr            ),
++        .instr_req_o            ( instr_req             ),
++        .instr_rdata_i          ( instr_rdata           ),
++        .instr_gnt_i            ( instr_gnt             ),
++        .instr_rvalid_i         ( instr_rvalid          ),
++
++        .data_addr_o            ( data_addr             ),
++        .data_wdata_o           ( data_wdata            ),
++        .data_we_o              ( data_we               ),
++        .data_req_o             ( data_req              ),
++        .data_be_o              ( data_be               ),
++        .data_rdata_i           ( data_rdata            ),
++        .data_gnt_i             ( data_gnt              ),
++        .data_rvalid_i          ( data_rvalid           ),
++        .data_atop_o            (                       ),
++
++        .apu_master_req_o       (                       ),
++        .apu_master_ready_o     (                       ),
++        .apu_master_gnt_i       (                       ),
++        .apu_master_operands_o  (                       ),
++        .apu_master_op_o        (                       ),
++        .apu_master_type_o      (                       ),
++        .apu_master_flags_o     (                       ),
++        .apu_master_valid_i     (                       ),
++        .apu_master_result_i    (                       ),
++        .apu_master_flags_i     (                       ),
++
++
++        .irq_software_i         ( 1'b0                  ),
++        .irq_timer_i            ( 1'b0                  ),
++        .irq_external_i         ( 1'b0                  ),
++        .irq_fast_i             ( 15'b0                 ),
++        .irq_nmi_i              ( 1'b0                  ),
++        .irq_fastx_i            ( 32'b0                 ),
++
++        .irq_ack_o              ( irq_ack               ),
++        .irq_id_o               ( irq_id_out            ),
++        .irq_sec_i              ( irq_sec               ),
++
++        .sec_lvl_o              ( sec_lvl_o             ),
++
++        .debug_req_i            ( dm_debug_req[CORE_MHARTID] ),
++
++        .fetch_enable_i         ( fetch_enable_i        ),
++        .core_busy_o            ( core_busy_o           ),
++
++        .ext_perf_counters_i    (                       ),
++        .fregfile_disable_i     ( 1'b0                  )
++    );
++
++    // this handles read to RAM and memory mapped pseudo peripherals
++    mm_ram #(
++        .RAM_ADDR_WIDTH (RAM_ADDR_WIDTH),
++        .INSTR_RDATA_WIDTH (INSTR_RDATA_WIDTH),
++        .JTAG_BOOT(JTAG_BOOT)
++    ) mm_ram_i (
++        .clk_i          ( clk_i           ),
++        .rst_ni         ( ndmreset_n      ),
++
++        // core instruction access
++        .instr_req_i    ( instr_req       ),
++        .instr_addr_i   ( instr_addr      ),
++        .instr_rdata_o  ( instr_rdata     ),
++        .instr_rvalid_o ( instr_rvalid    ),
++        .instr_gnt_o    ( instr_gnt       ),
++
++        // core data access
++        .data_req_i     ( data_req        ),
++        .data_addr_i    ( data_addr       ),
++        .data_we_i      ( data_we         ),
++        .data_be_i      ( data_be         ),
++        .data_wdata_i   ( data_wdata      ),
++        .data_rdata_o   ( data_rdata      ),
++        .data_rvalid_o  ( data_rvalid     ),
++        .data_gnt_o     ( data_gnt        ),
++
++        // system bus access from debug unit
++        .sb_req_i       ( sb_req          ),
++        .sb_addr_i      ( sb_addr         ),
++        .sb_we_i        ( sb_we           ),
++        .sb_be_i        ( sb_be           ),
++        .sb_wdata_i     ( sb_wdata        ),
++        .sb_rdata_o     ( sb_rdata        ),
++        .sb_rvalid_o    ( sb_rvalid       ),
++        .sb_gnt_o       ( sb_gnt          ),
++
++        // access to debug unit
++        .dm_req_o       ( dm_req          ),
++        .dm_addr_o      ( dm_addr         ),
++        .dm_we_o        ( dm_we           ),
++        .dm_be_o        ( dm_be           ),
++        .dm_wdata_o     ( dm_wdata        ),
++        .dm_rdata_i     ( dm_rdata        ),
++        .dm_rvalid_i    ( dm_rvalid       ),
++        .dm_gnt_i       ( dm_gnt          ),
++
++
++        .irq_id_i       ( irq_id_out      ),
++        .irq_ack_i      ( irq_ack         ),
++        .irq_id_o       ( irq_id_in       ),
++        .irq_o          ( irq             ),
++
++        .tests_passed_o ( tests_passed_o  ),
++        .tests_failed_o ( tests_failed_o  )
++    );
++
++    // debug subsystem
++    dmi_jtag #(
++        .IdcodeValue          ( 32'h249511C3    )
++    ) i_dmi_jtag (
++        .clk_i                ( clk_i           ),
++        .rst_ni               ( rst_ni          ),
++        .testmode_i           ( 1'b0            ),
++        .dmi_req_o            ( jtag_dmi_req    ),
++        .dmi_req_valid_o      ( jtag_req_valid  ),
++        .dmi_req_ready_i      ( debug_req_ready ),
++        .dmi_resp_i           ( debug_resp      ),
++        .dmi_resp_ready_o     ( jtag_resp_ready ),
++        .dmi_resp_valid_i     ( jtag_resp_valid ),
++        .dmi_rst_no           (                 ), // not connected
++        .tck_i                ( sim_jtag_tck    ),
++        .tms_i                ( sim_jtag_tms    ),
++        .trst_ni              ( sim_jtag_trstn  ),
++        .td_i                 ( sim_jtag_tdi    ),
++        .td_o                 ( sim_jtag_tdo    ),
++        .tdo_oe_o             (                 )
++    );
++
++    dm_top #(
++       .NrHarts           ( NrHarts           ),
++       .BusWidth          ( 32                ),
++       .SelectableHarts   ( SELECTABLE_HARTS  )
++    ) i_dm_top (
++
++       .clk_i             ( clk_i             ),
++       .rst_ni            ( rst_ni            ),
++       .testmode_i        ( 1'b0              ),
++       .ndmreset_o        ( ndmreset          ),
++       .dmactive_o        (                   ), // active debug session TODO
++       .debug_req_o       ( dm_debug_req      ),
++       .unavailable_i     ( ~SELECTABLE_HARTS ),
++       .hartinfo_i        ( '0                ),
++
++       .slave_req_i       ( dm_req            ),
++       .slave_we_i        ( dm_we             ),
++       .slave_addr_i      ( dm_addr           ),
++       .slave_be_i        ( dm_be             ),
++       .slave_wdata_i     ( dm_wdata          ),
++       .slave_rdata_o     ( dm_rdata          ),
++
++       .master_req_o      ( sb_req            ),
++       .master_add_o      ( sb_addr           ),
++       .master_we_o       ( sb_we             ),
++       .master_wdata_o    ( sb_wdata          ),
++       .master_be_o       ( sb_be             ),
++       .master_gnt_i      ( sb_gnt            ),
++       .master_r_valid_i  ( sb_rvalid         ),
++       .master_r_rdata_i  ( sb_rdata          ),
++
++       .dmi_rst_ni        ( rst_ni            ),
++       .dmi_req_valid_i   ( jtag_req_valid    ),
++       .dmi_req_ready_o   ( debug_req_ready   ),
++       .dmi_req_i         ( jtag_dmi_req      ),
++       .dmi_resp_valid_o  ( jtag_resp_valid   ),
++       .dmi_resp_ready_i  ( jtag_resp_ready   ),
++       .dmi_resp_o        ( debug_resp        )
++    );
++
++    // grant in the same cycle
++    assign dm_gnt = dm_req;
++    // valid read/write in the next cycle
++    always_ff @(posedge clk_i or negedge rst_ni) begin : dm_valid_handler
++        if(~rst_ni) begin
++            dm_rvalid <= '0;
++        end else begin
++            dm_rvalid <= dm_gnt;
++        end
++    end
++
++    // reset handling with ndmreset
++    rstgen i_rstgen_main (
++        .clk_i        ( clk_i                ),
++        .rst_ni       ( rst_ni & (~ndmreset) ),
++        .test_mode_i  ( '0                   ),
++        .rst_no       ( ndmreset_n           ),
++        .init_no      (                      ) // keep open
++    );
++
++    // jtag calls from dpi
++    SimJTAG #(
++        .TICK_DELAY (1),
++        .PORT(OPENOCD_PORT)
++    ) i_sim_jtag (
++        .clock                ( clk_i                ),
++        .reset                ( ~rst_ni              ),
++        .enable               ( sim_jtag_enable      ),
++        .init_done            ( rst_ni               ),
++        .jtag_TCK             ( sim_jtag_tck         ),
++        .jtag_TMS             ( sim_jtag_tms         ),
++        .jtag_TDI             ( sim_jtag_tdi         ),
++        .jtag_TRSTn           ( sim_jtag_trstn       ),
++        .jtag_TDO_data        ( sim_jtag_tdo         ),
++        .jtag_TDO_driven      ( 1'b1                 ),
++        .exit                 ( sim_jtag_exit        )
++    );
++
++    always_comb begin : jtag_exit_handler
++        if (sim_jtag_exit)
++            $finish(2); // print stats too
++    end
++
++endmodule // tb_test_env
+diff --git a/tb/tb_top.sv b/tb/tb_top.sv
+new file mode 100644
+index 0000000..9e7525f
+--- /dev/null
++++ b/tb/tb_top.sv
+@@ -0,0 +1,138 @@
++// Copyright 2017 Embecosm Limited <www.embecosm.com>
++// Copyright 2018 Robert Balas <balasr@student.ethz.ch>
++// Copyright 2020 ETH Zurich and University of Bologna.
++// Copyright and related rights are licensed under the Solderpad Hardware
++// License, Version 0.51 (the "License"); you may not use this file except in
++// compliance with the License.  You may obtain a copy of the License at
++// http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
++// or agreed to in writing, software, hardware and materials distributed under
++// this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
++// CONDITIONS OF ANY KIND, either express or implied. See the License for the
++// specific language governing permissions and limitations under the License.
++
++// Top level wrapper for a RI5CY testbench
++// Contributor: Robert Balas <balasr@iis.ee.ethz.ch>
++//              Jeremy Bennett <jeremy.bennett@embecosm.com>
++
++module tb_top #(
++    parameter int unsigned INSTR_RDATA_WIDTH = 32,
++    parameter int unsigned RAM_ADDR_WIDTH = 22,
++    parameter logic [31:0] BOOT_ADDR  = 'h1A00_0180,
++    parameter bit          JTAG_BOOT  = 1,
++    parameter int unsigned OPENOCD_PORT = 9999
++);
++
++    // comment to record execution trace
++    //`define TRACE_EXECUTION
++
++    const time CLK_PHASE_HI         = 5ns;
++    const time CLK_PHASE_LO         = 5ns;
++    const time CLK_PERIOD           = CLK_PHASE_HI + CLK_PHASE_LO;
++    const time STIM_APPLICATION_DEL = CLK_PERIOD * 0.1;
++    const time RESP_ACQUISITION_DEL = CLK_PERIOD * 0.9;
++    const time RESET_DEL            = STIM_APPLICATION_DEL;
++    const int  RESET_WAIT_CYCLES    = 4;
++
++    // clock and reset for tb
++    logic                   clk     = 'b1;
++    logic                   rst_n   = 'b0;
++
++    // testbench result
++    logic                   tests_passed;
++    logic                   tests_failed;
++
++   // signals for ri5cy
++    logic                   fetch_enable;
++
++
++    // make the core start fetching instruction immediately
++    assign fetch_enable = '1;
++
++    // allow vcd dump
++    initial begin: dump_vars
++        if ($test$plusargs("vcd")) begin
++            $dumpfile("riscy_tb.vcd");
++            $dumpvars(0, tb_top);
++        end
++`ifdef QUESTA
++        if ($test$plusargs("wlfdump")) begin
++            $wlfdumpvars(0, tb_top);
++        end
++`endif
++    end
++
++    // we either load the provided firmware or execute a small test program that
++    // doesn't do more than an infinite loop with some I/O
++    initial begin: load_prog
++        automatic logic [1023:0] firmware;
++        automatic int prog_size = 6;
++
++        if($value$plusargs("firmware=%s", firmware)) begin
++            if($test$plusargs("verbose"))
++                $display("[TESTBENCH] %t: loading firmware %0s ...",
++                         $time, firmware);
++            $readmemh(firmware, tb_test_env_i.mm_ram_i.dp_ram_i.mem);
++
++        end else begin
++            $display("No firmware specified");
++        end
++    end
++
++    // clock generation
++    initial begin: clock_gen
++        forever begin
++            #CLK_PHASE_HI clk = 1'b0;
++            #CLK_PHASE_LO clk = 1'b1;
++        end
++    end: clock_gen
++
++    // reset generation
++    initial begin: reset_gen
++        rst_n          = 1'b0;
++
++        // wait a few cycles
++        repeat (RESET_WAIT_CYCLES) begin
++            @(posedge clk); //TODO: was posedge, see below
++        end
++
++        // start running
++        #RESET_DEL rst_n = 1'b1;
++        if($test$plusargs("verbose"))
++            $display("reset deasserted", $time);
++
++    end: reset_gen
++
++    // set timing format
++    initial begin: timing_format
++        $timeformat(-9, 0, "ns", 9);
++    end: timing_format
++
++    // check if we succeded
++    always_ff @(posedge clk, negedge rst_n) begin
++        if (tests_passed) begin
++            $display("Exit Success");
++            $finish;
++        end
++        if (tests_failed) begin
++            $display("Exit FAILURE");
++            $finish;
++        end
++    end
++
++    // wrapper for riscv, the memory system and stdout peripheral
++    tb_test_env #(
++        .INSTR_RDATA_WIDTH (INSTR_RDATA_WIDTH),
++        .RAM_ADDR_WIDTH (RAM_ADDR_WIDTH),
++        .BOOT_ADDR (BOOT_ADDR),
++        .PULP_SECURE (1),
++        .JTAG_BOOT (JTAG_BOOT),
++        .OPENOCD_PORT (OPENOCD_PORT)
++    ) tb_test_env_i(
++        .clk_i          ( clk            ),
++        .rst_ni         ( rst_n          ),
++        .fetch_enable_i ( fetch_enable   ),
++        .tests_passed_o ( tests_passed   ),
++        .tests_failed_o ( tests_failed   )
++    );
++
++endmodule // tb_top
+diff --git a/tb/tb_top_verilator.cpp b/tb/tb_top_verilator.cpp
+new file mode 100644
+index 0000000..1009b13
+--- /dev/null
++++ b/tb/tb_top_verilator.cpp
+@@ -0,0 +1,105 @@
++// Copyright 2018 Robert Balas <balasr@student.ethz.ch>
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++
++// Top level wrapper for a verilator RI5CY testbench
++// Contributor: Robert Balas <balasr@student.ethz.ch>
++
++#include "svdpi.h"
++#include "Vtb_top_verilator__Dpi.h"
++#include "Vtb_top_verilator.h"
++#include "verilated_vcd_c.h"
++#include "verilated.h"
++
++#include <iostream>
++#include <iomanip>
++#include <fstream>
++#include <exception>
++#include <cstdio>
++#include <cstdint>
++#include <cerrno>
++
++void dump_memory();
++double sc_time_stamp();
++
++static vluint64_t t = 0;
++Vtb_top_verilator *top;
++
++int main(int argc, char **argv, char **env)
++{
++    Verilated::commandArgs(argc, argv);
++    Verilated::traceEverOn(true);
++    top = new Vtb_top_verilator();
++
++    svSetScope(svGetScopeFromName(
++        "TOP.tb_top_verilator.mm_ram_i.dp_ram_i"));
++    Verilated::scopesDump();
++
++#ifdef VCD_TRACE
++    VerilatedVcdC *tfp = new VerilatedVcdC;
++    top->trace(tfp, 99);
++    tfp->open("verilator_tb.vcd");
++#endif
++    top->fetch_enable_i = 1;
++    top->clk_i          = 0;
++    top->rst_ni         = 0;
++
++    top->eval();
++    dump_memory();
++
++    while (!Verilated::gotFinish()) {
++        if (t > 40)
++            top->rst_ni = 1;
++        top->clk_i = !top->clk_i;
++        top->eval();
++#ifdef VCD_TRACE
++        tfp->dump(t);
++#endif
++        t += 5;
++    }
++#ifdef VCD_TRACE
++    tfp->close();
++#endif
++    delete top;
++    exit(0);
++}
++
++double sc_time_stamp()
++{
++    return t;
++}
++
++void dump_memory()
++{
++    errno = 0;
++    std::ofstream mem_file;
++    svLogicVecVal addr = {0};
++
++    mem_file.exceptions(std::ofstream::failbit | std::ofstream::badbit);
++    try {
++        mem_file.open("memory_dump.bin");
++        for (size_t i = 0; i < 1048576; i++) {
++            addr.aval    = i;
++            uint32_t val = read_byte(&addr);
++            mem_file << std::setfill('0') << std::setw(2) << std::hex << val
++                     << std::endl;
++        }
++        mem_file.close();
++
++        std::cout << "finished dumping memory" << std::endl;
++
++    } catch (std::ofstream::failure e) {
++        std::cerr << "exception opening/reading/closing file memory_dump.bin\n";
++    }
++}
+diff --git a/tb/tb_top_verilator.sv b/tb/tb_top_verilator.sv
+new file mode 100644
+index 0000000..2c7ef95
+--- /dev/null
++++ b/tb/tb_top_verilator.sv
+@@ -0,0 +1,330 @@
++// Copyright 2018 Robert Balas <balasr@student.ethz.ch>
++// Copyright and related rights are licensed under the Solderpad Hardware
++// License, Version 0.51 (the "License"); you may not use this file except in
++// compliance with the License.  You may obtain a copy of the License at
++// http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
++// or agreed to in writing, software, hardware and materials distributed under
++// this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
++// CONDITIONS OF ANY KIND, either express or implied. See the License for the
++// specific language governing permissions and limitations under the License.
++
++// Top level wrapper for a verilator RI5CY testbench
++// Contributor: Robert Balas <balasr@student.ethz.ch>
++
++module tb_top_verilator #(
++   parameter int unsigned INSTR_RDATA_WIDTH = 32,
++   parameter int unsigned RAM_ADDR_WIDTH = 22,
++   parameter logic [31:0] BOOT_ADDR = 'h1A00_0180,
++   parameter bit          JTAG_BOOT = 1,
++   parameter int unsigned  OPENOCD_PORT = 9999
++) (
++   input logic  clk_i,
++   input logic  rst_ni,
++   input logic  fetch_enable_i,
++   output logic tests_passed_o,
++   output logic tests_failed_o
++);
++    // defs from pulpissimo
++    // localparam CLUSTER_ID         = 6'd31;
++    // localparam CORE_ID            = 4'd0;
++    // test defs
++    localparam CLUSTER_ID         = 6'd0;
++    localparam CORE_ID            = 4'd0;
++
++    localparam CORE_MHARTID       = {CLUSTER_ID, 1'b0, CORE_ID};
++    localparam NrHarts                               = 1;
++    localparam logic [NrHarts-1:0] SELECTABLE_HARTS  = 1 << CORE_MHARTID;
++
++    // signals connecting core to memory
++    logic                        instr_req;
++    logic                        instr_gnt;
++    logic                        instr_rvalid;
++    logic [31:0]                 instr_addr;
++    logic [INSTR_RDATA_WIDTH-1:0] instr_rdata;
++
++    logic                        data_req;
++    logic                        data_gnt;
++    logic                        data_rvalid;
++    logic [31:0]                 data_addr;
++    logic                        data_we;
++    logic [3:0]                  data_be;
++    logic [31:0]                 data_rdata;
++    logic [31:0]                 data_wdata;
++
++    // jtag openocd bridge signals
++    logic                        sim_jtag_tck;
++    logic                        sim_jtag_tms;
++    logic                        sim_jtag_tdi;
++    logic                        sim_jtag_trstn;
++    logic                        sim_jtag_tdo;
++    logic [31:0]                 sim_jtag_exit;
++    logic                        sim_jtag_enable;
++
++    // signals for debug unit
++    logic                        debug_req_ready;
++    dm::dmi_resp_t               debug_resp;
++    logic                        jtag_req_valid;
++    dm::dmi_req_t                jtag_dmi_req;
++    logic                        jtag_resp_ready;
++    logic                        jtag_resp_valid;
++    logic [NrHarts-1:0]          dm_debug_req;
++    logic                        ndmreset, ndmreset_n;
++
++    // debug unit slave interface
++    logic                        dm_grant;
++    logic                        dm_rvalid;
++    logic                        dm_req;
++    logic                        dm_we;
++    logic [31:0]                 dm_addr;
++    logic [31:0]                 dm_wdata;
++    logic [31:0]                 dm_rdata;
++    logic [3:0]                  dm_be;
++
++    // debug unit master interface (system bus access)
++    logic                        sb_req;
++    logic [31:0]                 sb_addr;
++    logic                        sb_we;
++    logic [31:0]                 sb_wdata;
++    logic [3:0]                  sb_be;
++    logic                        sb_gnt;
++    logic                        sb_rvalid;
++    logic [31:0]                 sb_rdata;
++
++    // irq signals (not used)
++    logic                        irq;
++    logic [0:4]                  irq_id_in;
++    logic                        irq_ack;
++    logic [0:4]                  irq_id_out;
++    logic                        irq_sec;
++
++    // make jtag bridge work
++    assign sim_jtag_enable = JTAG_BOOT;
++
++    // interrupts (only timer for now)
++    assign irq_sec = '0;
++
++    // instantiate the core
++    riscv_core #(
++        .INSTR_RDATA_WIDTH (INSTR_RDATA_WIDTH),
++        .PULP_SECURE(1),
++        .FPU(0)
++    ) riscv_core_i (
++        .clk_i                  ( clk_i                 ),
++        .rst_ni                 ( ndmreset_n            ),
++
++        .clock_en_i             ( '1                    ),
++        .test_en_i              ( '0                    ),
++
++        .boot_addr_i            ( BOOT_ADDR             ),
++        .core_id_i              ( CORE_ID               ),
++        .cluster_id_i           ( CLUSTER_ID            ),
++
++        .instr_addr_o           ( instr_addr            ),
++        .instr_req_o            ( instr_req             ),
++        .instr_rdata_i          ( instr_rdata           ),
++        .instr_gnt_i            ( instr_gnt             ),
++        .instr_rvalid_i         ( instr_rvalid          ),
++
++        .data_addr_o            ( data_addr             ),
++        .data_wdata_o           ( data_wdata            ),
++        .data_we_o              ( data_we               ),
++        .data_req_o             ( data_req              ),
++        .data_be_o              ( data_be               ),
++        .data_rdata_i           ( data_rdata            ),
++        .data_gnt_i             ( data_gnt              ),
++        .data_rvalid_i          ( data_rvalid           ),
++
++        .apu_master_req_o       (                       ),
++        .apu_master_ready_o     (                       ),
++        .apu_master_gnt_i       (                       ),
++        .apu_master_operands_o  (                       ),
++        .apu_master_op_o        (                       ),
++        .apu_master_type_o      (                       ),
++        .apu_master_flags_o     (                       ),
++        .apu_master_valid_i     (                       ),
++        .apu_master_result_i    (                       ),
++        .apu_master_flags_i     (                       ),
++
++
++        .irq_software_i         ( 1'b0                  ),
++        .irq_timer_i            ( 1'b0                  ),
++        .irq_external_i         ( 1'b0                  ),
++        .irq_fast_i             ( 15'b0                 ),
++        .irq_nmi_i              ( 1'b0                  ),
++        .irq_fastx_i            ( 32'b0                 ),
++        .irq_ack_o              ( irq_ack               ),
++        .irq_id_o               ( irq_id_out            ),
++        .irq_sec_i              ( irq_sec               ),
++
++        .sec_lvl_o              ( sec_lvl_o             ),
++
++        .debug_req_i            ( dm_debug_req[CORE_MHARTID] ),
++
++        .fetch_enable_i         ( fetch_enable_i        ),
++        .core_busy_o            ( core_busy_o           ),
++
++        .ext_perf_counters_i    (                       ),
++        .fregfile_disable_i     ( 1'b0                  ));
++
++    // this handles read to RAM and memory mapped pseudo peripherals
++    mm_ram #(
++        .RAM_ADDR_WIDTH (RAM_ADDR_WIDTH),
++        .INSTR_RDATA_WIDTH (INSTR_RDATA_WIDTH),
++        .JTAG_BOOT(JTAG_BOOT)
++    ) mm_ram_i (
++        .clk_i          ( clk_i                          ),
++        .rst_ni         ( ndmreset_n                     ),
++
++        // core instruction access
++        .instr_req_i    ( instr_req                      ),
++        .instr_addr_i   ( instr_addr                     ),
++        .instr_rdata_o  ( instr_rdata                    ),
++        .instr_rvalid_o ( instr_rvalid                   ),
++        .instr_gnt_o    ( instr_gnt                      ),
++
++        // core data access
++        .data_req_i     ( data_req                       ),
++        .data_addr_i    ( data_addr                      ),
++        .data_we_i      ( data_we                        ),
++        .data_be_i      ( data_be                        ),
++        .data_wdata_i   ( data_wdata                     ),
++        .data_rdata_o   ( data_rdata                     ),
++        .data_rvalid_o  ( data_rvalid                    ),
++        .data_gnt_o     ( data_gnt                       ),
++
++        // system bus access from debug unit
++        .sb_req_i       ( sb_req                       ),
++        .sb_addr_i      ( sb_addr                      ),
++        .sb_we_i        ( sb_we                        ),
++        .sb_be_i        ( sb_be                        ),
++        .sb_wdata_i     ( sb_wdata                     ),
++        .sb_rdata_o     ( sb_rdata                     ),
++        .sb_rvalid_o    ( sb_rvalid                    ),
++        .sb_gnt_o       ( sb_gnt                       ),
++
++        // access to debug unit
++        .dm_req_o       ( dm_req                         ),
++        .dm_addr_o      ( dm_addr                        ),
++        .dm_we_o        ( dm_we                          ),
++        .dm_be_o        ( dm_be                          ),
++        .dm_wdata_o     ( dm_wdata                       ),
++        .dm_rdata_i     ( dm_rdata                       ),
++        .dm_rvalid_i    ( dm_rvalid                      ),
++        .dm_gnt_i       ( dm_gnt                         ),
++
++
++        .irq_id_i       ( irq_id_out                     ),
++        .irq_ack_i      ( irq_ack                        ),
++        .irq_id_o       ( irq_id_in                      ),
++        .irq_o          ( irq                            ),
++
++        .tests_passed_o ( tests_passed_o                 ),
++        .tests_failed_o ( tests_failed_o                 ));
++
++    // debug subsystem
++    dmi_jtag #(
++        .IdcodeValue          ( 32'h249511C3    )
++    ) i_dmi_jtag (
++        .clk_i                ( clk_i           ),
++        .rst_ni               ( rst_ni          ),
++        .testmode_i           ( 1'b0            ),
++        .dmi_req_o            ( jtag_dmi_req    ),
++        .dmi_req_valid_o      ( jtag_req_valid  ),
++        .dmi_req_ready_i      ( debug_req_ready ),
++        .dmi_resp_i           ( debug_resp      ),
++        .dmi_resp_ready_o     ( jtag_resp_ready ),
++        .dmi_resp_valid_i     ( jtag_resp_valid ),
++        .dmi_rst_no           (                 ), // not connected
++        .tck_i                ( sim_jtag_tck    ),
++        .tms_i                ( sim_jtag_tms    ),
++        .trst_ni              ( sim_jtag_trstn  ),
++        .td_i                 ( sim_jtag_tdi    ),
++        .td_o                 ( sim_jtag_tdo    ),
++        .tdo_oe_o             (                 )
++    );
++
++    dm_top #(
++       .NrHarts           ( NrHarts           ),
++       .BusWidth          ( 32                ),
++       .SelectableHarts   ( SELECTABLE_HARTS  )
++    ) i_dm_top (
++
++       .clk_i             ( clk_i             ),
++       .rst_ni            ( rst_ni            ),
++       .testmode_i        ( 1'b0              ),
++       .ndmreset_o        ( ndmreset          ),
++       .dmactive_o        (                   ), // active debug session TODO
++       .debug_req_o       ( dm_debug_req      ),
++       .unavailable_i     ( ~SELECTABLE_HARTS ),
++       .hartinfo_i        ( '0                ),
++
++       .slave_req_i       ( dm_req            ),
++       .slave_we_i        ( dm_we             ),
++       .slave_addr_i      ( dm_addr           ),
++       .slave_be_i        ( dm_be             ),
++       .slave_wdata_i     ( dm_wdata          ),
++       .slave_rdata_o     ( dm_rdata          ),
++
++       .master_req_o      ( sb_req            ),
++       .master_add_o      ( sb_addr           ),
++       .master_we_o       ( sb_we             ),
++       .master_wdata_o    ( sb_wdata          ),
++       .master_be_o       ( sb_be             ),
++       .master_gnt_i      ( sb_gnt            ),
++       .master_r_valid_i  ( sb_rvalid         ),
++       .master_r_rdata_i  ( sb_rdata          ),
++
++       .dmi_rst_ni        ( rst_ni            ),
++       .dmi_req_valid_i   ( jtag_req_valid    ),
++       .dmi_req_ready_o   ( debug_req_ready   ),
++       .dmi_req_i         ( jtag_dmi_req      ),
++       .dmi_resp_valid_o  ( jtag_resp_valid   ),
++       .dmi_resp_ready_i  ( jtag_resp_ready   ),
++       .dmi_resp_o        ( debug_resp        )
++    );
++
++    // grant in the same cycle
++    assign dm_gnt = dm_req;
++    // valid read/write in the next cycle
++    always_ff @(posedge clk_i or negedge rst_ni) begin : dm_valid_handler
++        if(~rst_ni) begin
++            dm_rvalid <= '0;
++        end else begin
++            dm_rvalid <= dm_gnt;
++        end
++    end
++
++    // reset handling with ndmreset
++    rstgen i_rstgen_main (
++        .clk_i        ( clk_i                ),
++        .rst_ni       ( rst_ni & (~ndmreset) ),
++        .test_mode_i  ( '0                   ),
++        .rst_no       ( ndmreset_n           ),
++        .init_no      (                      ) // keep open
++    );
++
++    // jtag calls from dpi
++    SimJTAG #(
++        .TICK_DELAY (1),
++        .PORT(OPENOCD_PORT)
++    ) i_sim_jtag (
++        .clock                ( clk_i                ),
++        .reset                ( ~rst_ni              ),
++        .enable               ( sim_jtag_enable      ),
++        .init_done            ( rst_ni               ),
++        .jtag_TCK             ( sim_jtag_tck         ),
++        .jtag_TMS             ( sim_jtag_tms         ),
++        .jtag_TDI             ( sim_jtag_tdi         ),
++        .jtag_TRSTn           ( sim_jtag_trstn       ),
++        .jtag_TDO_data        ( sim_jtag_tdo         ),
++        .jtag_TDO_driven      ( 1'b1                 ),
++        .exit                 ( sim_jtag_exit        )
++    );
++
++    always_comb begin : jtag_exit_handler
++        if (sim_jtag_exit)
++            $finish(2); // print stats too
++    end
++
++endmodule // tb_top_verilator
++
+diff --git a/tb/unused/SimDTM.sv b/tb/unused/SimDTM.sv
+new file mode 100644
+index 0000000..293e784
+--- /dev/null
++++ b/tb/unused/SimDTM.sv
+@@ -0,0 +1,81 @@
++// See LICENSE.SiFive for license details.
++//VCS coverage exclude_file
++
++import "DPI-C" function int debug_tick
++(
++  output bit     debug_req_valid,
++  input  bit     debug_req_ready,
++  output int     debug_req_bits_addr,
++  output int     debug_req_bits_op,
++  output int     debug_req_bits_data,
++
++  input  bit        debug_resp_valid,
++  output bit        debug_resp_ready,
++  input  int        debug_resp_bits_resp,
++  input  int        debug_resp_bits_data
++);
++
++module SimDTM(
++  input clk,
++  input reset,
++
++  output        debug_req_valid,
++  input         debug_req_ready,
++  output [ 6:0] debug_req_bits_addr,
++  output [ 1:0] debug_req_bits_op,
++  output [31:0] debug_req_bits_data,
++
++  input         debug_resp_valid,
++  output        debug_resp_ready,
++  input  [ 1:0] debug_resp_bits_resp,
++  input  [31:0] debug_resp_bits_data,
++
++  output [31:0] exit
++);
++
++  bit r_reset;
++
++  wire #0.1 __debug_req_ready = debug_req_ready;
++  wire #0.1 __debug_resp_valid = debug_resp_valid;
++  wire [31:0] #0.1 __debug_resp_bits_resp = {30'b0, debug_resp_bits_resp};
++  wire [31:0] #0.1 __debug_resp_bits_data = debug_resp_bits_data;
++
++  bit __debug_req_valid;
++  int __debug_req_bits_addr;
++  int __debug_req_bits_op;
++  int __debug_req_bits_data;
++  bit __debug_resp_ready;
++  int __exit;
++
++  assign #0.1 debug_req_valid = __debug_req_valid;
++  assign #0.1 debug_req_bits_addr = __debug_req_bits_addr[6:0];
++  assign #0.1 debug_req_bits_op = __debug_req_bits_op[1:0];
++  assign #0.1 debug_req_bits_data = __debug_req_bits_data[31:0];
++  assign #0.1 debug_resp_ready = __debug_resp_ready;
++  assign #0.1 exit = __exit;
++
++  always @(posedge clk)
++  begin
++    r_reset <= reset;
++    if (reset || r_reset)
++    begin
++      __debug_req_valid = 0;
++      __debug_resp_ready = 0;
++      __exit = 0;
++    end
++    else
++    begin
++      __exit = debug_tick(
++        __debug_req_valid,
++        __debug_req_ready,
++        __debug_req_bits_addr,
++        __debug_req_bits_op,
++        __debug_req_bits_data,
++        __debug_resp_valid,
++        __debug_resp_ready,
++        __debug_resp_bits_resp,
++        __debug_resp_bits_data
++      );
++    end
++  end
++endmodule
+diff --git a/tb/vsim_batch.tcl b/tb/vsim_batch.tcl
+new file mode 100644
+index 0000000..01c0d3e
+--- /dev/null
++++ b/tb/vsim_batch.tcl
+@@ -0,0 +1,15 @@
++# Copyright 2020 ETH Zurich and University of Bologna.
++# Copyright and related rights are licensed under the Solderpad Hardware
++# License, Version 0.51 (the "License"); you may not use this file except in
++# compliance with the License.  You may obtain a copy of the License at
++# http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
++# or agreed to in writing, software, hardware and materials distributed under
++# this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
++# CONDITIONS OF ANY KIND, either express or implied. See the License for the
++# specific language governing permissions and limitations under the License.
++
++# Author: Robert Balas (balasr@student.ethz.ch)
++# Description: TCL scripts to facilitate simulations
++
++set NoQuitOnFinish 1
++run -all
+diff --git a/tb/vsim_gui.tcl b/tb/vsim_gui.tcl
+new file mode 100644
+index 0000000..571b66e
+--- /dev/null
++++ b/tb/vsim_gui.tcl
+@@ -0,0 +1,16 @@
++# Copyright 2019 ETH Zurich and University of Bologna.
++# Copyright and related rights are licensed under the Solderpad Hardware
++# License, Version 0.51 (the "License"); you may not use this file except in
++# compliance with the License.  You may obtain a copy of the License at
++# http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
++# or agreed to in writing, software, hardware and materials distributed under
++# this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
++# CONDITIONS OF ANY KIND, either express or implied. See the License for the
++# specific language governing permissions and limitations under the License.
++
++# Author: Robert Balas (balasr@student.ethz.ch)
++# Description: TCL scripts to facilitate simulations
++
++set NoQuitOnFinish 1
++source waves.tcl
++run -all
+diff --git a/tb/waves.tcl b/tb/waves.tcl
+new file mode 100644
+index 0000000..f535d80
+--- /dev/null
++++ b/tb/waves.tcl
+@@ -0,0 +1,117 @@
++# Copyright 2020 ETH Zurich and University of Bologna.
++# Copyright and related rights are licensed under the Solderpad Hardware
++# License, Version 0.51 (the "License"); you may not use this file except in
++# compliance with the License.  You may obtain a copy of the License at
++# http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
++# or agreed to in writing, software, hardware and materials distributed under
++# this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
++# CONDITIONS OF ANY KIND, either express or implied. See the License for the
++# specific language governing permissions and limitations under the License.
++
++# Author: Robert Balas (balasr@iis.ee.ethz.ch)
++# Description: TCL scripts to facilitate simulations
++# catch {
++#     if {$trdb_all ne ""} {
++#	foreach inst $trdb_all {
++#	    add wave -group [file tail $inst] $inst/*
++#	}
++#     }
++# } err
++
++# if {$err ne ""} {
++#     puts "\[TCL\]: Suppressed error: $err"
++# }
++
++# add fc
++set rvcores [find instances -recursive -bydu riscv_core -nodu]
++set fpuprivate [find instances -recursive -bydu fpu_private]
++set tb_top [find instances -recursive -bydu tb_top -nod]
++set mm_ram [find instances -recursive -bydu mm_ram -nod]
++set dp_ram [find instances -recursive -bydu dp_ram -nod]
++
++if {$tb_top ne ""} {
++    foreach inst $tb_top {
++	add wave -group [file tail $inst] $inst/*
++    }
++}
++
++if {$mm_ram ne ""} {
++    foreach inst $mm_ram {
++	add wave -group [file tail $inst] $inst/*
++    }
++}
++
++if {$dp_ram ne ""} {
++    foreach inst $dp_ram {
++	add wave -group [file tail $inst] $inst/*
++    }
++}
++
++if {$rvcores ne ""} {
++  set rvprefetch [find instances -recursive -bydu riscv_prefetch_L0_buffer -nodu]
++
++  add wave -group "Core"                                     $rvcores/*
++  add wave -group "IF Stage" -group "Hwlp Ctrl"              $rvcores/if_stage_i/hwloop_controller_i/*
++  if {$rvprefetch ne ""} {
++    add wave -group "IF Stage" -group "Prefetch" -group "L0"   $rvcores/if_stage_i/prefetch_128/prefetch_buffer_i/L0_buffer_i/*
++    add wave -group "IF Stage" -group "Prefetch"               $rvcores/if_stage_i/prefetch_128/prefetch_buffer_i/*
++  } {
++    add wave -group "IF Stage" -group "Prefetch" -group "FIFO" $rvcores/if_stage_i/prefetch_32/prefetch_buffer_i/fifo_i/*
++    add wave -group "IF Stage" -group "Prefetch"               $rvcores/if_stage_i/prefetch_32/prefetch_buffer_i/*
++  }
++  add wave -group "IF Stage"                                 $rvcores/if_stage_i/*
++  add wave -group "ID Stage"                                 $rvcores/id_stage_i/*
++  add wave -group "RF"                                       $rvcores/id_stage_i/registers_i/riscv_register_file_i/mem
++  add wave -group "RF_FP"                                    $rvcores/id_stage_i/registers_i/riscv_register_file_i/mem_fp
++  add wave -group "Decoder"                                  $rvcores/id_stage_i/decoder_i/*
++  add wave -group "Controller"                               $rvcores/id_stage_i/controller_i/*
++  add wave -group "Int Ctrl"                                 $rvcores/id_stage_i/int_controller_i/*
++  add wave -group "Hwloop Regs"                              $rvcores/id_stage_i/hwloop_regs_i/*
++  add wave -group "EX Stage" -group "ALU"                    $rvcores/ex_stage_i/alu_i/*
++  add wave -group "EX Stage" -group "ALU_DIV"                $rvcores/ex_stage_i/alu_i/int_div/div_i/*
++  add wave -group "EX Stage" -group "MUL"                    $rvcores/ex_stage_i/mult_i/*
++  if {$fpuprivate ne ""} {
++    add wave -group "EX Stage" -group "APU_DISP"             $rvcores/ex_stage_i/genblk1/apu_disp_i/*
++    add wave -group "EX Stage" -group "FPU"                  $rvcores/ex_stage_i/genblk1/genblk1/fpu_i/*
++  }
++  add wave -group "EX Stage"                                 $rvcores/ex_stage_i/*
++  add wave -group "LSU"                                      $rvcores/load_store_unit_i/*
++  add wave -group "CSR"                                      $rvcores/cs_registers_i/*
++}
++
++# add dm
++set dm [find instances -recursive -bydu dm_top -nodu]
++set dm_mem  [find instances -recursive -bydu dm_mem -nodu]
++set dm_csrs [find instances -recursive -bydu dm_csrs -nodu]
++set dm_sba  [find instances -recursive -bydu dm_sba -nodu]
++
++if {$dm ne ""} {
++  add wave -group "DM"                                     $dm/*
++}
++if {$dm_mem ne ""} {
++  add wave -group "DM" -group "dm_mem"                     $dm_mem/*
++}
++if {$dm_csrs ne ""} {
++  add wave -group "DM" -group "dm_csrs"                    $dm_csrs/*
++}
++if {$dm_sba ne ""} {
++  add wave -group "DM" -group "dm_sba"                     $dm_sba/*
++}
++
++# add dmi_jtag
++set dmi [find instances -recursive -bydu dmi_jtag -nodu]
++set dmi_tap  [find instances -recursive -bydu dmi_jtag_tap -nodu]
++
++if {$dmi ne ""} {
++  add wave -group "DMI"                                     $dmi/*
++}
++if {$dmi_tap ne ""} {
++  add wave -group "DMI" -group "dmi_tap"                    $dmi_tap/*
++}
++
++
++configure wave -namecolwidth  250
++configure wave -valuecolwidth 100
++configure wave -justifyvalue left
++configure wave -signalnamewidth 1
++configure wave -timelineunits ns
+
+From 9dd46780b9f9b2d1499f59018614f2ec14113643 Mon Sep 17 00:00:00 2001
+From: bluew <bluewww@users.noreply.github.com>
+Date: Tue, 25 Feb 2020 13:07:52 +0000
+Subject: [PATCH 2/4] Update CHANGELOG.md
+
+---
+ CHANGELOG.md | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 120b424..3a746a7 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
+ 
+ ## [Unreleased]
+ 
++### Added
++- `tb` that runs dm in conjunction with ri5cy and OpenOCD
++- `.travis-ci.yml` running `tb` with verilator
++
++### Fixed
++- Off-by-one error in data and progbuf end address from [@pbing](https://github.com/pbing)
++
+ ## [0.3.0] - 2020-01-23
+ 
+ ### Added
+
+From 8b737e060aa1bdf1cf65903fce340f061e788257 Mon Sep 17 00:00:00 2001
+From: bluew <bluewww@users.noreply.github.com>
+Date: Tue, 25 Feb 2020 16:32:16 +0000
+Subject: [PATCH 3/4] Add CI badge to README.md
+
+---
+ README.md | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/README.md b/README.md
+index 295fa9d..fe28e6d 100644
+--- a/README.md
++++ b/README.md
+@@ -1,3 +1,5 @@
++[![Build Status](https://travis-ci.com/pulp-platform/riscv-dbg.svg?branch=master)](https://travis-ci.com/pulp-platform/riscv-dbg)
++
+ # RISC-V Debug Support for PULP Cores
+ 
+ This module is an implementation of a debug unit compliant with the [RISC-V
+
+From fc0bd4d86b1c7fabe571c9c4c24dafac865005e0 Mon Sep 17 00:00:00 2001
+From: bluew <bluewww@users.noreply.github.com>
+Date: Mon, 9 Mar 2020 08:50:52 +0000
+Subject: [PATCH 4/4] Simplify cross compilation step
+
+---
+ tb/Makefile | 25 ++++++++++---------------
+ 1 file changed, 10 insertions(+), 15 deletions(-)
+
+diff --git a/tb/Makefile b/tb/Makefile
+index 285b508..9f6760d 100644
+--- a/tb/Makefile
++++ b/tb/Makefile
+@@ -133,9 +133,13 @@ RAM_START_ADDR          = 0x1c000000
+ RTLSRC_VLOG_TB_TOP	:= $(basename $(notdir $(RTLSRC_TB_TOP)))
+ RTLSRC_VOPT_TB_TOP	:= $(addsuffix _vopt, $(RTLSRC_VLOG_TB_TOP))
+ 
+-# riscv toolchain install path
+-RISCV                    ?= ~/.riscv
+-RISCV_EXE_PREFIX         = $(RISCV)/bin/riscv32-unknown-elf-
++# riscv bare metal cross compiling
++RISCV			?= $(HOME)/.riscv
++RV_CC			= $(RISCV)/bin/riscv32-unknown-elf-gcc
++RV_CFLAGS		= -march=rv32imc -Os -g
++RV_LDFLAGS		= -nostdlib -static -T prog/link.ld
++RV_LDLIBS		= -lc -lm -lgcc
++RV_OBJCOPY		= $(RISCV)/bin/riscv32-unknown-elf-objcopy
+ 
+ # assume verilator if no target chosen
+ .DEFAULT_GOAL := veri-run
+@@ -275,20 +279,11 @@ vsim-clean:
+ 	.build-rtl .opt-rtl .lib-rtl *.vcd objdump
+ 
+ # compile and dump program
+-prog/test.elf: prog/test.c prog/syscalls.c prog/start.S prog/vectors.S
+-	$(RISCV_EXE_PREFIX)gcc -march=rv32imc -o $@ -w -Os -g -nostdlib \
+-		-T prog/link.ld  \
+-		-static \
+-		prog/crt0.S \
+-		prog/test.c prog/syscalls.c prog/vectors.S \
+-		-I $(RISCV)/riscv32-unknown-elf/include \
+-		-L $(RISCV)/riscv32-unknown-elf/lib \
+-		-lc -lm -lgcc
+-
+-	chmod u+x prog/test.elf
++prog/test.elf: prog/test.c prog/crt0.S prog/syscalls.c prog/vectors.S
++	$(RV_CC) $(RV_CFLAGS) $(RV_CPPFLAGS) $(RV_LDFLAGS) $^ $(RV_LDLIBS) -o $@
+ 
+ prog/test.hex: prog/test.elf
+-	$(RISCV_EXE_PREFIX)objcopy -O verilog --change-addresses -$(RAM_START_ADDR) $< $@
++	$(RV_OBJCOPY) -O verilog --change-addresses -$(RAM_START_ADDR) $< $@
+ 
+ .PHONY: prog-clean
+ prog-clean:

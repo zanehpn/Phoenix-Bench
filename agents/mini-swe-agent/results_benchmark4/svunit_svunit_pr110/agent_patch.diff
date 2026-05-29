@@ -1,0 +1,45 @@
+diff --git a/svunit_base/svunit_base.sv b/svunit_base/svunit_base.sv
+index 0baf491..e7e3aa1 100644
+--- a/svunit_base/svunit_base.sv
++++ b/svunit_base/svunit_base.sv
+@@ -40,6 +40,7 @@ class svunit_base;
+   extern function new(string name);
+   extern function string get_name();
+   extern function results_t get_results();
++  extern function string get_xml();
+ 
+   extern virtual function void report();
+ 
+@@ -76,6 +77,10 @@ function void svunit_base::report();
+   `INFO($sformatf("%0s::%0s", name, str));
+ endfunction
+ 
++function string svunit_base::get_xml();
++  return "";
++endfunction
++
+ 
+ /*
+   Function: get_results
+diff --git a/svunit_base/svunit_testcase.sv b/svunit_base/svunit_testcase.sv
+index e49b27f..ccef111 100644
+--- a/svunit_base/svunit_testcase.sv
++++ b/svunit_base/svunit_testcase.sv
+@@ -193,6 +193,17 @@ function void svunit_testcase::report();
+ endfunction
+ 
+ 
++function string svunit_testcase::get_xml();
++  string xml;
++  $sformat(xml, "    <testcase name=\"%s\" tests=\"%0d\" failures=\"%0d\" errors=\"0\" time=\"0\">\n", get_name(), test_count, error_count);
++  if (success == FAIL) begin
++    $sformat(xml, "%s      <failure message=\"%0d failures\" type=\"svunit\"/>\n", xml, error_count);
++  end
++  $sformat(xml, "%s    </testcase>\n", xml);
++  return xml;
++endfunction
++
++
+ /*
+   Method: setup
+   Only required if using VCS since pure virtual functions are not implemented

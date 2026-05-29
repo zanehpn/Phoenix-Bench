@@ -1,0 +1,23 @@
+diff --git a/rtl/src/hpdcache_ctrl_pe.sv b/rtl/src/hpdcache_ctrl_pe.sv
+index efbf1a5..f24d79c 100644
+--- a/rtl/src/hpdcache_ctrl_pe.sv
++++ b/rtl/src/hpdcache_ctrl_pe.sv
+@@ -606,8 +606,16 @@ module hpdcache_ctrl_pe
+                                 //  request from the replay table.
+                                 st1_nop = st1_req_rtab_i & ~rtab_req_valid_i;
+ 
+-                                //  Update victim selection for the accessed set
+-                                st1_req_cachedir_updt_sel_victim_o = st1_req_is_load_i;
++                                //  Update victim selection (PLRU) for the accessed set.
++                                //  By default, loads update PLRU on hit.
++                                //
++                                //  For CMO_PREFETCH, this behavior is controlled by
++                                //  When enabled, keep PLRU update consistent between HIT and MISS:
++                                //  update also on HIT.
++                                //
++                                //  NOTE: st1_req_cachedir_updt_sel_victim_o is later ORed with
++                                //  refill/miss/AMO update requests in hpdcache_memctrl.
++                                st1_req_cachedir_updt_sel_victim_o = st1_req_is_load_i | st1_req_is_cmo_prefetch_i;
+ 
+                                 //  Respond to the core (if needed)
+                                 st1_rsp_valid_o = st1_req_need_rsp_i;

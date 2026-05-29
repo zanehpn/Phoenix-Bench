@@ -1,0 +1,15 @@
+diff --git a/rtl/cve2_id_stage.sv b/rtl/cve2_id_stage.sv
+index e989ff29..9b1b38a1 100644
+--- a/rtl/cve2_id_stage.sv
++++ b/rtl/cve2_id_stage.sv
+@@ -754,8 +754,9 @@ module cve2_id_stage #(
+ 
+   // Signal which instructions to count as retired in minstret, all traps along with ebrk and
+   // ecall instructions are not counted.
++  // DRET executed outside debug mode causes an illegal instruction exception and must not count.
+   assign instr_perf_count_id_o = ~ebrk_insn & ~ecall_insn_dec & ~illegal_insn_dec &
+-      ~illegal_csr_insn_i & ~instr_fetch_err_i;
++      ~illegal_csr_insn_i & ~instr_fetch_err_i & ~(dret_insn_dec & ~debug_mode_o);
+ 
+   // An instruction is ready to move to the writeback
+   assign en_wb_o = instr_done;

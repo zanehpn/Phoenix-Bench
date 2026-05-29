@@ -1,0 +1,23 @@
+# Proposal: allow the FMA addend to be in either `src_fmt_i` or `dst_fmt_i`
+
+Currently, the addend operand of the FMA shares its FP format with the result:
+
+https://github.com/openhwgroup/cvfpu/blob/4aac6b3e87a30c8567dbe7401eba3274eea18afc/src/fpnew_fma_multi.sv#L37-L38
+
+This makes sense when considering the various fused multiply-accumulate operations of the RISC-V spec, which add the product of two multiplicands given in one FP format to an accumulator in another FP format. However, the RISC-V vector spec defines [widening FP add and subtract operations](https://github.com/riscv/riscv-v-spec/blob/master/v-spec.adoc#133-vector-widening-floating-point-addsubtract-instructions) that come in two flavors:
+- one which sums two narrow operands and produces a wider result
+- one which sums one narrow and one wide operand to produce a wide result
+
+The latter is directly supported by CVFPU but the former is not, as that would require the addend operand of the FMA to be in `src_fmt_i` as well.
+
+Looking at the source code of the FMA, nothing is fundamentally preventing the FMA addend to be in a different format than the result. It would suffice to change the following lines, which unpack the 3 operands, to use a different format for `operand_c` (and `info_c`):
+
+https://github.com/openhwgroup/cvfpu/blob/4aac6b3e87a30c8567dbe7401eba3274eea18afc/src/fpnew_fma_multi.sv#L234-L240
+
+Hence, in order to improve support for these type of widening FP add/sub and potentially other operations and to generally increase the flexibility of CVFPU, **I propose to allow the FMA addend to be in either `src_fmt_i` or `dst_fmt_i` (at least for the add operation)**.
+
+This change could be implemented, for instance, by:
+- Adding a new port `add_fmt_i` to the FMA, all opgroup modules and the `fpnew_top` module that specifies the format of the addend. This would be the most flexible option but changes the ports of the top module.
+- Adding a new operation `ADDW` to the `operation_e` enum, which behaves the same as the `ADD` operation except that `src_fmt_i` is used for the addend instead of `dst_fmt_i`. This would avoid changes of the top module.
+
+@davideschiavone @pascalgouedo @stmach @lucabertaccini Please let me know if you would support such a change and your preferred way of implementing it. If favorable, I would then prepare a PR.

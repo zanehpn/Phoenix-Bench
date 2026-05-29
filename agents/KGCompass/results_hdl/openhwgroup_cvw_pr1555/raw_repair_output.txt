@@ -1,0 +1,35 @@
+The bug is in the tracer’s CSR-change detection macro in `testbench/common/wallyTracer.sv`.
+
+### Why this is the likely source
+`CONNECT_CSR` currently does two problematic things:
+
+1. It declares `prev_csr_*` without reset/initialization, so the first observed value can be X/old state.
+2. It continuously assigns the CSR trace value from `valid ? val : prev_csr_*`, which can cause the tracer to briefly observe stale or unintended CSR values during stalls/flushes.
+3. It also uses `rvvi.csr[...]` on both sides of the assignment chain in a way that can create ordering/race issues in simulation, which is consistent with spurious `mip.MTIP` transitions.
+
+A safer approach is to register the previous value with reset and drive the trace CSR from the current `val` only when valid, while detecting change against the registered previous value.
+
+## SEARCH/REPLACE edits
+
+```systemverilog
+### testbench/common/wallyTracer.sv
+<<<<<<< SEARCH
+`define CONNECT_CSR(name, addr, val) \
+  logic [P.XLEN-1:0] prev_csr_``name; \
+  always_ff @(posedge clk) \
+    prev_csr_``name <= rvvi.csr[0][0][addr]; \
+  assign rvvi.csr_wb[0][0][addr] = (rvvi.csr[0][0][addr] != prev_csr_``name); \
+  assign rvvi.csr[0][0][addr] = valid ? val : prev_csr_``name;
+=======
+`define CONNECT_CSR(name, addr, val) \
+  logic [P.XLEN-1:0] prev_csr_``name; \
+  always_ff @(posedge clk or posedge reset) begin \
+    if (reset) prev_csr_``name <= '0; \
+    else       prev_csr_``name <= valid ? val : prev_csr_``name; \
+  end \
+  assign rvvi.csr[0][0][addr] = valid ? val : prev_csr_``name; \
+  assign rvvi.csr_wb[0][0][addr] = valid && (val != prev_csr_``name);
+>>>>>>> REPLACE
+```
+
+This should eliminate the spurious CSR trace transitions that are likely causing the bogus `mip.MTIP` rise/fall behavior and the false “uninitialized RAM” read artifact.

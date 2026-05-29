@@ -1,0 +1,71 @@
+diff --git a/src/shift_reg.sv b/src/shift_reg.sv
+index 7193fbc..e9d700c 100644
+--- a/src/shift_reg.sv
++++ b/src/shift_reg.sv
+@@ -19,33 +19,54 @@ module shift_reg #(
+ )(
+     input  logic clk_i,    // Clock
+     input  logic rst_ni,   // Asynchronous reset active low
++    // Backward-compatible ports.
++    // If vld_i is tied to 1'b1 (default usage), behavior matches the original
++    // shift_reg. If vld_i is 0, internal state is held to allow downstream clock
++    // gating (DC insert ICG) and reduce dynamic power.
++    input  logic vld_i,
+     input  dtype d_i,
+-    output dtype d_o
++    output dtype d_o,
++    output logic vld_o
+ );
+ 
+-    // register of depth 0 is a wire
++    // Depth 0: purely combinational pass-through.
+     if (Depth == 0) begin : gen_pass_through
+-        assign d_o = d_i;
+-    // register of depth 1 is a simple register
++        assign d_o   = d_i;
++        assign vld_o = vld_i;
++
++    // Depth 1: single register stage.
+     end else if (Depth == 1) begin : gen_register
+         always_ff @(posedge clk_i or negedge rst_ni) begin
+             if (~rst_ni) begin
+-                d_o <= '0;
++                d_o   <= '0;
++                vld_o <= 1'b0;
++            end else if (vld_i) begin
++                d_o   <= d_i;
++                vld_o <= 1'b1;
+             end else begin
+-                d_o <= d_i;
++                // Hold state when not valid to avoid unnecessary toggles.
++                vld_o <= 1'b0;
+             end
+         end
+-    // if depth is greater than 1 it becomes a shift register
+-    end else if (Depth > 1) begin : gen_shift_reg
+-        dtype [Depth-1:0] reg_d, reg_q;
+-        assign d_o = reg_q[Depth-1];
+-        assign reg_d = {reg_q[Depth-2:0], d_i};
++
++    // Depth > 1: shift register.
++    end else begin : gen_shift_reg
++        dtype [Depth-1:0] reg_q;
++        logic [Depth-1:0] vld_q;
++
++        assign d_o   = reg_q[Depth-1];
++        assign vld_o = vld_q[Depth-1];
+ 
+         always_ff @(posedge clk_i or negedge rst_ni) begin
+             if (~rst_ni) begin
+                 reg_q <= '0;
++                vld_q <= '0;
++            end else if (vld_i) begin
++                reg_q <= {reg_q[Depth-2:0], d_i};
++                vld_q <= {vld_q[Depth-2:0], 1'b1};
+             end else begin
+-                reg_q <= reg_d;
++                // Hold data flops when invalid; only clear valid pipeline.
++                vld_q <= {vld_q[Depth-2:0], 1'b0};
+             end
+         end
+     end

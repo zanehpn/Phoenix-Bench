@@ -1,0 +1,25 @@
+The bug is localized in **`hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv`** inside the `WaitIdle` state transition logic.
+
+### Root cause
+When a new command arrives after a CSID change, the FSM currently transitions to `WaitIdle` again instead of to `CSBSwitch`. That causes the first command after the CSID change to be skipped/held incorrectly. The intended behavior is to go through the `CSBSwitch` state so the new CSID gets its required idle timing before accepting the command.
+
+### Fix
+Replace the transition in `WaitIdle` from `WaitIdle` to `CSBSwitch` when `switch_required` is true.
+
+```systemverilog
+### hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv
+<<<<<<< SEARCH
+            if (switch_required) begin
+               prestall_st_d = CSBSwitch;
+            end else begin
+               prestall_st_d = WaitLead;
+            end
+=======
+            if (switch_required) begin
+              prestall_st_d = CSBSwitch;
+            end else begin
+              prestall_st_d = WaitLead;
+            end
+>>>>>>> REPLACE
+```
+

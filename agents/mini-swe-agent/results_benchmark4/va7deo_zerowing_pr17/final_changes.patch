@@ -1,0 +1,24 @@
+diff --git a/zerowing.sv b/zerowing.sv
+index 1580ab5..573f765 100644
+--- a/zerowing.sv
++++ b/zerowing.sv
+@@ -1012,7 +1012,7 @@ reg  [9:0] sprite_x;         // offset from left side of sprite
+ reg  [9:0] sprite_y; 
+ 
+ reg  sprite_buf_active;
+-wire [9:0] sprite_buf_x = sprite_x + sprite_pos_x ;     // offset from left of frame
++wire [9:0] sprite_buf_x = sprite_x + sprite_pos_x[9:0] ;     // offset from left of frame
+ 
+ wire fetch_tile = layer == 3 || ( tile_priority_buf[x] <= tile_priority && tile_hidden == 0 );
+ 
+@@ -1024,8 +1024,8 @@ wire [5:0] sprite_pal_addr  = sprite_attr_1_buf_dout[5:0] /* synthesis keep */;
+ wire [5:0]  sprite_size_addr = sprite_attr_1_buf_dout[11:6] /* synthesis keep */;
+ wire [3:0]  sprite_priority  = sprite_attr_1_buf_dout[15:12] /* synthesis keep */;
+ 
+-wire [9:0] sprite_pos_x  = ( sprite_attr_2_buf_dout[15:7] < 9'h180 ) ? sprite_attr_2_buf_dout[15:7]  : ( sprite_attr_2_buf_dout[15:7] - 9'h1fe )  ;
+-wire [9:0] sprite_pos_y  = ( sprite_attr_3_buf_dout[15:7] < 9'h180 ) ? sprite_attr_3_buf_dout[15:7]  : ( sprite_attr_3_buf_dout[15:7] - 9'h1fe )  ;  //- 16 + scroll_y_offset /* synthesis keep */; )
++wire signed [10:0] sprite_pos_x = $signed(sprite_attr_2_buf_dout[15:7]) - (sprite_attr_2_buf_dout[15:7] >= 9'h180 ? 11'd510 : 11'd0);
++wire signed [10:0] sprite_pos_y = $signed(sprite_attr_3_buf_dout[15:7]) - (sprite_attr_3_buf_dout[15:7] >= 9'h180 ? 11'd510 : 11'd0);
+ 
+ // valid 1 cycle after sprite attr ready
+ wire [8:0] sprite_height    = { sprite_size_buf_dout[7:4], 3'b0 } /* synthesis keep */;  // in pixels

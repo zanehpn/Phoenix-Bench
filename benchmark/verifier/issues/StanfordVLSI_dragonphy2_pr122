@@ -1,0 +1,37 @@
+# Generate "update" signal for adc_unfolding directly, rather than through clock division circuitry
+
+- Source URL: https://github.com/StanfordVLSI/dragonphy2/issues/106
+
+At the moment, we generate the ``update`` signal used in ``adc_unfolding`` by sampling ``clk_avg`` with ``clk_retimer`` and then generating a one-cycle pulse when ``clk_avg`` transitions from ``0`` to ``1``.  The issue is that ``clk_avg`` is generated with a ``freq_divider`` module that creates several generated clocks.  For FPGA synthesis, at least, this causes some timing issues.  By removing the ``freq_divider`` in ``digital_core`` and directly generating the ``update`` signal, we will get back to having only one clock signal in ``digital_core``, which is ``clk_adc``.  This will resolve the FPGA synthesis issue, while also simplifying ASIC synthesis.
+
+
+
+
+
+
+
+
+
+
+
+PR title: PFD offset calibration loop updates
+
+Source: https://github.com/StanfordVLSI/dragonphy2/pull/122
+
+PR description:
+This PR updates the PFD offset calibration feature with new block- and system-level tests. The primary technical change replaces a generated clock signal with a clock enable signal for the `update` mechanism, streamlining both ASIC and FPGA synthesis workflows.
+
+Key changes:
+- System-level PFD offset calibration test via DC sweep.
+- Block-level tests for `adc_unfolding`, `avg_pulse`, `calib_hist`, `sample_avg` modules.
+- Bitwidth reviews addressing potential overflow risks.
+- JTAG register sampling now occurs at `update` cycle completion only.
+- New debugging/control JTAG registers: `pfd_cal_flip_feedback` (polarity inversion) and `en_pfd_cal_ext_ave` (averaging bypass).
+
+Comments:
+- sjkim85 (Oct 6, 2020): "All changes make sense. I like flipping polarity by a chicken bit and bypassing avg block for testing."
+
+Linked issue:
+- #106 "Generate 'update' signal for adc_unfolding directly, rather than through clock division circuitry"
+
+Status: Merged Oct 6, 2020. 13 commits total across development and merge workflow.

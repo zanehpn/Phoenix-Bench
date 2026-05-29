@@ -1,0 +1,22 @@
+[
+  {
+    "file_path": "src/dm_csrs.sv",
+    "reason": "This is the most likely place where abstract command/data register accesses are decoded and where cmderr should be set on illegal accesses while busy. The bug report specifically mentions data0 access during an executing abstract command, which is typically handled in the DM CSR logic."
+  },
+  {
+    "file_path": "src/dm_top.sv",
+    "reason": "Top-level debug module control logic may coordinate abstract command state, busy tracking, and cmderr propagation across submodules. If busy/command sequencing is centralized, this file could contain the missing conflict check."
+  },
+  {
+    "file_path": "src/dm_pkg.sv",
+    "reason": "Package files often define constants, enums, and field encodings for cmderr and abstract command status. If the busy error code or related state encoding is wrong or incomplete, the fix may involve this file."
+  },
+  {
+    "file_path": "src/dm_mem.sv",
+    "reason": "If data0/data1 register accesses are implemented through a memory-mapped register file or shared memory interface, this file may contain the read/write gating logic that fails to assert cmderr when busy."
+  },
+  {
+    "file_path": "src/dm_sba.sv",
+    "reason": "Less likely than the CSR path, but if the design reuses abstract command/busy handling between the system bus access and data register path, this module may also participate in the conflict detection logic."
+  }
+]

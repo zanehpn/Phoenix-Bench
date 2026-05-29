@@ -1,0 +1,18 @@
+diff --git a/design/ifu/el2_ifu_mem_ctl.sv b/design/ifu/el2_ifu_mem_ctl.sv
+index d4097c0..741fea9 100644
+--- a/design/ifu/el2_ifu_mem_ctl.sv
++++ b/design/ifu/el2_ifu_mem_ctl.sv
+@@ -926,7 +926,13 @@ logic                                         perr_sb_write_status   ;
+ 
+ 
+ 
++generate
++if (pt.ICACHE_ENABLE == 1) begin : perr_dat_gen
+    rvdffe #(.WIDTH(pt.ICACHE_INDEX_HI-pt.ICACHE_TAG_INDEX_LO+1),.OVERRIDE(1)) perr_dat_ff    (.din(ifu_ic_rw_int_addr_ff[pt.ICACHE_INDEX_HI:pt.ICACHE_TAG_INDEX_LO]), .dout(perr_ic_index_ff[pt.ICACHE_INDEX_HI : pt.ICACHE_TAG_INDEX_LO]), .en(perr_sb_write_status),  .*);
++end else begin : perr_dat_gen
++   assign perr_ic_index_ff[pt.ICACHE_INDEX_HI:pt.ICACHE_TAG_INDEX_LO] = ifu_ic_rw_int_addr_ff[pt.ICACHE_INDEX_HI:pt.ICACHE_TAG_INDEX_LO];
++end
++endgenerate
+ 
+    assign perr_err_inv_way[pt.ICACHE_NUM_WAYS-1:0]   =  {pt.ICACHE_NUM_WAYS{perr_sel_invalidate}} ;
+    assign iccm_correct_ecc     = (perr_state == ECC_CORR);

@@ -1,0 +1,16 @@
+# Potential bug in hardened fifo module
+
+The hardened fifo module contains a variable `read_write_same_addr_n`, which is currently assigned as `wptr_r == rptr_r`. The comment for this variable mentions that it should be 1 when the fifo is empty, but the condition is true for both empty and full fifo conditions. The line in question is given below:
+
+https://github.com/bespoke-silicon-group/basejump_stl/blob/4cfaeb454a7278f7d13eb766dad07ce34fefcdea/bsg_dataflow/bsg_fifo_1r1w_small_hardened.v#L118
+
+If this variable is 1 when the fifo is full, it prevents the memory read as in https://github.com/bespoke-silicon-group/basejump_stl/blob/4cfaeb454a7278f7d13eb766dad07ce34fefcdea/bsg_dataflow/bsg_fifo_1r1w_small_hardened.v#L95
+The assignment can instead be `assign read_write_same_addr_n = empty`.
+
+## Linked Issue Content from GitHub
+
+**Issue #465: Potential bug in hardened fifo module**
+
+- Body: `read_write_same_addr_n = wptr_r == rptr_r` is true for both empty AND full conditions, but the comment says it should be 1 only when empty. When fifo is full, this prevents memory read at line 95 (`r_v_i (~read_write_same_addr_n)`). Suggested fix: `assign read_write_same_addr_n = empty`.
+- Author: Shashank-Vijay, Opened July 19, 2021. Status: Closed (resolved via PR #472). Label: bug.
+- Comments: None.

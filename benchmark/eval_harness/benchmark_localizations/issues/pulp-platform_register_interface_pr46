@@ -1,0 +1,21 @@
+# axi_to_reg_v2: Add optional mem cuts
+
+Instance: pulp-platform_register_interface_pr46
+Source: https://github.com/pulp-platform/register_interface/pull/46
+Fetched: 2026-04-26
+Repository: pulp-platform/register_interface
+Pull request: #46
+Author: paulsc96
+State: closed
+Base branch: master
+Head branch: paulsc/cut-axi2reg
+Created: 2024-02-23T17:19:21Z
+Updated: 2024-03-01T14:06:58Z
+Closed: 2024-03-01T14:00:06Z
+Merged: 2024-03-01T14:00:06Z
+
+The `axi_to_reg_v2` module, while greatly improving functionality, incurs rather long paths. 
+
+For example, even when inserting a retimed `axi_cut` right at its input, it still causes the longest (currently violating) path in Cheshire's FPGA implementation, with its `i_axi_to_detailed_mem` claiming more than half the path length alone.
+
+This PR inserts optional (default disabled) mem request and response cuts right after `i_axi_to_detailed_mem`. While this may become quite expensive for large `AxiDataWidth/RegDataWidth`, it should efficiently mitigate timing issues, especially as register interfaces cannot be cut without bandwidth loss.

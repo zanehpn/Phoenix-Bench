@@ -1,0 +1,187 @@
+From f340d605dd52001955761a72c28d8460fba0a7b0 Mon Sep 17 00:00:00 2001
+From: Srinivasan Venkataramanan <svenka3@gmail.com>
+Date: Fri, 1 Dec 2023 17:45:17 +0000
+Subject: [PATCH 1/2] Fixes Issue #147
+
+---
+ sv_tests/test_issue_143_f.sv | 5 +++++
+ sv_tests/test_issue_147_f.sv | 5 +++++
+ 2 files changed, 10 insertions(+)
+ create mode 100644 sv_tests/test_issue_143_f.sv
+ create mode 100644 sv_tests/test_issue_147_f.sv
+
+diff --git a/sv_tests/test_issue_143_f.sv b/sv_tests/test_issue_143_f.sv
+new file mode 100644
+index 0000000..f146dc2
+--- /dev/null
++++ b/sv_tests/test_issue_143_f.sv
+@@ -0,0 +1,5 @@
++import "DPI-C"  function dpi_f (bit [3:0] a);
++
++module top ;
++
++endmodule
+diff --git a/sv_tests/test_issue_147_f.sv b/sv_tests/test_issue_147_f.sv
+new file mode 100644
+index 0000000..533eb99
+--- /dev/null
++++ b/sv_tests/test_issue_147_f.sv
+@@ -0,0 +1,5 @@
++interface af_sv_if;
++  import "DPI" function int c_sum();
++  import "DPI-C" function logic c_bad_4_st();
++  import "DPI-C" function c_bad_implicit_rt();
++endinterface : af_sv_if
+
+From e15120a8136c676210a06b67f331fe5e935cd35f Mon Sep 17 00:00:00 2001
+From: Srinivasan Venkataramanan <svenka3@gmail.com>
+Date: Fri, 1 Dec 2023 18:07:41 +0000
+Subject: [PATCH 2/2] Support for DPI inside PKG is added
+
+---
+ exec_dir/Makefile            |  2 ++
+ exec_dir/pyslint.log         | 21 +++++++++++++++++++++
+ py_src/pyslint.py            | 18 ++++++++++++++++++
+ sv_tests/test_issue_147_f.sv | 23 +++++++++++++++++++++++
+ sv_tests/test_issue_148_f.sv | 25 +++++++++++++++++++++++++
+ 5 files changed, 89 insertions(+)
+ create mode 100644 sv_tests/test_issue_148_f.sv
+
+diff --git a/exec_dir/Makefile b/exec_dir/Makefile
+index f94d4e1..b46b3a2 100644
+--- a/exec_dir/Makefile
++++ b/exec_dir/Makefile
+@@ -90,6 +90,8 @@ naming:
+ 	python3 ../py_src/pyslint.py -t ../sv_tests/test_issue_139_f.sv >> pyslint.log
+ 	python3 ../py_src/pyslint.py -t ../sv_tests/test_issue_139_p.sv >> pyslint.log
+ 	python3 ../py_src/pyslint.py -t ../sv_tests/test_issue_145_f.sv >> pyslint.log
++	python3 ../py_src/pyslint.py -t ../sv_tests/test_issue_147_f.sv >> pyslint.log
++	python3 ../py_src/pyslint.py -t ../sv_tests/test_issue_148_f.sv >> pyslint.log
+ 
+ 	cat pyslint.log
+ 
+diff --git a/exec_dir/pyslint.log b/exec_dir/pyslint.log
+index 97b5dbe..33e8a7f 100644
+--- a/exec_dir/pyslint.log
++++ b/exec_dir/pyslint.log
+@@ -878,3 +878,24 @@ PySlint: Violation: [FUNC_DPI_FN_MISSING_RTYPE]: DPI import functions should spe
+ 	 Preferably use 2-state type. 
+ // No explicit return type - PySlint violation
+ import "DPI-C"  function dpi_f (bit [3:0] a);
++PySlint: Violation: [COMPAT_DPI_OLD_SPECSTR]: Wrong Spec-STR in DPI declaration IEEE 1800-2012 specifies "DPI-C" as Spec-STR. Found code as: 
++
++  import "DPI" function int c_sum();
++PySlint: Violation: [FUNC_DPI_NO_4STATE_IN_RETURN]: DPI functions shall use 2-state types in return value. Using 4-state type can lead to unnecessary complication as C-side does not naturally support 4-state value system Found code as: 
++
++  import "DPI-C" function logic c_bad_4_st();
++PySlint: Violation: [FUNC_DPI_FN_MISSING_RTYPE]: DPI import functions should specify 
++	 return type as per LRM. Using Implicit return type (of logic) can lead to 
++	 functional issues leading to unexpected results. Please specify return type as void/bit etc. 
++	 Preferably use 2-state type. 
++
++  import "DPI-C" function c_bad_implicit_rt();
++PySlint: Violation: [COMPAT_DPI_OLD_SPECSTR]: Wrong Spec-STR in DPI declaration IEEE 1800-2012 specifies "DPI-C" as Spec-STR. Found code as: 
++
++  import "DPI" function int bad_spec_str (input int v, output int o);
++PySlint: Violation: [FUNC_DPI_FN_MISSING_RTYPE]: DPI import functions should specify 
++	 return type as per LRM. Using Implicit return type (of logic) can lead to 
++	 functional issues leading to unexpected results. Please specify return type as void/bit etc. 
++	 Preferably use 2-state type. 
++
++  import "DPI-C" function bad_implicit_rt (input int v1, input int v2, output int o);
+diff --git a/py_src/pyslint.py b/py_src/pyslint.py
+index 10bcab0..63cd012 100644
+--- a/py_src/pyslint.py
++++ b/py_src/pyslint.py
+@@ -887,11 +887,29 @@ def chk_dpi_rules(lv_cu_scope):
+     chk_dpi_rules_common(lv_cu_scope)
+   if (lv_cu_scope.kind.name == 'DPIImport'):
+     chk_dpi_rules_common(lv_cu_scope)
++
+   if (lv_cu_scope.kind.name == 'ModuleDeclaration'):
+     for lv_mod_mem_i in lv_cu_scope.members:
++      if (lv_mod_mem_i.kind.name == 'DPIExport'):
++        chk_dpi_rules_common(lv_mod_mem_i)
+       if (lv_mod_mem_i.kind.name == 'DPIImport'):
+         chk_dpi_rules_common(lv_mod_mem_i)
+ 
++  if (lv_cu_scope.kind.name == 'InterfaceDeclaration'):
++    for lv_if_mem_i in lv_cu_scope.members:
++      if (lv_if_mem_i.kind.name == 'DPIExport'):
++        chk_dpi_rules_common(lv_if_mem_i)
++      if (lv_if_mem_i.kind.name == 'DPIImport'):
++        chk_dpi_rules_common(lv_if_mem_i)
++
++  if (lv_cu_scope.kind.name == 'PackageDeclaration'):
++    for lv_pkg_mem_i in lv_cu_scope.members:
++      if (lv_pkg_mem_i.kind.name == 'DPIExport'):
++        chk_dpi_rules_common(lv_pkg_mem_i)
++      if (lv_pkg_mem_i.kind.name == 'DPIImport'):
++        chk_dpi_rules_common(lv_pkg_mem_i)
++
++
+ def chk_naming(lv_cu_scope):
+   if (lv_cu_scope.kind.name == 'ClassDeclaration'):
+     lv_ident_name = str(lv_cu_scope.name)
+diff --git a/sv_tests/test_issue_147_f.sv b/sv_tests/test_issue_147_f.sv
+index 533eb99..7df9d27 100644
+--- a/sv_tests/test_issue_147_f.sv
++++ b/sv_tests/test_issue_147_f.sv
+@@ -3,3 +3,26 @@ interface af_sv_if;
+   import "DPI-C" function logic c_bad_4_st();
+   import "DPI-C" function c_bad_implicit_rt();
+ endinterface : af_sv_if
++/*- - - -*/
++package pack1;
++import "DPI-C" function int myFunction1(input int v, output int o);
++import "DPI-C" function void myFunction2 (input int v1, input int v2, output int o);
++endpackage
++/*-- ---*/
++module mymodule();
++int i, j;
++int o1 ,o2, o3;
++initial
++begin
++#1;
++j = 10;
++o3 =pack1:: myFunction1(j, o1);//should be 10/2 = 5
++pack1::myFunction2(j, 2+3, o2); // 5 += 10 + 2+3
++$display(o1, o2);
++if( o1 == 5 && o2 == 15)
++$display("PASSED");
++else
++$display("FAILED");
++end
++endmodule
++
+diff --git a/sv_tests/test_issue_148_f.sv b/sv_tests/test_issue_148_f.sv
+new file mode 100644
+index 0000000..38ac1fb
+--- /dev/null
++++ b/sv_tests/test_issue_148_f.sv
+@@ -0,0 +1,25 @@
++/*- - - -*/
++package pack1;
++  import "DPI" function int bad_spec_str (input int v, output int o);
++  import "DPI-C" function bad_implicit_rt (input int v1, input int v2, output int o);
++  import "DPI-C" function int myFunction1(input int v, output int o);
++  import "DPI-C" function void myFunction2 (input int v1, input int v2, output int o);
++endpackage
++/*-- ---*/
++module mymodule();
++int i, j;
++int o1 ,o2, o3;
++initial
++begin
++  #1;
++  j = 10;
++  o3 =pack1:: myFunction1(j, o1);//should be 10/2 = 5
++  pack1::myFunction2(j, 2+3, o2); // 5 += 10 + 2+3
++  $display(o1, o2);
++  if( o1 == 5 && o2 == 15)
++    $display("PASSED");
++  else
++    $display("FAILED");
++end
++endmodule
++

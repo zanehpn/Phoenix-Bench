@@ -1,0 +1,339 @@
+From 1a7b82db803fd2da9e3255d5b6a2322084392d12 Mon Sep 17 00:00:00 2001
+From: Srinivasan Venkataramanan <svenka3@gmail.com>
+Date: Wed, 6 Dec 2023 18:45:52 +0000
+Subject: [PATCH] Added rule for #159
+
+---
+ exec_dir/Makefile            |   1 +
+ exec_dir/pyslint.log         | 143 +++++++++++++++++++++++++++++++++++
+ py_src/pyslint.py            |  54 ++++++++++++-
+ sv_tests/test_issue_159_f.sv |  25 ++++++
+ sv_tests/test_issue_160_f.sv |  12 +++
+ 5 files changed, 234 insertions(+), 1 deletion(-)
+ create mode 100644 sv_tests/test_issue_159_f.sv
+
+diff --git a/exec_dir/Makefile b/exec_dir/Makefile
+index acff2bd..52aaddb 100644
+--- a/exec_dir/Makefile
++++ b/exec_dir/Makefile
+@@ -95,6 +95,7 @@ naming:
+ 	python3 ../py_src/pyslint.py -t ../sv_tests/test_issue_150_f.sv >> pyslint.log
+ 	python3 ../py_src/pyslint.py -t ../sv_tests/test_issue_151_f.sv >> pyslint.log
+ 	python3 ../py_src/pyslint.py -t ../sv_tests/test_issue_152_f.sv >> pyslint.log
++	python3 ../py_src/pyslint.py -t ../sv_tests/test_issue_159_f.sv >> pyslint.log
+ 	python3 ../py_src/pyslint.py -t ../sv_tests/test_issue_160_f.sv >> pyslint.log
+ 	python3 ../py_src/pyslint.py -t ../sv_tests/test_issue_161_f.sv >> pyslint.log
+ 	python3 ../py_src/pyslint.py -t ../sv_tests/test_issue_162_f.sv >> pyslint.log
+diff --git a/exec_dir/pyslint.log b/exec_dir/pyslint.log
+index 9dcba2d..e65fff7 100644
+--- a/exec_dir/pyslint.log
++++ b/exec_dir/pyslint.log
+@@ -126,6 +126,71 @@ PySlint: Violation: [COMPAT_SVA_NO_DEGEN_CONSEQ]: Empty match ([*0] or variants)
+     (a |-> a[*0:3])
+ PySlint: Violation: [FUNC_SVA_MISSING_FAIL_AB]: Missing FAIL Action block - use $error/`uvm_error: 
+   a_p_empty_sequence_2 : assert property (empty_sequence_2);
++PySlint: Violation: [DBG_AVOID_BEGIN_IN_FN]: A function with begin..end was found.
++	 This is likely a legacy Verilog coding syle as SystemVerilog 
++	 makes this optional and it is recommended coding style to avoid begin..end 
++	 inside function to improve readability and maintainability of codebase.
++	 Please remove the redundant begin..end 
++ // p_WidDepthComb
++//------------------------------------------------------------------------------
++// INDEX:   5) Verilog Functions
++//------------------------------------------------------------------------------
++  // INDEX:        - CheckBurst
++  // =====
++  // Inputs: Burst (burst data structure)
++  //         Count (number of data items)
++  // Returns: High is any of the write strobes are illegal
++  // Calls CheckStrb to test each WSTRB value.
++  //------------------------------------------------------------------------------
++  function CheckBurst
++PySlint: Violation: [DBG_AVOID_BEGIN_IN_FN]: A function with begin..end was found.
++	 This is likely a legacy Verilog coding syle as SystemVerilog 
++	 makes this optional and it is recommended coding style to avoid begin..end 
++	 inside function to improve readability and maintainability of codebase.
++	 Please remove the redundant begin..end 
++ // CheckBurst
++  // INDEX:        - CheckStrb
++  // =====
++  function CheckStrb
++PySlint: Violation: [DBG_AVOID_BEGIN_IN_FN]: A function with begin..end was found.
++	 This is likely a legacy Verilog coding syle as SystemVerilog 
++	 makes this optional and it is recommended coding style to avoid begin..end 
++	 inside function to improve readability and maintainability of codebase.
++	 Please remove the redundant begin..end 
++ // CheckStrb
++  // INDEX:        - ReadDataMask
++  // =====
++  // Inputs: Burst (Burst data structure)
++  //         Beat  (Data beat number)
++  // Returns: Read data mask for valid byte lanes.
++  //------------------------------------------------------------------------------
++  function [DATA_MAX:0] ReadDataMask
++PySlint: Violation: [DBG_AVOID_BEGIN_IN_FN]: A function with begin..end was found.
++	 This is likely a legacy Verilog coding syle as SystemVerilog 
++	 makes this optional and it is recommended coding style to avoid begin..end 
++	 inside function to improve readability and maintainability of codebase.
++	 Please remove the redundant begin..end 
++ // ReadDataMask
++  // INDEX:        - ByteShift
++  // =====
++  // Inputs: Burst (Burst data structure)
++  //         Beat  (Data beat number)
++  // Returns: Byte Shift for valid byte lanes.
++  //------------------------------------------------------------------------------
++  function [DATA_MAX:0] ByteShift
++PySlint: Violation: [DBG_AVOID_BEGIN_IN_FN]: A function with begin..end was found.
++	 This is likely a legacy Verilog coding syle as SystemVerilog 
++	 makes this optional and it is recommended coding style to avoid begin..end 
++	 inside function to improve readability and maintainability of codebase.
++	 Please remove the redundant begin..end 
++ // ByteShift
++  // INDEX:        - ByteCount
++  // =====
++  // Inputs: Burst (Burst data structure)
++  //         Beat  (Data beat number)
++  // Returns: Byte Count of valid byte lanes.
++  //------------------------------------------------------------------------------
++  function [7:0] ByteCount
+ PySlint: Violation: [NAME_PROP_PREFIX]: Improper naming of property: AXI_ERRM_AWADDR_BOUNDARY: expected prefix: p_
+ PySlint: Violation: [DBG_SVA_MISSING_ENDLABEL]: Missing End Label for property: AXI_ERRM_AWADDR_BOUNDARY
+ PySlint: Violation: [NAME_AST_PREFIX]: Improper naming of assert directive: axi_errm_awaddr_boundary: expected prefix: a_
+@@ -939,6 +1004,17 @@ PySlint: Violation: [COMPAT_DPI_NO_MDA]: DPI method with Multi-Dimensional Array
+ 	While LRM allows this, some tools do not fully support. To avoid compatibility issues, 
+ 	please remodel the code:
+   import "DPI-C" task bad_dpi_t_mda(input int dyn_a[][]);
++PySlint: Violation: [COMPAT_NO_REF_IN_STATIC_FN]: A function with 'ref' argument was found. 
++	 IEEE 1800 LRM requires such functions to be declared automatic. Some tools do not check 
++	 this rule strictly leading to incompatible code. Add keyword 'automatic' before the 
++	 function name or remove the 'ref' qualifier to the argument.
++  function  bad_fn (integer a[], ref ab)
++PySlint: Violation: [COMPAT_NO_REF_IN_STATIC_FN]: A function with 'ref' argument was found. 
++	 IEEE 1800 LRM requires such functions to be declared automatic. Some tools do not check 
++	 this rule strictly leading to incompatible code. Add keyword 'automatic' before the 
++	 function name or remove the 'ref' qualifier to the argument.
++ 
++  function  func (ref integer a[])
+ PySlint: Violation: [DBG_AVOID_BEGIN_IN_TASK]: A task with begin..end was found.
+ 	 This is likely a legacy Verilog coding syle as SystemVerilog 
+ 	 makes this optional and it is recommended coding style to avoid begin..end 
+@@ -946,6 +1022,13 @@ PySlint: Violation: [DBG_AVOID_BEGIN_IN_TASK]: A task with begin..end was found.
+ 	 Please remove the redundant begin..end 
+ 
+   task t1_bad()
++PySlint: Violation: [DBG_AVOID_BEGIN_IN_FN]: A function with begin..end was found.
++	 This is likely a legacy Verilog coding syle as SystemVerilog 
++	 makes this optional and it is recommended coding style to avoid begin..end 
++	 inside function to improve readability and maintainability of codebase.
++	 Please remove the redundant begin..end 
++ 
++  function bad_f ()
+ PySlint: Violation: [FUNC_NO_BEGIN_IN_TIMING_CTRL]: A task with TimingControl like @(posedge clk) was
+ 	 found along with a 'begin..end'
+ 	 This is likely a typo-error and may lead to unexpected behaviour of the BFM code. 
+@@ -953,6 +1036,66 @@ PySlint: Violation: [FUNC_NO_BEGIN_IN_TIMING_CTRL]: A task with TimingControl li
+ task Write()
+ 	 Relevant code snippet: 
+   @(negedge pclk) begin     psel = 1;
++PySlint: Violation: [NAME_CLASS_SUFFIX]: Improper naming of identifier:  reg_item: expected suffix: _c
++PySlint: Violation: [CL_METHOD_NOT_EXTERN]: method is not declared extern:  print
++PySlint: Violation: [DBG_CL_MISSING_ENDLABEL]: Missing End Label for class: reg_item
++PySlint: Violation: [NAME_CLASS_SUFFIX]: Improper naming of identifier:  driver: expected suffix: _c
++PySlint: Violation: [CL_METHOD_NOT_EXTERN]: method is not declared extern:  run
++PySlint: Violation: [DBG_CL_MISSING_ENDLABEL]: Missing End Label for class: driver
++PySlint: Violation: [VLT_NO_GENERIC_MBX]: A generic mailbox declaration was found. 
++	 While IEEE 1800 LRM allows this, such usage is error-prone and harder to debug. 
++	 Verilator does not support this feature. Please use typed mailbox such as: 'mailbox #(int) in_box;'
++  mailbox drv_mbx;
++PySlint: Violation: [NAME_CLASS_SUFFIX]: Improper naming of identifier:  monitor: expected suffix: _c
++PySlint: Violation: [CL_METHOD_NOT_EXTERN]: method is not declared extern:  run
++PySlint: Violation: [DBG_CL_MISSING_ENDLABEL]: Missing End Label for class: monitor
++PySlint: Violation: [REUSE_ONE_CL_PER_FILE]: Always use one-class definition per file
++PySlint: Violation: [REUSE_ONE_CL_PER_FILE]: Always use one-class definition per file
++PySlint: Violation: [REUSE_ONE_CL_PER_FILE]: Always use one-class definition per file
++PySlint: Violation: [REUSE_ONE_CL_PER_FILE]: Always use one-class definition per file
++PySlint: Violation: [REUSE_ONE_CL_PER_FILE]: Always use one-class definition per file
++PySlint: Violation: [VLT_NO_GENERIC_MBX]: A generic mailbox declaration was found. 
++	 While IEEE 1800 LRM allows this, such usage is error-prone and harder to debug. 
++	 Verilator does not support this feature. Please use typed mailbox such as: 'mailbox #(int) in_box;'
++  mailbox scb_mbx;
++PySlint: Violation: [NAME_CLASS_SUFFIX]: Improper naming of identifier:  scoreboard: expected suffix: _c
++PySlint: Violation: [CL_METHOD_NOT_EXTERN]: method is not declared extern:  run
++PySlint: Violation: [DBG_CL_MISSING_ENDLABEL]: Missing End Label for class: scoreboard
++PySlint: Violation: [REUSE_ONE_CL_PER_FILE]: Always use one-class definition per file
++PySlint: Violation: [REUSE_ONE_CL_PER_FILE]: Always use one-class definition per file
++PySlint: Violation: [REUSE_ONE_CL_PER_FILE]: Always use one-class definition per file
++PySlint: Violation: [REUSE_ONE_CL_PER_FILE]: Always use one-class definition per file
++PySlint: Violation: [REUSE_ONE_CL_PER_FILE]: Always use one-class definition per file
++PySlint: Violation: [VLT_NO_GENERIC_MBX]: A generic mailbox declaration was found. 
++	 While IEEE 1800 LRM allows this, such usage is error-prone and harder to debug. 
++	 Verilator does not support this feature. Please use typed mailbox such as: 'mailbox #(int) in_box;'
++  mailbox scb_mbx;
++PySlint: Violation: [NAME_CLASS_SUFFIX]: Improper naming of identifier:  env: expected suffix: _c
++PySlint: Violation: [CL_METHOD_NOT_EXTERN]: method is not declared extern:  run
++PySlint: Violation: [DBG_CL_MISSING_ENDLABEL]: Missing End Label for class: env
++PySlint: Violation: [REUSE_ONE_CL_PER_FILE]: Always use one-class definition per file
++PySlint: Violation: [REUSE_ONE_CL_PER_FILE]: Always use one-class definition per file
++PySlint: Violation: [REUSE_ONE_CL_PER_FILE]: Always use one-class definition per file
++PySlint: Violation: [REUSE_ONE_CL_PER_FILE]: Always use one-class definition per file
++PySlint: Violation: [REUSE_ONE_CL_PER_FILE]: Always use one-class definition per file
++PySlint: Violation: [VLT_NO_GENERIC_MBX]: A generic mailbox declaration was found. 
++	 While IEEE 1800 LRM allows this, such usage is error-prone and harder to debug. 
++	 Verilator does not support this feature. Please use typed mailbox such as: 'mailbox #(int) in_box;' 		// Scoreboard connected to monitor
++  mailbox 			scb_mbx;
++PySlint: Violation: [NAME_CLASS_SUFFIX]: Improper naming of identifier:  test: expected suffix: _c
++PySlint: Violation: [CL_METHOD_NOT_EXTERN]: method is not declared extern:  run
++PySlint: Violation: [CL_METHOD_NOT_EXTERN]: method is not declared extern:  apply_stim
++PySlint: Violation: [DBG_CL_MISSING_ENDLABEL]: Missing End Label for class: test
++PySlint: Violation: [REUSE_ONE_CL_PER_FILE]: Always use one-class definition per file
++PySlint: Violation: [REUSE_ONE_CL_PER_FILE]: Always use one-class definition per file
++PySlint: Violation: [REUSE_ONE_CL_PER_FILE]: Always use one-class definition per file
++PySlint: Violation: [REUSE_ONE_CL_PER_FILE]: Always use one-class definition per file
++PySlint: Violation: [REUSE_ONE_CL_PER_FILE]: Always use one-class definition per file
++PySlint: Violation: [VLT_NO_GENERIC_MBX]: A generic mailbox declaration was found. 
++	 While IEEE 1800 LRM allows this, such usage is error-prone and harder to debug. 
++	 Verilator does not support this feature. Please use typed mailbox such as: 'mailbox #(int) in_box;'
++  mailbox drv_mbx;
++PySlint: Violation: [REUSE_ONE_MOD_PER_FILE]: Always use one-module definition per file
+ PySlint: Violation: [VLT_NO_GENERIC_MBX]: A generic mailbox declaration was found. 
+ 	 While IEEE 1800 LRM allows this, such usage is error-prone and harder to debug. 
+ 	 Verilator does not support this feature. Please use typed mailbox such as: 'mailbox #(int) in_box;'
+diff --git a/py_src/pyslint.py b/py_src/pyslint.py
+index f350c7d..b200f65 100644
+--- a/py_src/pyslint.py
++++ b/py_src/pyslint.py
+@@ -43,6 +43,8 @@ def pyslint_update_rule_ids():
+   lv_sv_ruleid_l.append('FUNC_DPI_NO_4STATE_IN_ARGS')
+   lv_sv_ruleid_l.append('FUNC_NO_BEGIN_IN_TIMING_CTRL')
+   lv_sv_ruleid_l.append('DBG_AVOID_BEGIN_IN_TASK')
++  lv_sv_ruleid_l.append('DBG_AVOID_BEGIN_IN_FN')
++  lv_sv_ruleid_l.append('COMPAT_NO_REF_IN_STATIC_FN')
+   lv_sv_ruleid_l.append('COMPAT_DPI_NO_MDA')
+   lv_sv_ruleid_l.append('DBG_CL_MISSING_ENDLABEL')
+   lv_sv_ruleid_l.append('COMPAT_PRE_RAND_NON_VOID')
+@@ -908,7 +910,6 @@ def DBG_AVOID_BEGIN_IN_TASK(lv_cu_scope):
+         for lv_task_items_i in lv_mod_mem_i.items:
+           if (lv_task_items_i.kind.name == 'SequentialBlockStatement'):
+             lv_code_s = str(lv_mod_mem_i.prototype)
+-            lv_seq_s = str(lv_task_items_i)
+             msg = 'A task with begin..end was found.\n'
+             msg += '\t This is likely a legacy Verilog coding syle as SystemVerilog \n'
+             msg += '\t makes this optional and it is recommended'
+@@ -920,6 +921,55 @@ def DBG_AVOID_BEGIN_IN_TASK(lv_cu_scope):
+             lv_rule_id = 'DBG_AVOID_BEGIN_IN_TASK'
+             pyslint_msg(lv_rule_id, msg)
+ 
++def DBG_AVOID_BEGIN_IN_FN(lv_cu_scope):
++  if (lv_cu_scope.kind.name == 'ModuleDeclaration'):
++    for lv_mod_mem_i in lv_cu_scope.members:
++      if (lv_mod_mem_i.kind.name == 'FunctionDeclaration'):
++        for lv_task_items_i in lv_mod_mem_i.items:
++          if (lv_task_items_i.kind.name == 'SequentialBlockStatement'):
++            lv_code_s = str(lv_mod_mem_i.prototype)
++            msg = 'A function with begin..end was found.\n'
++            msg += '\t This is likely a legacy Verilog coding syle as SystemVerilog \n'
++            msg += '\t makes this optional and it is recommended'
++            msg += ' coding style to avoid begin..end \n'
++            msg += '\t inside function to improve readability and'
++            msg += ' maintainability of codebase.\n'
++            msg += '\t Please remove the redundant begin..end \n'
++            msg += lv_code_s
++            lv_rule_id = 'DBG_AVOID_BEGIN_IN_FN'
++            pyslint_msg(lv_rule_id, msg)
++
++def COMPAT_NO_REF_IN_STATIC_FN(lv_cu_scope):
++  if (lv_cu_scope.kind.name == 'ModuleDeclaration'):
++    for lv_mod_mem_i in lv_cu_scope.members:
++      if (lv_mod_mem_i.kind.name == 'FunctionDeclaration'):
++        lv_found_ref_arg = False
++        lv_code_s = str(lv_mod_mem_i.prototype)
++        if (not hasattr(lv_mod_mem_i.prototype.portList, 'ports')):
++          continue
++        for lv_fn_p_i in lv_mod_mem_i.prototype.portList.ports:
++          if (lv_fn_p_i.kind.name == 'FunctionPort'):
++            if (str(lv_fn_p_i.direction).strip() == 'ref'):
++              lv_found_ref_arg = True
++              break
++        if (lv_found_ref_arg and
++            str(lv_mod_mem_i.prototype.lifetime).strip() != 'automatic'):
++
++          msg = 'A function with \'ref\' argument was found. \n'
++          msg += '\t IEEE 1800 LRM requires such functions to be'
++          msg += ' declared automatic. Some tools do not check \n'
++          msg += '\t this rule strictly leading to incompatible code.'
++          msg += ' Add keyword \'automatic\' before the \n\t function'
++          msg += ' name or remove the \'ref\' qualifier to the argument.'
++          msg += lv_code_s
++          lv_rule_id = 'COMPAT_NO_REF_IN_STATIC_FN'
++          pyslint_msg(lv_rule_id, msg)
++
++
++        for lv_task_items_i in lv_mod_mem_i.items:
++          if (lv_task_items_i.kind.name == 'SequentialBlockStatement'):
++            lv_code_s = str(lv_mod_mem_i.prototype)
++
+ def COMPAT_SVA_NO_EXPECT_EXPR_IN_INIT(lv_cu_scope):
+   if (lv_cu_scope.kind.name == 'ModuleDeclaration'):
+     for lv_mod_mem_i in lv_cu_scope.members:
+@@ -1093,6 +1143,8 @@ def chk_naming(lv_cu_scope):
+   REUSE_ONE_MOD_PER_FILE(scope_i)
+   FUNC_NO_BEGIN_IN_TIMING_CTRL(scope_i)
+   DBG_AVOID_BEGIN_IN_TASK(scope_i)
++  DBG_AVOID_BEGIN_IN_FN(scope_i)
++  COMPAT_NO_REF_IN_STATIC_FN(scope_i)
+   VLT_NO_GENERIC_MBX(scope_i)
+   VLT_NO_CB_IN_INTF(scope_i)
+ 
+diff --git a/sv_tests/test_issue_159_f.sv b/sv_tests/test_issue_159_f.sv
+new file mode 100644
+index 0000000..4ee46a8
+--- /dev/null
++++ b/sv_tests/test_issue_159_f.sv
+@@ -0,0 +1,25 @@
++module x;
++  integer x1;
++
++  function  bad_fn (integer a[], ref ab);
++    $display ("%p", a);
++  endfunction
++ 
++  function  ok_fn (integer a[]);
++    $display ("%p", a);
++  endfunction
++ 
++  function  func (ref integer a[]);
++    $display ("%p", a);
++  endfunction
++ 
++  function automatic auto_func (ref integer a[]);
++    $display ("%p", a);
++  endfunction
++ 
++  initial begin
++    integer a [];
++    a = {1,2,3,4,5};
++    x1=func(a);
++  end
++endmodule 
+diff --git a/sv_tests/test_issue_160_f.sv b/sv_tests/test_issue_160_f.sv
+index 052f2d1..364ab5f 100644
+--- a/sv_tests/test_issue_160_f.sv
++++ b/sv_tests/test_issue_160_f.sv
+@@ -15,4 +15,16 @@ module m;
+     #100;
+   endtask : t1
+ 
++  function good_f ();
++    $display ("No extra begin..end");
++    $display ("In SV, no begin..end needed even for multiple line functions");
++  endfunction : good_f 
++
++  function bad_f ();
++  begin
++    $display ("Redundnant begin..end");
++    $display ("In SV, no begin..end needed even for multiple line functions");
++  end
++  endfunction : bad_f 
++
+ endmodule : m

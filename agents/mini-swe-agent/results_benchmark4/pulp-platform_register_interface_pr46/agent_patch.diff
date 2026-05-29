@@ -1,0 +1,52 @@
+diff --git a/src/axi_to_reg_v2.sv b/src/axi_to_reg_v2.sv
+index 6ba723d..44517fe 100644
+--- a/src/axi_to_reg_v2.sv
++++ b/src/axi_to_reg_v2.sv
+@@ -28,7 +28,9 @@ module axi_to_reg_v2 #(
+   /// Regbus response struct type.
+   parameter type         reg_rsp_t    = logic,
+   /// Dependent parameter: ID Width
+-  parameter type         id_t         = logic[AxiIdWidth-1:0]
++  parameter type         id_t         = logic[AxiIdWidth-1:0],
++  /// Insert optional cuts after the detailed AXI-to-memory conversion.
++  parameter bit          CutMemReqRsp = 1'b0
+ )(
+   input  logic      clk_i,
+   input  logic      rst_ni,
+@@ -63,6 +65,9 @@ module axi_to_reg_v2 #(
+   reg_req_t [NumBanks-1:0] reg_req, valid_req, zero_w_req;
+   reg_rsp_t [NumBanks-1:0] reg_rsp, valid_rsp, zero_w_rsp;
+ 
++  reg_req_t [NumBanks-1:0] mem_req_cut;
++  reg_rsp_t [NumBanks-1:0] mem_rsp_cut;
++
+   // convert to TCDM first
+   axi_to_detailed_mem #(
+     .axi_req_t    ( axi_req_t     ),
+@@ -123,10 +128,24 @@ module axi_to_reg_v2 #(
+       .r_opc_o   ( mem_err    [i]      ),
+       .r_id_o    ( /* NOT CONNECTED */ ),
+       .r_valid_o ( mem_rvalid [i]      ),
+-      .reg_req_o ( reg_req    [i]      ),
+-      .reg_rsp_i ( reg_rsp    [i]      )
++      .reg_req_o ( mem_req_cut[i]      ),
++      .reg_rsp_i ( mem_rsp_cut[i]      )
+     );
+ 
++    if (CutMemReqRsp) begin : gen_mem_cut
++      reg_cut #(.req_t(reg_req_t), .rsp_t(reg_rsp_t)) i_mem_req_cut (
++        .clk_i,
++        .rst_ni,
++        .src_req_i ( mem_req_cut[i] ),
++        .src_rsp_o ( mem_rsp_cut[i] ),
++        .dst_req_o ( mem_req[i] ),
++        .dst_rsp_i ( mem_gnt[i] )
++      );
++    end else begin : gen_no_mem_cut
++      assign mem_req[i] = mem_req_cut[i];
++      assign mem_rsp_cut[i] = mem_gnt[i];
++    end
++
+     // filter zero strobe writes early, directly ack them
+     reg_demux #(
+       .NoPorts ( 32'd2     ),

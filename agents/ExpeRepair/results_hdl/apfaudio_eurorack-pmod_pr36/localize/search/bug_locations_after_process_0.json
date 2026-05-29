@@ -1,0 +1,52 @@
+[
+    {
+        "rel_file_path": "gateware/cores/util/vco/gen_wavetable.py",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/apfaudio_eurorack-pmod_pr36/gateware/cores/util/vco/gen_wavetable.py",
+        "start": 1,
+        "end": 23,
+        "class_name": null,
+        "method_name": null,
+        "code": "1 #!/bin/python3\n2 \n3 import math\n4 \n5 import matplotlib.pyplot as plt\n6 \n7 N = 256\n8 \n9 values = []\n10 \n11 with open(\"wavetable.hex\", \"w\") as f:\n12     for i in range(N):\n13         # 3 sine waves and a sawtooth on top of each other.\n14         value = i/N - 0.5\n15         # Scale up to fit inside 16 bit integer and use 2s comp for negative.\n16         value = int((1<<14) * value)\n17         values.append(value)\n18         if value < 0:\n19             value = 0xffff + value\n20         line = \"{:04x}\\n\".format(value)\n21         f.write(line)\n22 \n23 plt.plot(values)\n",
+        "intended_behavior": ""
+    },
+    {
+        "rel_file_path": "gateware/cores/util/vco/gen_v_oct_lut.py",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/apfaudio_eurorack-pmod_pr36/gateware/cores/util/vco/gen_v_oct_lut.py",
+        "start": 1,
+        "end": 17,
+        "class_name": null,
+        "method_name": "volts_to_freq",
+        "code": "1 #!/bin/python3\n2 \n3 # Generate a LUT (indexed by volts) mapped to the number of wavetable samples to\n4 # increment by for every sample_clk. See vco.sv for more info.\n5 \n6 def volts_to_freq(volts, a3_freq_hz=440.0):\n7     \"\"\"Convert volts/oct (C3 == +3.0V) to frequency (Hz).\"\"\"\n8     return (a3_freq_hz / 8.0) * 2 ** (volts - 3.0/4.0)\n9 \n10 def volts_to_delta(volts, wavetable_n_samples=256, sample_rate_hz=46875):\n11     \"\"\"Index delta (fractional) for wavetable per sample clock).\"\"\"\n12     return (wavetable_n_samples / sample_rate_hz) * volts_to_freq(volts)\n13 \n14 def print_line(volts, frac_bits_delta = 10):\n15     #volts = 3 + (midi_note - 60) / 12.0\n16     freq = volts_to_freq(volts)\n17     delta = volts_to_delta(volts)\n",
+        "intended_behavior": ""
+    },
+    {
+        "rel_file_path": "gateware/cores/util/vco/gen_v_oct_lut.py",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/apfaudio_eurorack-pmod_pr36/gateware/cores/util/vco/gen_v_oct_lut.py",
+        "start": 1,
+        "end": 21,
+        "class_name": null,
+        "method_name": "volts_to_delta",
+        "code": "1 #!/bin/python3\n2 \n3 # Generate a LUT (indexed by volts) mapped to the number of wavetable samples to\n4 # increment by for every sample_clk. See vco.sv for more info.\n5 \n6 def volts_to_freq(volts, a3_freq_hz=440.0):\n7     \"\"\"Convert volts/oct (C3 == +3.0V) to frequency (Hz).\"\"\"\n8     return (a3_freq_hz / 8.0) * 2 ** (volts - 3.0/4.0)\n9 \n10 def volts_to_delta(volts, wavetable_n_samples=256, sample_rate_hz=46875):\n11     \"\"\"Index delta (fractional) for wavetable per sample clock).\"\"\"\n12     return (wavetable_n_samples / sample_rate_hz) * volts_to_freq(volts)\n13 \n14 def print_line(volts, frac_bits_delta = 10):\n15     #volts = 3 + (midi_note - 60) / 12.0\n16     freq = volts_to_freq(volts)\n17     delta = volts_to_delta(volts)\n18     delta_fixed = delta * (1<<frac_bits_delta)\n19     #print(f\"// {volts:.3f}V, {freq:.3f}Hz, delta_fixed={delta_fixed:.3f}\")\n20     #print(f\"{int(volts*4000)>>6}, {int(delta_fixed)}\")\n21     print(\"{:04x}\".format(int(delta_fixed)))\n",
+        "intended_behavior": ""
+    },
+    {
+        "rel_file_path": "gateware/cores/util/vco/gen_v_oct_lut.py",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/apfaudio_eurorack-pmod_pr36/gateware/cores/util/vco/gen_v_oct_lut.py",
+        "start": 3,
+        "end": 24,
+        "class_name": null,
+        "method_name": "print_line",
+        "code": "3 # Generate a LUT (indexed by volts) mapped to the number of wavetable samples to\n4 # increment by for every sample_clk. See vco.sv for more info.\n5 \n6 def volts_to_freq(volts, a3_freq_hz=440.0):\n7     \"\"\"Convert volts/oct (C3 == +3.0V) to frequency (Hz).\"\"\"\n8     return (a3_freq_hz / 8.0) * 2 ** (volts - 3.0/4.0)\n9 \n10 def volts_to_delta(volts, wavetable_n_samples=256, sample_rate_hz=46875):\n11     \"\"\"Index delta (fractional) for wavetable per sample clock).\"\"\"\n12     return (wavetable_n_samples / sample_rate_hz) * volts_to_freq(volts)\n13 \n14 def print_line(volts, frac_bits_delta = 10):\n15     #volts = 3 + (midi_note - 60) / 12.0\n16     freq = volts_to_freq(volts)\n17     delta = volts_to_delta(volts)\n18     delta_fixed = delta * (1<<frac_bits_delta)\n19     #print(f\"// {volts:.3f}V, {freq:.3f}Hz, delta_fixed={delta_fixed:.3f}\")\n20     #print(f\"{int(volts*4000)>>6}, {int(delta_fixed)}\")\n21     print(\"{:04x}\".format(int(delta_fixed)))\n22 \n23 for i in range(0, 512):\n24     volts = i*64 / 4000\n",
+        "intended_behavior": ""
+    },
+    {
+        "rel_file_path": "gateware/cores/util/vco/gen_v_oct_lut.py",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/apfaudio_eurorack-pmod_pr36/gateware/cores/util/vco/gen_v_oct_lut.py",
+        "start": 12,
+        "end": 24,
+        "class_name": null,
+        "method_name": null,
+        "code": "12     return (wavetable_n_samples / sample_rate_hz) * volts_to_freq(volts)\n13 \n14 def print_line(volts, frac_bits_delta = 10):\n15     #volts = 3 + (midi_note - 60) / 12.0\n16     freq = volts_to_freq(volts)\n17     delta = volts_to_delta(volts)\n18     delta_fixed = delta * (1<<frac_bits_delta)\n19     #print(f\"// {volts:.3f}V, {freq:.3f}Hz, delta_fixed={delta_fixed:.3f}\")\n20     #print(f\"{int(volts*4000)>>6}, {int(delta_fixed)}\")\n21     print(\"{:04x}\".format(int(delta_fixed)))\n22 \n23 for i in range(0, 512):\n24     volts = i*64 / 4000\n",
+        "intended_behavior": ""
+    }
+]

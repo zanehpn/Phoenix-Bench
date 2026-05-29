@@ -1,0 +1,50 @@
+# Fix process reference giving no return statement error
+
+- Source URL: https://github.com/verilator/verilator/issues/6767
+
+The below, rewritten from UVM tests/10resources/90Mantis/4666_no_process results in a compile-time error:
+
+```
+In file included from Vt_0__ALL.cpp:4:
+Vt_0___024root__0.cpp: In function â\200\230VlCoroutine Vt_0___024root___eval_initial__TOP__Vtiming__0(Vt_0___024root*, VlProcessRef)â\200\231:
+Vt_0___024root__0.cpp:25:1: error: no return statement in function returning non-void [-Werror=return-type]
+```
+
+```
+package uvm_pkg;
+  class uvm_object;
+  endclass
+
+  class uvm_config_db;
+    static uvm_object m_rsc[int];
+    static function void set(int cntxt);
+      if (!m_rsc.exists(cntxt)) begin
+        m_rsc[cntxt] = new;
+      end
+    endfunction
+  endclass
+
+  virtual class uvm_process_guard_base extends uvm_object;
+    protected process m_target_process;
+    function new(string name);
+      m_target_process = process::self();
+    endfunction
+  endclass
+
+endpackage
+
+module t;
+  import uvm_pkg::*;
+  int a;
+  assign a = something();
+  // verilator lint_off NORETURN
+  function int something();
+    uvm_config_db::set(1);
+    return 0;
+  endfunction
+endmodule
+```
+
+Might be related to #6106
+
+@RRozak et al, might you get a chance to look into this?  Thanks.

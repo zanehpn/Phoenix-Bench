@@ -1,0 +1,26 @@
+diff --git a/src/top.v b/src/top.v
+index 4a8d7f5..7d204d9 100644
+--- a/src/top.v
++++ b/src/top.v
+@@ -109,6 +109,21 @@ module top #( parameter MEM_SIZE = 1024 )
+     end
+   end
+ 
++  always @(posedge clk) begin
++    if (!reset) begin
++      if (cfsm__ir_write) begin
++        $display("[%0t] [I]: 0x%08h", $time, pc_cur);
++        $display("    instr <- 0x%08h", memory_data);
++      end
++      if (cfsm__reg_write) begin
++        $display("    x%0d <- 0x%08h", rd, result);
++      end
++      if (|__tmp_MemWrite) begin
++        $display("    mem[0x%08h] <- 0x%08h (WE=%b)", memory_address, __tmp_MemData, __tmp_MemWrite);
++      end
++    end
++  end
++
+   MemoryLoader MemLoad
+   ( .memory_data          ( memory_data       )
+   , .memory_address       ( memory_address    )

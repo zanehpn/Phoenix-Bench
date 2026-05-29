@@ -1,0 +1,9 @@
+The bug is in the SBA implementation in `dm_sba.sv` / its integration in `dm_top.sv`: the current debug-module system bus access is a simple valid/gnt/read-data handshake, but the repository issue asks for an **AXI-Lite master port for SBA**. That means SBA should no longer directly speak the internal handshake as if it were a generic bus; it needs to be exposed/connected as an AXI-Lite master interface.
+
+From the provided code, the most likely functional gap is that `dm_top` instantiates `dm_sba` with plain master handshake signals, but there is no AXI-Lite master interface exported or wired. The `dm_obi_top` wrapper only adapts the slave side and forwards the same internal master handshake, so it does not solve the AXI-Lite master requirement either.
+
+A minimal fix in the shown codebase is to localize the change in `dm_top.sv`, where the SBA block is connected, and extend the module interface to provide AXI-Lite master signals. However, because the AXI-Lite interface definition/wiring is not present in the snippets, I can’t safely generate a correct compile-ready edit from the available code alone without inventing the surrounding AXI types and port names.
+
+If you want, I can still help by:
+1. drafting the exact AXI-Lite master port additions for `dm_top.sv` and `dm_sba.sv` once you share the AXI-Lite interface package/types used in the repo, or
+2. producing a best-effort patch that converts `dm_sba` to an AXI-Lite master in a conventional `aw/w/b/ar/r` style based on common `axi` typedefs.

@@ -1,0 +1,28 @@
+diff --git a/hdl/hazard3_frontend.v b/hdl/hazard3_frontend.v
+index ac30c77..5022f0e 100644
+--- a/hdl/hazard3_frontend.v
++++ b/hdl/hazard3_frontend.v
+@@ -132,11 +132,7 @@ wire              fifo_dbg_inject = DEBUG_SUPPORT && dbg_instr_data_vld && dbg_i
+ 
+ always @ (*) begin: boundary_conditions
+ 	integer i;
+-	fifo_mem[FIFO_DEPTH] = mem_data;
+-	fifo_predbranch[FIFO_DEPTH] = 2'b00;
+-	fifo_err[FIFO_DEPTH] = 1'b0;
+-	fifo_valid_hw[FIFO_DEPTH] = 2'b00;
+-	for (i = 0; i < FIFO_DEPTH; i = i + 1) begin
++		for (i = 0; i < FIFO_DEPTH; i = i + 1) begin
+ 		fifo_valid[i] = |EXTENSION_C ? |fifo_valid_hw[i] : fifo_valid_hw[i][0];
+ 		// valid-to-right condition: i == 0 || fifo_valid[i - 1], but without
+ 		// using negative array bound (seems broken in Yosys?) or OOB in the
+@@ -159,6 +155,10 @@ always @ (posedge clk or negedge rst_n) begin: fifo_update
+ 			fifo_predbranch[i] <= 2'b00;
+ 		end
+ 	end else begin
++		fifo_mem[FIFO_DEPTH]        <= mem_data;
++		fifo_predbranch[FIFO_DEPTH] <= 2'b00;
++		fifo_err[FIFO_DEPTH]        <= 1'b0;
++		fifo_valid_hw[FIFO_DEPTH]   <= 2'b00;
+ 		for (i = 0; i < FIFO_DEPTH; i = i + 1) begin
+ 			if (fifo_pop || (fifo_push && !fifo_valid[i])) begin
+ 				fifo_mem[i]        <= fifo_valid[i + 1] ? fifo_mem[i + 1]        : mem_data;

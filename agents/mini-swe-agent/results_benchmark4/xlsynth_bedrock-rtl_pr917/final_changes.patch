@@ -1,0 +1,59 @@
+diff --git a/arb/fpv/arb_basic_fpv_monitor.sv b/arb/fpv/arb_basic_fpv_monitor.sv
+index f67a902..433c3fa 100644
+--- a/arb/fpv/arb_basic_fpv_monitor.sv
++++ b/arb/fpv/arb_basic_fpv_monitor.sv
+@@ -8,7 +8,6 @@
+ `include "br_fv.svh"
+ 
+ module arb_basic_fpv_monitor #(
+-    // Must be at least 2
+     parameter int NumRequesters = 2
+ ) (
+     input logic clk,
+diff --git a/arb/fpv/br_arb_fixed_fpv_monitor.sv b/arb/fpv/br_arb_fixed_fpv_monitor.sv
+index aa172ec..978c314 100644
+--- a/arb/fpv/br_arb_fixed_fpv_monitor.sv
++++ b/arb/fpv/br_arb_fixed_fpv_monitor.sv
+@@ -7,7 +7,6 @@
+ `include "br_fv.svh"
+ 
+ module br_arb_fixed_fpv_monitor #(
+-    // Must be at least 2
+     parameter int NumRequesters = 2
+ ) (
+     input logic clk,
+@@ -31,7 +30,12 @@ module br_arb_fixed_fpv_monitor #(
+   logic [$clog2(NumRequesters)-1:0] i, j;
+   `BR_FV_2RAND_IDX(i, j, NumRequesters)
+ 
+-  `BR_ASSERT(strict_priority_a, (i < j) && request[i] && request[j] |-> !grant[j])
++  generate
++    if (NumRequesters > 1) begin : gen_strict_priority
++      `BR_ASSERT(strict_priority_a, (i < j) && request[i] && request[j] |-> !grant[j])
++    end
++  endgenerate
++
+ 
+ endmodule : br_arb_fixed_fpv_monitor
+ 
+diff --git a/arb/rtl/internal/br_arb_fixed_internal.sv b/arb/rtl/internal/br_arb_fixed_internal.sv
+index f12a53c..a5107d6 100644
+--- a/arb/rtl/internal/br_arb_fixed_internal.sv
++++ b/arb/rtl/internal/br_arb_fixed_internal.sv
+@@ -13,7 +13,6 @@
+ `include "br_asserts_internal.svh"
+ 
+ module br_arb_fixed_internal #(
+-    // Must be at least 2
+     parameter int NumRequesters = 2
+ ) (
+     input  logic [NumRequesters-1:0] request,
+@@ -21,8 +20,6 @@ module br_arb_fixed_internal #(
+     output logic [NumRequesters-1:0] grant
+ );
+ 
+-  `BR_ASSERT_STATIC(num_requesters_gte_2_A, NumRequesters >= 2)
+-
+   //------------------------------------------
+   // Implementation
+   //------------------------------------------

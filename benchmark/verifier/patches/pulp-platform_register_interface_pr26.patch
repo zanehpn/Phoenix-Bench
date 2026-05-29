@@ -1,0 +1,314 @@
+From 5bff9694548e6a65bb4084d1b296433b06616c56 Mon Sep 17 00:00:00 2001
+From: Manuel Eggimann <meggimann@iis.ee.ethz.ch>
+Date: Tue, 13 Dec 2022 11:03:00 +0100
+Subject: [PATCH 1/2] Add interface variant of apb_to_reg converter
+
+---
+ Bender.yml        |  1 +
+ src/apb_to_reg.sv | 21 +++++++++++++++++++++
+ 2 files changed, 22 insertions(+)
+
+diff --git a/Bender.yml b/Bender.yml
+index b31c70f..4a8b9e3 100644
+--- a/Bender.yml
++++ b/Bender.yml
+@@ -4,6 +4,7 @@ package:
+ 
+ dependencies:
+   axi: { git: "https://github.com/pulp-platform/axi.git", version: 0.38.0 }
++  apb: { git: "https://github.com/pulp-platform/apb.git", version: 0.2.2}
+   common_cells: { git: "https://github.com/pulp-platform/common_cells.git", version: 1.21.0 }
+ 
+ export_include_dirs:
+diff --git a/src/apb_to_reg.sv b/src/apb_to_reg.sv
+index f2f14dc..907c1e7 100644
+--- a/src/apb_to_reg.sv
++++ b/src/apb_to_reg.sv
+@@ -37,3 +37,24 @@ module apb_to_reg (
+     prdata_o = reg_o.rdata;
+   end
+ endmodule
++
++module apb_to_reg_intf #(
++  parameter int unsigned DATA_WIDTH = 32,
++  parameter int unsigned ADDR_WIDTH = 32
++)(
++  APB.Slave    apb_i,
++  REG_BUS.out  reg_o
++);
++
++  always_comb begin
++    reg_o.addr    = apb_i.paddr;
++    reg_o.write   = apb_i.pwrite;
++    reg_o.wdata   = apb_i.pwdata;
++    reg_o.wstrb   = '1;
++    reg_o.valid   = apb_i.psel & apb_i.penable;
++    apb_i.pready  = reg_o.ready;
++    apb_i.pslverr = reg_o.error;
++    apb_i.prdata  = reg_o.rdata;
++  end
++
++endmodule
+
+From 30c9f8ba7caa5675e7a1a5f62281675463386d7c Mon Sep 17 00:00:00 2001
+From: Manuel Eggimann <meggimann@iis.ee.ethz.ch>
+Date: Tue, 13 Dec 2022 11:03:32 +0100
+Subject: [PATCH 2/2] Generate regfiles with interface variant and add missin
+ signal type specifier for clock and reset
+
+---
+ .../util/reggen/reg_top.sv.tpl                |  90 +++++++++++-
+ ...rface-variant-for-generated-regfiles.patch | 128 ++++++++++++++++++
+ 2 files changed, 212 insertions(+), 6 deletions(-)
+ create mode 100644 vendor/patches/lowrisc_opentitan/reggen/0003-Add-interface-variant-for-generated-regfiles.patch
+
+diff --git a/vendor/lowrisc_opentitan/util/reggen/reg_top.sv.tpl b/vendor/lowrisc_opentitan/util/reggen/reg_top.sv.tpl
+index 594f9fe..664e128 100644
+--- a/vendor/lowrisc_opentitan/util/reggen/reg_top.sv.tpl
++++ b/vendor/lowrisc_opentitan/util/reggen/reg_top.sv.tpl
+@@ -57,20 +57,20 @@
+ module ${mod_name} \
+ % if use_reg_iface:
+ #(
+-    parameter type reg_req_t = logic,
+-    parameter type reg_rsp_t = logic,
+-    parameter int AW = ${addr_width}
++  parameter type reg_req_t = logic,
++  parameter type reg_rsp_t = logic,
++  parameter int AW = ${addr_width}
+ ) \
+ % else:
+     % if needs_aw:
+ #(
+-    parameter int AW = ${addr_width}
++  parameter int AW = ${addr_width}
+ ) \
+     % endif
+ % endif
+ (
+-  input clk_i,
+-  input rst_ni,
++  input logic clk_i,
++  input logic rst_ni,
+ % if use_reg_iface:
+   input  ${reg_intf_req} reg_req_i,
+   output ${reg_intf_rsp} reg_rsp_o,
+@@ -527,6 +527,84 @@ ${rdata_gen(f, r.name.lower() + "_" + f.name.lower())}\
+ 
+ % endif
+ endmodule
++
++% if use_reg_iface:
++module ${mod_name}_intf
++#(
++  parameter int AW = ${addr_width},
++  localparam int DW = ${block.regwidth}
++) (
++  input logic clk_i,
++  input logic rst_ni,
++  REG_BUS.in  regbus_slave,
++% if num_wins != 0:
++  REG_BUS.out  regbus_win_mst[${num_wins}-1:0],
++% endif
++  // To HW
++% if rb.get_n_bits(["q","qe","re"]):
++  output ${lblock}_reg_pkg::${reg2hw_t} reg2hw, // Write
++% endif
++% if rb.get_n_bits(["d","de"]):
++  input  ${lblock}_reg_pkg::${hw2reg_t} hw2reg, // Read
++% endif
++  // Config
++  input devmode_i // If 1, explicit error return for unmapped register access
++);
++ localparam int unsigned STRB_WIDTH = DW/8;
++
++`include "register_interface/typedef.svh"
++`include "register_interface/assign.svh"
++
++  // Define structs for reg_bus
++  typedef logic [AW-1:0] addr_t;
++  typedef logic [DW-1:0] data_t;
++  typedef logic [STRB_WIDTH-1:0] strb_t;
++  `REG_BUS_TYPEDEF_ALL(reg_bus, addr_t, data_t, strb_t)
++
++  reg_bus_req_t s_reg_req;
++  reg_bus_rsp_t s_reg_rsp;
++  
++  // Assign SV interface to structs
++  `REG_BUS_ASSIGN_TO_REQ(s_reg_req, regbus_slave)
++  `REG_BUS_ASSIGN_FROM_RSP(regbus_slave, s_reg_rsp)
++
++% if num_wins != 0:
++  reg_bus_req_t s_reg_win_req[${num_wins}-1:0];
++  reg_bus_rsp_t s_reg_win_rsp[${num_wins}-1:0];
++  for (genvar i = 0; i < ${num_wins}; i++) begin : gen_assign_window_structs
++    `REG_BUS_ASSIGN_TO_REQ(s_reg_win_req[i], regbus_win_mst[i])
++    `REG_BUS_ASSIGN_FROM_RSP(regbus_win_mst[i], s_reg_win_rsp[i])
++  end
++  
++% endif
++  
++
++  ${mod_name} #(
++    .reg_req_t(reg_bus_req_t),
++    .reg_rsp_t(reg_bus_rsp_t),
++    .AW(AW)
++  ) i_regs (
++    .clk_i,
++    .rst_ni,
++    .reg_req_i(s_reg_req),
++    .reg_rsp_o(s_reg_rsp),
++% if num_wins != 0:
++    .reg_req_win_o(s_reg_win_req),
++    .reg_rsp_win_i(s_reg_win_rsp),
++% endif
++% if rb.get_n_bits(["q","qe","re"]):
++    .reg2hw, // Write
++% endif
++% if rb.get_n_bits(["d","de"]):
++    .hw2reg, // Read
++% endif
++    .devmode_i
++  );
++  
++endmodule
++
++% endif
++
+ <%def name="str_bits_sv(bits)">\
+ % if bits.msb != bits.lsb:
+ ${bits.msb}:${bits.lsb}\
+diff --git a/vendor/patches/lowrisc_opentitan/reggen/0003-Add-interface-variant-for-generated-regfiles.patch b/vendor/patches/lowrisc_opentitan/reggen/0003-Add-interface-variant-for-generated-regfiles.patch
+new file mode 100644
+index 0000000..f9c9e58
+--- /dev/null
++++ b/vendor/patches/lowrisc_opentitan/reggen/0003-Add-interface-variant-for-generated-regfiles.patch
+@@ -0,0 +1,128 @@
++From 88f448bfdb3b6dcf233cfdd5dc93648f02826f6e Mon Sep 17 00:00:00 2001
++From: Manuel Eggimann <meggimann@iis.ee.ethz.ch>
++Date: Mon, 12 Dec 2022 16:45:00 +0100
++Subject: [PATCH] Add interface variant of apb_to_reg converter
++
++---
++ reg_top.sv.tpl | 90 ++++++++++++++++++++++++++++++++++++++++++++++----
++ 1 file changed, 84 insertions(+), 6 deletions(-)
++
++diff --git a/reg_top.sv.tpl b/reg_top.sv.tpl
++index 594f9fe..664e128 100644
++--- a/reg_top.sv.tpl
+++++ b/reg_top.sv.tpl
++@@ -57,20 +57,20 @@
++ module ${mod_name} \
++ % if use_reg_iface:
++ #(
++-    parameter type reg_req_t = logic,
++-    parameter type reg_rsp_t = logic,
++-    parameter int AW = ${addr_width}
+++  parameter type reg_req_t = logic,
+++  parameter type reg_rsp_t = logic,
+++  parameter int AW = ${addr_width}
++ ) \
++ % else:
++     % if needs_aw:
++ #(
++-    parameter int AW = ${addr_width}
+++  parameter int AW = ${addr_width}
++ ) \
++     % endif
++ % endif
++ (
++-  input clk_i,
++-  input rst_ni,
+++  input logic clk_i,
+++  input logic rst_ni,
++ % if use_reg_iface:
++   input  ${reg_intf_req} reg_req_i,
++   output ${reg_intf_rsp} reg_rsp_o,
++@@ -527,6 +527,84 @@ ${rdata_gen(f, r.name.lower() + "_" + f.name.lower())}\
++ 
++ % endif
++ endmodule
+++
+++% if use_reg_iface:
+++module ${mod_name}_intf
+++#(
+++  parameter int AW = ${addr_width},
+++  localparam int DW = ${block.regwidth}
+++) (
+++  input logic clk_i,
+++  input logic rst_ni,
+++  REG_BUS.in  regbus_slave,
+++% if num_wins != 0:
+++  REG_BUS.out  regbus_win_mst[${num_wins}-1:0],
+++% endif
+++  // To HW
+++% if rb.get_n_bits(["q","qe","re"]):
+++  output ${lblock}_reg_pkg::${reg2hw_t} reg2hw, // Write
+++% endif
+++% if rb.get_n_bits(["d","de"]):
+++  input  ${lblock}_reg_pkg::${hw2reg_t} hw2reg, // Read
+++% endif
+++  // Config
+++  input devmode_i // If 1, explicit error return for unmapped register access
+++);
+++ localparam int unsigned STRB_WIDTH = DW/8;
+++
+++`include "register_interface/typedef.svh"
+++`include "register_interface/assign.svh"
+++
+++  // Define structs for reg_bus
+++  typedef logic [AW-1:0] addr_t;
+++  typedef logic [DW-1:0] data_t;
+++  typedef logic [STRB_WIDTH-1:0] strb_t;
+++  `REG_BUS_TYPEDEF_ALL(reg_bus, addr_t, data_t, strb_t)
+++
+++  reg_bus_req_t s_reg_req;
+++  reg_bus_rsp_t s_reg_rsp;
+++  
+++  // Assign SV interface to structs
+++  `REG_BUS_ASSIGN_TO_REQ(s_reg_req, regbus_slave)
+++  `REG_BUS_ASSIGN_FROM_RSP(regbus_slave, s_reg_rsp)
+++
+++% if num_wins != 0:
+++  reg_bus_req_t s_reg_win_req[${num_wins}-1:0];
+++  reg_bus_rsp_t s_reg_win_rsp[${num_wins}-1:0];
+++  for (genvar i = 0; i < ${num_wins}; i++) begin : gen_assign_window_structs
+++    `REG_BUS_ASSIGN_TO_REQ(s_reg_win_req[i], regbus_win_mst[i])
+++    `REG_BUS_ASSIGN_FROM_RSP(regbus_win_mst[i], s_reg_win_rsp[i])
+++  end
+++  
+++% endif
+++  
+++
+++  ${mod_name} #(
+++    .reg_req_t(reg_bus_req_t),
+++    .reg_rsp_t(reg_bus_rsp_t),
+++    .AW(AW)
+++  ) i_regs (
+++    .clk_i,
+++    .rst_ni,
+++    .reg_req_i(s_reg_req),
+++    .reg_rsp_o(s_reg_rsp),
+++% if num_wins != 0:
+++    .reg_req_win_o(s_reg_win_req),
+++    .reg_rsp_win_i(s_reg_win_rsp),
+++% endif
+++% if rb.get_n_bits(["q","qe","re"]):
+++    .reg2hw, // Write
+++% endif
+++% if rb.get_n_bits(["d","de"]):
+++    .hw2reg, // Read
+++% endif
+++    .devmode_i
+++  );
+++  
+++endmodule
+++
+++% endif
+++
++ <%def name="str_bits_sv(bits)">\
++ % if bits.msb != bits.lsb:
++ ${bits.msb}:${bits.lsb}\
++-- 
++2.37.2
++

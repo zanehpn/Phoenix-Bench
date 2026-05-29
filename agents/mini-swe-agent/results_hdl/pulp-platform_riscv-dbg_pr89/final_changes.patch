@@ -1,0 +1,35 @@
+diff --git a/src/dmi_jtag_tap.sv b/src/dmi_jtag_tap.sv
+index 3d11145..8f9c8c9 100755
+--- a/src/dmi_jtag_tap.sv
++++ b/src/dmi_jtag_tap.sv
+@@ -141,11 +141,15 @@ module dmi_jtag_tap #(
+ 
+   assign dmi_reset_o = dtmcs_q.dmireset;
+ 
++  logic dmireset_clr;
++
+   always_comb begin
+     idcode_d = idcode_q;
+     bypass_d = bypass_q;
+     dtmcs_d  = dtmcs_q;
+ 
++    dmireset_clr = 1'b0;
++
+     if (capture_dr_o) begin
+       if (idcode_select) idcode_d = IdcodeValue;
+       if (bypass_select) bypass_d = 1'b0;
+@@ -172,6 +176,15 @@ module dmi_jtag_tap #(
+     if (test_logic_reset_o) begin
+       idcode_d = IdcodeValue;
+       bypass_d = 1'b0;
++      dmireset_clr = 1'b1;
++    end
++
++    if (update_dr_o && dtmcs_select_o) begin
++      dmireset_clr = 1'b1;
++    end
++
++    if (dmireset_clr) begin
++      dtmcs_d.dmireset = 1'b0;
+     end
+   end

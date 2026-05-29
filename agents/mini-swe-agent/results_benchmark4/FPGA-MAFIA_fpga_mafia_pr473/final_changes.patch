@@ -1,0 +1,25 @@
+diff --git a/source/core_rrv/core_rrv_csr.sv b/source/core_rrv/core_rrv_csr.sv
+index dac68e8..544b57b 100644
+--- a/source/core_rrv/core_rrv_csr.sv
++++ b/source/core_rrv/core_rrv_csr.sv
+@@ -80,8 +80,7 @@ always_comb begin
+         TimerInterruptEnable  = 0;
+         next_csr.csr_mcause   = 32'h80000007;
+         next_csr.csr_mepc     = CsrInterruptUpdateQ102H.Pc;
+-        next_csr.csr_mie      = 32'h00000808;  // disable mie 
+-        next_csr.csr_mstatus  = 32'h00000080;  // mstatus[7] will be equall to mstatus[3]. If interrupt taken than mstatus[3] = 1
++        next_csr.csr_mstatus  = {csr.csr_mstatus[31:8], csr.csr_mstatus[3], csr.csr_mstatus[6:4], 1'b0, csr.csr_mstatus[2:0]};
+     end
+     if(CsrInterruptUpdateQ102H.illegal_instruction) begin
+         next_csr.csr_mcause = 32'h00000002;
+@@ -104,9 +103,7 @@ always_comb begin
+         next_csr.csr_mtval  = CsrInterruptUpdateQ102H.mtval_instruction;
+     end
+     if(CsrInterruptUpdateQ102H.Mret && csr.csr_mip[7]) begin
+-            next_csr.csr_mie     = 32'h00000888;  // enable mie
+-            next_csr.csr_mstatus = 32'h00000008;
+-            next_csr.csr_mip     = 32'h0; 
++            next_csr.csr_mstatus = {csr.csr_mstatus[31:8], 1'b1, csr.csr_mstatus[6:4], csr.csr_mstatus[7], csr.csr_mstatus[2:0]};
+     end
+ 
+     //==========================================================

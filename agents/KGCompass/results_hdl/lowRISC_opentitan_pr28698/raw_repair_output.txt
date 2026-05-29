@@ -1,0 +1,41 @@
+Localized bug: the mnemonic coverpoint bins are comparing against the *macro name string* (`"mnem_add"`) rather than the actual mnemonic value (`"add"`).  
+This is introduced in `hw/ip/otbn/dv/uvm/env/otbn_env_cov.sv` by:
+
+```systemverilog
+`define DEF_MNEM_BIN(NAME) bins NAME = {`"NAME`"}
+```
+
+That expands to quoted macro names, which mismatches the sampled string values coming from `otbn_env_pkg::mnem_str_t`.
+
+## Fix
+Change the mnemonic bin macro to use the mnemonic string values already defined by the `DEF_MNEM(...)` declarations, not the bin names.
+
+### Edit 1
+```systemverilog
+### hw/ip/otbn/dv/uvm/env/otbn_env_cov.sv
+<<<<<<< SEARCH
+  // A macro used for coverpoints for mnemonics. This expands to entries like
+  //
+  //    bins mnem_add = {"mnem_add"};
+`define DEF_MNEM_BIN(NAME) bins NAME = {`"NAME`"}
+=======
+  // A macro used for coverpoints for mnemonics. This expands to entries like
+  //
+  //    bins mnem_add = {mnem_add};
+`define DEF_MNEM_BIN(NAME) bins NAME = {NAME}
+>>>>>>> REPLACE
+```
+
+### Edit 2
+If Verissimo/VCS still requires a sized integral literal syntax, use the already-defined packed string variables directly by casting them in the bin expression:
+
+```systemverilog
+### hw/ip/otbn/dv/uvm/env/otbn_env_cov.sv
+<<<<<<< SEARCH
+`define DEF_MNEM_BIN(NAME) bins NAME = {NAME}
+=======
+`define DEF_MNEM_BIN(NAME) bins NAME = {mnem_str_t'(NAME)}
+>>>>>>> REPLACE
+```
+
+If you want, I can also propose a safer version that avoids relying on macro stringification and makes the mnemonic coverpoint binning explicit for both Verissimo and VCS.

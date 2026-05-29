@@ -1,0 +1,160 @@
+From 0983d05a9fd95e4967b3f9230382a42abd435897 Mon Sep 17 00:00:00 2001
+From: Taichi Ishitani <taichi730@gmail.com>
+Date: Thu, 5 Jan 2023 14:34:24 +0900
+Subject: [PATCH] add areset_n to clocking event of master_cb/slave_cb
+
+(refs: #46)
+---
+ src/tvip_axi_if.sv             |  6 ++--
+ src/tvip_axi_master_driver.svh | 50 +++++++++++++++++-----------------
+ src/tvip_axi_slave_driver.svh  | 24 ++++++++--------
+ 3 files changed, 39 insertions(+), 41 deletions(-)
+
+diff --git a/src/tvip_axi_if.sv b/src/tvip_axi_if.sv
+index 7e90128..1819fa0 100644
+--- a/src/tvip_axi_if.sv
++++ b/src/tvip_axi_if.sv
+@@ -47,8 +47,7 @@ interface tvip_axi_if (
+   tvip_axi_response     rresp;
+   logic                 rlast;
+ 
+-  clocking master_cb @(posedge aclk);
+-    input   areset_n;
++  clocking master_cb @(posedge aclk, negedge areset_n);
+     output  awvalid;
+     input   awready;
+     output  awid;
+@@ -86,8 +85,7 @@ interface tvip_axi_if (
+     input   rlast;
+   endclocking
+ 
+-  clocking slave_cb @(posedge aclk);
+-    input   areset_n;
++  clocking slave_cb @(posedge aclk, negedge areset_n);
+     input   awvalid;
+     output  awready;
+     input   awid;
+diff --git a/src/tvip_axi_master_driver.svh b/src/tvip_axi_master_driver.svh
+index f2548f5..ee657cc 100644
+--- a/src/tvip_axi_master_driver.svh
++++ b/src/tvip_axi_master_driver.svh
+@@ -79,7 +79,7 @@ class tvip_axi_master_sub_driver extends tvip_axi_component_base #(
+     response_stores.delete();
+ 
+     reset_if();
+-    @(posedge vif.master_cb.areset_n);
++    @(posedge vif.areset_n);
+   endtask
+ 
+   protected virtual task reset_if();
+@@ -294,20 +294,20 @@ class tvip_axi_master_write_driver extends tvip_axi_master_sub_driver;
+   endfunction
+ 
+   protected task reset_if();
+-    vif.awvalid = '0;
+-    vif.awid    = '0;
+-    vif.awaddr  = '0;
+-    vif.awlen   = '0;
+-    vif.awsize  = tvip_axi_burst_size'(0);
+-    vif.awburst = tvip_axi_burst_type'(0);
+-    vif.awcache = tvip_axi_cache'(0);
+-    vif.awprot  = '0;
+-    vif.awqos   = '0;
+-    vif.wvalid  = '0;
+-    vif.wdata   = '0;
+-    vif.wstrb   = '0;
+-    vif.wlast   = '0;
+-    vif.bready  = configuration.default_bready;
++    vif.master_cb.awvalid <= '0;
++    vif.master_cb.awid    <= '0;
++    vif.master_cb.awaddr  <= '0;
++    vif.master_cb.awlen   <= '0;
++    vif.master_cb.awsize  <= tvip_axi_burst_size'(0);
++    vif.master_cb.awburst <= tvip_axi_burst_type'(0);
++    vif.master_cb.awcache <= tvip_axi_cache'(0);
++    vif.master_cb.awprot  <= '0;
++    vif.master_cb.awqos   <= '0;
++    vif.master_cb.wvalid  <= '0;
++    vif.master_cb.wdata   <= '0;
++    vif.master_cb.wstrb   <= '0;
++    vif.master_cb.wlast   <= '0;
++    vif.master_cb.bready  <= configuration.default_bready;
+   endtask
+ 
+   protected task drive_address(
+@@ -370,16 +370,16 @@ class tvip_axi_master_read_driver extends tvip_axi_master_sub_driver;
+   endfunction
+ 
+   protected task reset_if();
+-    vif.arvalid = '0;
+-    vif.arid    = '0;
+-    vif.araddr  = '0;
+-    vif.arlen   = '0;
+-    vif.arsize  = tvip_axi_burst_size'(0);
+-    vif.arburst = tvip_axi_burst_type'(0);
+-    vif.arcache = tvip_axi_cache'(0);
+-    vif.arprot  = '0;
+-    vif.arqos   = '0;
+-    vif.rready  = configuration.default_rready;
++    vif.master_cb.arvalid <= '0;
++    vif.master_cb.arid    <= '0;
++    vif.master_cb.araddr  <= '0;
++    vif.master_cb.arlen   <= '0;
++    vif.master_cb.arsize  <= tvip_axi_burst_size'(0);
++    vif.master_cb.arburst <= tvip_axi_burst_type'(0);
++    vif.master_cb.arcache <= tvip_axi_cache'(0);
++    vif.master_cb.arprot  <= '0;
++    vif.master_cb.arqos   <= '0;
++    vif.master_cb.rready  <= configuration.default_rready;
+   endtask
+ 
+   protected task drive_address(
+diff --git a/src/tvip_axi_slave_driver.svh b/src/tvip_axi_slave_driver.svh
+index d7cca73..5859c53 100644
+--- a/src/tvip_axi_slave_driver.svh
++++ b/src/tvip_axi_slave_driver.svh
+@@ -219,7 +219,7 @@ class tvip_axi_slave_sub_driver extends tvip_axi_component_base #(
+     active_ids.delete();
+ 
+     reset_if();
+-    @(posedge vif.slave_cb.areset_n);
++    @(posedge vif.areset_n);
+   endtask
+ 
+   protected virtual task reset_if();
+@@ -495,11 +495,11 @@ class tvip_axi_slave_write_driver extends tvip_axi_slave_sub_driver;
+   endfunction
+ 
+   protected task reset_if();
+-    vif.awready = configuration.default_awready;
+-    vif.wready  = configuration.default_wready;
+-    vif.bvalid  = '0;
+-    vif.bid     = '0;
+-    vif.bresp   = tvip_axi_response'(0);
++    vif.slave_cb.awready  <= configuration.default_awready;
++    vif.slave_cb.wready   <= configuration.default_wready;
++    vif.slave_cb.bvalid   <= '0;
++    vif.slave_cb.bid      <= '0;
++    vif.slave_cb.bresp    <= tvip_axi_response'(0);
+   endtask
+ 
+   protected function bit get_request_valid(bit write_data_thread);
+@@ -542,12 +542,12 @@ class tvip_axi_slave_read_driver extends tvip_axi_slave_sub_driver;
+   endfunction
+ 
+   protected task reset_if();
+-    vif.arready = configuration.default_arready;
+-    vif.rvalid  = '0;
+-    vif.rid     = '0;
+-    vif.rresp   = tvip_axi_response'(0);
+-    vif.rdata   = '0;
+-    vif.rlast   = '0;
++    vif.slave_cb.arready  <= configuration.default_arready;
++    vif.slave_cb.rvalid   <= '0;
++    vif.slave_cb.rid      <= '0;
++    vif.slave_cb.rresp    <= tvip_axi_response'(0);
++    vif.slave_cb.rdata    <= '0;
++    vif.slave_cb.rlast    <= '0;
+   endtask
+ 
+   protected function bit get_request_valid(bit write_data_thread);

@@ -1,0 +1,33 @@
+The bug is in `src/stream_arbiter_flushable.sv`.
+
+### Localization
+For `ARBITER == "prio"`, the module instantiates `rr_arb_tree` with:
+- `ExtPrio = 1'b1`
+- `LockIn  = 1'b1`
+
+But `rr_arb_tree.sv` explicitly asserts that `LockIn` may only be used when `ExtPrio` is `1'b0` (see the assertion around the `LockIn` logic). So priority arbitration is incorrectly wired through the round-robin arbiter with an invalid parameter combination.
+
+### Fix
+For priority arbitration, keep external priority enabled but **disable `LockIn`**. That avoids the assertion and matches the intended behavior of static priority arbitration.
+
+```systemverilog
+### src/stream_arbiter_flushable.sv
+<<<<<<< SEARCH
+    rr_arb_tree #(
+      .NumIn      (N_INP),
+      .DataType   (DATA_T),
+      .ExtPrio    (1'b1),
+      .AxiVldRdy  (1'b1),
+      .LockIn     (1'b1)
+    ) i_arbiter (
+=======
+    rr_arb_tree #(
+      .NumIn      (N_INP),
+      .DataType   (DATA_T),
+      .ExtPrio    (1'b1),
+      .AxiVldRdy  (1'b1),
+      .LockIn     (1'b0)
+    ) i_arbiter (
+>>>>>>> REPLACE
+```
+

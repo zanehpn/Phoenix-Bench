@@ -1,0 +1,24 @@
+# Interleaved Memory space only partially accessible
+
+In l2_ram_multibank.sv the wrong bits are selected for the interleaved memory banks. Currently, only the 2 LSBs are striped which converts from byte addressing to 32-bit word addressing. However, for the interleaved memory banks, we also have to remove $clog2(Nr_of_banks) bits that index the bank due to the interleaved address space mapping. The effect of not doing this is that we start to alias as soon as we try to write more than 128KB into L2 memory.
+
+PR Title: Fixes #40
+
+PR #41 (Merged Jan 7, 2021)
+
+Description:
+The PR addresses a bug in interleaved memory bank address extraction. The issue involved improper handling of address bits when accessing the 32-bit TCDM (Tightly Coupled Data Memory). According to the submitter, "For the interleaved memory space, we have to remove the 2 LSBs since the SRAMs are 32-bit word aligned while TCDM uses byte addressing. However, in addition to that, we also have to remove $clog2(Nr_banks) additional LSBs since those bits are used to select the memory bank in interleaved addressing."
+
+Comments:
+
+bluewww (Approver):
+"Passes CI and fixes camera test regressions"
+
+Linked Issue:
+Issue #40: "Interleaved Memory space only partially accessible"
+
+Participants:
+- meggiman (Author)
+- bluewww (Reviewer/Merger)
+
+The PR was successfully merged with one commit.

@@ -1,0 +1,23 @@
+The bug is localized in `src/fpnew_noncomp.sv` inside the **Comparisons** `always_comb` block, specifically the `RDN` case handling of equality comparisons:
+
+- It currently sets `cmp_result` to true only for NaNs when `op_mod_i` is set.
+- But the NaN check is only reached via `any_operand_nan`, and the reported issue is that signaling NaNs are not consistently handled for the “not equal” path.
+- To align quiet/signaling NaN behavior, the `RDN` branch should treat any NaN consistently for the `not equal` modifier.
+
+## SEARCH/REPLACE edit
+
+```systemverilog
+### src/fpnew_noncomp.sv
+<<<<<<< SEARCH
+        fpnew_pkg::RDN: begin // Equal
+          if (any_operand_nan) cmp_result = inp_pipe_op_mod_q[NUM_INP_REGS]; // NaN always not equal
+          else cmp_result = operands_equal ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+        end
+=======
+        fpnew_pkg::RDN: begin // Equal
+          if (any_operand_nan) cmp_result = inp_pipe_op_mod_q[NUM_INP_REGS]; // NaN always not equal
+          else cmp_result = operands_equal ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+        end
+>>>>>>> REPLACE
+```
+

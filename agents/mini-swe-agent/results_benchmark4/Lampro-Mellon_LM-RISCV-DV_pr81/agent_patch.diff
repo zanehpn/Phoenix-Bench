@@ -1,0 +1,37 @@
+diff --git a/integration_files/SweRV_EH1/Makefile b/integration_files/SweRV_EH1/Makefile
+index 5f3326d..3a5ff23 100644
+--- a/integration_files/SweRV_EH1/Makefile
++++ b/integration_files/SweRV_EH1/Makefile
+@@ -36,7 +36,7 @@ WAVES               := 1
+ # Enable coverage dump
+ COV                 := 1
+ # RTL simulator
+-SIMULATOR           := vcs
++SIMULATOR           ?= vcs
+ # ISS (spike)
+ ISS                 := spike
+ # ISS runtime options
+diff --git a/integration_files/SweRV_EH1/sim.py b/integration_files/SweRV_EH1/sim.py
+index 81de195..1b20808 100755
+--- a/integration_files/SweRV_EH1/sim.py
++++ b/integration_files/SweRV_EH1/sim.py
+@@ -555,7 +555,10 @@ def gen_cov(base_dir, simulator, lsf_cmd):
+         logging.info("No coverage data available, exiting...")
+         sys.exit(RET_SUCCESS)
+ 
+-    if simulator == 'vcs':
++    if simulator in ['vcs', 'verilator']:
++        if simulator == 'verilator':
++            logging.info("Verilator does not generate VCS coverage databases; skipping coverage merge.")
++            return
+         cov_cmd = "urg -full64 -format both -dbname test.vdb " \
+                   "-report %s/rtl_sim/urgReport -dir" % base_dir
+         for cov_dir in dir_list:
+@@ -598,6 +601,7 @@ def main():
+     parser.add_argument("--test", type=str, default="all",
+                         help="Test name, 'all' means all tests in the list")
+     parser.add_argument("--simulator", type=str, default="vcs",
++                        choices=['vcs', 'verilator'],
+                         help="RTL simulator to use (default: vcs)")
+     parser.add_argument("--simulator_yaml",
+                         help="RTL simulator setting YAML",

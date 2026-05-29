@@ -1,0 +1,17 @@
+The bug is in `src/axi_lite_mux.sv`: the module already defines `axi_req_t` and `axi_resp_t` as parameters, but the logic in the file is written assuming the request/response structs are available as the port types. If XSim is reaching the instantiated module with those parameters left at their defaults, the struct fields like `.aw`, `.aw_valid`, etc. are not present, causing the errors you saw.
+
+However, based on the code you shared, `axi_lite_mux.sv` already has the missing parameters declared correctly. So the issue is most likely not in this module itself, but in the place where it is instantiated: the instantiation must pass the concrete `axi_req_t` / `axi_resp_t` types.
+
+Your proposed fix is correct: add the two parameter bindings at the instantiation site.
+
+Since the repository excerpt only includes the module definition and not the instantiation site, I can’t generate an exact SEARCH/REPLACE patch for the caller file from the provided material. If you share the file where `axi_lite_mux` is instantiated, I can produce the precise edit.
+
+That said, the underlying fix is:
+
+```systemverilog
+// wherever axi_lite_mux is instantiated
+.axi_req_t  ( axi_req_t  ),
+.axi_resp_t ( axi_resp_t ),
+```
+
+If you want, send the instantiation file and I’ll return the exact SEARCH/REPLACE block(s).

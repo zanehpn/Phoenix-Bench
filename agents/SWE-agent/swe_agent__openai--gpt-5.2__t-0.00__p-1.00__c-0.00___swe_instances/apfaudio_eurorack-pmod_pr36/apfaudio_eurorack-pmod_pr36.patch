@@ -1,0 +1,23 @@
+diff --git a/gateware/cores/vco.sv b/gateware/cores/vco.sv
+index 11e742d..5ef38f8 100644
+--- a/gateware/cores/vco.sv
++++ b/gateware/cores/vco.sv
+@@ -44,7 +44,17 @@ logic [$clog2(V_OCT_LUT_SIZE)-1:0] lut_index_clamped;
+ logic [31:0] wavetable_pos = 32'h0;
+ 
+ assign lut_index = sample_in0 >>> 6;
+-assign lut_index_clamped = $clog2(V_OCT_LUT_SIZE)'(lut_index < 0 ? W'(0) : lut_index);
++// Clamp LUT index into valid range.
++//
++// NOTE: Prior code only clamped negative indices. On iCE40 this could
++// synthesize into an out-of-bounds ROM access when the V/Oct input exceeds
++// the LUT range, causing undefined behavior (broken VCO). ECP5 tools are
++// more forgiving here.
++localparam int LUT_INDEX_W = $clog2(V_OCT_LUT_SIZE);
++wire signed [W-1:0] lut_index_sat = (lut_index < 0) ? W'(0) :
++                                 (lut_index > $signed(W'(V_OCT_LUT_SIZE-1))) ? $signed(W'(V_OCT_LUT_SIZE-1)) :
++                                 lut_index;
++assign lut_index_clamped = LUT_INDEX_W'(lut_index_sat);
+ 
+ always_ff @(posedge sample_clk) begin
+     // TODO: linear interpolation between frequencies, silence oscillator

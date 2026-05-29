@@ -1,0 +1,17 @@
+diff --git a/src/dm_csrs.sv b/src/dm_csrs.sv
+index 56091fa..f70310e 100644
+--- a/src/dm_csrs.sv
++++ b/src/dm_csrs.sv
+@@ -462,8 +462,11 @@ module dm_csrs #(
+             sbcs = dm::sbcs_t'(dmi_req_i.data);
+             sbcs_d = sbcs;
+             // R/W1C
++            // sbbusyerror is W1C.
+             sbcs_d.sbbusyerror = sbcs_q.sbbusyerror & (~sbcs.sbbusyerror);
+-            sbcs_d.sberror     = sbcs_q.sberror     & {3{~(sbcs.sberror == 3'd1)}};
++            // sberror is a 3-bit W1C field. Any write with at least one bit set clears it.
++            // (OpenOCD writes 0x7 to clear, as permitted by the spec.)
++            sbcs_d.sberror     = (sbcs.sberror != 3'b000) ? 3'b000 : sbcs_q.sberror;
+           end
+         end
+         dm::SBAddress0: begin

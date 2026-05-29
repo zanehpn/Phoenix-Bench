@@ -1,0 +1,36 @@
+diff --git a/hw/carfield.sv b/hw/carfield.sv
+index d6ac6ab..03c1e92 100755
+--- a/hw/carfield.sv
++++ b/hw/carfield.sv
+@@ -738,6 +738,31 @@ carfield_a32_d32_reg_rsp_t reg_wdt_rsp;
+ carfield_axi_slv_req_t axi_mbox_req;
+ carfield_axi_slv_rsp_t axi_mbox_rsp;
+ 
++// RISC-V atomics support before L2 SPM (both L2 slave windows)
++axi_riscv_atomics_structs #(
++  .axi_req_t ( carfield_axi_slv_req_t ),
++  .axi_rsp_t ( carfield_axi_slv_rsp_t )
++) i_axi_riscv_atomics_l2_port1 (
++  .clk_i     ( l2_clk                    ),
++  .rst_ni    ( l2_rst_n                  ),
++  .slv_req_i ( axi_slv_req[L2Port1SlvIdx]),
++  .slv_rsp_o ( axi_slv_rsp[L2Port1SlvIdx]),
++  .mst_req_o ( axi_l2_req[0]             ),
++  .mst_rsp_i ( axi_l2_rsp[0]             )
++);
++
++axi_riscv_atomics_structs #(
++  .axi_req_t ( carfield_axi_slv_req_t ),
++  .axi_rsp_t ( carfield_axi_slv_rsp_t )
++) i_axi_riscv_atomics_l2_port2 (
++  .clk_i     ( l2_clk                    ),
++  .rst_ni    ( l2_rst_n                  ),
++  .slv_req_i ( axi_slv_req[L2Port2SlvIdx]),
++  .slv_rsp_o ( axi_slv_rsp[L2Port2SlvIdx]),
++  .mst_req_o ( axi_l2_req[1]             ),
++  .mst_rsp_i ( axi_l2_rsp[1]             )
++);
++
+ /***************
+ * Carfield IPs *
+ ***************/

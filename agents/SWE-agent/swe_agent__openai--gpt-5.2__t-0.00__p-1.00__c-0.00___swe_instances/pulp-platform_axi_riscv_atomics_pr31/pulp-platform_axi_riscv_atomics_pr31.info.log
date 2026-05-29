@@ -1,0 +1,487 @@
+2026-01-19 23:07:00,959 - INFO - rex-deploy - Pulling image 'hwebench/pulp-platform_axi_riscv_atomics:pr31'
+2026-01-19 23:07:06,311 - INFO - rex-deploy - Building image hwebench/pulp-platform_axi_riscv_atomics:pr31 to install a standalone python to /root. This might take a while (but you only have to do it once). To skip this step, set `python_standalone_dir` to None.
+2026-01-19 23:07:59,316 - INFO - rex-deploy - Starting container hwebenchpulp-platform_axi_riscv_atomicspr31-0793a0d1-35d3-41f9-84d1-7dd47c295c74 with image hwebench/pulp-platform_axi_riscv_atomics:pr31 serving on port 37443
+2026-01-19 23:07:59,325 - INFO - rex-deploy - Starting runtime at 37443
+2026-01-19 23:08:00,094 - INFO - rex-deploy - Runtime started in 0.77s
+2026-01-19 23:08:00,881 - INFO - swea-env - Environment Initialized
+2026-01-19 23:08:02,127 - INFO - swea-agent - Setting up agent for instance pulp-platform_axi_riscv_atomics_pr31
+2026-01-19 23:08:02,131 - INFO - swea-agent - Trajectory will be saved to /workspace/phoenix-bench/agents/SWE-agent/trajectories/anon/swe_agent__openai--gpt-5.2__t-0.00__p-1.00__c-0.00___swe_instances/pulp-platform_axi_riscv_atomics_pr31/pulp-platform_axi_riscv_atomics_pr31.traj
+2026-01-19 23:08:04,808 - INFO - swea-tools - Resetting tools
+2026-01-19 23:08:05,164 - INFO - swea-agent - SYSTEM (main)
+You are an expert agent that can interact with a computer to debug SystemVerilog/Verilog repositories. You are in an environment
+with Verilator, Make, Python3 and Spike RISC-V ISA Simulator.
+2026-01-19 23:08:05,310 - INFO - swea-agent - 🤖 MODEL INPUT
+<uploaded_files>
+/testbed
+</uploaded_files>
+I've uploaded a HDL code repository in the directory /testbed. Consider the following PR description:
+
+<pr_description>
+# AW burst of length N clears N+1 addresses
+
+When an AW burst of length N with start address A is sent to the axi_riscv_lrsc module, it submits a check+clear request for addresses [A, A+N], but the correct range would be [A,  A+(N-1)].
+
+Probably it would be sufficient to change [line 761](https://github.com/pulp-platform/axi_riscv_atomics/blob/c3c3f2b65071841035c4e081c61c9b7be801d749/src/axi_riscv_lrsc.sv#L761) from:
+```verilog
+if (aw_res_len > 1) begin
+    clr_len_d  = aw_res_len - 1;
+```
+to:
+```verilog
+if (aw_res_len > 1) begin
+    clr_len_d  = aw_res_len - 2;
+```
+
+</pr_description>
+
+Implement the necessary changes to the repository so that the issue specified in the <pr_description> are resolved.
+Your task is to make the minimal changes to files in the /testbed directory to ensure the <pr_description> is fixed.
+Follow these steps to resolve the issue:
+1. As a first step, it might be a good idea to find and read code relevant to the <pr_description>.
+2. Edit the sourcecode of the repo to resolve the issue.
+3. Think about edgecases and make sure your fix handles them as well.
+
+You can use the tools Verilog debugging tools if needed.
+Your thinking should be thorough and so it's fine if it's very long.
+2026-01-19 23:08:05,317 - INFO - swea-agent - ========================= STEP 1 =========================
+2026-01-19 23:08:08,033 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+ls -R /testbed
+2026-01-19 23:08:08,292 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+/testbed:
+Bender.yml  CHANGELOG.md  LICENSE  README.md  scripts  src  src_files.yml  test
+
+/testbed/scripts:
+compile_vsim.sh  run_vsim.sh
+
+/testbed/src:
+axi_res_tbl.sv         axi_riscv_amos_wrap.sv        axi_riscv_atomics_wrap.sv
+axi_riscv_amos.sv      axi_riscv_atomics.sv          axi_riscv_lrsc.sv
+axi_riscv_amos_alu.sv  axi_riscv_atomics_structs.sv  axi_riscv_lrsc_wrap.sv
+
+/testbed/test:
+axi_riscv_atomics_synth.v     axi_riscv_lrsc_synth.v     golden_memory.sv
+axi_riscv_atomics_tb.sv       axi_riscv_lrsc_tb.sv       tb_axi_pkg.sv
+axi_riscv_atomics_tb_wave.do  axi_riscv_lrsc_tb_wave.do
+
+2026-01-19 23:08:08,298 - INFO - swea-agent - ========================= STEP 2 =========================
+2026-01-19 23:08:10,540 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+str_replace_editor view /testbed/src/axi_riscv_lrsc.sv  --view_range 730 790
+2026-01-19 23:08:10,827 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+Here's the result of running `cat -n` on /testbed/src/axi_riscv_lrsc.sv:
+   730	                                if (art_check_clr_gnt) begin
+   731	                                    if (slv_aw_lock_i && slv_aw_len_i == 8'h00) begin
+   732	                                        // Exclusive access and no burst, so check reservation.
+   733	                                        if (art_check_res) begin
+   734	                                            // Reservation exists, so forward downstream.
+   735	                                            mst_aw_valid   = 1'b1;
+   736	                                            slv_aw_ready_o = mst_aw_ready;
+   737	                                            if (!mst_aw_ready) begin
+   738	                                                aw_state_d = AW_WAIT;
+   739	                                            end
+   740	                                        end else begin
+   741	                                            // No reservation exists, so drop AW.
+   742	                                            slv_aw_ready_o = 1'b1;
+   743	                                        end
+   744	                                        // Store command to forward or drop W burst.
+   745	                                        w_cmd_inp = '{forward: art_check_res, id: slv_aw_id_i,
+   746	                                                user: slv_aw_user_i};
+   747	                                        w_cmd_push = 1'b1;
+   748	                                        // Add B status for this ID (exclusive if there is a
+   749	                                        // reservation, inject otherwise).
+   750	                                        b_status_inp_cmd = art_check_res ? B_EXCLUSIVE : B_INJECT;
+   751	                                    end else begin
+   752	                                        // Non-exclusive access or burst, so forward downstream.
+   753	                                        mst_aw_valid   = 1'b1;
+   754	                                        slv_aw_ready_o = mst_aw_ready;
+   755	                                        // Store command to forward W burst.
+   756	                                        w_cmd_inp  = '{forward: 1'b1, id: '0, user: '0};
+   757	                                        w_cmd_push = 1'b1;
+   758	                                        // Track B response as regular-okay.
+   759	                                        b_status_inp_cmd = B_REGULAR;
+   760	                                        // Is this write longer than our reservation granularity?
+   761	                                        if (aw_res_len > 1) begin
+   762	                                            // latch start address and length of write (burst)
+   763	                                            clr_addr_d = slv_aw_addr_i[AXI_ADDR_WIDTH-1:AXI_ADDR_LSB] + 1;
+   764	                                            clr_len_d  = aw_res_len - 1;
+   765	                                            clr_id_d   = slv_aw_id_i;
+   766	                                            aw_wait_d  = ~mst_aw_ready;
+   767	                                            aw_state_d = AW_BURST;
+   768	                                        end
+   769	                                        else if (!mst_aw_ready) begin
+   770	                                            aw_state_d = AW_WAIT;
+   771	                                        end
+   772	                                    end
+   773	                                    b_status_inp_id = slv_aw_id_i;
+   774	                                    b_status_inp_req = 1'b1;
+   775	                                end
+   776	                            end
+   777	                        end
+   778	                    end else begin
+   779	                        // Outside exclusively-accessible address range, so bypass any
+   780	                        // modifications.
+   781	                        mst_aw_valid   = 1'b1;
+   782	                        slv_aw_ready_o = mst_aw_ready;
+   783	                        if (mst_aw_ready) begin
+   784	                            // Store command to forward W burst.
+   785	                            w_cmd_inp = '{forward: 1'b1, id: '0, user: '0};
+   786	                            w_cmd_push = 1'b1;
+   787	                            // Track B response as regular-okay.
+   788	                            b_status_inp_id  = slv_aw_id_i;
+   789	                            b_status_inp_cmd = B_REGULAR;
+   790	                            b_status_inp_req = 1'b1;
+
+
+2026-01-19 23:08:10,840 - INFO - swea-agent - ========================= STEP 3 =========================
+2026-01-19 23:08:12,803 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+grep -n "aw_res_len" -n /testbed/src/axi_riscv_lrsc.sv | head -n 50
+2026-01-19 23:08:13,060 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+323:                              aw_res_len;
+675:        aw_res_len = slv_aw_len_i + 1;
+678:            aw_res_len = (slv_aw_len_i + 1) << (slv_aw_size_i - AXI_ADDR_LSB);
+682:            aw_res_len = (slv_aw_len_i + 1) >> (AXI_ADDR_LSB - slv_aw_size_i);
+761:                                        if (aw_res_len > 1) begin
+764:                                            clr_len_d  = aw_res_len - 1;
+
+2026-01-19 23:08:13,067 - INFO - swea-agent - ========================= STEP 4 =========================
+2026-01-19 23:08:14,832 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+str_replace_editor view /testbed/src/axi_riscv_lrsc.sv  --view_range 650 710
+2026-01-19 23:08:15,117 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+Here's the result of running `cat -n` on /testbed/src/axi_riscv_lrsc.sv:
+   650	    ) i_aw_trans_reg (
+   651	        .clk_i       (clk_i),
+   652	        .rst_ni      (rst_ni),
+   653	        .clr_i       (1'b0),
+   654	        .testmode_i  (1'b0),
+   655	        // Input
+   656	        .valid_i     (mst_aw_valid),
+   657	        .ready_o     (mst_aw_ready),
+   658	        .data_i      (slv_aw),
+   659	        // Output
+   660	        .valid_o     (mst_aw_valid_o),
+   661	        .ready_i     (mst_aw_ready_i),
+   662	        .data_o      (mst_aw)
+   663	    );
+   664	
+   665	    // Time-Invariant Signal Assignments
+   666	    assign mst_aw_lock_o    = 1'b0;
+   667	    assign mst_w_data_o     = slv_w_data_i;
+   668	    assign mst_w_strb_o     = slv_w_strb_i;
+   669	    assign mst_w_user_o     = slv_w_user_i;
+   670	    assign mst_w_last_o     = slv_w_last_i;
+   671	
+   672	    // Compute number of reservations written by this write transaction
+   673	    always_comb begin
+   674	        // AWSIZE == GRANULARITY: use burst length = AWLEN + 1
+   675	        aw_res_len = slv_aw_len_i + 1;
+   676	        // AWSIZE > GRANULARITY: clear beat-size / granularity reservations per beat
+   677	        if (slv_aw_size_i > AXI_ADDR_LSB) begin
+   678	            aw_res_len = (slv_aw_len_i + 1) << (slv_aw_size_i - AXI_ADDR_LSB);
+   679	        end
+   680	        // AWSIZE < GRANULARITY: clear one reservation for every granularity / beat-size beat
+   681	        else if (slv_aw_size_i < AXI_ADDR_LSB) begin
+   682	            aw_res_len = (slv_aw_len_i + 1) >> (AXI_ADDR_LSB - slv_aw_size_i);
+   683	        end
+   684	    end
+   685	
+   686	    // Control AW Channel
+   687	    always_comb begin
+   688	        mst_aw_valid            = 1'b0;
+   689	        slv_aw_ready_o          = 1'b0;
+   690	        art_check_clr_addr      = '0;
+   691	        art_check_clr_excl      = '0;
+   692	        art_check_clr_req       = 1'b0;
+   693	        aw_wifq_exists_inp.data = '0;
+   694	        aw_wifq_exists_inp.mask = '1;
+   695	        aw_wifq_exists_req      = 1'b0;
+   696	        b_status_inp_id         = '0;
+   697	        b_status_inp_cmd        = B_REGULAR;
+   698	        b_status_inp_req        = 1'b0;
+   699	        w_cmd_inp               = '0;
+   700	        w_cmd_push              = 1'b0;
+   701	        aw_state_d              = aw_state_q;
+   702	        clr_addr_d              = clr_addr_q;
+   703	        clr_len_d               = clr_len_q;
+   704	        clr_id_d                = clr_id_q;
+   705	        aw_wait_d               = aw_wait_q;
+   706	
+   707	        case (aw_state_q)
+   708	            AW_IDLE: begin
+   709	                if (slv_aw_valid_i && !w_cmd_full && b_status_inp_gnt && wifq_inp_gnt) begin
+   710	                    // New AW and we are ready to handle it.
+
+
+2026-01-19 23:08:15,131 - INFO - swea-agent - ========================= STEP 5 =========================
+2026-01-19 23:08:17,407 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+grep -n "clr_len" -n /testbed/src/axi_riscv_lrsc.sv | head -n 50
+2026-01-19 23:08:17,665 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+322:    logic [10-AXI_ADDR_LSB:0] clr_len_d,        clr_len_q,
+703:        clr_len_d               = clr_len_q;
+764:                                            clr_len_d  = aw_res_len - 1;
+813:                    if (clr_len_q == 1'b0) begin
+817:                        clr_len_d  = clr_len_q - 1;
+1044:            clr_len_q  = '0;
+1052:            clr_len_q  = clr_len_d;
+
+2026-01-19 23:08:17,673 - INFO - swea-agent - ========================= STEP 6 =========================
+2026-01-19 23:08:20,301 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+str_replace_editor view /testbed/src/axi_riscv_lrsc.sv  --view_range 790 840
+2026-01-19 23:08:20,585 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+Here's the result of running `cat -n` on /testbed/src/axi_riscv_lrsc.sv:
+   790	                            b_status_inp_req = 1'b1;
+   791	                        end
+   792	                    end
+   793	                end
+   794	            end
+   795	
+   796	            AW_WAIT: begin
+   797	                mst_aw_valid   = 1'b1;
+   798	                slv_aw_ready_o = mst_aw_ready;
+   799	                if (mst_aw_ready) begin
+   800	                    aw_state_d = AW_IDLE;
+   801	                end
+   802	            end
+   803	
+   804	            AW_BURST: begin
+   805	                mst_aw_valid = aw_wait_q;
+   806	                aw_wait_d    = aw_wait_q & ~mst_aw_ready;
+   807	                // Make sure no exclusive AR to the same address is currently waiting.
+   808	                if (!(slv_ar_valid_i && slv_ar_lock_i &&
+   809	                        slv_ar_addr_i[AXI_ADDR_WIDTH-1:AXI_ADDR_LSB] == clr_addr_q)) begin
+   810	                    // Check reservation and clear identical addresses.
+   811	                    art_check_clr_addr = clr_addr_q;
+   812	                    art_check_clr_req  = 1'b1;
+   813	                    if (clr_len_q == 1'b0) begin
+   814	                        aw_state_d = aw_wait_d ? AW_WAIT : AW_IDLE;
+   815	                    end else begin
+   816	                        clr_addr_d = clr_addr_q + 1;
+   817	                        clr_len_d  = clr_len_q - 1;
+   818	                    end
+   819	                end
+   820	            end
+   821	
+   822	            default:
+   823	                aw_state_d = AW_IDLE;
+   824	        endcase
+   825	    end
+   826	
+   827	// pragma translate_off
+   828	    if (DEBUG) begin
+   829	        always @(posedge clk_i) begin
+   830	            if (b_status_inp_req && b_status_inp_gnt) begin
+   831	                $display("%0t: AW added %0x as %0d", $time, b_status_inp_id, b_status_inp_cmd);
+   832	            end
+   833	        end
+   834	    end
+   835	// pragma translate_on
+   836	
+   837	    // Control W Channel
+   838	    always_comb begin
+   839	        mst_w_valid_o   = 1'b0;
+   840	        slv_w_ready_o   = 1'b0;
+
+
+2026-01-19 23:08:20,598 - INFO - swea-agent - ========================= STEP 7 =========================
+2026-01-19 23:08:27,566 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+str_replace_editor str_replace /testbed/src/axi_riscv_lrsc.sv   --old_str '                                        if (aw_res_len > 1) begin
+                                            // latch start address and length of write (burst)
+                                            clr_addr_d = slv_aw_addr_i[AXI_ADDR_WIDTH-1:AXI_ADDR_LSB] + 1;
+                                            clr_len_d  = aw_res_len - 1;
+                                            clr_id_d   = slv_aw_id_i;
+                                            aw_wait_d  = ~mst_aw_ready;
+                                            aw_state_d = AW_BURST;
+                                        end' --new_str '                                        if (aw_res_len > 1) begin
+                                            // Latch start address and number of *additional* reservation-granules
+                                            // to clear. The first granule at the start address is cleared via the
+                                            // immediate art_check_clr request below (in AW_IDLE). For a burst that
+                                            // spans aw_res_len granules in total, we therefore need to clear
+                                            // (aw_res_len-1) more addresses: [A+1, ..., A+(aw_res_len-1)].
+                                            clr_addr_d = slv_aw_addr_i[AXI_ADDR_WIDTH-1:AXI_ADDR_LSB] + 1;
+                                            clr_len_d  = aw_res_len - 2;
+                                            clr_id_d   = slv_aw_id_i;
+                                            aw_wait_d  = ~mst_aw_ready;
+                                            aw_state_d = AW_BURST;
+                                        end'
+2026-01-19 23:08:27,865 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+The file /testbed/src/axi_riscv_lrsc.sv has been edited. Here's the result of running `cat -n` on a snippet of /testbed/src/axi_riscv_lrsc.sv:
+   756	                                        w_cmd_inp  = '{forward: 1'b1, id: '0, user: '0};
+   757	                                        w_cmd_push = 1'b1;
+   758	                                        // Track B response as regular-okay.
+   759	                                        b_status_inp_cmd = B_REGULAR;
+   760	                                        // Is this write longer than our reservation granularity?
+   761	                                        if (aw_res_len > 1) begin
+   762	                                            // Latch start address and number of *additional* reservation-granules
+   763	                                            // to clear. The first granule at the start address is cleared via the
+   764	                                            // immediate art_check_clr request below (in AW_IDLE). For a burst that
+   765	                                            // spans aw_res_len granules in total, we therefore need to clear
+   766	                                            // (aw_res_len-1) more addresses: [A+1, ..., A+(aw_res_len-1)].
+   767	                                            clr_addr_d = slv_aw_addr_i[AXI_ADDR_WIDTH-1:AXI_ADDR_LSB] + 1;
+   768	                                            clr_len_d  = aw_res_len - 2;
+   769	                                            clr_id_d   = slv_aw_id_i;
+   770	                                            aw_wait_d  = ~mst_aw_ready;
+   771	                                            aw_state_d = AW_BURST;
+   772	                                        end
+   773	                                        else if (!mst_aw_ready) begin
+   774	                                            aw_state_d = AW_WAIT;
+   775	                                        end
+Review the changes and make sure they are as expected. Edit the file again if necessary.
+
+2026-01-19 23:08:27,881 - INFO - swea-agent - ========================= STEP 8 =========================
+2026-01-19 23:08:31,019 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+make -C /testbed test 2>&1 | tail -n 50
+2026-01-19 23:08:31,275 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+make: Entering directory '/testbed'
+make: Nothing to be done for 'test'.
+make: Leaving directory '/testbed'
+
+2026-01-19 23:08:31,284 - INFO - swea-agent - ========================= STEP 9 =========================
+2026-01-19 23:08:34,159 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+verilator --version
+2026-01-19 23:08:34,449 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+Verilator 4.038 2020-07-11 rev v4.036-114-g0cd4a57ad
+
+2026-01-19 23:08:34,459 - INFO - swea-agent - ========================= STEP 10 =========================
+2026-01-19 23:08:38,485 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+verilator -Wall --lint-only -I/testbed/src /testbed/src/axi_riscv_lrsc.sv 2>&1 | head -n 50
+2026-01-19 23:08:38,782 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+%Error: /testbed/src/axi_riscv_lrsc.sv:901:43: Package/class 'axi_pkg' not found, and needs to be predeclared (IEEE 1800-2017 26.3)
+  901 |                             slv_b.resp  = axi_pkg::RESP_OKAY;
+      |                                           ^~~~~~~
+%Error: Exiting due to 1 error(s)
+
+2026-01-19 23:08:38,793 - INFO - swea-agent - ========================= STEP 11 =========================
+2026-01-19 23:08:47,787 - WARNING - swea-agent - Requerying model after FunctionCallingFormatError (1th requery)
+2026-01-19 23:08:47,793 - WARNING - swea-agent - Your last output did not use any tool calls!
+Please make sure your output includes exactly _ONE_ function call!
+You must invoke the function directly using the function call format.
+You cannot invoke commands with ```, you have to use the function call format.
+If you think you have already resolved the issue, please submit your changes by running the `submit` command.
+If you think you cannot solve the problem, please run `exit_forfeit` (if available) or `submit`.
+Else, please continue with a new tool call!
+2026-01-19 23:08:50,203 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+submit
+2026-01-19 23:08:50,495 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+Thank you for your work on this issue. Please review your changes and run the submit command again to confirm.
+
+Here is a list of all of your changes:
+
+<diff>
+diff --git a/src/axi_riscv_lrsc.sv b/src/axi_riscv_lrsc.sv
+index e967b7e..64b78a0 100644
+--- a/src/axi_riscv_lrsc.sv
++++ b/src/axi_riscv_lrsc.sv
+@@ -759,9 +759,13 @@ module axi_riscv_lrsc #(
+                                         b_status_inp_cmd = B_REGULAR;
+                                         // Is this write longer than our reservation granularity?
+                                         if (aw_res_len > 1) begin
+-                                            // latch start address and length of write (burst)
++                                            // Latch start address and number of *additional* reservation-granules
++                                            // to clear. The first granule at the start address is cleared via the
++                                            // immediate art_check_clr request below (in AW_IDLE). For a burst that
++                                            // spans aw_res_len granules in total, we therefore need to clear
++                                            // (aw_res_len-1) more addresses: [A+1, ..., A+(aw_res_len-1)].
+                                             clr_addr_d = slv_aw_addr_i[AXI_ADDR_WIDTH-1:AXI_ADDR_LSB] + 1;
+-                                            clr_len_d  = aw_res_len - 1;
++                                            clr_len_d  = aw_res_len - 2;
+                                             clr_id_d   = slv_aw_id_i;
+                                             aw_wait_d  = ~mst_aw_ready;
+                                             aw_state_d = AW_BURST;
+
+</diff>
+
+
+2026-01-19 23:08:50,512 - INFO - swea-agent - ========================= STEP 13 =========================
+2026-01-19 23:08:53,408 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+submit
+2026-01-19 23:08:53,701 - INFO - swea-agent - Found submission: diff --git a/src/axi_riscv_lrsc.sv b/src/axi_riscv_lrsc.sv
+index e967b7e..64b78a0 100644
+--- a/src/axi_riscv_lrsc.sv
++++ b/src/axi_riscv_lrsc.sv
+@@ -759,9 +759,13 @@ module axi_riscv_lrsc #(
+                                         b_status_inp_cmd = B_REGULAR;
+                                         // Is this write longer than our reservation granularity?
+                                         if (aw_res_len > 1) begin
+-                                            // latch start address and length of write (burst)
++                                            // Latch start address and number of *additional* reservation-granules
++                                            // to clear. The first granule at the start address is cleared via the
++                                            // immediate art_check_clr request below (in AW_IDLE). For a burst that
++                                            // spans aw_res_len granules in total, we therefore need to clear
++                                            // (aw_res_len-1) more addresses: [A+1, ..., A+(aw_res_len-1)].
+                                             clr_addr_d = slv_aw_addr_i[AXI_ADDR_WIDTH-1:AXI_ADDR_LSB] + 1;
+-                                            clr_len_d  = aw_res_len - 1;
++                                            clr_len_d  = aw_res_len - 2;
+                                             clr_id_d   = slv_aw_id_i;
+                                             aw_wait_d  = ~mst_aw_ready;
+                                             aw_state_d = AW_BURST;
+
+2026-01-19 23:08:53,710 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+diff --git a/src/axi_riscv_lrsc.sv b/src/axi_riscv_lrsc.sv
+index e967b7e..64b78a0 100644
+--- a/src/axi_riscv_lrsc.sv
++++ b/src/axi_riscv_lrsc.sv
+@@ -759,9 +759,13 @@ module axi_riscv_lrsc #(
+                                         b_status_inp_cmd = B_REGULAR;
+                                         // Is this write longer than our reservation granularity?
+                                         if (aw_res_len > 1) begin
+-                                            // latch start address and length of write (burst)
++                                            // Latch start address and number of *additional* reservation-granules
++                                            // to clear. The first granule at the start address is cleared via the
++                                            // immediate art_check_clr request below (in AW_IDLE). For a burst that
++                                            // spans aw_res_len granules in total, we therefore need to clear
++                                            // (aw_res_len-1) more addresses: [A+1, ..., A+(aw_res_len-1)].
+                                             clr_addr_d = slv_aw_addr_i[AXI_ADDR_WIDTH-1:AXI_ADDR_LSB] + 1;
+-                                            clr_len_d  = aw_res_len - 1;
++                                            clr_len_d  = aw_res_len - 2;
+                                             clr_id_d   = slv_aw_id_i;
+                                             aw_wait_d  = ~mst_aw_ready;
+                                             aw_state_d = AW_BURST;
+
+2026-01-19 23:08:53,730 - INFO - swea-agent - Trajectory saved to /workspace/phoenix-bench/agents/SWE-agent/trajectories/anon/swe_agent__openai--gpt-5.2__t-0.00__p-1.00__c-0.00___swe_instances/pulp-platform_axi_riscv_atomics_pr31/pulp-platform_axi_riscv_atomics_pr31.traj
+2026-01-19 23:08:53,737 - INFO - swea-env - Beginning environment shutdown...

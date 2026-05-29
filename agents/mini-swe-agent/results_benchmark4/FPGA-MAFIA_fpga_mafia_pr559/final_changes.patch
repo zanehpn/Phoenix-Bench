@@ -1,0 +1,20 @@
+diff --git a/source/core_rrv/core_rrv_mem_wrap.sv b/source/core_rrv/core_rrv_mem_wrap.sv
+index 427ce0a..d5689e3 100644
+--- a/source/core_rrv/core_rrv_mem_wrap.sv
++++ b/source/core_rrv/core_rrv_mem_wrap.sv
+@@ -281,6 +281,15 @@ mem
+ logic [31:0] VgaAddressWithOffsetQ103H;
+ assign VgaAddressWithOffsetQ103H = DMemAddressQ103H - VGA_MEM_REGION_FLOOR;
+ 
++`ifdef SIM_ONLY
++always_ff @(posedge Clock) begin
++   if (!Rst && (DMemWrEnQ103H || DMemRdEnQ103H)) begin
++      assert (MatchCRMemRegionQ103H || MatchVGAMemRegionQ103H || MatchDmemRegionQ103H)
++         else $error("[core_rrv_mem_wrap] illegal memory access address %h", DMemAddressQ103H);
++   end
++end
++`endif
++
+ logic [31:0]  VgaWrData;
+ logic [31:0]  VgaAdrsReq;
+ logic [3:0]   VgaWrByteEn;

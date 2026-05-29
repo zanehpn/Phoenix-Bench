@@ -1,0 +1,58 @@
+# Remove the Parameter override from the build.
+
+- Source URL: https://github.com/FPGA-MAFIA/fpga_mafia/issues/441
+
+https://github.com/FPGA-MAFIA/fpga_mafia/blob/931deaa13c92a1fe5d29dee95ba23c76531a68f2/build.py#L241C16-L241C16
+
+I think there is room for creating a script that can override the parameter value by name - both in source (AKA rtl) and in verif
+
+The way it should work is as following:
+In the cfg file add a field that is called "parameter_override"
+``` json
+{
+    "I_MEM_OFFSET": 0,
+    "I_MEM_LENGTH": 65536,
+    "D_MEM_OFFSET": 65536,
+    "D_MEM_LENGTH": 61440,
+    "crt0_file"   : "crt0_mini_rv32e.S",
+    "rv32_gcc"    : "rv32e -mabi=ilp32e",
+    "name"        : "rv32e",
+    "rtl_parameter_override"  : {
+        "RF_NUM_MSB"  : 31,
+        "RF_NUM_LSB"  : 0,
+        "OTHER_EXAMPLE" : 31
+    },
+    "verif_pkg_parameter_override"  : {
+        "TIMEOUT" : 1000000,
+        "OTHER_EXAMPLE" : 65403540
+    }
+}
+```
+
+Then in the "build" call a new script that you need to create that accepts the list of parameters you need to change.
+Make sure use correct regular expression so it overrides only the "parameter <name> = value" instances
+
+The scipt will search, find and replace the values that are mentioned in the cfg json file.
+The scipt will also log the info by printing to the screen what he found, where, and what he has changed.
+
+During the find replace - add a comment in the line of parameter
+Example:
+```systemverilog
+parameter EXAMPLE = 15; // Note: This line was inserted using parameter override script
+```
+
+*Note:*
+This Parameter change will actually change the value of the RTL!! 
+This is fine - as long as we test correctly the different parameter variations in the workflow.
+
+This is not the best solution because this may cause many redundant commit changes in the git. (the Change in Value is tracked in the git add/commit flow)
+But i think for us - this is a good solution.
+(We are not really expected to manually change the RTL parameters very often. but we want to make sure they are correct)
+
+
+I will note that the alternative is override the parameter value in the command line (simular to what i just added) but i have some trouble with overriding specific values in the param_pkg.
+Another good alternative is to pass the parameter in the instance of each module -> but this also can get annoying. 
+I think will need to this to the most common parameter overrides so we can simply intergrade different version of the same module in the same system. (similar to what we did with the RF_NUM_MSB which is getting override in the module instance)
+
+I think you can do this fairly simple
+Let me know if you have any questions

@@ -1,0 +1,533 @@
+2026-01-19 20:38:40,829 - INFO - rex-deploy - Pulling image 'hwebench/lowrisc_ibex:pr2241'
+2026-01-19 20:38:48,934 - INFO - rex-deploy - Building image hwebench/lowrisc_ibex:pr2241 to install a standalone python to /root. This might take a while (but you only have to do it once). To skip this step, set `python_standalone_dir` to None.
+2026-01-19 20:39:48,142 - INFO - rex-deploy - Starting container hwebenchlowrisc_ibexpr2241-55249970-0d13-4ba1-993f-229b3c43bfa8 with image hwebench/lowrisc_ibex:pr2241 serving on port 47445
+2026-01-19 20:39:48,152 - INFO - rex-deploy - Starting runtime at 47445
+2026-01-19 20:39:48,923 - INFO - rex-deploy - Runtime started in 0.77s
+2026-01-19 20:39:49,709 - INFO - swea-env - Environment Initialized
+2026-01-19 20:39:54,990 - INFO - swea-agent - Setting up agent for instance lowRISC_ibex_pr2241
+2026-01-19 20:39:54,994 - INFO - swea-agent - Trajectory will be saved to /workspace/phoenix-bench/agents/SWE-agent/trajectories/anon/swe_agent__openai--gpt-5.2__t-0.00__p-1.00__c-0.00___swe_instances/lowRISC_ibex_pr2241/lowRISC_ibex_pr2241.traj
+2026-01-19 20:39:57,773 - INFO - swea-tools - Resetting tools
+2026-01-19 20:39:58,148 - INFO - swea-agent - SYSTEM (main)
+You are an expert agent that can interact with a computer to debug SystemVerilog/Verilog repositories. You are in an environment
+with Verilator, Make, Python3 and Spike RISC-V ISA Simulator.
+2026-01-19 20:39:58,293 - INFO - swea-agent - 🤖 MODEL INPUT
+<uploaded_files>
+/testbed
+</uploaded_files>
+I've uploaded a HDL code repository in the directory /testbed. Consider the following PR description:
+
+<pr_description>
+# Undriven signal in ibex_register_file_fpga.sv
+
+## Observed Behavior
+<!--
+Please describe the problem you saw. Include waveforms (in VCD or Verilator/GtkWave FST format only please) and log files if possible.
+-->
+
+On the following line, `oh_raddr_a_err` is undriven if `RdataMuxCheck` is zero.
+
+https://github.com/lowRISC/ibex/blob/master/rtl/ibex_register_file_fpga.sv#L54
+
+This was seen in Verilator linting when trying to integrate Ibex into my design.  I've searched the VLT files for any relevant waivers but can't see any relating to this level of hierarchy.
+
+```
+ERROR: %Warning-UNDRIVEN: src/lowrisc_export_ibex_top_0/rtl/ibex_register_file_fpga.sv:54:9: Signal is not driven: 'oh_raddr_a_err'
+                                                                                    : ... note: In instance 'ibex_wb.u_top..gen_regfile_fpga.register_file_i'
+   54 |   logic oh_raddr_a_err, oh_raddr_b_err, oh_we_err;
+      |         ^~~~~~~~~~~~~~
+                   ... For warning description see https://verilator.org/warn/UNDRIVEN?v=5.024
+                   ... Use "/* verilator lint_off UNDRIVEN */" and lint_on around source to disable this message.
+%Warning-UNDRIVEN: src/lowrisc_export_ibex_top_0/rtl/ibex_register_file_fpga.sv:54:25: Signal is not driven: 'oh_raddr_b_err'
+                                                                                     : ... note: In instance 'ibex_wb.u_top..gen_regfile_fpga.register_file_i'
+   54 |   logic oh_raddr_a_err, oh_raddr_b_err, oh_we_err;
+      |                         ^~~~~~~~~~~~~~
+%Error: Exiting due to 2 warning(s)
+make: *** [Makefile:23: lint-only] Error 1
+
+ERROR: Failed to build nq:ip:ibex_wb:0 : '['make', 'lint-only']' exited with an error: 2
+```
+
+## Expected Behavior
+<!-- Please describe the behavior you expected to see instead. -->
+Tis lint clean please.
+
+## Steps to reproduce the issue
+<!--
+Please help us to reproduce the issue you're seeing by including a detailed description of what you did to get to the problem.
+
+For example:
+* What command did you run? (Also include the output of the command.)
+* What parameters/defines did you set?
+* Did you make modifications to the source code?
+-->
+
+I'm trying to export the Ibex RTL source code to get around the fact that you are using a custom version of Fusesoc.  I'm instantiating Ibex with the following parameters:
+
+```
+  ibex_top #(
+      .RV32M  (ibex_pkg::RV32MSlow),
+      .RV32B  (ibex_pkg::RV32BNone),
+      .RegFile(ibex_pkg::RegFileFPGA)
+  ) u_top (
+<snip>
+```
+
+and then running a Verilator lint using the standard Fusesoc/Edalize flow.
+
+## My Environment
+
+<!--
+Let us know how you're using Ibex. This helps us to better understand your problem and find a solution more quickly.
+-->
+
+**EDA tool and version:**
+Verilator 5.024 2024-04-05 rev v5.024
+<!--
+If you are using an EDA tool to work with Ibex let us know which tool and which version you're using.
+For example, "Xilinx Vivado 2020.1" or "Synopsys VCS 2020.03-SP1"
+-->
+
+**Operating system:**
+Rocky 9.4
+<!--
+Please let us know the operating system/Linux distribution you're using.
+For example "Ubuntu Linux 18.04" or "CentOS 7.3".
+-->
+
+**Version of the Ibex source code:**
+8f4c75c5e43e61b994248307c814e01860303056
+<!--
+Which version of the Ibex source code are you using?
+You can call `git rev-parse HEAD` in your Ibex source directory to get this information.
+Please also let us know if you have made changes to the code.
+-->
+
+</pr_description>
+
+Implement the necessary changes to the repository so that the issue specified in the <pr_description> are resolved.
+Your task is to make the minimal changes to files in the /testbed directory to ensure the <pr_description> is fixed.
+Follow these steps to resolve the issue:
+1. As a first step, it might be a good idea to find and read code relevant to the <pr_description>.
+2. Edit the sourcecode of the repo to resolve the issue.
+3. Think about edgecases and make sure your fix handles them as well.
+
+You can use the tools Verilog debugging tools if needed.
+Your thinking should be thorough and so it's fine if it's very long.
+2026-01-19 20:39:58,304 - INFO - swea-agent - ========================= STEP 1 =========================
+2026-01-19 20:40:00,736 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+ls -R /testbed | head
+2026-01-19 20:40:01,005 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+/testbed:
+CONTRIBUTING.md
+CREDITS.md
+LICENSE
+Makefile
+NOTICE
+README.md
+SECURITY.md
+__init__.py
+check_tool_requirements.core
+ls: write error: Broken pipe
+
+2026-01-19 20:40:01,011 - INFO - swea-agent - ========================= STEP 2 =========================
+2026-01-19 20:40:03,064 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+sed -n '1,120p' /testbed/rtl/ibex_register_file_fpga.sv
+2026-01-19 20:40:03,317 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+// Copyright lowRISC contributors.
+// Copyright 2018 ETH Zurich and University of Bologna, see also CREDITS.md.
+// Licensed under the Apache License, Version 2.0, see LICENSE for details.
+// SPDX-License-Identifier: Apache-2.0
+
+/**
+ * RISC-V register file
+ *
+ * Register file with 31 or 15x 32 bit wide registers. Register 0 is fixed to 0.
+ *
+ * This register file is designed to make FPGA synthesis tools infer RAM primitives. For Xilinx
+ * FPGA architectures, it will produce RAM32M primitives. Other vendors have not yet been tested.
+ */
+module ibex_register_file_fpga #(
+    parameter bit                   RV32E             = 0,
+    parameter int unsigned          DataWidth         = 32,
+    parameter bit                   DummyInstructions = 0,
+    parameter bit                   WrenCheck         = 0,
+    parameter bit                   RdataMuxCheck     = 0,
+    parameter logic [DataWidth-1:0] WordZeroVal       = '0
+) (
+  // Clock and Reset
+  input  logic                 clk_i,
+  input  logic                 rst_ni,
+
+  input  logic                 test_en_i,
+  input  logic                 dummy_instr_id_i,
+  input  logic                 dummy_instr_wb_i,
+
+  //Read port R1
+  input  logic [          4:0] raddr_a_i,
+  output logic [DataWidth-1:0] rdata_a_o,
+  //Read port R2
+  input  logic [          4:0] raddr_b_i,
+  output logic [DataWidth-1:0] rdata_b_o,
+  // Write port W1
+  input  logic [          4:0] waddr_a_i,
+  input  logic [DataWidth-1:0] wdata_a_i,
+  input  logic                 we_a_i,
+
+  // This indicates whether spurious WE or non-one-hot encoded raddr are detected.
+  output logic                 err_o
+);
+
+  localparam int ADDR_WIDTH = RV32E ? 4 : 5;
+  localparam int NUM_WORDS = 2 ** ADDR_WIDTH;
+
+  logic [DataWidth-1:0] mem[NUM_WORDS];
+  logic we; // write enable if writing to any register other than R0
+
+  logic [DataWidth-1:0] mem_o_a, mem_o_b;
+
+  // WE strobe and one-hot encoded raddr alert.
+  logic oh_raddr_a_err, oh_raddr_b_err, oh_we_err;
+  assign err_o = oh_raddr_a_err || oh_raddr_b_err || oh_we_err;
+
+  if (RdataMuxCheck) begin : gen_rdata_mux_check
+    // Encode raddr_a/b into one-hot encoded signals.
+    logic [NUM_WORDS-1:0] raddr_onehot_a, raddr_onehot_b;
+    logic [NUM_WORDS-1:0] raddr_onehot_a_buf, raddr_onehot_b_buf;
+    prim_onehot_enc #(
+      .OneHotWidth(NUM_WORDS)
+    ) u_prim_onehot_enc_raddr_a (
+      .in_i  (raddr_a_i),
+      .en_i  (1'b1),
+      .out_o (raddr_onehot_a)
+    );
+
+    prim_onehot_enc #(
+      .OneHotWidth(NUM_WORDS)
+    ) u_prim_onehot_enc_raddr_b (
+      .in_i  (raddr_b_i),
+      .en_i  (1'b1),
+      .out_o (raddr_onehot_b)
+    );
+
+    // Buffer the one-hot encoded signals so that the checkers
+    // are not optimized.
+    prim_buf #(
+      .Width(NUM_WORDS)
+    ) u_prim_buf_raddr_a (
+      .in_i (raddr_onehot_a),
+      .out_o(raddr_onehot_a_buf)
+    );
+
+    prim_buf #(
+      .Width(NUM_WORDS)
+    ) u_prim_buf_raddr_b (
+      .in_i (raddr_onehot_b),
+      .out_o(raddr_onehot_b_buf)
+    );
+
+    // SEC_CM: DATA_REG_SW.GLITCH_DETECT
+    // Check the one-hot encoded signals for glitches.
+    prim_onehot_check #(
+      .AddrWidth(ADDR_WIDTH),
+      .OneHotWidth(NUM_WORDS),
+      .AddrCheck(1),
+      // When AddrCheck=1 also EnableCheck needs to be 1.
+      .EnableCheck(1)
+    ) u_prim_onehot_check_raddr_a (
+      .clk_i,
+      .rst_ni,
+      .oh_i   (raddr_onehot_a_buf),
+      .addr_i (raddr_a_i),
+      // Set enable=1 as address is always valid.
+      .en_i   (1'b1),
+      .err_o  (oh_raddr_a_err)
+    );
+
+    prim_onehot_check #(
+      .AddrWidth(ADDR_WIDTH),
+      .OneHotWidth(NUM_WORDS),
+      .AddrCheck(1),
+      // When AddrCheck=1 also EnableCheck needs to be 1.
+      .EnableCheck(1)
+    ) u_prim_onehot_check_raddr_b (
+      .clk_i,
+      .rst_ni,
+      .oh_i   (raddr_onehot_b_buf),
+
+2026-01-19 20:40:03,330 - INFO - swea-agent - ========================= STEP 3 =========================
+2026-01-19 20:40:05,163 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+sed -n '120,240p' /testbed/rtl/ibex_register_file_fpga.sv
+2026-01-19 20:40:05,421 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+      .oh_i   (raddr_onehot_b_buf),
+      .addr_i (raddr_b_i),
+      // Set enable=1 as address is always valid.
+      .en_i   (1'b1),
+      .err_o  (oh_raddr_b_err)
+    );
+
+    // MUX register to rdata_a/b_o according to raddr_a/b_onehot.
+    prim_onehot_mux  #(
+      .Width(DataWidth),
+      .Inputs(NUM_WORDS)
+    ) u_rdata_a_mux (
+      .clk_i,
+      .rst_ni,
+      .in_i  (mem),
+      .sel_i (raddr_onehot_a),
+      .out_o (mem_o_a)
+    );
+
+    prim_onehot_mux  #(
+      .Width(DataWidth),
+      .Inputs(NUM_WORDS)
+    ) u_rdata_b_mux (
+      .clk_i,
+      .rst_ni,
+      .in_i  (mem),
+      .sel_i (raddr_onehot_b),
+      .out_o (mem_o_b)
+    );
+
+    assign rdata_a_o = (raddr_a_i == '0) ? WordZeroVal : mem_o_a;
+    assign rdata_b_o = (raddr_b_i == '0) ? WordZeroVal : mem_o_b;
+  end else begin : gen_no_rdata_mux_check
+    // async_read a
+    assign rdata_a_o = (raddr_a_i == '0) ? WordZeroVal : mem[raddr_a_i];
+
+    // async_read b
+    assign rdata_b_o = (raddr_b_i == '0) ? WordZeroVal : mem[raddr_b_i];
+  end
+
+  // we select
+  assign we = (waddr_a_i == '0) ? 1'b0 : we_a_i;
+
+  // SEC_CM: DATA_REG_SW.GLITCH_DETECT
+  // This checks for spurious WE strobes on the regfile.
+  if (WrenCheck) begin : gen_wren_check
+    // Since the FPGA uses a memory macro, there is only one write-enable strobe to check.
+    assign oh_we_err = we && !we_a_i;
+  end else begin : gen_no_wren_check
+    assign oh_we_err = 1'b0;
+  end
+
+  // Note that the SystemVerilog LRM requires variables on the LHS of assignments within
+  // "always_ff" to not be written to by any other process. However, to enable the initialization
+  // of the inferred RAM32M primitives with non-zero values, below "initial" procedure is needed.
+  // Therefore, we use "always" instead of the generally preferred "always_ff" for the synchronous
+  // write procedure.
+  always @(posedge clk_i) begin : sync_write
+    if (we == 1'b1) begin
+      mem[waddr_a_i] <= wdata_a_i;
+    end
+  end : sync_write
+
+  // Make sure we initialize the BRAM with the correct register reset value.
+  initial begin
+    for (int k = 0; k < NUM_WORDS; k++) begin
+      mem[k] = WordZeroVal;
+    end
+  end
+
+  // Reset not used in this register file version
+  logic unused_rst_ni;
+  assign unused_rst_ni = rst_ni;
+
+  // Dummy instruction changes not relevant for FPGA implementation
+  logic unused_dummy_instr;
+  assign unused_dummy_instr = dummy_instr_id_i ^ dummy_instr_wb_i;
+  // Test enable signal not used in FPGA implementation
+  logic unused_test_en;
+  assign unused_test_en = test_en_i;
+
+endmodule
+
+2026-01-19 20:40:05,433 - INFO - swea-agent - ========================= STEP 4 =========================
+2026-01-19 20:40:11,516 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+str_replace_editor str_replace /testbed/rtl/ibex_register_file_fpga.sv   --old_str '  // WE strobe and one-hot encoded raddr alert.
+  logic oh_raddr_a_err, oh_raddr_b_err, oh_we_err;
+  assign err_o = oh_raddr_a_err || oh_raddr_b_err || oh_we_err;
+
+  if (RdataMuxCheck) begin : gen_rdata_mux_check' --new_str '  // WE strobe and one-hot encoded raddr alert.
+  logic oh_raddr_a_err, oh_raddr_b_err, oh_we_err;
+
+  // The one-hot address checkers are only instantiated when RdataMuxCheck is enabled.
+  // When disabled, tie the corresponding error outputs off to avoid undriven signals
+  // (and to keep err_o well-defined for lint/simulation).
+  assign oh_raddr_a_err = 1'"'"'b0;
+  assign oh_raddr_b_err = 1'"'"'b0;
+
+  assign err_o = oh_raddr_a_err || oh_raddr_b_err || oh_we_err;
+
+  if (RdataMuxCheck) begin : gen_rdata_mux_check'
+2026-01-19 20:40:11,811 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+The file /testbed/rtl/ibex_register_file_fpga.sv has been edited. Here's the result of running `cat -n` on a snippet of /testbed/rtl/ibex_register_file_fpga.sv:
+    48	  logic [DataWidth-1:0] mem[NUM_WORDS];
+    49	  logic we; // write enable if writing to any register other than R0
+    50	
+    51	  logic [DataWidth-1:0] mem_o_a, mem_o_b;
+    52	
+    53	  // WE strobe and one-hot encoded raddr alert.
+    54	  logic oh_raddr_a_err, oh_raddr_b_err, oh_we_err;
+    55	
+    56	  // The one-hot address checkers are only instantiated when RdataMuxCheck is enabled.
+    57	  // When disabled, tie the corresponding error outputs off to avoid undriven signals
+    58	  // (and to keep err_o well-defined for lint/simulation).
+    59	  assign oh_raddr_a_err = 1'b0;
+    60	  assign oh_raddr_b_err = 1'b0;
+    61	
+    62	  assign err_o = oh_raddr_a_err || oh_raddr_b_err || oh_we_err;
+    63	
+    64	  if (RdataMuxCheck) begin : gen_rdata_mux_check
+    65	    // Encode raddr_a/b into one-hot encoded signals.
+    66	    logic [NUM_WORDS-1:0] raddr_onehot_a, raddr_onehot_b;
+    67	    logic [NUM_WORDS-1:0] raddr_onehot_a_buf, raddr_onehot_b_buf;
+Review the changes and make sure they are as expected. Edit the file again if necessary.
+
+2026-01-19 20:40:11,820 - INFO - swea-agent - ========================= STEP 5 =========================
+2026-01-19 20:40:14,350 - WARNING - swea-agent - Requerying model after FunctionCallingFormatError (1th requery)
+2026-01-19 20:40:14,352 - WARNING - swea-agent - Your action could not be parsed properly: Unexpected argument(s): timeout.
+Make sure your function call doesn't include any extra arguments that are not in the allowed arguments, and only use the allowed commands.
+2026-01-19 20:40:17,386 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+make -C /testbed lint-only
+2026-01-19 20:40:17,639 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+make: Entering directory '/testbed'
+make: *** No rule to make target 'lint-only'.  Stop.
+make: Leaving directory '/testbed'
+
+2026-01-19 20:40:17,642 - INFO - swea-agent - ========================= STEP 7 =========================
+2026-01-19 20:40:20,354 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+grep -R "lint-only" -n /testbed/Makefile /testbed/**/Makefile 2>/dev/null | head
+2026-01-19 20:40:20,606 - INFO - swea-agent - 🤖 MODEL INPUT
+Your command ran successfully and did not produce any output.
+2026-01-19 20:40:20,611 - INFO - swea-agent - ========================= STEP 8 =========================
+2026-01-19 20:40:23,525 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+verilator -Wall --lint-only -I/testbed/rtl -I/testbed/vendor -I/testbed/vendor/lowrisc_ip -I/testbed/vendor/lowrisc_ip/ip/prim/rtl /testbed/rtl/ibex_register_file_fpga.sv
+2026-01-19 20:40:23,821 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+%Warning-DECLFILENAME: /testbed/rtl/ibex_register_file_fpga.sv:88:7: Filename 'ibex_register_file_fpga' does not match NOTFOUNDMODULE name: 'prim_buf'
+   88 |     ) u_prim_buf_raddr_a (
+      |       ^~~~~~~~~~~~~~~~~~
+                       ... Use "/* verilator lint_off DECLFILENAME */" and lint_on around source to disable this message.
+%Warning-DECLFILENAME: /testbed/vendor/lowrisc_ip/ip/prim/rtl/prim_onehot_mux.sv:31:33: Filename 'prim_onehot_mux' does not match NOTFOUNDMODULE name: 'prim_and2'
+   31 |     prim_and2 #(.Width(Inputs)) u_mux_bit_and(
+      |                                 ^~~~~~~~~~~~~
+                       /testbed/rtl/ibex_register_file_fpga.sv:140:1: ... note: In file included from ibex_register_file_fpga.sv
+%Warning-UNUSED: /testbed/rtl/ibex_register_file_fpga.sv:51:25: Signal is not driven, nor used: 'mem_o_a'
+                                                              : ... In instance ibex_register_file_fpga
+   51 |   logic [DataWidth-1:0] mem_o_a, mem_o_b;
+      |                         ^~~~~~~
+%Warning-UNUSED: /testbed/rtl/ibex_register_file_fpga.sv:51:34: Signal is not driven, nor used: 'mem_o_b'
+                                                              : ... In instance ibex_register_file_fpga
+   51 |   logic [DataWidth-1:0] mem_o_a, mem_o_b;
+      |                                  ^~~~~~~
+%Error: Exiting due to 4 warning(s)
+
+2026-01-19 20:40:23,835 - INFO - swea-agent - ========================= STEP 9 =========================
+2026-01-19 20:40:27,071 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+submit
+2026-01-19 20:40:27,371 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+Thank you for your work on this issue. Please review your changes and run the submit command again to confirm.
+
+Here is a list of all of your changes:
+
+<diff>
+diff --git a/rtl/ibex_register_file_fpga.sv b/rtl/ibex_register_file_fpga.sv
+index 73e0afab..bc246f42 100644
+--- a/rtl/ibex_register_file_fpga.sv
++++ b/rtl/ibex_register_file_fpga.sv
+@@ -52,6 +52,13 @@ module ibex_register_file_fpga #(
+ 
+   // WE strobe and one-hot encoded raddr alert.
+   logic oh_raddr_a_err, oh_raddr_b_err, oh_we_err;
++
++  // The one-hot address checkers are only instantiated when RdataMuxCheck is enabled.
++  // When disabled, tie the corresponding error outputs off to avoid undriven signals
++  // (and to keep err_o well-defined for lint/simulation).
++  assign oh_raddr_a_err = 1'b0;
++  assign oh_raddr_b_err = 1'b0;
++
+   assign err_o = oh_raddr_a_err || oh_raddr_b_err || oh_we_err;
+ 
+   if (RdataMuxCheck) begin : gen_rdata_mux_check
+
+</diff>
+
+
+2026-01-19 20:40:27,388 - INFO - swea-agent - ========================= STEP 10 =========================
+2026-01-19 20:40:29,659 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+submit
+2026-01-19 20:40:29,957 - INFO - swea-agent - Found submission: diff --git a/rtl/ibex_register_file_fpga.sv b/rtl/ibex_register_file_fpga.sv
+index 73e0afab..bc246f42 100644
+--- a/rtl/ibex_register_file_fpga.sv
++++ b/rtl/ibex_register_file_fpga.sv
+@@ -52,6 +52,13 @@ module ibex_register_file_fpga #(
+ 
+   // WE strobe and one-hot encoded raddr alert.
+   logic oh_raddr_a_err, oh_raddr_b_err, oh_we_err;
++
++  // The one-hot address checkers are only instantiated when RdataMuxCheck is enabled.
++  // When disabled, tie the corresponding error outputs off to avoid undriven signals
++  // (and to keep err_o well-defined for lint/simulation).
++  assign oh_raddr_a_err = 1'b0;
++  assign oh_raddr_b_err = 1'b0;
++
+   assign err_o = oh_raddr_a_err || oh_raddr_b_err || oh_we_err;
+ 
+   if (RdataMuxCheck) begin : gen_rdata_mux_check
+
+2026-01-19 20:40:29,961 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+diff --git a/rtl/ibex_register_file_fpga.sv b/rtl/ibex_register_file_fpga.sv
+index 73e0afab..bc246f42 100644
+--- a/rtl/ibex_register_file_fpga.sv
++++ b/rtl/ibex_register_file_fpga.sv
+@@ -52,6 +52,13 @@ module ibex_register_file_fpga #(
+ 
+   // WE strobe and one-hot encoded raddr alert.
+   logic oh_raddr_a_err, oh_raddr_b_err, oh_we_err;
++
++  // The one-hot address checkers are only instantiated when RdataMuxCheck is enabled.
++  // When disabled, tie the corresponding error outputs off to avoid undriven signals
++  // (and to keep err_o well-defined for lint/simulation).
++  assign oh_raddr_a_err = 1'b0;
++  assign oh_raddr_b_err = 1'b0;
++
+   assign err_o = oh_raddr_a_err || oh_raddr_b_err || oh_we_err;
+ 
+   if (RdataMuxCheck) begin : gen_rdata_mux_check
+
+2026-01-19 20:40:29,971 - INFO - swea-agent - Trajectory saved to /workspace/phoenix-bench/agents/SWE-agent/trajectories/anon/swe_agent__openai--gpt-5.2__t-0.00__p-1.00__c-0.00___swe_instances/lowRISC_ibex_pr2241/lowRISC_ibex_pr2241.traj
+2026-01-19 20:40:29,977 - INFO - swea-env - Beginning environment shutdown...

@@ -1,0 +1,19 @@
+diff --git a/cores/s18/hdl/jts18_main.v b/cores/s18/hdl/jts18_main.v
+index 6daa2d7..05f5ede 100644
+--- a/cores/s18/hdl/jts18_main.v
++++ b/cores/s18/hdl/jts18_main.v
+@@ -354,9 +354,12 @@ assign io_dout = (A[15:4] == 12'h301) ? {m6253_shift_out, 7'h7f} :
+ 
+ always @(*) begin
+     if (game_id[PCB_5873]) begin
+-        p1 = {joystick3[4], joystick3[5], 2'b11, joystick2[5:4], joystick1[5:4]};
++        // Laser Ghost uses the third joystick port for the cabinet controls on
++        // Analogue Pocket. Keep the full D-PAD mapping on joystick1 so left/right
++        // and up/down remain playable.
++        p1 = {joystick1[3:0], joystick1[7:4]};
+         p2 = 8'hff;
+-        p3 = 8'hff;
++        p3 = {joystick3[3:0],joystick3[7:4]};
+         coinage = { coin[2], 2'b11, service, 1'b1, dip_test, coin[1:0] };
+     end else begin
+         p1 = {joystick1[3:0],joystick1[7:4]};

@@ -1,0 +1,110 @@
+From 7bbdb2d4e1fcd70bb899f489edc027e36eeeff8e Mon Sep 17 00:00:00 2001
+From: Will Green <WillGreen@users.noreply.github.com>
+Date: Mon, 8 Jan 2024 11:30:21 +0000
+Subject: [PATCH] Hitomezashi missing pixel fix (#172).
+
+Simple fix for the missing pixel. Thanks to Serg Ko (@vfr1200f).
+Testing in simulation. Awaiting board tests before merge.
+---
+ graphics/racing-the-beam/ice40/top_hitomezashi.sv   | 6 +++++-
+ graphics/racing-the-beam/sim/top_hitomezashi.sv     | 6 +++++-
+ graphics/racing-the-beam/xc7-dvi/top_hitomezashi.sv | 6 +++++-
+ graphics/racing-the-beam/xc7/top_hitomezashi.sv     | 6 +++++-
+ 4 files changed, 20 insertions(+), 4 deletions(-)
+
+diff --git a/graphics/racing-the-beam/ice40/top_hitomezashi.sv b/graphics/racing-the-beam/ice40/top_hitomezashi.sv
+index 17bb7f72..b983f6dd 100644
+--- a/graphics/racing-the-beam/ice40/top_hitomezashi.sv
++++ b/graphics/racing-the-beam/ice40/top_hitomezashi.sv
+@@ -58,14 +58,18 @@ module top_hitomezashi (
+     logic stitch;
+     logic v_line, v_on;
+     logic h_line, h_on;
++    logic last_h_stitch;
+     always_comb begin
+         v_line = (sx[3:0] == 4'b0000);
+         h_line = (sy[3:0] == 4'b0000);
+         v_on = sy[4] ^ v_start[sx[9:4]];
+         h_on = sx[4] ^ h_start[sy[8:4]];
+-        stitch = (v_line && v_on) || (h_line && h_on);
++        stitch = (v_line && v_on) || (h_line && h_on) || last_h_stitch;
+     end
+ 
++    // last stich fix thanks to Serg Ko (@vfr1200f)
++    always_ff @(posedge clk_pix) last_h_stitch <= h_line && h_on;
++
+     // paint colour: yellow lines, blue background
+     logic [3:0] paint_r, paint_g, paint_b;
+     always_comb begin
+diff --git a/graphics/racing-the-beam/sim/top_hitomezashi.sv b/graphics/racing-the-beam/sim/top_hitomezashi.sv
+index 26f5408f..571abfe5 100644
+--- a/graphics/racing-the-beam/sim/top_hitomezashi.sv
++++ b/graphics/racing-the-beam/sim/top_hitomezashi.sv
+@@ -46,14 +46,18 @@ module top_hitomezashi #(parameter CORDW=10) (  // coordinate width
+     logic stitch;
+     logic v_line, v_on;
+     logic h_line, h_on;
++    logic last_h_stitch;
+     always_comb begin
+         v_line = (sx[3:0] == 4'b0000);
+         h_line = (sy[3:0] == 4'b0000);
+         v_on = sy[4] ^ v_start[sx[9:4]];
+         h_on = sx[4] ^ h_start[sy[8:4]];
+-        stitch = (v_line && v_on) || (h_line && h_on);
++        stitch = (v_line && v_on) || (h_line && h_on) || last_h_stitch;
+     end
+ 
++    // last stich fix thanks to Serg Ko (@vfr1200f)
++    always_ff @(posedge clk_pix) last_h_stitch <= h_line && h_on;
++
+     // paint colour: yellow lines, blue background
+     logic [3:0] paint_r, paint_g, paint_b;
+     always_comb begin
+diff --git a/graphics/racing-the-beam/xc7-dvi/top_hitomezashi.sv b/graphics/racing-the-beam/xc7-dvi/top_hitomezashi.sv
+index 969cbf33..09d736f5 100644
+--- a/graphics/racing-the-beam/xc7-dvi/top_hitomezashi.sv
++++ b/graphics/racing-the-beam/xc7-dvi/top_hitomezashi.sv
+@@ -61,14 +61,18 @@ module top_hitomezashi (
+     logic stitch;
+     logic v_line, v_on;
+     logic h_line, h_on;
++    logic last_h_stitch;
+     always_comb begin
+         v_line = (sx[4:0] == 5'b00000);
+         h_line = (sy[4:0] == 5'b00000);
+         v_on = sy[5] ^ v_start[sx[10:5]];
+         h_on = sx[5] ^ h_start[sy[9:5]];
+-        stitch = (v_line && v_on) || (h_line && h_on);
++        stitch = (v_line && v_on) || (h_line && h_on) || last_h_stitch;
+     end
+ 
++    // last stich fix thanks to Serg Ko (@vfr1200f)
++    always_ff @(posedge clk_pix) last_h_stitch <= h_line && h_on;
++
+     // paint colour: yellow lines, blue background
+     logic [3:0] paint_r, paint_g, paint_b;
+     always_comb begin
+diff --git a/graphics/racing-the-beam/xc7/top_hitomezashi.sv b/graphics/racing-the-beam/xc7/top_hitomezashi.sv
+index bbf807e8..97af1172 100644
+--- a/graphics/racing-the-beam/xc7/top_hitomezashi.sv
++++ b/graphics/racing-the-beam/xc7/top_hitomezashi.sv
+@@ -59,14 +59,18 @@ module top_hitomezashi (
+     logic stitch;
+     logic v_line, v_on;
+     logic h_line, h_on;
++    logic last_h_stitch;
+     always_comb begin
+         v_line = (sx[3:0] == 4'b0000);
+         h_line = (sy[3:0] == 4'b0000);
+         v_on = sy[4] ^ v_start[sx[9:4]];
+         h_on = sx[4] ^ h_start[sy[8:4]];
+-        stitch = (v_line && v_on) || (h_line && h_on);
++        stitch = (v_line && v_on) || (h_line && h_on) || last_h_stitch;
+     end
+ 
++    // last stich fix thanks to Serg Ko (@vfr1200f)
++    always_ff @(posedge clk_pix) last_h_stitch <= h_line && h_on;
++
+     // paint colour: yellow lines, blue background
+     logic [3:0] paint_r, paint_g, paint_b;
+     always_comb begin

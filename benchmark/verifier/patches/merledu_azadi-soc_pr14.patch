@@ -1,0 +1,420 @@
+From a653ba43ceeb6303de011ae1befb0f84991e0e41 Mon Sep 17 00:00:00 2001
+From: Auringzaib Sabir <auringzaibsabir11@gmail.com>
+Date: Fri, 19 Nov 2021 14:17:47 +0500
+Subject: [PATCH 1/6] Added code to cover functional coverage
+
+---
+ hw/vendor/lowrisc_ibex/rtl/ibex_controller.sv | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/hw/vendor/lowrisc_ibex/rtl/ibex_controller.sv b/hw/vendor/lowrisc_ibex/rtl/ibex_controller.sv
+index 31a7506f..16112211 100644
+--- a/hw/vendor/lowrisc_ibex/rtl/ibex_controller.sv
++++ b/hw/vendor/lowrisc_ibex/rtl/ibex_controller.sv
+@@ -8,6 +8,7 @@
+  */
+ 
+ `include "prim_assert.sv"
++`include "dv_fcov_macros.svh"
+ 
+ module ibex_controller #(
+     parameter bit WritebackStage  = 0,
+@@ -837,6 +838,18 @@ module ibex_controller #(
+     end
+   end
+ 
++  //////////
++  // FCOV //
++  //////////
++
++  `DV_FCOV_SIGNAL(logic, interrupt_taken, (ctrl_fsm_cs != IRQ_TAKEN) & (ctrl_fsm_ns == IRQ_TAKEN))
++  `DV_FCOV_SIGNAL(logic, debug_entry_if,
++      (ctrl_fsm_cs != DBG_TAKEN_IF) & (ctrl_fsm_ns == DBG_TAKEN_IF))
++  `DV_FCOV_SIGNAL(logic, debug_entry_id,
++      (ctrl_fsm_cs != DBG_TAKEN_ID) & (ctrl_fsm_ns == DBG_TAKEN_ID))
++  `DV_FCOV_SIGNAL(logic, pipe_flush, (ctrl_fsm_cs != FLUSH) & (ctrl_fsm_ns == FLUSH))
++  `DV_FCOV_SIGNAL(logic, debug_req, debug_req_i & ~debug_mode_q)
++
+   ////////////////
+   // Assertions //
+   ////////////////
+
+From b44532c52fa88f092e85c7a31f6acd58723d3a03 Mon Sep 17 00:00:00 2001
+From: Auringzaib Sabir <auringzaibsabir11@gmail.com>
+Date: Fri, 19 Nov 2021 14:30:22 +0500
+Subject: [PATCH 2/6] Modified decoder stage for functional coverage
+
+---
+ hw/vendor/lowrisc_ibex/rtl/ibex_id_stage.sv | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/hw/vendor/lowrisc_ibex/rtl/ibex_id_stage.sv b/hw/vendor/lowrisc_ibex/rtl/ibex_id_stage.sv
+index f751bd7f..7e52d425 100644
+--- a/hw/vendor/lowrisc_ibex/rtl/ibex_id_stage.sv
++++ b/hw/vendor/lowrisc_ibex/rtl/ibex_id_stage.sv
+@@ -15,6 +15,7 @@
+  */
+ 
+ `include "prim_assert.sv"
++`include "dv_fcov_macros.svh"
+ 
+ module ibex_id_stage #(
+     parameter bit               RV32E           = 0,
+@@ -1141,6 +1142,17 @@ module ibex_id_stage #(
+   assign perf_mul_wait_o = stall_multdiv & mult_en_dec;
+   assign perf_div_wait_o = stall_multdiv & div_en_dec;
+ 
++  //////////
++  // FCOV //
++  //////////
++
++  `DV_FCOV_SIGNAL_GEN_IF(logic, rf_rd_wb_hz,
++    (gen_stall_mem.rf_rd_a_hz | gen_stall_mem.rf_rd_b_hz) & instr_valid_i, WritebackStage)
++  `DV_FCOV_SIGNAL(logic, branch_taken,
++    instr_executing & (id_fsm_q == FIRST_CYCLE) & branch_decision_i)
++  `DV_FCOV_SIGNAL(logic, branch_not_taken,
++    instr_executing & (id_fsm_q == FIRST_CYCLE) & ~branch_decision_i)
++
+   ////////////////
+   // Assertions //
+   ////////////////
+
+From 60eba831941347924b8bbcef736e44e6344698f1 Mon Sep 17 00:00:00 2001
+From: Auringzaib Sabir <auringzaibsabir11@gmail.com>
+Date: Fri, 19 Nov 2021 14:35:07 +0500
+Subject: [PATCH 3/6] Modified load store unit to capture coverage
+
+---
+ hw/vendor/lowrisc_ibex/rtl/ibex_load_store_unit.sv | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/hw/vendor/lowrisc_ibex/rtl/ibex_load_store_unit.sv b/hw/vendor/lowrisc_ibex/rtl/ibex_load_store_unit.sv
+index 4d89b257..a26a3cbd 100644
+--- a/hw/vendor/lowrisc_ibex/rtl/ibex_load_store_unit.sv
++++ b/hw/vendor/lowrisc_ibex/rtl/ibex_load_store_unit.sv
+@@ -12,6 +12,7 @@
+  */
+ 
+ `include "prim_assert.sv"
++`include "dv_fcov_macros.svh"
+ 
+ module ibex_load_store_unit
+ (
+@@ -494,6 +495,13 @@ module ibex_load_store_unit
+ 
+   assign busy_o = (ls_fsm_cs != IDLE);
+ 
++  //////////
++  // FCOV //
++  //////////
++
++  `DV_FCOV_SIGNAL(logic, ls_error_exception, (load_err_o | store_err_o) & ~pmp_err_q)
++  `DV_FCOV_SIGNAL(logic, ls_pmp_exception, (load_err_o | store_err_o) & pmp_err_q)
++
+   ////////////////
+   // Assertions //
+   ////////////////
+
+From 9464522c719e7b8d5b6c5a43201ec8f6a96a9334 Mon Sep 17 00:00:00 2001
+From: Auringzaib Sabir <auringzaibsabir11@gmail.com>
+Date: Fri, 19 Nov 2021 14:41:14 +0500
+Subject: [PATCH 4/6] Added code to gather functional coverage for write back
+ stage
+
+---
+ hw/vendor/lowrisc_ibex/rtl/ibex_wb_stage.sv | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/hw/vendor/lowrisc_ibex/rtl/ibex_wb_stage.sv b/hw/vendor/lowrisc_ibex/rtl/ibex_wb_stage.sv
+index fac995a7..4ecad872 100644
+--- a/hw/vendor/lowrisc_ibex/rtl/ibex_wb_stage.sv
++++ b/hw/vendor/lowrisc_ibex/rtl/ibex_wb_stage.sv
+@@ -12,6 +12,7 @@
+  */
+ 
+ `include "prim_assert.sv"
++`include "dv_fcov_macros.svh"
+ 
+ module ibex_wb_stage #(
+   parameter bit WritebackStage = 1'b0,
+@@ -250,5 +251,7 @@ module ibex_wb_stage #(
+                             fp_rf_wdata_wb_mux[1];
+   assign fp_rf_wen_wb_o   = |fp_rf_wdata_wb_mux_we;
+ 
++`DV_FCOV_SIGNAL_GEN_IF(logic, wb_valid, g_writeback_stage.wb_valid_q, WritebackStage)
++
+   `ASSERT(RFWriteFromOneSourceOnly, $onehot0(rf_wdata_wb_mux_we))
+ endmodule
+
+From 77df88a5dee1c0283f16ad9a289620f2a32118d4 Mon Sep 17 00:00:00 2001
+From: Auringzaib Sabir <auringzaibsabir11@gmail.com>
+Date: Fri, 19 Nov 2021 15:23:57 +0500
+Subject: [PATCH 5/6] Modified ibex_pkg.sv for functional coverage
+
+---
+ hw/vendor/lowrisc_ibex/rtl/ibex_pkg.sv | 88 +++++++++++++++++++++++++-
+ 1 file changed, 86 insertions(+), 2 deletions(-)
+
+diff --git a/hw/vendor/lowrisc_ibex/rtl/ibex_pkg.sv b/hw/vendor/lowrisc_ibex/rtl/ibex_pkg.sv
+index b84d4273..06709784 100644
+--- a/hw/vendor/lowrisc_ibex/rtl/ibex_pkg.sv
++++ b/hw/vendor/lowrisc_ibex/rtl/ibex_pkg.sv
+@@ -8,6 +8,25 @@
+  */
+ package ibex_pkg;
+ 
++  ////////////////
++  // IO Structs //
++  ////////////////
++
++  typedef struct packed {
++    logic [31:0] current_pc;
++    logic [31:0] next_pc;
++    logic [31:0] last_data_addr;
++    logic [31:0] exception_addr;
++  } crash_dump_t;
++
++  typedef struct packed {
++    logic        dummy_instr_id;
++    logic [4:0]  raddr_a;
++    logic [4:0]  waddr_a;
++    logic        we_a;
++    logic [4:0]  raddr_b;
++  } core2rf_t;
++
+ /////////////////////
+ // Parameter Enums //
+ /////////////////////
+@@ -335,6 +354,25 @@ typedef enum logic [2:0] {
+ parameter int unsigned PMP_MAX_REGIONS      = 16;
+ parameter int unsigned PMP_CFG_W            = 8;
+ 
++  // ICache constants
++  parameter int unsigned ADDR_W          = 32;
++  parameter int unsigned BUS_SIZE        = 32;
++  parameter int unsigned BUS_BYTES       = BUS_SIZE/8;
++  parameter int unsigned BUS_W           = $clog2(BUS_BYTES);
++  parameter int unsigned IC_SIZE_BYTES   = 4096;
++  parameter int unsigned IC_NUM_WAYS     = 2;
++  parameter int unsigned IC_LINE_SIZE    = 64;
++  parameter int unsigned IC_LINE_BYTES   = IC_LINE_SIZE/8;
++  parameter int unsigned IC_LINE_W       = $clog2(IC_LINE_BYTES);
++  parameter int unsigned IC_NUM_LINES    = IC_SIZE_BYTES / IC_NUM_WAYS / IC_LINE_BYTES;
++  parameter int unsigned IC_LINE_BEATS   = IC_LINE_BYTES / BUS_BYTES;
++  parameter int unsigned IC_LINE_BEATS_W = $clog2(IC_LINE_BEATS);
++  parameter int unsigned IC_INDEX_W      = $clog2(IC_NUM_LINES);
++  parameter int unsigned IC_INDEX_HI     = IC_INDEX_W + IC_LINE_W - 1;
++  parameter int unsigned IC_TAG_SIZE     = ADDR_W - IC_INDEX_W - IC_LINE_W + 1; // 1 valid bit
++  parameter int unsigned IC_OUTPUT_BEATS = (BUS_BYTES / 2); // number of halfwords
++
++
+ // PMP acces type
+ parameter int unsigned PMP_I = 0;
+ parameter int unsigned PMP_D = 1;
+@@ -361,17 +399,27 @@ typedef struct packed {
+   logic          read;
+ } pmp_cfg_t;
+ 
++// Machine Security Configuration (ePMP)
++  typedef struct packed {
++    logic rlb;  // Rule Locking Bypass
++    logic mmwp; // Machine Mode Whitelist Policy
++    logic mml;  // Machine Mode Lockdown
++  } pmp_mseccfg_t;
++
+ // CSRs
+ typedef enum logic[11:0] {
+   // Machine information
+-  CSR_MHARTID   = 12'hF14,
++    CSR_MVENDORID = 12'hF11,
++    CSR_MARCHID   = 12'hF12,
++    CSR_MIMPID    = 12'hF13,
++    CSR_MHARTID   = 12'hF14,
+ 
+   // Machine trap setup
+   CSR_MSTATUS   = 12'h300,
+   CSR_MISA      = 12'h301,
+   CSR_MIE       = 12'h304,
+   CSR_MTVEC     = 12'h305,
+-
++  CSR_MCOUNTEREN= 12'h306,
+   // Machine trap handling
+   CSR_MSCRATCH  = 12'h340,
+   CSR_MEPC      = 12'h341,
+@@ -401,6 +449,10 @@ typedef enum logic[11:0] {
+   CSR_PMPADDR14 = 12'h3BE,
+   CSR_PMPADDR15 = 12'h3BF,
+ 
++// ePMP control
++    CSR_MSECCFG   = 12'h747,
++    CSR_MSECCFGH  = 12'h757,
++
+   // Debug trigger
+   CSR_TSELECT   = 12'h7A0,
+   CSR_TDATA1    = 12'h7A1,
+@@ -541,4 +593,36 @@ parameter int unsigned CSR_MEIX_BIT      = 11;
+ parameter int unsigned CSR_MFIX_BIT_LOW  = 16;
+ parameter int unsigned CSR_MFIX_BIT_HIGH = 30;
+ 
++  // CSR Machine Security Configuration bits
++  parameter int unsigned CSR_MSECCFG_MML_BIT  = 0;
++  parameter int unsigned CSR_MSECCFG_MMWP_BIT = 1;
++  parameter int unsigned CSR_MSECCFG_RLB_BIT  = 2;
++
++  // Vendor ID
++  // No JEDEC ID has been allocated to lowRISC so the value is 0 to indicate the field is not
++  // implemented
++  localparam logic [31:0] CSR_MVENDORID_VALUE  = 32'b0;
++
++  // Architecture ID
++  // Top bit is unset to indicate an open source project. The lower bits are an ID allocated by the
++  // RISC-V Foundation. Note this is allocated specifically to Ibex, should significant changes be
++  // made a different architecture ID should be supplied.
++  localparam logic [31:0] CSR_MARCHID_VALUE = {1'b0, 31'd22};
++
++  // Implementation ID
++  // 0 indicates this field is not implemeted. Ibex implementors may wish to indicate an RTL/netlist
++  // version here using their own unique encoding (e.g. 32 bits of the git hash of the implemented
++  // commit).
++  localparam logic [31:0] CSR_MIMPID_VALUE = 32'b0;
++
++  // These LFSR parameters have been generated with
++  // $ opentitan/util/design/gen-lfsr-seed.py --width 32 --seed 2480124384 --prefix ""
++  parameter int LfsrWidth = 32;
++  typedef logic [LfsrWidth-1:0] lfsr_seed_t;
++  typedef logic [LfsrWidth-1:0][$clog2(LfsrWidth)-1:0] lfsr_perm_t;
++  parameter lfsr_seed_t RndCnstLfsrSeedDefault = 32'hac533bf4;
++  parameter lfsr_perm_t RndCnstLfsrPermDefault = {
++    160'h1e35ecba467fd1b12e958152c04fa43878a8daed
++  };
++
+ endpackage
+
+From 434bd19a88225b4e50f68cb9551089cf773ff87a Mon Sep 17 00:00:00 2001
+From: Auringzaib Sabir <auringzaibsabir11@gmail.com>
+Date: Fri, 19 Nov 2021 15:26:25 +0500
+Subject: [PATCH 6/6] Added dv_fcov_macros.svh
+
+---
+ .../lowrisc_ip/dv_utils/dv_fcov_macros.svh    | 112 ++++++++++++++++++
+ 1 file changed, 112 insertions(+)
+ create mode 100644 hw/vendor/lowrisc_ibex/vendor/lowrisc_ip/dv_utils/dv_fcov_macros.svh
+
+diff --git a/hw/vendor/lowrisc_ibex/vendor/lowrisc_ip/dv_utils/dv_fcov_macros.svh b/hw/vendor/lowrisc_ibex/vendor/lowrisc_ip/dv_utils/dv_fcov_macros.svh
+new file mode 100644
+index 00000000..8ca12cdc
+--- /dev/null
++++ b/hw/vendor/lowrisc_ibex/vendor/lowrisc_ip/dv_utils/dv_fcov_macros.svh
+@@ -0,0 +1,112 @@
++// Copyright lowRISC contributors.
++// Licensed under the Apache License, Version 2.0, see LICENSE for details.
++// SPDX-License-Identifier: Apache-2.0
++
++// Include FCOV RTL by default. Disable it for synthesis and where explicitly requested (by defining
++// DV_FCOV_DISABLE).
++`ifdef SYNTHESIS
++  `define DV_FCOV_DISABLE
++`elsif YOSYS
++  `define DV_FCOV_DISABLE
++`endif
++
++// Disable instantiations of FCOV coverpoints or covergroups.
++`ifdef VERILATOR
++  `define DV_FCOV_DISABLE_CP
++`elsif DV_FCOV_DISABLE
++  `define DV_FCOV_DISABLE_CP
++`endif
++
++// Instantiates a covergroup in an interface or module.
++//
++// This macro assumes that a covergroup of the same name as the NAME_ arg is defined in the
++// interface or module. It just adds some extra signals and logic to control the creation of the
++// covergroup instance with ~bit en_<cg_name>~. This defaults to 0. It is ORed with the external
++// COND_ signal. The testbench can modify it at t = 0 based on the test being run.
++// NOTE: This is not meant to be invoked inside a class.
++//
++// NAME_ : Name of the covergroup.
++// COND_ : External condition / expr that controls the creation of the covergroup.
++// ARGS_ : Arguments to covergroup instance, if any. Args MUST BE wrapped in (..).
++`ifndef DV_FCOV_INSTANTIATE_CG
++`ifdef DV_FCOV_DISABLE_CP
++  `define DV_FCOV_INSTANTIATE_CG(NAME_, COND_ = 1'b1, ARGS_ = ())
++`else
++  `define DV_FCOV_INSTANTIATE_CG(NAME_, COND_ = 1'b1, ARGS_ = ()) \
++    bit en_``NAME_ = 1'b0; \
++    NAME_ NAME_``_inst; \
++    initial begin \
++      /* The #1 delay below allows any part of the tb to control the conditions first at t = 0. */ \
++      #1; \
++      if ((en_``NAME_) || (COND_)) begin \
++        $display("%0t: (%0s:%0d) [%m] %0s", $time, `__FILE__, `__LINE__, \
++                 {"Creating covergroup ", `"NAME_`"}); \
++        NAME_``_inst = new``ARGS_; \
++      end \
++    end
++`endif
++`endif
++
++// Creates a coverpoint for an expression where only the expression true case is of interest for
++// coverage (e.g. where the expression indicates an event has occured).
++`ifndef DV_FCOV_EXPR_SEEN
++`ifdef DV_FCOV_DISABLE_CP
++  `define DV_FCOV_EXPR_SEEN(NAME_, EXPR_)
++`else
++  `define DV_FCOV_EXPR_SEEN(NAME_, EXPR_) cp_``NAME_: coverpoint EXPR_ { bins seen = {1}; }
++`endif
++`endif
++
++// Creates a SVA cover that can be used in a covergroup.
++//
++// This macro creates an unnamed SVA cover from the property (or an expression) `PROP_` and an event
++// with the name `EV_NAME_`. When the SVA cover is hit, the event is triggered. A coverpoint can
++// cover the `triggered` property of the event.
++`ifndef DV_FCOV_SVA
++`ifdef DV_FCOV_DISABLE
++  `define DV_FCOV_SVA(EV_NAME_, PROP_, CLK_ = clk_i, RST_ = rst_ni)
++`else
++  `define DV_FCOV_SVA(EV_NAME_, PROP_, CLK_ = clk_i, RST_ = rst_ni) \
++    event EV_NAME_; \
++    cover property (@(posedge CLK_) disable iff (RST_ == 0) (PROP_)) begin \
++      -> EV_NAME_; \
++    end
++`endif
++`endif
++
++// Coverage support is not always available but it's useful to include extra fcov signals for
++// linting purposes. They need to be marked as unused to avoid warnings.
++`ifndef DV_FCOV_MARK_UNUSED
++  `define DV_FCOV_MARK_UNUSED(TYPE_, NAME_) \
++    TYPE_ unused_fcov_``NAME_; \
++    assign unused_fcov_``NAME_ = fcov_``NAME_;
++`endif
++
++// Define a signal and expression in the design for capture in functional coverage
++`ifndef DV_FCOV_SIGNAL
++`ifdef DV_FCOV_DISABLE
++  `define DV_FCOV_SIGNAL(TYPE_, NAME_, EXPR_)
++`else
++  `define DV_FCOV_SIGNAL(TYPE_, NAME_, EXPR_) \
++    TYPE_ fcov_``NAME_; \
++    assign fcov_``NAME_ = EXPR_; \
++    `DV_FCOV_MARK_UNUSED(TYPE_, NAME_)
++`endif
++`endif
++
++// Define a signal and expression in the design for capture in functional coverage depending on
++// design configuration. The input GEN_COND_ must be a constant or parameter.
++`ifndef DV_FCOV_SIGNAL_GEN_IF
++`ifdef DV_FCOV_DISABLE
++  `define DV_FCOV_SIGNAL_GEN_IF(TYPE_, NAME_, EXPR_, GEN_COND_, DEFAULT_ = '0)
++`else
++  `define DV_FCOV_SIGNAL_GEN_IF(TYPE_, NAME_, EXPR_, GEN_COND_, DEFAULT_ = '0) \
++    TYPE_ fcov_``NAME_; \
++    if (GEN_COND_) begin : g_fcov_``NAME_ \
++      assign fcov_``NAME_ = EXPR_; \
++    end else begin : g_no_fcov_``NAME_ \
++      assign fcov_``NAME_ = DEFAULT_; \
++    end \
++    `DV_FCOV_MARK_UNUSED(TYPE_, NAME_)
++`endif
++`endif

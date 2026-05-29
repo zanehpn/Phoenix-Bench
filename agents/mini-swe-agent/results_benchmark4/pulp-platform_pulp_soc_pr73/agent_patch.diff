@@ -1,0 +1,113 @@
+diff --git a/Bender.yml b/Bender.yml
+index 7fa1451..d6f1c82 100644
+--- a/Bender.yml
++++ b/Bender.yml
+@@ -25,7 +25,6 @@ dependencies:
+   axi:                    { git: "https://github.com/pulp-platform/axi.git", version: 0.29.1 }
+   # axi_node:               { git: "https://github.com/pulp-platform/axi_node.git", version: 1.1.4 } # deprecated, replaced by axi_xbar (in axi repo)
+   axi_slice:              { git: "https://github.com/pulp-platform/axi_slice.git", version: 1.1.4 } # deprecated, replaced by axi_cut (in axi repo)
+-  timer_unit:             { git: "https://github.com/pulp-platform/timer_unit.git", version: 1.0.2 }
+   common_cells:           { git: "https://github.com/pulp-platform/common_cells.git", version: 1.21.0 }
+   cluster_interconnect:   { git: "https://github.com/pulp-platform/cluster_interconnect.git", version: 1.1.1 }
+   fpnew:                  { git: "https://github.com/pulp-platform/fpnew.git", version: 0.6.6 }
+diff --git a/rtl/components/src_files.yml b/rtl/components/src_files.yml
+index 2db284c..da32838 100644
+--- a/rtl/components/src_files.yml
++++ b/rtl/components/src_files.yml
+@@ -4,7 +4,6 @@ components:
+   ]
+   files: [
+     apb_clkdiv.sv,
+-    apb_timer_unit.sv,
+     apb_soc_ctrl.sv,
+     counter.sv,
+     memory_models.sv,
+diff --git a/rtl/pulp_soc/periph_bus_wrap.sv b/rtl/pulp_soc/periph_bus_wrap.sv
+index 583cdfe..54b0240 100644
+--- a/rtl/pulp_soc/periph_bus_wrap.sv
++++ b/rtl/pulp_soc/periph_bus_wrap.sv
+@@ -26,7 +26,7 @@ module periph_bus_wrap #(
+     APB_BUS.Master soc_evnt_gen_master,
+     APB_BUS.Master eu_master,
+     APB_BUS.Master mmap_debug_master,
+-    APB_BUS.Master timer_master,
++
+     APB_BUS.Master hwpe_master,
+     APB_BUS.Master stdout_master
+ );
+@@ -78,10 +78,6 @@ module periph_bus_wrap #(
+     assign s_start_addr[6] = `EU_START_ADDR;
+     assign s_end_addr[6]   = `EU_END_ADDR;
+ 
+-    `APB_ASSIGN_MASTER(s_masters[7], timer_master);
+-    assign s_start_addr[7] = `TIMER_START_ADDR;
+-    assign s_end_addr[7]   = `TIMER_END_ADDR;
+-
+     `APB_ASSIGN_MASTER(s_masters[8], hwpe_master);
+     assign s_start_addr[8] = `HWPE_START_ADDR;
+     assign s_end_addr[8]   = `HWPE_END_ADDR;
+diff --git a/rtl/pulp_soc/soc_peripherals.sv b/rtl/pulp_soc/soc_peripherals.sv
+index 5f4a838..115dcb3 100644
+--- a/rtl/pulp_soc/soc_peripherals.sv
++++ b/rtl/pulp_soc/soc_peripherals.sv
+@@ -175,7 +175,6 @@ module soc_peripherals #(
+     APB_BUS s_adv_timer_bus ();
+     APB_BUS s_soc_evnt_gen_bus ();
+     APB_BUS s_stdout_bus ();
+-    APB_BUS s_apb_timer_bus ();
+ 
+     localparam UDMA_EVENTS = 16*8;
+ 
+@@ -204,8 +203,6 @@ module soc_peripherals #(
+     logic [UDMA_EVENTS-1:0] s_udma_events;
+     logic [          159:0] s_events;
+ 
+-    logic s_timer_in_lo_event;
+-    logic s_timer_in_hi_event;
+ 
+     assign s_events[UDMA_EVENTS-1:0]  = s_udma_events;
+     assign s_events[135]              = s_adv_timer_events[0];
+@@ -220,8 +217,8 @@ module soc_peripherals #(
+     assign fc_events_o[7:0] = 8'h0; //RESERVED for sw events
+     assign fc_events_o[8]   = dma_pe_evt_i;
+     assign fc_events_o[9]   = dma_pe_irq_i;
+-    assign fc_events_o[10]  = s_timer_lo_event;
+-    assign fc_events_o[11]  = s_timer_hi_event;
++    assign fc_events_o[10]  = 1'b0;
++    assign fc_events_o[11]  = 1'b0;
+     assign fc_events_o[12]  = pf_evt_i;
+     assign fc_events_o[13]  = 1'b0;
+     assign fc_events_o[14]  = s_ref_rise_event | s_ref_fall_event;
+@@ -284,7 +281,6 @@ module soc_peripherals #(
+         .eu_master           ( apb_eu_master      ),
+         .mmap_debug_master   ( apb_debug_master   ),
+         .hwpe_master         ( apb_hwpe_master    ),
+-        .timer_master        ( s_apb_timer_bus    ),
+         .stdout_master       ( s_stdout_bus       )
+     );
+ 
+@@ -623,24 +619,6 @@ module soc_peripherals #(
+     );
+ 
+ 
+-    apb_timer_unit #(.APB_ADDR_WIDTH(APB_ADDR_WIDTH)) i_apb_timer_unit (
+-        .HCLK       ( clk_i                   ),
+-        .HRESETn    ( rst_ni                  ),
+-        .PADDR      ( s_apb_timer_bus.paddr   ),
+-        .PWDATA     ( s_apb_timer_bus.pwdata  ),
+-        .PWRITE     ( s_apb_timer_bus.pwrite  ),
+-        .PSEL       ( s_apb_timer_bus.psel    ),
+-        .PENABLE    ( s_apb_timer_bus.penable ),
+-        .PRDATA     ( s_apb_timer_bus.prdata  ),
+-        .PREADY     ( s_apb_timer_bus.pready  ),
+-        .PSLVERR    ( s_apb_timer_bus.pslverr ),
+-        .ref_clk_i  ( slow_clk_i              ),
+-        .event_lo_i ( s_timer_in_lo_event     ),
+-        .event_hi_i ( s_timer_in_hi_event     ),
+-        .irq_lo_o   ( s_timer_lo_event        ),
+-        .irq_hi_o   ( s_timer_hi_event        ),
+-        .busy_o     (                         )
+-    );
+ 
+ `ifdef PULP_TRAINING
+ `ifndef SYNTHESIS

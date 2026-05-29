@@ -1,0 +1,62 @@
+# stream_register: Error in Synopsys Synplify
+
+Hi all,
+
+I'm facing a problem using the stream_register required for using Pulp AXI. This module is included in the axi_atop_filter. Unfortunately I get the following error message during compilation with Synopsys Synplify :
+
+**@E: CD671: /.../commom_cells/src/stream_register.sv: 36:31:36:31| Expecting array type.**
+
+If I change the code from
+
+```
+    fifo_v2 #(
+        .FALL_THROUGH   (1'b0),
+        .DATA_WIDTH     ($size(T)),                     // <= change done here: $size() replaced with $bits()
+        .DEPTH          (1),
+        .dtype          (T)
+    ) i_fifo (
+        .clk_i          (clk_i),
+        .rst_ni         (rst_ni),
+        .flush_i        (clr_i),
+        .testmode_i     (testmode_i),
+        .full_o         (fifo_full),
+        .empty_o        (fifo_empty),
+        .alm_full_o     ( ),
+        .alm_empty_o    ( ),
+        .data_i         (data_i),
+        .push_i         (valid_i & ~fifo_full),
+        .data_o         (data_o),
+        .pop_i          (ready_i & ~fifo_empty)
+    );
+```
+
+to
+
+```
+    fifo_v2 #(
+        .FALL_THROUGH   (1'b0),
+        .DATA_WIDTH     ($bits(T)),                    // <= this is working
+        .DEPTH          (1),
+        .dtype          (T)
+    ) i_fifo (
+        .clk_i          (clk_i),
+        .rst_ni         (rst_ni),
+        .flush_i        (clr_i),
+        .testmode_i     (testmode_i),
+        .full_o         (fifo_full),
+        .empty_o        (fifo_empty),
+        .alm_full_o     ( ),
+        .alm_empty_o    ( ),
+        .data_i         (data_i),
+        .push_i         (valid_i & ~fifo_full),
+        .data_o         (data_o),
+        .pop_i          (ready_i & ~fifo_empty)
+    );
+```
+
+but I think then the module does not have the intended behaviour any more. Does anybody know what the exact error is because I don't get the problem.
+
+**I simulate the whole design with MentorGraphics Questa and there it works without any problem. So it seems to be a problem with the Synthesis tool.**
+
+Kind regards and thank you very much for helping!
+Sebastian

@@ -1,0 +1,818 @@
+2026-01-19 22:59:37,874 - INFO - rex-deploy - Pulling image 'hwebench/pulp-platform_pulp_soc:pr41'
+2026-01-19 22:59:42,699 - INFO - rex-deploy - Building image hwebench/pulp-platform_pulp_soc:pr41 to install a standalone python to /root. This might take a while (but you only have to do it once). To skip this step, set `python_standalone_dir` to None.
+2026-01-19 23:00:32,362 - INFO - rex-deploy - Starting container hwebenchpulp-platform_pulp_socpr41-05daddd7-42f3-480d-9ab0-97babf798180 with image hwebench/pulp-platform_pulp_soc:pr41 serving on port 56955
+2026-01-19 23:00:32,367 - INFO - rex-deploy - Starting runtime at 56955
+2026-01-19 23:00:33,135 - INFO - rex-deploy - Runtime started in 0.77s
+2026-01-19 23:00:33,924 - INFO - swea-env - Environment Initialized
+2026-01-19 23:00:35,262 - INFO - swea-agent - Setting up agent for instance pulp-platform_pulp_soc_pr41
+2026-01-19 23:00:35,267 - INFO - swea-agent - Trajectory will be saved to /workspace/phoenix-bench/agents/SWE-agent/trajectories/anon/swe_agent__openai--gpt-5.2__t-0.00__p-1.00__c-0.00___swe_instances/pulp-platform_pulp_soc_pr41/pulp-platform_pulp_soc_pr41.traj
+2026-01-19 23:00:37,917 - INFO - swea-tools - Resetting tools
+2026-01-19 23:00:38,272 - INFO - swea-agent - SYSTEM (main)
+You are an expert agent that can interact with a computer to debug SystemVerilog/Verilog repositories. You are in an environment
+with Verilator, Make, Python3 and Spike RISC-V ISA Simulator.
+2026-01-19 23:00:38,420 - INFO - swea-agent - 🤖 MODEL INPUT
+<uploaded_files>
+/testbed
+</uploaded_files>
+I've uploaded a HDL code repository in the directory /testbed. Consider the following PR description:
+
+<pr_description>
+# Interleaved Memory space only partially accessible
+
+In l2_ram_multibank.sv the wrong bits are selected for the interleaved memory banks. Currently, only the 2 LSBs are striped which converts from byte addressing to 32-bit word addressing. However, for the interleaved memory banks, we also have to remove $clog2(Nr_of_banks) bits that index the bank due to the interleaved address space mapping. The effect of not doing this is that we start to alias as soon as we try to write more than 128KB into L2 memory.
+
+</pr_description>
+
+Implement the necessary changes to the repository so that the issue specified in the <pr_description> are resolved.
+Your task is to make the minimal changes to files in the /testbed directory to ensure the <pr_description> is fixed.
+Follow these steps to resolve the issue:
+1. As a first step, it might be a good idea to find and read code relevant to the <pr_description>.
+2. Edit the sourcecode of the repo to resolve the issue.
+3. Think about edgecases and make sure your fix handles them as well.
+
+You can use the tools Verilog debugging tools if needed.
+Your thinking should be thorough and so it's fine if it's very long.
+2026-01-19 23:00:38,426 - INFO - swea-agent - ========================= STEP 1 =========================
+2026-01-19 23:00:41,950 - WARNING - swea-agent - Requerying model after FunctionCallingFormatError (1th requery)
+2026-01-19 23:00:41,957 - WARNING - swea-agent - Your last output included multiple tool calls!
+Please make sure your output includes a thought and exactly _ONE_ function call.
+2026-01-19 23:00:44,160 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && ls
+2026-01-19 23:00:44,413 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+CHANGELOG.md  LICENSE  README.md  ips_list.yml  rtl  src_files.yml
+
+2026-01-19 23:00:44,419 - INFO - swea-agent - ========================= STEP 3 =========================
+2026-01-19 23:00:46,682 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && grep -R "l2_ram_multibank" -n
+2026-01-19 23:00:46,945 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+rtl/pulp_soc/pulp_soc.sv:239:    //The L2 parameter do not influence the size of the memories. Change them in the l2_ram_multibank. This parameters
+
+2026-01-19 23:00:46,952 - INFO - swea-agent - ========================= STEP 4 =========================
+2026-01-19 23:00:49,237 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && find rtl -name '*l2_ram_multibank*' -print
+2026-01-19 23:00:49,495 - INFO - swea-agent - 🤖 MODEL INPUT
+Your command ran successfully and did not produce any output.
+2026-01-19 23:00:49,505 - INFO - swea-agent - ========================= STEP 5 =========================
+2026-01-19 23:00:51,508 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && grep -R "module l2_ram_multibank" -n rtl
+2026-01-19 23:00:51,765 - INFO - swea-agent - 🤖 MODEL INPUT
+Your command ran successfully and did not produce any output.
+2026-01-19 23:00:51,771 - INFO - swea-agent - ========================= STEP 6 =========================
+2026-01-19 23:00:53,724 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && grep -R "ram_multibank" -n rtl | head
+2026-01-19 23:00:53,982 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+rtl/pulp_soc/pulp_soc.sv:239:    //The L2 parameter do not influence the size of the memories. Change them in the l2_ram_multibank. This parameters
+
+2026-01-19 23:00:53,989 - INFO - swea-agent - ========================= STEP 7 =========================
+2026-01-19 23:00:56,027 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && find . -iname '*multibank*'
+2026-01-19 23:00:56,285 - INFO - swea-agent - 🤖 MODEL INPUT
+Your command ran successfully and did not produce any output.
+2026-01-19 23:00:56,292 - INFO - swea-agent - ========================= STEP 8 =========================
+2026-01-19 23:00:58,462 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && grep -R "l2_ram" -n rtl | head -n 50
+2026-01-19 23:00:58,721 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+rtl/pulp_soc/src_files.yml:11:    l2_ram_multi_bank.sv,
+rtl/pulp_soc/pulp_soc.sv:239:    //The L2 parameter do not influence the size of the memories. Change them in the l2_ram_multibank. This parameters
+rtl/pulp_soc/pulp_soc.sv:509:    l2_ram_multi_bank #(
+rtl/pulp_soc/pulp_soc.sv:511:    ) l2_ram_i (
+rtl/pulp_soc/l2_ram_multi_bank.sv:13:module l2_ram_multi_bank #(
+rtl/pulp_soc/l2_ram_multi_bank.sv:174:endmodule // l2_ram_multi_bank
+
+2026-01-19 23:00:58,729 - INFO - swea-agent - ========================= STEP 9 =========================
+2026-01-19 23:01:00,804 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+str_replace_editor view /testbed/rtl/pulp_soc/l2_ram_multi_bank.sv  --view_range 1 220
+2026-01-19 23:01:01,088 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+Invalid `view_range`: [1, 220]. Its second element `220` should be smaller than the number of lines in the file: `175`
+
+2026-01-19 23:01:01,097 - INFO - swea-agent - ========================= STEP 10 =========================
+2026-01-19 23:01:04,674 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+str_replace_editor view /testbed/rtl/pulp_soc/l2_ram_multi_bank.sv  --view_range 1 175
+2026-01-19 23:01:04,957 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+Here's the result of running `cat -n` on /testbed/rtl/pulp_soc/l2_ram_multi_bank.sv:
+     1	// Copyright 2018 ETH Zurich and University of Bologna.
+     2	// Copyright and related rights are licensed under the Solderpad Hardware
+     3	// License, Version 0.51 (the "License"); you may not use this file except in
+     4	// compliance with the License.  You may obtain a copy of the License at
+     5	// http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
+     6	// or agreed to in writing, software, hardware and materials distributed under
+     7	// this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+     8	// CONDITIONS OF ANY KIND, either express or implied. See the License for the
+     9	// specific language governing permissions and limitations under the License.
+    10	
+    11	`include "soc_mem_map.svh"
+    12	
+    13	module l2_ram_multi_bank #(
+    14	   parameter NB_BANKS                   = 4
+    15	) (
+    16	   input logic             clk_i,
+    17	   input logic             rst_ni,
+    18	   input logic             init_ni,
+    19	   input logic             test_mode_i,
+    20	   XBAR_TCDM_BUS.Slave     mem_slave[NB_BANKS],
+    21	   XBAR_TCDM_BUS.Slave     mem_pri_slave[2]
+    22	);
+    23	    // Don't forget to adjust the SRAM macros and the FPGA settings if you change the banksizes
+    24	    localparam int unsigned BANK_SIZE_INTL_SRAM  = 32768; //Number of 32-bit words
+    25	    localparam int unsigned BANK_SIZE_PRI0       = 8192; //Number of 32-bit words
+    26	    localparam int unsigned BANK_SIZE_PRI1       = 8192; //Number of 32-bit words
+    27	
+    28	    //Derived parameters
+    29	    localparam int unsigned INTL_MEM_ADDR_WIDTH = $clog2(BANK_SIZE_INTL_SRAM);
+    30	    localparam int unsigned PRI0_MEM_ADDR_WIDTH = $clog2(BANK_SIZE_PRI0);
+    31	    localparam int unsigned PRI1_MEM_ADDR_WIDTH = $clog2(BANK_SIZE_PRI1);
+    32	
+    33	    //Used in testbenches
+    34	
+    35	
+    36	
+    37	    //INTERLEAVED Memory
+    38	    logic [31:0]           interleaved_addresses[NB_BANKS];
+    39	    for(genvar i=0; i<NB_BANKS; i++) begin : CUTS
+    40	        //Perform TCDM handshaking for constant 1 cycle latency
+    41	        assign mem_slave[i].gnt = mem_slave[i].req;
+    42	        assign mem_slave[i].r_opc = 1'b0;
+    43	        always_ff @(posedge clk_i, negedge rst_ni) begin
+    44	            if (!rst_ni) begin
+    45	                mem_slave[i].r_valid <= 1'b0;
+    46	            end else begin
+    47	                mem_slave[i].r_valid <= mem_slave[i].req;
+    48	            end
+    49	        end
+    50	       //Remove Address offset
+    51	       assign interleaved_addresses[i] = mem_slave[i].add - `SOC_MEM_MAP_TCDM_START_ADDR;
+    52	
+    53	      `ifndef PULP_FPGA_EMUL
+    54	          /*
+    55	           This model the hybrid SRAM and SCM configuration
+    56	           that has been tape-out.
+    57	           */
+    58	          generic_memory #(
+    59	                           .ADDR_WIDTH ( INTL_MEM_ADDR_WIDTH ),
+    60	                           .DATA_WIDTH ( 32                  )
+    61	                           ) bank_i (
+    62	                                               .CLK   ( clk_i                                             ),
+    63	                                               .INITN ( 1'b1                                              ),
+    64	                                               .CEN   ( ~mem_slave[i].req                                 ),
+    65	                                               .BEN   ( ~mem_slave[i].be                                  ),
+    66	                                               .WEN   ( mem_slave[i].wen                                  ),
+    67	                                               .A     ( interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+1:2] ), //Convert from
+    68	                                                                                                             //byte to word addressing
+    69	                                               .D     ( mem_slave[i].wdata                                ),
+    70	                                               .Q     ( mem_slave[i].r_rdata                              )
+    71	                                               );
+    72	
+    73	      `else // !`ifndef PULP_FPGA_EMUL
+    74	          fpga_interleaved_ram #(.ADDR_WIDTH(INTL_MEM_ADDR_WIDTH)) bank_i
+    75	              (
+    76	               .clk_i,
+    77	               .rst_ni,
+    78	               .csn_i   (~mem_slave[i].req                                 ),
+    79	               .wen_i   (mem_slave[i].wen                                  ),
+    80	               .be_i    (mem_slave[i].be                                   ),
+    81	               .addr_i  (interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+1:2] ),
+    82	               .wdata_i (mem_slave[i].wdata                                ),
+    83	               .rdata_o (mem_slave[i].r_rdata                              )
+    84	               );
+    85	      `endif
+    86	   end
+    87	
+    88	    // PRIVATE BANK0
+    89	    //Perform TCDM handshaking for constant 1 cycle latency
+    90	    assign mem_pri_slave[0].gnt = mem_pri_slave[0].req;
+    91	    assign mem_pri_slave[0].r_opc = 1'b0;
+    92	    always_ff @(posedge clk_i, negedge rst_ni) begin
+    93	        if (!rst_ni) begin
+    94	            mem_pri_slave[0].r_valid <= 1'b0;
+    95	        end else begin
+    96	            mem_pri_slave[0].r_valid <= mem_pri_slave[0].req;
+    97	        end
+    98	    end
+    99	    //Remove Address offset
+   100	    logic [31:0] pri0_address;
+   101	    assign pri0_address = mem_pri_slave[0].add - `SOC_MEM_MAP_PRIVATE_BANK0_START_ADDR;
+   102	   `ifndef PULP_FPGA_EMUL
+   103	    generic_memory #(
+   104	      .ADDR_WIDTH ( PRI0_MEM_ADDR_WIDTH  ),
+   105	      .DATA_WIDTH ( 32                  )
+   106	   ) bank_sram_pri0_i (
+   107	      .CLK   ( clk_i                                 ),
+   108	      .INITN ( 1'b1                                  ),
+   109	      .CEN   ( ~mem_pri_slave[0].req                 ),
+   110	      .BEN   ( ~mem_pri_slave[0].be                  ),
+   111	      .WEN   ( mem_pri_slave[0].wen                  ),
+   112	      .A     ( pri0_address[PRI0_MEM_ADDR_WIDTH+1:2] ), //Convert from byte to word addressing
+   113	      .D     ( mem_pri_slave[0].wdata                ),
+   114	      .Q     ( mem_pri_slave[0].r_rdata              )
+   115	   );
+   116	   `else // !`ifndef PULP_FPGA_EMUL
+   117	   fpga_private_ram #(.ADDR_WIDTH(PRI0_MEM_ADDR_WIDTH)) bank_sram_pri0_i
+   118	       (
+   119	        .clk_i,
+   120	        .rst_ni,
+   121	        .csn_i   ( ~mem_pri_slave[0].req                 ),
+   122	        .wen_i   ( mem_pri_slave[0].wen                  ),
+   123	        .be_i    ( mem_pri_slave[0].be                   ),
+   124	        .addr_i  ( pri0_address[PRI0_MEM_ADDR_WIDTH+1:2] ), //Convert from byte to word addressing
+   125	        .wdata_i ( mem_pri_slave[0].wdata                ),
+   126	        .rdata_o ( mem_pri_slave[0].r_rdata              )
+   127	        );
+   128	   `endif // !`ifndef PULP_FPGA_EMUL
+   129	
+   130	
+   131	    // PRIVATE BANK1
+   132	    //Perform TCDM handshaking for constant 1 cycle latency
+   133	    assign mem_pri_slave[1].gnt = mem_pri_slave[1].req;
+   134	    assign mem_pri_slave[1].r_opc = 1'b0;
+   135	    always_ff @(posedge clk_i, negedge rst_ni) begin
+   136	        if (!rst_ni) begin
+   137	            mem_pri_slave[1].r_valid <= 1'b0;
+   138	        end else begin
+   139	            mem_pri_slave[1].r_valid <= mem_pri_slave[1].req;
+   140	        end
+   141	    end
+   142	    //Remove Address offset
+   143	    logic [31:0] pri1_address;
+   144	    assign pri1_address = mem_pri_slave[1].add - `SOC_MEM_MAP_PRIVATE_BANK1_START_ADDR;
+   145	   `ifndef PULP_FPGA_EMUL
+   146	    generic_memory #(
+   147	      .ADDR_WIDTH ( PRI1_MEM_ADDR_WIDTH  ),
+   148	      .DATA_WIDTH ( 32                  )
+   149	   ) bank_sram_pri1_i (
+   150	      .CLK   ( clk_i                                 ),
+   151	      .INITN ( 1'b1                                  ),
+   152	      .CEN   ( ~mem_pri_slave[1].req                 ),
+   153	      .BEN   ( ~mem_pri_slave[1].be                  ),
+   154	      .WEN   ( mem_pri_slave[1].wen                  ),
+   155	      .A     ( pri1_address[PRI1_MEM_ADDR_WIDTH+1:2] ), //Convert from byte to word addressing
+   156	      .D     ( mem_pri_slave[1].wdata                ),
+   157	      .Q     ( mem_pri_slave[1].r_rdata              )
+   158	   );
+   159	   `else // !`ifndef PULP_FPGA_EMUL
+   160	   fpga_private_ram #(.ADDR_WIDTH(PRI1_MEM_ADDR_WIDTH)) bank_sram_pri1_i
+   161	       (
+   162	        .clk_i,
+   163	        .rst_ni,
+   164	        .csn_i   ( ~mem_pri_slave[1].req                 ),
+   165	        .wen_i   ( mem_pri_slave[1].wen                  ),
+   166	        .be_i    ( mem_pri_slave[1].be                   ),
+   167	        .addr_i  ( pri1_address[PRI1_MEM_ADDR_WIDTH+1:2] ), //Convert from byte to word addressing
+   168	        .wdata_i ( mem_pri_slave[1].wdata                ),
+   169	        .rdata_o ( mem_pri_slave[1].r_rdata              )
+   170	        );
+   171	   `endif
+   172	
+   173	
+   174	endmodule // l2_ram_multi_bank
+   175	
+
+
+2026-01-19 23:01:04,986 - INFO - swea-agent - ========================= STEP 11 =========================
+2026-01-19 23:01:14,082 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+str_replace_editor str_replace /testbed/rtl/pulp_soc/l2_ram_multi_bank.sv   --old_str '    //INTERLEAVED Memory
+    logic [31:0]           interleaved_addresses[NB_BANKS];
+    for(genvar i=0; i<NB_BANKS; i++) begin : CUTS' --new_str '    //INTERLEAVED Memory
+    // Address mapping is interleaved across banks: the byte address contains
+    //   - 2 LSBs for byte-in-word
+    //   - $clog2(NB_BANKS) bits for the bank index
+    // Those bank-index bits must be removed when generating the per-bank
+    // word address, otherwise the address space aliases once crossing the
+    // per-bank capacity.
+    localparam int unsigned NB_BANKS_LOG2 = (NB_BANKS <= 1) ? 0 : $clog2(NB_BANKS);
+    logic [31:0]           interleaved_addresses[NB_BANKS];
+    for(genvar i=0; i<NB_BANKS; i++) begin : CUTS'
+2026-01-19 23:01:14,376 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+The file /testbed/rtl/pulp_soc/l2_ram_multi_bank.sv has been edited. Here's the result of running `cat -n` on a snippet of /testbed/rtl/pulp_soc/l2_ram_multi_bank.sv:
+    32	
+    33	    //Used in testbenches
+    34	
+    35	
+    36	
+    37	    //INTERLEAVED Memory
+    38	    // Address mapping is interleaved across banks: the byte address contains
+    39	    //   - 2 LSBs for byte-in-word
+    40	    //   - $clog2(NB_BANKS) bits for the bank index
+    41	    // Those bank-index bits must be removed when generating the per-bank
+    42	    // word address, otherwise the address space aliases once crossing the
+    43	    // per-bank capacity.
+    44	    localparam int unsigned NB_BANKS_LOG2 = (NB_BANKS <= 1) ? 0 : $clog2(NB_BANKS);
+    45	    logic [31:0]           interleaved_addresses[NB_BANKS];
+    46	    for(genvar i=0; i<NB_BANKS; i++) begin : CUTS
+    47	        //Perform TCDM handshaking for constant 1 cycle latency
+    48	        assign mem_slave[i].gnt = mem_slave[i].req;
+    49	        assign mem_slave[i].r_opc = 1'b0;
+Review the changes and make sure they are as expected. Edit the file again if necessary.
+
+2026-01-19 23:01:14,388 - INFO - swea-agent - ========================= STEP 12 =========================
+2026-01-19 23:01:20,043 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+str_replace_editor str_replace /testbed/rtl/pulp_soc/l2_ram_multi_bank.sv   --old_str '                                               .WEN   ( mem_slave[i].wen                                  ),
+                                               .A     ( interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+1:2] ), //Convert from
+                                                                                                             //byte to word addressing' --new_str '                                               .WEN   ( mem_slave[i].wen                                  ),
+                                               // Convert from byte addressing to per-bank word addressing:
+                                               // drop 2 byte-offset bits and the bank-index bits.
+                                               .A     ( interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+NB_BANKS_LOG2+1:2+NB_BANKS_LOG2] ),'
+2026-01-19 23:01:20,338 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+The file /testbed/rtl/pulp_soc/l2_ram_multi_bank.sv has been edited. Here's the result of running `cat -n` on a snippet of /testbed/rtl/pulp_soc/l2_ram_multi_bank.sv:
+    68	                           ) bank_i (
+    69	                                               .CLK   ( clk_i                                             ),
+    70	                                               .INITN ( 1'b1                                              ),
+    71	                                               .CEN   ( ~mem_slave[i].req                                 ),
+    72	                                               .BEN   ( ~mem_slave[i].be                                  ),
+    73	                                               .WEN   ( mem_slave[i].wen                                  ),
+    74	                                               // Convert from byte addressing to per-bank word addressing:
+    75	                                               // drop 2 byte-offset bits and the bank-index bits.
+    76	                                               .A     ( interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+NB_BANKS_LOG2+1:2+NB_BANKS_LOG2] ),
+    77	                                               .D     ( mem_slave[i].wdata                                ),
+    78	                                               .Q     ( mem_slave[i].r_rdata                              )
+    79	                                               );
+Review the changes and make sure they are as expected. Edit the file again if necessary.
+
+2026-01-19 23:01:20,351 - INFO - swea-agent - ========================= STEP 13 =========================
+2026-01-19 23:01:25,941 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+str_replace_editor str_replace /testbed/rtl/pulp_soc/l2_ram_multi_bank.sv   --old_str '               .addr_i  (interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+1:2] ),' --new_str '               .addr_i  (interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+NB_BANKS_LOG2+1:2+NB_BANKS_LOG2] ),'
+2026-01-19 23:01:26,225 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+The file /testbed/rtl/pulp_soc/l2_ram_multi_bank.sv has been edited. Here's the result of running `cat -n` on a snippet of /testbed/rtl/pulp_soc/l2_ram_multi_bank.sv:
+    84	               .clk_i,
+    85	               .rst_ni,
+    86	               .csn_i   (~mem_slave[i].req                                 ),
+    87	               .wen_i   (mem_slave[i].wen                                  ),
+    88	               .be_i    (mem_slave[i].be                                   ),
+    89	               .addr_i  (interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+NB_BANKS_LOG2+1:2+NB_BANKS_LOG2] ),
+    90	               .wdata_i (mem_slave[i].wdata                                ),
+    91	               .rdata_o (mem_slave[i].r_rdata                              )
+    92	               );
+Review the changes and make sure they are as expected. Edit the file again if necessary.
+
+2026-01-19 23:01:26,238 - INFO - swea-agent - ========================= STEP 14 =========================
+2026-01-19 23:01:30,606 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && verilator -Wall --lint-only rtl/pulp_soc/l2_ram_multi_bank.sv
+2026-01-19 23:01:30,897 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+%Error: rtl/pulp_soc/l2_ram_multi_bank.sv:11:10: Cannot find include file: soc_mem_map.svh
+   11 | `include "soc_mem_map.svh"
+      |          ^~~~~~~~~~~~~~~~~
+%Error: rtl/pulp_soc/l2_ram_multi_bank.sv:11:10: This may be because there's no search path specified with -I<dir>.
+   11 | `include "soc_mem_map.svh"
+      |          ^~~~~~~~~~~~~~~~~
+        ... Looked in:
+             soc_mem_map.svh
+             soc_mem_map.svh.v
+             soc_mem_map.svh.sv
+             obj_dir/soc_mem_map.svh
+             obj_dir/soc_mem_map.svh.v
+             obj_dir/soc_mem_map.svh.sv
+%Error: rtl/pulp_soc/l2_ram_multi_bank.sv:58:61: Define or directive not defined: '`SOC_MEM_MAP_TCDM_START_ADDR'
+   58 |        assign interleaved_addresses[i] = mem_slave[i].add - `SOC_MEM_MAP_TCDM_START_ADDR;
+      |                                                             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+%Error: rtl/pulp_soc/l2_ram_multi_bank.sv:58:89: syntax error, unexpected ';', expecting TYPE-IDENTIFIER
+   58 |        assign interleaved_addresses[i] = mem_slave[i].add - `SOC_MEM_MAP_TCDM_START_ADDR;
+      |                                                                                         ^
+%Error: rtl/pulp_soc/l2_ram_multi_bank.sv:109:50: Define or directive not defined: '`SOC_MEM_MAP_PRIVATE_BANK0_START_ADDR'
+  109 |     assign pri0_address = mem_pri_slave[0].add - `SOC_MEM_MAP_PRIVATE_BANK0_START_ADDR;
+      |                                                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+%Error: rtl/pulp_soc/l2_ram_multi_bank.sv:109:87: syntax error, unexpected ';', expecting TYPE-IDENTIFIER
+  109 |     assign pri0_address = mem_pri_slave[0].add - `SOC_MEM_MAP_PRIVATE_BANK0_START_ADDR;
+      |                                                                                       ^
+%Error: rtl/pulp_soc/l2_ram_multi_bank.sv:152:50: Define or directive not defined: '`SOC_MEM_MAP_PRIVATE_BANK1_START_ADDR'
+  152 |     assign pri1_address = mem_pri_slave[1].add - `SOC_MEM_MAP_PRIVATE_BANK1_START_ADDR;
+      |                                                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+%Error: rtl/pulp_soc/l2_ram_multi_bank.sv:152:87: syntax error, unexpected ';', expecting TYPE-IDENTIFIER
+  152 |     assign pri1_address = mem_pri_slave[1].add - `SOC_MEM_MAP_PRIVATE_BANK1_START_ADDR;
+      |                                                                                       ^
+%Error: Exiting due to 8 error(s)
+
+2026-01-19 23:01:30,911 - INFO - swea-agent - ========================= STEP 15 =========================
+2026-01-19 23:01:35,428 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && find rtl -name soc_mem_map.svh -print
+2026-01-19 23:01:35,672 - INFO - swea-agent - 🤖 MODEL INPUT
+Your command ran successfully and did not produce any output.
+2026-01-19 23:01:35,679 - INFO - swea-agent - ========================= STEP 16 =========================
+2026-01-19 23:01:39,559 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && find . -name soc_mem_map.svh -o -name '*mem_map*' | head
+2026-01-19 23:01:39,818 - INFO - swea-agent - 🤖 MODEL INPUT
+Your command ran successfully and did not produce any output.
+2026-01-19 23:01:39,833 - INFO - swea-agent - ========================= STEP 17 =========================
+2026-01-19 23:01:43,820 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && grep -R "SOC_MEM_MAP_TCDM_START_ADDR" -n .. | head
+2026-01-19 23:02:13,910 - CRITICAL - rex-runtime - Traceback: 
+Traceback (most recent call last):
+  File "/root/python3.11/lib/python3.11/site-packages/swerex/runtime/local.py", line 311, in _run_normal
+    expect_index = self.shell.expect(expect_strings, timeout=action.timeout)  # type: ignore
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/python3.11/lib/python3.11/site-packages/pexpect/spawnbase.py", line 354, in expect
+    return self.expect_list(compiled_pattern_list,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/python3.11/lib/python3.11/site-packages/pexpect/spawnbase.py", line 383, in expect_list
+    return exp.expect_loop(timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/python3.11/lib/python3.11/site-packages/pexpect/expect.py", line 181, in expect_loop
+    return self.timeout(e)
+           ^^^^^^^^^^^^^^^
+  File "/root/python3.11/lib/python3.11/site-packages/pexpect/expect.py", line 144, in timeout
+    raise exc
+pexpect.exceptions.TIMEOUT: Timeout exceeded.
+<pexpect.pty_spawn.spawn object at 0x7f2bfc07c8d0>
+command: /usr/bin/env
+args: [b'/usr/bin/env', b'bash']
+buffer (last 100 chars): 'ied\r\ngrep: ../proc/pagetypeinfo: Permission denied\r\ngrep: ../proc/sysrq-trigger: Permission denied\r\n'
+before (last 100 chars): 'ied\r\ngrep: ../proc/pagetypeinfo: Permission denied\r\ngrep: ../proc/sysrq-trigger: Permission denied\r\n'
+after: <class 'pexpect.exceptions.TIMEOUT'>
+match: None
+match_index: None
+exitstatus: None
+flag_eof: False
+pid: 8
+child_fd: 10
+closed: False
+timeout: 30
+delimiter: <class 'pexpect.exceptions.EOF'>
+logfile: None
+logfile_read: None
+logfile_send: None
+maxread: 2000
+ignorecase: False
+searchwindowsize: None
+delaybeforesend: 0.05
+delayafterclose: 0.1
+delayafterterminate: 0.1
+searcher: searcher_re:
+    0: re.compile('SHELLPS1PREFIX')
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/root/python3.11/lib/python3.11/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/root/python3.11/lib/python3.11/site-packages/starlette/middleware/base.py", line 191, in __call__
+    with recv_stream, send_stream, collapse_excgroups():
+  File "/root/python3.11/lib/python3.11/contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "/root/python3.11/lib/python3.11/site-packages/starlette/_utils.py", line 85, in collapse_excgroups
+    raise exc
+  File "/root/python3.11/lib/python3.11/site-packages/starlette/middleware/base.py", line 193, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/python3.11/lib/python3.11/site-packages/swerex/server.py", line 86, in handle_request_id
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/python3.11/lib/python3.11/site-packages/starlette/middleware/base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "/root/python3.11/lib/python3.11/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/root/python3.11/lib/python3.11/site-packages/starlette/middleware/base.py", line 191, in __call__
+    with recv_stream, send_stream, collapse_excgroups():
+  File "/root/python3.11/lib/python3.11/contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "/root/python3.11/lib/python3.11/site-packages/starlette/_utils.py", line 85, in collapse_excgroups
+    raise exc
+  File "/root/python3.11/lib/python3.11/site-packages/starlette/middleware/base.py", line 193, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/python3.11/lib/python3.11/site-packages/swerex/server.py", line 74, in authenticate
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/python3.11/lib/python3.11/site-packages/starlette/middleware/base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "/root/python3.11/lib/python3.11/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/root/python3.11/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/root/python3.11/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/root/python3.11/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/root/python3.11/lib/python3.11/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/root/python3.11/lib/python3.11/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/root/python3.11/lib/python3.11/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/root/python3.11/lib/python3.11/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/root/python3.11/lib/python3.11/site-packages/fastapi/routing.py", line 115, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/root/python3.11/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/root/python3.11/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/root/python3.11/lib/python3.11/site-packages/fastapi/routing.py", line 101, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/root/python3.11/lib/python3.11/site-packages/fastapi/routing.py", line 355, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/python3.11/lib/python3.11/site-packages/fastapi/routing.py", line 243, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/python3.11/lib/python3.11/site-packages/swerex/server.py", line 139, in run
+    return serialize_model(await runtime.run_in_session(action))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/python3.11/lib/python3.11/site-packages/swerex/runtime/local.py", line 407, in run_in_session
+    return await self.sessions[action.session].run(action)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/python3.11/lib/python3.11/site-packages/swerex/runtime/local.py", line 236, in run
+    r = await self._run_normal(action)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/python3.11/lib/python3.11/site-packages/swerex/runtime/local.py", line 315, in _run_normal
+    raise CommandTimeoutError(msg) from e
+swerex.exceptions.CommandTimeoutError: timeout after 30.0 seconds while running command 'cd /testbed && grep -R "SOC_MEM_MAP_TCDM_START_ADDR" -n .. | head'
+
+2026-01-19 23:02:13,933 - ERROR - rex-runtime - Error making request 1fbcdb0a-da19-4d30-9624-8eabd189b631 after 0 retries: timeout after 30.0 seconds while running command 'cd /testbed && grep -R "SOC_MEM_MAP_TCDM_START_ADDR" -n .. | head'
+2026-01-19 23:02:13,937 - INFO - swea-env - Interrupting session
+2026-01-19 23:02:14,689 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+The command 'cd /testbed && grep -R "SOC_MEM_MAP_TCDM_START_ADDR" -n .. | head' was cancelled because it took more than 30 seconds. Please try a different command that completes more quickly. Note: A common source of this error is if the command is interactive or requires user input (it is impossible to receive user input in the current environment, so the command will never complete).
+2026-01-19 23:02:14,705 - INFO - swea-agent - ========================= STEP 18 =========================
+2026-01-19 23:02:19,194 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && grep -R "SOC_MEM_MAP_TCDM_START_ADDR" -n rtl src_files.yml ips_list.yml | head
+2026-01-19 23:02:19,454 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+rtl/pulp_soc/soc_interconnect_wrap.sv:100:       '{ idx: 2 , start_addr: `SOC_MEM_MAP_TCDM_START_ADDR          , end_addr: `SOC_MEM_MAP_TCDM_END_ADDR }};
+rtl/pulp_soc/soc_interconnect_wrap.sv:104:       '{ idx: 1 , start_addr: `SOC_MEM_MAP_TCDM_START_ADDR          , end_addr: `SOC_MEM_MAP_TCDM_END_ADDR }};
+rtl/pulp_soc/l2_ram_multi_bank.sv:58:       assign interleaved_addresses[i] = mem_slave[i].add - `SOC_MEM_MAP_TCDM_START_ADDR;
+
+2026-01-19 23:02:19,471 - INFO - swea-agent - ========================= STEP 19 =========================
+2026-01-19 23:02:22,358 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && find rtl -name '*mem_map*' -maxdepth 4
+2026-01-19 23:02:22,616 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+find: warning: you have specified the global option -maxdepth after the argument -name, but global options are not positional, i.e., -maxdepth affects tests specified before it as well as those specified after it.  Please specify global options before other arguments.
+
+2026-01-19 23:02:22,635 - INFO - swea-agent - ========================= STEP 20 =========================
+2026-01-19 23:02:25,462 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && find rtl -maxdepth 6 -iname '*mem_map*'
+2026-01-19 23:02:25,745 - INFO - swea-agent - 🤖 MODEL INPUT
+Your command ran successfully and did not produce any output.
+2026-01-19 23:02:25,765 - INFO - swea-agent - ========================= STEP 21 =========================
+2026-01-19 23:02:28,886 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && grep -R "include \"soc_mem_map" -n rtl/pulp_soc | head -n 20
+2026-01-19 23:02:29,150 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+rtl/pulp_soc/boot_rom.sv:12:`include "soc_mem_map.svh"
+rtl/pulp_soc/soc_interconnect_wrap.sv:24:`include "soc_mem_map.svh"
+rtl/pulp_soc/l2_ram_multi_bank.sv:11:`include "soc_mem_map.svh"
+
+2026-01-19 23:02:29,171 - INFO - swea-agent - ========================= STEP 22 =========================
+2026-01-19 23:02:32,078 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && find . -name 'soc_mem_map.svh' -print
+2026-01-19 23:02:32,343 - INFO - swea-agent - 🤖 MODEL INPUT
+Your command ran successfully and did not produce any output.
+2026-01-19 23:02:32,365 - INFO - swea-agent - ========================= STEP 23 =========================
+2026-01-19 23:02:35,697 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && verilator -Wall --lint-only -Irtl/pulp_soc rtl/pulp_soc/l2_ram_multi_bank.sv
+2026-01-19 23:02:35,990 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+%Error: rtl/pulp_soc/l2_ram_multi_bank.sv:11:10: Cannot find include file: soc_mem_map.svh
+   11 | `include "soc_mem_map.svh"
+      |          ^~~~~~~~~~~~~~~~~
+        ... Looked in:
+             rtl/pulp_soc/soc_mem_map.svh
+             rtl/pulp_soc/soc_mem_map.svh.v
+             rtl/pulp_soc/soc_mem_map.svh.sv
+             soc_mem_map.svh
+             soc_mem_map.svh.v
+             soc_mem_map.svh.sv
+             obj_dir/soc_mem_map.svh
+             obj_dir/soc_mem_map.svh.v
+             obj_dir/soc_mem_map.svh.sv
+%Error: rtl/pulp_soc/l2_ram_multi_bank.sv:58:61: Define or directive not defined: '`SOC_MEM_MAP_TCDM_START_ADDR'
+   58 |        assign interleaved_addresses[i] = mem_slave[i].add - `SOC_MEM_MAP_TCDM_START_ADDR;
+      |                                                             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+%Error: rtl/pulp_soc/l2_ram_multi_bank.sv:58:89: syntax error, unexpected ';', expecting TYPE-IDENTIFIER
+   58 |        assign interleaved_addresses[i] = mem_slave[i].add - `SOC_MEM_MAP_TCDM_START_ADDR;
+      |                                                                                         ^
+%Error: rtl/pulp_soc/l2_ram_multi_bank.sv:109:50: Define or directive not defined: '`SOC_MEM_MAP_PRIVATE_BANK0_START_ADDR'
+  109 |     assign pri0_address = mem_pri_slave[0].add - `SOC_MEM_MAP_PRIVATE_BANK0_START_ADDR;
+      |                                                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+%Error: rtl/pulp_soc/l2_ram_multi_bank.sv:109:87: syntax error, unexpected ';', expecting TYPE-IDENTIFIER
+  109 |     assign pri0_address = mem_pri_slave[0].add - `SOC_MEM_MAP_PRIVATE_BANK0_START_ADDR;
+      |                                                                                       ^
+%Error: rtl/pulp_soc/l2_ram_multi_bank.sv:152:50: Define or directive not defined: '`SOC_MEM_MAP_PRIVATE_BANK1_START_ADDR'
+  152 |     assign pri1_address = mem_pri_slave[1].add - `SOC_MEM_MAP_PRIVATE_BANK1_START_ADDR;
+      |                                                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+%Error: rtl/pulp_soc/l2_ram_multi_bank.sv:152:87: syntax error, unexpected ';', expecting TYPE-IDENTIFIER
+  152 |     assign pri1_address = mem_pri_slave[1].add - `SOC_MEM_MAP_PRIVATE_BANK1_START_ADDR;
+      |                                                                                       ^
+%Error: Exiting due to 7 error(s)
+
+2026-01-19 23:02:36,002 - INFO - swea-agent - ========================= STEP 24 =========================
+2026-01-19 23:02:41,633 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+submit
+2026-01-19 23:02:41,920 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+Thank you for your work on this issue. Please review your changes and run the submit command again to confirm.
+
+Here is a list of all of your changes:
+
+<diff>
+diff --git a/rtl/pulp_soc/l2_ram_multi_bank.sv b/rtl/pulp_soc/l2_ram_multi_bank.sv
+index 86ba415..2dd9db4 100644
+--- a/rtl/pulp_soc/l2_ram_multi_bank.sv
++++ b/rtl/pulp_soc/l2_ram_multi_bank.sv
+@@ -35,6 +35,13 @@ module l2_ram_multi_bank #(
+ 
+ 
+     //INTERLEAVED Memory
++    // Address mapping is interleaved across banks: the byte address contains
++    //   - 2 LSBs for byte-in-word
++    //   - $clog2(NB_BANKS) bits for the bank index
++    // Those bank-index bits must be removed when generating the per-bank
++    // word address, otherwise the address space aliases once crossing the
++    // per-bank capacity.
++    localparam int unsigned NB_BANKS_LOG2 = (NB_BANKS <= 1) ? 0 : $clog2(NB_BANKS);
+     logic [31:0]           interleaved_addresses[NB_BANKS];
+     for(genvar i=0; i<NB_BANKS; i++) begin : CUTS
+         //Perform TCDM handshaking for constant 1 cycle latency
+@@ -64,8 +71,9 @@ module l2_ram_multi_bank #(
+                                                .CEN   ( ~mem_slave[i].req                                 ),
+                                                .BEN   ( ~mem_slave[i].be                                  ),
+                                                .WEN   ( mem_slave[i].wen                                  ),
+-                                               .A     ( interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+1:2] ), //Convert from
+-                                                                                                             //byte to word addressing
++                                               // Convert from byte addressing to per-bank word addressing:
++                                               // drop 2 byte-offset bits and the bank-index bits.
++                                               .A     ( interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+NB_BANKS_LOG2+1:2+NB_BANKS_LOG2] ),
+                                                .D     ( mem_slave[i].wdata                                ),
+                                                .Q     ( mem_slave[i].r_rdata                              )
+                                                );
+@@ -78,7 +86,7 @@ module l2_ram_multi_bank #(
+                .csn_i   (~mem_slave[i].req                                 ),
+                .wen_i   (mem_slave[i].wen                                  ),
+                .be_i    (mem_slave[i].be                                   ),
+-               .addr_i  (interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+1:2] ),
++               .addr_i  (interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+NB_BANKS_LOG2+1:2+NB_BANKS_LOG2] ),
+                .wdata_i (mem_slave[i].wdata                                ),
+                .rdata_o (mem_slave[i].r_rdata                              )
+                );
+
+</diff>
+
+
+2026-01-19 23:02:41,949 - INFO - swea-agent - ========================= STEP 25 =========================
+2026-01-19 23:02:47,600 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+submit
+2026-01-19 23:02:47,888 - INFO - swea-agent - Found submission: diff --git a/rtl/pulp_soc/l2_ram_multi_bank.sv b/rtl/pulp_soc/l2_ram_multi_bank.sv
+index 86ba415..2dd9db4 100644
+--- a/rtl/pulp_soc/l2_ram_multi_bank.sv
++++ b/rtl/pulp_soc/l2_ram_multi_bank.sv
+@@ -35,6 +35,13 @@ module l2_ram_multi_bank #(
+ 
+ 
+     //INTERLEAVED Memory
++    // Address mapping is interleaved across banks: the byte address contains
++    //   - 2 LSBs for byte-in-word
++    //   - $clog2(NB_BANKS) bits for the bank index
++    // Those bank-index bits must be removed when generating the per-bank
++    // word address, otherwise the address space aliases once crossing the
++    // per-bank capacity.
++    localparam int unsigned NB_BANKS_LOG2 = (NB_BANKS <= 1) ? 0 : $clog2(NB_BANKS);
+     logic [31:0]           interleaved_addresses[NB_BANKS];
+     for(genvar i=0; i<NB_BANKS; i++) begin : CUTS
+         //Perform TCDM handshaking for constant 1 cycle latency
+@@ -64,8 +71,9 @@ module l2_ram_multi_bank #(
+                                                .CEN   ( ~mem_slave[i].req                                 ),
+                                                .BEN   ( ~mem_slave[i].be                                  ),
+                                                .WEN   ( mem_slave[i].wen                                  ),
+-                                               .A     ( interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+1:2] ), //Convert from
+-                                                                                                             //byte to word addressing
++                                               // Convert from byte addressing to per-bank word addressing:
++                                               // drop 2 byte-offset bits and the bank-index bits.
++                                               .A     ( interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+NB_BANKS_LOG2+1:2+NB_BANKS_LOG2] ),
+                                                .D     ( mem_slave[i].wdata                                ),
+                                                .Q     ( mem_slave[i].r_rdata                              )
+                                                );
+@@ -78,7 +86,7 @@ module l2_ram_multi_bank #(
+                .csn_i   (~mem_slave[i].req                                 ),
+                .wen_i   (mem_slave[i].wen                                  ),
+                .be_i    (mem_slave[i].be                                   ),
+-               .addr_i  (interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+1:2] ),
++               .addr_i  (interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+NB_BANKS_LOG2+1:2+NB_BANKS_LOG2] ),
+                .wdata_i (mem_slave[i].wdata                                ),
+                .rdata_o (mem_slave[i].r_rdata                              )
+                );
+
+2026-01-19 23:02:47,903 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+diff --git a/rtl/pulp_soc/l2_ram_multi_bank.sv b/rtl/pulp_soc/l2_ram_multi_bank.sv
+index 86ba415..2dd9db4 100644
+--- a/rtl/pulp_soc/l2_ram_multi_bank.sv
++++ b/rtl/pulp_soc/l2_ram_multi_bank.sv
+@@ -35,6 +35,13 @@ module l2_ram_multi_bank #(
+ 
+ 
+     //INTERLEAVED Memory
++    // Address mapping is interleaved across banks: the byte address contains
++    //   - 2 LSBs for byte-in-word
++    //   - $clog2(NB_BANKS) bits for the bank index
++    // Those bank-index bits must be removed when generating the per-bank
++    // word address, otherwise the address space aliases once crossing the
++    // per-bank capacity.
++    localparam int unsigned NB_BANKS_LOG2 = (NB_BANKS <= 1) ? 0 : $clog2(NB_BANKS);
+     logic [31:0]           interleaved_addresses[NB_BANKS];
+     for(genvar i=0; i<NB_BANKS; i++) begin : CUTS
+         //Perform TCDM handshaking for constant 1 cycle latency
+@@ -64,8 +71,9 @@ module l2_ram_multi_bank #(
+                                                .CEN   ( ~mem_slave[i].req                                 ),
+                                                .BEN   ( ~mem_slave[i].be                                  ),
+                                                .WEN   ( mem_slave[i].wen                                  ),
+-                                               .A     ( interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+1:2] ), //Convert from
+-                                                                                                             //byte to word addressing
++                                               // Convert from byte addressing to per-bank word addressing:
++                                               // drop 2 byte-offset bits and the bank-index bits.
++                                               .A     ( interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+NB_BANKS_LOG2+1:2+NB_BANKS_LOG2] ),
+                                                .D     ( mem_slave[i].wdata                                ),
+                                                .Q     ( mem_slave[i].r_rdata                              )
+                                                );
+@@ -78,7 +86,7 @@ module l2_ram_multi_bank #(
+                .csn_i   (~mem_slave[i].req                                 ),
+                .wen_i   (mem_slave[i].wen                                  ),
+                .be_i    (mem_slave[i].be                                   ),
+-               .addr_i  (interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+1:2] ),
++               .addr_i  (interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+NB_BANKS_LOG2+1:2+NB_BANKS_LOG2] ),
+                .wdata_i (mem_slave[i].wdata                                ),
+                .rdata_o (mem_slave[i].r_rdata                              )
+                );
+
+2026-01-19 23:02:47,932 - INFO - swea-agent - Trajectory saved to /workspace/phoenix-bench/agents/SWE-agent/trajectories/anon/swe_agent__openai--gpt-5.2__t-0.00__p-1.00__c-0.00___swe_instances/pulp-platform_pulp_soc_pr41/pulp-platform_pulp_soc_pr41.traj
+2026-01-19 23:02:47,938 - INFO - swea-env - Beginning environment shutdown...

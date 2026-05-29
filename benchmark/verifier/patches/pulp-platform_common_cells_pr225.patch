@@ -1,0 +1,168 @@
+From d99b266748f299195898fe2ebe7b14c5b6d000ea Mon Sep 17 00:00:00 2001
+From: Michael Rogenmoser <michael@rogenmoser.us>
+Date: Wed, 17 Jul 2024 17:31:46 +0200
+Subject: [PATCH 1/2] Add credit_counter
+
+Co-authored-by: Paul Scheffler <paulsc@iis.ee.ethz.ch>
+---
+ Bender.yml            |  1 +
+ CHANGELOG.md          |  4 +++
+ README.md             |  1 +
+ common_cells.core     |  1 +
+ src/credit_counter.sv | 57 +++++++++++++++++++++++++++++++++++++++++++
+ src_files.yml         |  1 +
+ 6 files changed, 65 insertions(+)
+ create mode 100644 src/credit_counter.sv
+
+diff --git a/Bender.yml b/Bender.yml
+index 05231665..f5a5a21b 100644
+--- a/Bender.yml
++++ b/Bender.yml
+@@ -32,6 +32,7 @@ sources:
+       - src/cdc_reset_ctrlr_pkg.sv
+       - src/cf_math_pkg.sv
+       - src/clk_int_div.sv
++      - src/credit_counter.sv
+       - src/delta_counter.sv
+       - src/ecc_pkg.sv
+       - src/edge_propagator_tx.sv
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index d9ee453f..f0df2aa7 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
+ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
+ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
+ 
++## Unreleased
++### Added
++- `credit_counter`: Add up/down counter for credit.
++
+ ## 1.36.0 - 2024-07-08
+ ### Fixed
+ - `registers`: Fix else statement in FFARNC macro.
+diff --git a/README.md b/README.md
+index 8c2aa59b..d91f6b37 100644
+--- a/README.md
++++ b/README.md
+@@ -55,6 +55,7 @@ Please note that cells with status *deprecated* are not to be used for new desig
+ | Name                | Description                                                       | Status       | Superseded By |
+ | ------------------- | ----------------------------------------------------------------- | ------------ | ------------- |
+ | `counter`           | Generic up/down counter with overflow detection                   | active       |               |
++| `credit_counter`    | Up/down counter for credit                                        | active       |               |
+ | `delta_counter`     | Up/down counter with variable delta and overflow detection        | active       |               |
+ | `generic_LFSR_8bit` | 8-bit linear feedback shift register (LFSR)                       | *deprecated* | `lfsr_8bit`   |
+ | `lfsr_8bit`         | 8-bit linear feedback shift register (LFSR)                       | active       |               |
+diff --git a/common_cells.core b/common_cells.core
+index bcdd5059..bd10e7c6 100644
+--- a/common_cells.core
++++ b/common_cells.core
+@@ -16,6 +16,7 @@ filesets:
+       - src/cc_onehot.sv
+       - src/cf_math_pkg.sv
+       - src/clk_int_div.sv
++      - src/credit_counter.sv
+       - src/delta_counter.sv
+       - src/ecc_pkg.sv
+       - src/edge_propagator_tx.sv
+diff --git a/src/credit_counter.sv b/src/credit_counter.sv
+new file mode 100644
+index 00000000..b29312ae
+--- /dev/null
++++ b/src/credit_counter.sv
+@@ -0,0 +1,57 @@
++// Copyright 2020 ETH Zurich and University of Bologna.
++// Solderpad Hardware License, Version 0.51, see LICENSE for details.
++// SPDX-License-Identifier: SHL-0.51
++
++// Author: Fabian Schuiki <fschuiki@iis.ee.ethz.ch>
++// Author: Paul Scheffler <paulsc@iis.ee.ethz.ch>
++
++`include "common_cells/registers.svh"
++`include "common_cells/assertions.svh"
++
++module credit_counter #(
++  parameter int unsigned NumCredits      = 0,
++  /// Whether credit is full or empty on reset
++  parameter bit          InitCreditEmpty = 1'b0,
++  /// Derived parameters *Do not override*
++  parameter int unsigned InitNumCredits  = InitCreditEmpty ? '0 : NumCredits,
++  parameter type         credit_cnt_t    = logic [$clog2(NumCredits):0]
++) (
++  input  logic clk_i,
++  input  logic rst_ni,
++
++  output credit_cnt_t credit_o,
++
++  input  logic credit_give_i,
++  input  logic credit_take_i,
++  input  logic credit_init_i,  // Reinitialize (soft-reset) credit; takes priority
++
++  output logic credit_left_o,
++  output logic credit_crit_o,  // Giving one more credit will fill the credits
++  output logic credit_full_o
++);
++
++  credit_cnt_t credit_d, credit_q;
++  logic increment, decrement;
++
++  assign decrement = credit_take_i & ~credit_give_i;
++  assign increment = ~credit_take_i & credit_give_i;
++
++  always_comb begin
++    credit_d = credit_q;
++    if      (decrement) credit_d = credit_q - 1;
++    else if (increment) credit_d = credit_q + 1;
++  end
++
++  logic credit_load;
++  assign credit_load = 1'b1;
++  `FFLARNC(credit_q, credit_d, credit_load, credit_init_i, InitNumCredits, clk_i, rst_ni)
++
++  assign credit_o       = credit_q;
++  assign credit_left_o  = (credit_q != '0);
++  assign credit_crit_o  = (credit_q == NumCredits-1);
++  assign credit_full_o  = (credit_q == NumCredits);
++
++  `ASSERT_NEVER(CreditUnderflow, credit_o == '0 && decrement)
++  `ASSERT_NEVER(CreditOverflow, credit_o == NumCredits && increment)
++
++endmodule
+diff --git a/src_files.yml b/src_files.yml
+index 0449fabe..30aebdba 100644
+--- a/src_files.yml
++++ b/src_files.yml
+@@ -11,6 +11,7 @@ common_cells_all:
+     - src/cc_onehot.sv
+     - src/cf_math_pkg.sv
+     - src/clk_int_div.sv
++    - src/credit_counter.sv
+     - src/delta_counter.sv
+     - src/ecc_pkg.sv
+     - src/edge_propagator_tx.sv
+
+From 483b3dd64c64bfc4ae37e4cc3665ea339b4be01f Mon Sep 17 00:00:00 2001
+From: Michael Rogenmoser <michael@rogenmoser.us>
+Date: Thu, 18 Jul 2024 14:00:40 +0200
+Subject: [PATCH 2/2] credit_counter: replace FFLARNC with FFARNC
+
+Co-authored-by: Nils Wistoff <nwistoff@iis.ee.ethz.ch>
+---
+ src/credit_counter.sv | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/src/credit_counter.sv b/src/credit_counter.sv
+index b29312ae..2792fd5a 100644
+--- a/src/credit_counter.sv
++++ b/src/credit_counter.sv
+@@ -42,9 +42,7 @@ module credit_counter #(
+     else if (increment) credit_d = credit_q + 1;
+   end
+ 
+-  logic credit_load;
+-  assign credit_load = 1'b1;
+-  `FFLARNC(credit_q, credit_d, credit_load, credit_init_i, InitNumCredits, clk_i, rst_ni)
++  `FFARNC(credit_q, credit_d, credit_init_i, InitNumCredits, clk_i, rst_ni)
+ 
+   assign credit_o       = credit_q;
+   assign credit_left_o  = (credit_q != '0);

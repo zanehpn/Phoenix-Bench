@@ -1,0 +1,72 @@
+[
+    {
+        "rel_file_path": "src/axi_pkg.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_axi_pr293/src/axi_pkg.sv",
+        "start": 13,
+        "end": 74,
+        "class_name": null,
+        "method_name": null,
+        "code": "13 // - Andreas Kurth <akurth@iis.ee.ethz.ch>\n14 // - Florian Zaruba <zarubaf@iis.ee.ethz.ch>\n15 // - Wolfgang Roenninger <wroennin@iis.ee.ethz.ch>\n16 // - Fabian Schuiki <fschuiki@iis.ee.ethz.ch>\n17 // - Matheus Cavalcante <matheusd@iis.ee.ethz.ch>\n18 \n19 //! AXI Package\n20 /// Contains all necessary type definitions, constants, and generally useful functions.\n21 package axi_pkg;\n22 \n23   /// AXI Transaction Burst Width.\n24   typedef logic [1:0]  burst_t;\n25   /// AXI Transaction Response Type.\n26   typedef logic [1:0]   resp_t;\n27   /// AXI Transaction Cacheability Type.\n28   typedef logic [3:0]  cache_t;\n29   /// AXI Transaction Protection Type.\n30   typedef logic [2:0]   prot_t;\n31   /// AXI Transaction Quality of Service Type.\n32   typedef logic [3:0]    qos_t;\n33   /// AXI Transaction Region Type.\n34   typedef logic [3:0] region_t;\n35   /// AXI Transaction Length Type.\n36   typedef logic [7:0]    len_t;\n37   /// AXI Transaction Size Type.\n38   typedef logic [2:0]   size_t;\n39   /// AXI5 Atomic Operation Type.\n40   typedef logic [5:0]   atop_t; // atomic operations\n41   /// AXI5 Non-Secure Address Identifier.\n42   typedef logic [3:0]  nsaid_t;\n43 \n44   /// AXI Transaction Burst Width.\n45   parameter int unsigned BurstWidth  = $size(burst_t);\n46   /// AXI Transaction Response Width.\n47   parameter int unsigned RespWidth   = $size(resp_t);\n48   /// AXI Transaction Cacheability Width.\n49   parameter int unsigned CacheWidth  = $size(cache_t);\n50   /// AXI Transaction Protection Width.\n51   parameter int unsigned ProtWidth   = $size(prot_t);\n52   /// AXI Transaction Quality of Service Width.\n53   parameter int unsigned QosWidth    = $size(qos_t);\n54   /// AXI Transaction Region Width.\n55   parameter int unsigned RegionWidth = $size(region_t);\n56   /// AXI Transaction Length Width.\n57   parameter int unsigned LenWidth    = $size(len_t);\n58   /// AXI Transaction Size Width.\n59   parameter int unsigned SizeWidth   = $size(size_t);\n60   /// AXI Lock Width.\n61   parameter int unsigned LockWidth   = 32'd1;\n62   /// AXI5 Atomic Operation Width.\n63   parameter int unsigned AtopWidth   = $size(atop_t);\n64   /// AXI5 Non-Secure Address Identifier.\n65   parameter int unsigned NsaidWidth  = $size(nsaid_t);\n66 \n67   /// In a fixed burst:\n68   /// - The address is the same for every transfer in the burst.\n69   /// - The byte lanes that are valid are constant for all beats in the burst.  However, within\n70   ///   those byte lanes, the actual bytes that have `wstrb` asserted can differ for each beat in\n71   ///   the burst.\n72   /// This burst type is used for repeated accesses to the same location such as when loading or\n73   /// emptying a FIFO.\n74   localparam BURST_FIXED = 2'b00;\n",
+        "intended_behavior": ""
+    },
+    {
+        "rel_file_path": "src/axi_pkg.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_axi_pr293/src/axi_pkg.sv",
+        "start": 307,
+        "end": 332,
+        "class_name": null,
+        "method_name": null,
+        "code": "307           return resp_a;\n308         end\n309       end\n310       RESP_DECERR: begin\n311         // No response precedes DECERR.\n312         return resp_a;\n313       end\n314     endcase\n315   endfunction\n316 \n317   /// AW Width: Returns the width of the AW channel payload\n318   function automatic int unsigned aw_width(int unsigned addr_width, int unsigned id_width,\n319                                            int unsigned user_width );\n320     // Sum the individual bit widths of the signals\n321     return (id_width + addr_width + LenWidth + SizeWidth + BurstWidth + LockWidth + CacheWidth +\n322             ProtWidth + QosWidth + RegionWidth + AtopWidth + user_width );\n323   endfunction\n324 \n325   /// W Width: Returns the width of the W channel payload\n326   function automatic int unsigned w_width(int unsigned data_width, int unsigned user_width );\n327     // Sum the individual bit widths of the signals\n328     return (data_width + data_width / 32'd8 + 32'd1 + user_width);\n329     //                   ^- StrobeWidth       ^- LastWidth\n330   endfunction\n331 \n332   /// B Width: Returns the width of the B channel payload\n",
+        "intended_behavior": ""
+    },
+    {
+        "rel_file_path": "src/axi_pkg.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_axi_pr293/src/axi_pkg.sv",
+        "start": 316,
+        "end": 339,
+        "class_name": null,
+        "method_name": null,
+        "code": "316 \n317   /// AW Width: Returns the width of the AW channel payload\n318   function automatic int unsigned aw_width(int unsigned addr_width, int unsigned id_width,\n319                                            int unsigned user_width );\n320     // Sum the individual bit widths of the signals\n321     return (id_width + addr_width + LenWidth + SizeWidth + BurstWidth + LockWidth + CacheWidth +\n322             ProtWidth + QosWidth + RegionWidth + AtopWidth + user_width );\n323   endfunction\n324 \n325   /// W Width: Returns the width of the W channel payload\n326   function automatic int unsigned w_width(int unsigned data_width, int unsigned user_width );\n327     // Sum the individual bit widths of the signals\n328     return (data_width + data_width / 32'd8 + 32'd1 + user_width);\n329     //                   ^- StrobeWidth       ^- LastWidth\n330   endfunction\n331 \n332   /// B Width: Returns the width of the B channel payload\n333   function automatic int unsigned b_width(int unsigned id_width, int unsigned user_width );\n334     // Sum the individual bit widths of the signals\n335     return (id_width + RespWidth + user_width);\n336   endfunction\n337 \n338   /// AR Width: Returns the width of the AR channel payload\n339   function automatic int unsigned ar_width(int unsigned addr_width, int unsigned id_width,\n",
+        "intended_behavior": ""
+    },
+    {
+        "rel_file_path": "src/axi_pkg.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_axi_pr293/src/axi_pkg.sv",
+        "start": 322,
+        "end": 345,
+        "class_name": null,
+        "method_name": null,
+        "code": "322             ProtWidth + QosWidth + RegionWidth + AtopWidth + user_width );\n323   endfunction\n324 \n325   /// W Width: Returns the width of the W channel payload\n326   function automatic int unsigned w_width(int unsigned data_width, int unsigned user_width );\n327     // Sum the individual bit widths of the signals\n328     return (data_width + data_width / 32'd8 + 32'd1 + user_width);\n329     //                   ^- StrobeWidth       ^- LastWidth\n330   endfunction\n331 \n332   /// B Width: Returns the width of the B channel payload\n333   function automatic int unsigned b_width(int unsigned id_width, int unsigned user_width );\n334     // Sum the individual bit widths of the signals\n335     return (id_width + RespWidth + user_width);\n336   endfunction\n337 \n338   /// AR Width: Returns the width of the AR channel payload\n339   function automatic int unsigned ar_width(int unsigned addr_width, int unsigned id_width,\n340                                            int unsigned user_width );\n341     // Sum the individual bit widths of the signals\n342     return (id_width + addr_width + LenWidth + SizeWidth + BurstWidth + LockWidth + CacheWidth +\n343             ProtWidth + QosWidth + RegionWidth + user_width );\n344   endfunction\n345 \n",
+        "intended_behavior": ""
+    },
+    {
+        "rel_file_path": "src/axi_pkg.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_axi_pr293/src/axi_pkg.sv",
+        "start": 328,
+        "end": 353,
+        "class_name": null,
+        "method_name": null,
+        "code": "328     return (data_width + data_width / 32'd8 + 32'd1 + user_width);\n329     //                   ^- StrobeWidth       ^- LastWidth\n330   endfunction\n331 \n332   /// B Width: Returns the width of the B channel payload\n333   function automatic int unsigned b_width(int unsigned id_width, int unsigned user_width );\n334     // Sum the individual bit widths of the signals\n335     return (id_width + RespWidth + user_width);\n336   endfunction\n337 \n338   /// AR Width: Returns the width of the AR channel payload\n339   function automatic int unsigned ar_width(int unsigned addr_width, int unsigned id_width,\n340                                            int unsigned user_width );\n341     // Sum the individual bit widths of the signals\n342     return (id_width + addr_width + LenWidth + SizeWidth + BurstWidth + LockWidth + CacheWidth +\n343             ProtWidth + QosWidth + RegionWidth + user_width );\n344   endfunction\n345 \n346   /// R Width: Returns the width of the R channel payload\n347   function automatic int unsigned r_width(int unsigned data_width, int unsigned id_width,\n348                                           int unsigned user_width );\n349     // Sum the individual bit widths of the signals\n350     return (id_width + data_width + RespWidth + 32'd1 + user_width);\n351     //                                          ^- LastWidth\n352   endfunction\n353 \n",
+        "intended_behavior": ""
+    },
+    {
+        "rel_file_path": "src/axi_pkg.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_axi_pr293/src/axi_pkg.sv",
+        "start": 336,
+        "end": 361,
+        "class_name": null,
+        "method_name": null,
+        "code": "336   endfunction\n337 \n338   /// AR Width: Returns the width of the AR channel payload\n339   function automatic int unsigned ar_width(int unsigned addr_width, int unsigned id_width,\n340                                            int unsigned user_width );\n341     // Sum the individual bit widths of the signals\n342     return (id_width + addr_width + LenWidth + SizeWidth + BurstWidth + LockWidth + CacheWidth +\n343             ProtWidth + QosWidth + RegionWidth + user_width );\n344   endfunction\n345 \n346   /// R Width: Returns the width of the R channel payload\n347   function automatic int unsigned r_width(int unsigned data_width, int unsigned id_width,\n348                                           int unsigned user_width );\n349     // Sum the individual bit widths of the signals\n350     return (id_width + data_width + RespWidth + 32'd1 + user_width);\n351     //                                          ^- LastWidth\n352   endfunction\n353 \n354   /// Request Width: Returns the width of the request channel\n355   function automatic int unsigned req_width(int unsigned addr_width,    int unsigned data_width,\n356                                             int unsigned id_width,      int unsigned aw_user_width,\n357                                             int unsigned ar_user_width, int unsigned w_user_width   );\n358     // Sum the individual bit widths of the signals and their handshakes\n359     //                                                      v- valids\n360     return (aw_width(addr_width, id_width, aw_user_width) + 32'd1 +\n361             w_width(data_width, w_user_width)             + 32'd1 +\n",
+        "intended_behavior": ""
+    },
+    {
+        "rel_file_path": "src/axi_pkg.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_axi_pr293/src/axi_pkg.sv",
+        "start": 343,
+        "end": 364,
+        "class_name": null,
+        "method_name": null,
+        "code": "343             ProtWidth + QosWidth + RegionWidth + user_width );\n344   endfunction\n345 \n346   /// R Width: Returns the width of the R channel payload\n347   function automatic int unsigned r_width(int unsigned data_width, int unsigned id_width,\n348                                           int unsigned user_width );\n349     // Sum the individual bit widths of the signals\n350     return (id_width + data_width + RespWidth + 32'd1 + user_width);\n351     //                                          ^- LastWidth\n352   endfunction\n353 \n354   /// Request Width: Returns the width of the request channel\n355   function automatic int unsigned req_width(int unsigned addr_width,    int unsigned data_width,\n356                                             int unsigned id_width,      int unsigned aw_user_width,\n357                                             int unsigned ar_user_width, int unsigned w_user_width   );\n358     // Sum the individual bit widths of the signals and their handshakes\n359     //                                                      v- valids\n360     return (aw_width(addr_width, id_width, aw_user_width) + 32'd1 +\n361             w_width(data_width, w_user_width)             + 32'd1 +\n362             ar_width(addr_width, id_width, ar_user_width) + 32'd1 + 32'd1 + 32'd1 );\n363     //                                                              ^- R,   ^- B ready\n364   endfunction\n",
+        "intended_behavior": ""
+    }
+]

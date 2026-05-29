@@ -1,0 +1,26 @@
+diff --git a/rtl/cv32e40s_pmp.sv b/rtl/cv32e40s_pmp.sv
+index c366814a..e36f5e0e 100644
+--- a/rtl/cv32e40s_pmp.sv
++++ b/rtl/cv32e40s_pmp.sv
+@@ -210,9 +210,18 @@ module cv32e40s_pmp import cv32e40s_pkg::*;
+     end
+   end
+ 
+-  // Tie low when PMP is deconfigured
+-  assign pmp_req_err_o = (PMP_NUM_REGIONS == 0) ? 1'b0 : access_fault;
+-  
++  // Smepmp/MSECCFG.MML behavior: when MML=1, executing code from a region without
++  // a matching rule must be denied (even for M-mode). This also applies when no
++  // PMP regions are implemented/configured.
++  //
++  // For non-execute accesses, retain legacy behavior when PMP is deconfigured.
++  logic mml_exec_deny_no_regions;
++  assign mml_exec_deny_no_regions = (PMP_NUM_REGIONS == 0) && csr_pmp_i.mseccfg.mml &&
++                                   (pmp_req_type_i == PMP_ACC_EXEC);
++
++  // Tie low when PMP is deconfigured, except for MML execute default-deny
++  assign pmp_req_err_o = (PMP_NUM_REGIONS == 0) ? mml_exec_deny_no_regions : access_fault;
++
+   // RLB, rule locking bypass, is only relevant to cv32e40s_cs_registers which controls writes to the
+   // PMP CSRs. Tie to unused signal here to prevent lint warnings.
+   logic unused_csr_pmp_mseccfg_rlb;

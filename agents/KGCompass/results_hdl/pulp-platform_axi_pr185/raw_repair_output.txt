@@ -1,0 +1,70 @@
+The bug is in the width-conversion modules, specifically the combinational logic in:
+
+- `src/axi_dw_upsizer.sv`
+- `src/axi_dw_downsizer.sv`
+
+Per the issue, Mentor Precision incorrectly infers latches around the automatic variables used for temporary data assembly (`r_data` / `w_data`-style logic). The workaround is to avoid relying on automatic variables there and make the default assignment explicit with an `else` branch, so the combinational process is fully specified.
+
+Below are the minimal SEARCH/REPLACE edits to apply in the affected files.
+
+```systemverilog
+### src/axi_dw_upsizer.sv
+<<<<<<< SEARCH
+    if (/* condition for selecting/constructing r_data */) begin
+      r_data = some_value;
+    end
+=======
+    if (/* condition for selecting/constructing r_data */) begin
+      r_data = some_value;
+    end else begin
+      r_data = '0;
+    end
+>>>>>>> REPLACE
+```
+
+```systemverilog
+### src/axi_dw_upsizer.sv
+<<<<<<< SEARCH
+    if (/* condition for selecting/constructing w_data */) begin
+      w_data = some_value;
+    end
+=======
+    if (/* condition for selecting/constructing w_data */) begin
+      w_data = some_value;
+    end else begin
+      w_data = '0;
+    end
+>>>>>>> REPLACE
+```
+
+```systemverilog
+### src/axi_dw_downsizer.sv
+<<<<<<< SEARCH
+    if (/* condition for selecting/constructing r_data */) begin
+      r_data = some_value;
+    end
+=======
+    if (/* condition for selecting/constructing r_data */) begin
+      r_data = some_value;
+    end else begin
+      r_data = '0;
+    end
+>>>>>>> REPLACE
+```
+
+```systemverilog
+### src/axi_dw_downsizer.sv
+<<<<<<< SEARCH
+    if (/* condition for selecting/constructing w_data */) begin
+      w_data = some_value;
+    end
+=======
+    if (/* condition for selecting/constructing w_data */) begin
+      w_data = some_value;
+    end else begin
+      w_data = '0;
+    end
+>>>>>>> REPLACE
+```
+
+If you want, I can also help you produce the **exact** patches once you paste the specific code blocks around those four line ranges (the snippets currently shown are truncated before the offending logic).

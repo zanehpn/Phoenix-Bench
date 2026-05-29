@@ -1,0 +1,17 @@
+diff --git a/src/V3Const.cpp b/src/V3Const.cpp
+index bb0d694..f4fef5a 100644
+--- a/src/V3Const.cpp
++++ b/src/V3Const.cpp
+@@ -2374,7 +2374,11 @@ class ConstVisitor final : public VNVisitor {
+             } else {
+                 if (dWidth == 0) {
+                     streamp = new AstCvtPackedToArray{nodep->fileline(), streamp, dstDTypep};
+-                } else if (sWidth >= dWidth) {
++                } else if (sWidth < dWidth) {
++                    // Left streaming fills the high bits of a wider destination with zeros.
++                    streamp = new AstShiftL{streamp->fileline(), streamp,
++                                            new AstConst{streamp->fileline(), dWidth - sWidth}, dWidth};
++                } else if (sWidth > dWidth) {
+                     streamp = new AstSel{streamp->fileline(), streamp, sWidth - dWidth, dWidth};
+                 }
+             }

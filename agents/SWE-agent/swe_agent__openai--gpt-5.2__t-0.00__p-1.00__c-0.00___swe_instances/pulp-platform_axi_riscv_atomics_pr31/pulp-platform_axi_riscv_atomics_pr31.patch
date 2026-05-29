@@ -1,0 +1,20 @@
+diff --git a/src/axi_riscv_lrsc.sv b/src/axi_riscv_lrsc.sv
+index e967b7e..64b78a0 100644
+--- a/src/axi_riscv_lrsc.sv
++++ b/src/axi_riscv_lrsc.sv
+@@ -759,9 +759,13 @@ module axi_riscv_lrsc #(
+                                         b_status_inp_cmd = B_REGULAR;
+                                         // Is this write longer than our reservation granularity?
+                                         if (aw_res_len > 1) begin
+-                                            // latch start address and length of write (burst)
++                                            // Latch start address and number of *additional* reservation-granules
++                                            // to clear. The first granule at the start address is cleared via the
++                                            // immediate art_check_clr request below (in AW_IDLE). For a burst that
++                                            // spans aw_res_len granules in total, we therefore need to clear
++                                            // (aw_res_len-1) more addresses: [A+1, ..., A+(aw_res_len-1)].
+                                             clr_addr_d = slv_aw_addr_i[AXI_ADDR_WIDTH-1:AXI_ADDR_LSB] + 1;
+-                                            clr_len_d  = aw_res_len - 1;
++                                            clr_len_d  = aw_res_len - 2;
+                                             clr_id_d   = slv_aw_id_i;
+                                             aw_wait_d  = ~mst_aw_ready;
+                                             aw_state_d = AW_BURST;

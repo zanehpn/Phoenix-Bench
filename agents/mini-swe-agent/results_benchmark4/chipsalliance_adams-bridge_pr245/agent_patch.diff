@@ -1,0 +1,41 @@
+diff --git a/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/sequences/src/ML_DSA_verif_KATs_stream_msg_sequence.svh b/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/sequences/src/ML_DSA_verif_KATs_stream_msg_sequence.svh
+index 9ea2d13..c5dac7e 100644
+--- a/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/sequences/src/ML_DSA_verif_KATs_stream_msg_sequence.svh
++++ b/src/abr_top/uvmf/uvmf_template_output/project_benches/mldsa/tb/sequences/src/ML_DSA_verif_KATs_stream_msg_sequence.svh
+@@ -153,6 +153,13 @@ class ML_DSA_verif_KATs_stream_msg_sequence extends mldsa_bench_sequence_base;
+ 
+       // Writing MLDSA_MSG register
+       // Hack to stream normal message in through streaming interface
++      reg_model.MLDSA_MSG_STROBE.write(status, 32'hF, UVM_FRONTDOOR, reg_model.default_map, this);
++      if (status != UVM_IS_OK) begin
++        `uvm_error("REG_WRITE", $sformatf("Failed to reset MLDSA_MSG_STROBE at KAT %0d", i));
++      end else begin
++        `uvm_info("REG_WRITE", $sformatf("MLDSA_MSG_STROBE reset to %0h for KAT %0d", 32'hF, i), UVM_LOW);
++      end
++
+       foreach (MSG[j]) begin
+         reg_model.MLDSA_MSG[0].write(status, kat_MSG[j], UVM_FRONTDOOR, reg_model.default_map, this);
+         if (status != UVM_IS_OK) begin
+@@ -161,13 +168,6 @@ class ML_DSA_verif_KATs_stream_msg_sequence extends mldsa_bench_sequence_base;
+           `uvm_info("REG_WRITE", $sformatf("MLDSA_MSG[0] written with %0h", kat_MSG[j]), UVM_LOW);
+         end
+       end
+-      //write 0 to strobe since it's aligned to trigger end
+-      reg_model.MLDSA_MSG_STROBE.write(status, 0, UVM_FRONTDOOR, reg_model.default_map, this);
+-      if (status != UVM_IS_OK) begin
+-        `uvm_error("REG_WRITE", $sformatf("Failed to write MLDSA_MSG_STROBE"));
+-      end else begin
+-        `uvm_info("REG_WRITE", $sformatf("MLDSA_MSG_STROBE written with %0h", 0), UVM_LOW);
+-      end
+       //write junk to msg to trigger end
+       reg_model.MLDSA_MSG[0].write(status, kat_MSG[6], UVM_FRONTDOOR, reg_model.default_map, this);
+       if (status != UVM_IS_OK) begin
+@@ -196,7 +196,7 @@ class ML_DSA_verif_KATs_stream_msg_sequence extends mldsa_bench_sequence_base;
+         end
+ 
+         if (data !== VERIFY_RES[j]) begin
+-          `uvm_error("VALIDATION_FAIL", $sformatf("SIG mismatch for KAT %0d at index %0d: Expected %h, Got %h", i, j, SIG[j], data));
++          `uvm_error("VALIDATION_FAIL", $sformatf("RES mismatch for KAT %0d at index %0d: Expected %h, Got %h", i, j, VERIFY_RES[j], data));
+         end else begin
+           `uvm_info("VALIDATION_PASS", $sformatf("SIG match for KAT %0d at index %0d: %h", i, j, data), UVM_LOW);
+         end

@@ -1,0 +1,986 @@
+From faa6ccd06100cf4f855ffe8562d55044f998db5e Mon Sep 17 00:00:00 2001
+From: Manuel Eggimann <meggimann@iis.ee.ethz.ch>
+Date: Thu, 6 Jan 2022 19:10:42 +0100
+Subject: [PATCH 01/11] First draft of dmihardreset support and proper warm
+ reset capability
+
+---
+ doc/debug-system.md |   1 -
+ src/dmi_cdc.sv      |  54 +++++++-----
+ src/dmi_jtag.sv     | 203 +++++++++++++++++++++++---------------------
+ src/dmi_jtag_tap.sv |   7 +-
+ 4 files changed, 144 insertions(+), 121 deletions(-)
+
+diff --git a/doc/debug-system.md b/doc/debug-system.md
+index b025f89..1beca7d 100644
+--- a/doc/debug-system.md
++++ b/doc/debug-system.md
+@@ -485,7 +485,6 @@ default the IR register is 5 bits long, but the implementation is parameterized.
+   ) (
+   ```
+ - `DTMCSR`: RISC-V specific control and status register of the JTAG DMI.
+-  Currently `dmihardreset` is not implemented.
+ - `DMIACCESS`: Access the debug module's register.
+     - `abits+33:34`: Address
+     - `33:2`: Data
+diff --git a/src/dmi_cdc.sv b/src/dmi_cdc.sv
+index 4665c91..d9e9363 100644
+--- a/src/dmi_cdc.sv
++++ b/src/dmi_cdc.sv
+@@ -19,11 +19,13 @@
+ module dmi_cdc (
+   // JTAG side (master side)
+   input  logic             tck_i,
+-  input  logic             trst_ni,
+ 
+   input  dm::dmi_req_t     jtag_dmi_req_i,
+   output logic             jtag_dmi_ready_o,
+   input  logic             jtag_dmi_valid_i,
++  input  logic             jtag_dmi_cdc_clear_i, // Synchronous clear signal.
++                                                 // Triggers reset sequencing
++                                                 // accross CDC
+ 
+   output dm::dmi_resp_t    jtag_dmi_resp_o,
+   output logic             jtag_dmi_valid_o,
+@@ -42,32 +44,40 @@ module dmi_cdc (
+   input  logic             core_dmi_valid_i
+ );
+ 
+-  cdc_2phase #(.T(dm::dmi_req_t)) i_cdc_req (
+-    .src_rst_ni  ( trst_ni          ),
+-    .src_clk_i   ( tck_i            ),
+-    .src_data_i  ( jtag_dmi_req_i   ),
+-    .src_valid_i ( jtag_dmi_valid_i ),
+-    .src_ready_o ( jtag_dmi_ready_o ),
+ 
+-    .dst_rst_ni  ( rst_ni           ),
+-    .dst_clk_i   ( clk_i            ),
+-    .dst_data_o  ( core_dmi_req_o   ),
+-    .dst_valid_o ( core_dmi_valid_o ),
+-    .dst_ready_i ( core_dmi_ready_i )
++
++  cdc_2phase_clearable #(.T(dm::dmi_req_t)) i_cdc_req (
++    .src_rst_ni  ( rst_ni               ),
++    .src_clear_i ( jtag_dmi_cdc_clear_i )
++    .src_clk_i   ( tck_i                ),
++    .src_data_i  ( jtag_dmi_req_i       ),
++    .src_valid_i ( jtag_dmi_valid_i     ),
++    .src_ready_o ( jtag_dmi_ready_o     ),
++
++    .dst_rst_ni  ( rst_ni               ),
++    .dst_clear_i ( 1'b0                 ), // No functional reset from core side
++                                           // used (only async).
++    .dst_clk_i   ( clk_i                ),
++    .dst_data_o  ( core_dmi_req_o       ),
++    .dst_valid_o ( core_dmi_valid_o     ),
++    .dst_ready_i ( core_dmi_ready_i     )
+   );
+ 
+   cdc_2phase #(.T(dm::dmi_resp_t)) i_cdc_resp (
+-    .src_rst_ni  ( rst_ni           ),
+-    .src_clk_i   ( clk_i            ),
+-    .src_data_i  ( core_dmi_resp_i  ),
+-    .src_valid_i ( core_dmi_valid_i ),
+-    .src_ready_o ( core_dmi_ready_o ),
++    .src_rst_ni  ( rst_ni               ),
++    .src_clear_i ( 1'b0                 ), // No functional reset from core side
++                                           // used (only async ).
++    .src_clk_i   ( clk_i                ),
++    .src_data_i  ( core_dmi_resp_i      ),
++    .src_valid_i ( core_dmi_valid_i     ),
++    .src_ready_o ( core_dmi_ready_o     ),
+ 
+-    .dst_rst_ni  ( trst_ni          ),
+-    .dst_clk_i   ( tck_i            ),
+-    .dst_data_o  ( jtag_dmi_resp_o  ),
+-    .dst_valid_o ( jtag_dmi_valid_o ),
+-    .dst_ready_i ( jtag_dmi_ready_i )
++    .dst_rst_ni  ( trst_ni              ),
++    .dst_clear_i ( jtag_dmi_cdc_clear_i ),
++    .dst_clk_i   ( tck_i                ),
++    .dst_data_o  ( jtag_dmi_resp_o      ),
++    .dst_valid_o ( jtag_dmi_valid_o     ),
++    .dst_ready_i ( jtag_dmi_ready_i     )
+   );
+ 
+ endmodule : dmi_cdc
+diff --git a/src/dmi_jtag.sv b/src/dmi_jtag.sv
+index 70ee776..04414e6 100644
+--- a/src/dmi_jtag.sv
++++ b/src/dmi_jtag.sv
+@@ -47,12 +47,16 @@ module dmi_jtag #(
+   dmi_error_e error_d, error_q;
+ 
+   logic tck;
+-  logic trst_n;
++  logic jtag_dmi_clear; // Synchronous reset of DMI triggered by TestLogicReset in
++                        // jtag TAP
++  logic dmi_clear; // Functional (warm) reset of the entire DMI
+   logic update;
+   logic capture;
+   logic shift;
+   logic tdi;
+ 
++  assign dmi_clear = jtag_dmi_clear || dtmcs_q.dmihardreset;
++
+   // -------------------------------
+   // Debug Module Control and Status
+   // -------------------------------
+@@ -61,8 +65,7 @@ module dmi_jtag #(
+   dm::dtmcs_t dtmcs_d, dtmcs_q;
+ 
+   always_comb begin
+-    dtmcs_d  = dtmcs_q;
+-
++    dtmcs_d = dtmcs_q;
+     if (capture) begin
+       if (dtmcs_select) begin
+         dtmcs_d  = '{
+@@ -83,8 +86,8 @@ module dmi_jtag #(
+     end
+   end
+ 
+-  always_ff @(posedge tck or negedge trst_n) begin
+-    if (!trst_n) begin
++  always_ff @(posedge tck or negedge trst_ni) begin
++    if (!trst_ni) begin
+       dtmcs_q <= '0;
+     end else begin
+       dtmcs_q <= dtmcs_d;
+@@ -94,9 +97,8 @@ module dmi_jtag #(
+   // ----------------------------
+   // DMI (Debug Module Interface)
+   // ----------------------------
+-  // TODO(zarubaf): Might need to be connected to the `dtmcs_q.dmihardreset`
+-  // signal.
+-  assign dmi_rst_no = rst_ni;
++
++  assign dmi_rst_no = dmi_clear;
+ 
+   logic        dmi_select;
+   logic        dmi_tdo;
+@@ -142,79 +144,86 @@ module dmi_jtag #(
+ 
+     dmi_req_valid = 1'b0;
+ 
+-    unique case (state_q)
+-      Idle: begin
+-        // make sure that no error is sticky
+-        if (dmi_select && update && (error_q == DMINoError)) begin
+-          // save address and value
+-          address_d = dmi.address;
+-          data_d = dmi.data;
+-          if (dm::dtm_op_e'(dmi.op) == dm::DTM_READ) begin
+-            state_d = Read;
+-          end else if (dm::dtm_op_e'(dmi.op) == dm::DTM_WRITE) begin
+-            state_d = Write;
++    if (dmi_clear) begin
++      state_d   = IDLE;
++      data_d    = '0;
++      error_d   = DMINoError;
++      address_d = '0;
++    end else begin
++      unique case (state_q)
++        Idle: begin
++          // make sure that no error is sticky
++          if (dmi_select && update && (error_q == DMINoError)) begin
++            // save address and value
++            address_d = dmi.address;
++            data_d = dmi.data;
++            if (dm::dtm_op_e'(dmi.op) == dm::DTM_READ) begin
++              state_d = Read;
++            end else if (dm::dtm_op_e'(dmi.op) == dm::DTM_WRITE) begin
++              state_d = Write;
++            end
++            // else this is a nop and we can stay here
+           end
+-          // else this is a nop and we can stay here
+         end
+-      end
+ 
+-      Read: begin
+-        dmi_req_valid = 1'b1;
+-        if (dmi_req_ready) begin
+-          state_d = WaitReadValid;
++        Read: begin
++          dmi_req_valid = 1'b1;
++          if (dmi_req_ready) begin
++            state_d = WaitReadValid;
++          end
+         end
+-      end
+ 
+-      WaitReadValid: begin
+-        // load data into register and shift out
+-        if (dmi_resp_valid) begin
+-          data_d = dmi_resp.data;
+-          state_d = Idle;
++        WaitReadValid: begin
++          // load data into register and shift out
++          if (dmi_resp_valid) begin
++            data_d = dmi_resp.data;
++            state_d = Idle;
++          end
+         end
+-      end
+ 
+-      Write: begin
+-        dmi_req_valid = 1'b1;
+-        // request sent, wait for response before going back to idle
+-        if (dmi_req_ready) begin
+-          state_d = WaitWriteValid;
++        Write: begin
++          dmi_req_valid = 1'b1;
++          // request sent, wait for response before going back to idle
++          if (dmi_req_ready) begin
++            state_d = WaitWriteValid;
++          end
+         end
+-      end
+ 
+-      WaitWriteValid: begin
+-        // got a valid answer go back to idle
+-        if (dmi_resp_valid) begin
+-          state_d = Idle;
++        WaitWriteValid: begin
++          // got a valid answer go back to idle
++          if (dmi_resp_valid) begin
++            state_d = Idle;
++          end
+         end
+-      end
+ 
+-      default: begin
+-        // just wait for idle here
+-        if (dmi_resp_valid) begin
+-          state_d = Idle;
++        default: begin
++          // just wait for idle here
++          if (dmi_resp_valid) begin
++            state_d = Idle;
++          end
+         end
+-      end
+-    endcase
++      endcase
+ 
+-    // update means we got another request but we didn't finish
+-    // the one in progress, this state is sticky
+-    if (update && state_q != Idle) begin
+-      error_dmi_busy = 1'b1;
+-    end
++      // update means we got another request but we didn't finish
++      // the one in progress, this state is sticky
++      if (update && state_q != Idle) begin
++        error_dmi_busy = 1'b1;
++      end
+ 
+-    // if capture goes high while we are in the read state
+-    // or in the corresponding wait state we are not giving back a valid word
+-    // -> throw an error
+-    if (capture && state_q inside {Read, WaitReadValid}) begin
+-      error_dmi_busy = 1'b1;
+-    end
++      // if capture goes high while we are in the read state
++      // or in the corresponding wait state we are not giving back a valid word
++      // -> throw an error
++      if (capture && state_q inside {Read, WaitReadValid}) begin
++        error_dmi_busy = 1'b1;
++      end
+ 
+-    if (error_dmi_busy) begin
+-      error_d = DMIBusy;
+-    end
+-    // clear sticky error flag
+-    if (update && dtmcs_q.dmireset && dtmcs_select) begin
+-      error_d = DMINoError;
++      if (error_dmi_busy) begin
++        error_d = DMIBusy;
++      end
++      // clear sticky error flag
++      if (update && dtmcs_q.dmireset && dtmcs_select) begin
++        error_d = DMINoError;
++      end
+     end
+   end
+ 
+@@ -223,27 +232,30 @@ module dmi_jtag #(
+ 
+   always_comb begin : p_shift
+     dr_d    = dr_q;
+-
+-    if (capture) begin
+-      if (dmi_select) begin
+-        if (error_q == DMINoError && !error_dmi_busy) begin
+-          dr_d = {address_q, data_q, DMINoError};
+-        // DMI was busy, report an error
+-        end else if (error_q == DMIBusy || error_dmi_busy) begin
+-          dr_d = {address_q, data_q, DMIBusy};
++    if (dmi_clear) begin
++      dr_d = '0;
++    end else begin
++      if (capture) begin
++        if (dmi_select) begin
++          if (error_q == DMINoError && !error_dmi_busy) begin
++            dr_d = {address_q, data_q, DMINoError};
++            // DMI was busy, report an error
++          end else if (error_q == DMIBusy || error_dmi_busy) begin
++            dr_d = {address_q, data_q, DMIBusy};
++          end
+         end
+       end
+-    end
+ 
+-    if (shift) begin
+-      if (dmi_select) begin
+-        dr_d = {tdi, dr_q[$bits(dr_q)-1:1]};
++      if (shift) begin
++        if (dmi_select) begin
++          dr_d = {tdi, dr_q[$bits(dr_q)-1:1]};
++        end
+       end
+     end
+   end
+ 
+-  always_ff @(posedge tck or negedge trst_n) begin
+-    if (!trst_n) begin
++  always_ff @(posedge tck or negedge trst_ni) begin
++    if (!trst_ni) begin
+       dr_q      <= '0;
+       state_q   <= Idle;
+       address_q <= '0;
+@@ -273,7 +285,7 @@ module dmi_jtag #(
+     .tdo_oe_o,
+     .testmode_i,
+     .tck_o          ( tck              ),
+-    .trst_no        ( trst_n           ),
++    .dmi_clear_o    ( jtag_dmi_clear   ),
+     .update_o       ( update           ),
+     .capture_o      ( capture          ),
+     .shift_o        ( shift            ),
+@@ -289,23 +301,24 @@ module dmi_jtag #(
+   // ---------
+   dmi_cdc i_dmi_cdc (
+     // JTAG side (master side)
+-    .tck_i             ( tck              ),
+-    .trst_ni           ( trst_n           ),
+-    .jtag_dmi_req_i    ( dmi_req          ),
+-    .jtag_dmi_ready_o  ( dmi_req_ready    ),
+-    .jtag_dmi_valid_i  ( dmi_req_valid    ),
+-    .jtag_dmi_resp_o   ( dmi_resp         ),
+-    .jtag_dmi_valid_o  ( dmi_resp_valid   ),
+-    .jtag_dmi_ready_i  ( dmi_resp_ready   ),
++    .tck_i                ( tck              ),
++    .trst_ni              ( trst_ni          ),
++    .jtag_dmi_cdc_clear_i ( dmi_clear        ),
++    .jtag_dmi_req_i       ( dmi_req          ),
++    .jtag_dmi_ready_o     ( dmi_req_ready    ),
++    .jtag_dmi_valid_i     ( dmi_req_valid    ),
++    .jtag_dmi_resp_o      ( dmi_resp         ),
++    .jtag_dmi_valid_o     ( dmi_resp_valid   ),
++    .jtag_dmi_ready_i     ( dmi_resp_ready   ),
+     // core side
+     .clk_i,
+     .rst_ni,
+-    .core_dmi_req_o    ( dmi_req_o        ),
+-    .core_dmi_valid_o  ( dmi_req_valid_o  ),
+-    .core_dmi_ready_i  ( dmi_req_ready_i  ),
+-    .core_dmi_resp_i   ( dmi_resp_i       ),
+-    .core_dmi_ready_o  ( dmi_resp_ready_o ),
+-    .core_dmi_valid_i  ( dmi_resp_valid_i )
++    .core_dmi_req_o       ( dmi_req_o        ),
++    .core_dmi_valid_o     ( dmi_req_valid_o  ),
++    .core_dmi_ready_i     ( dmi_req_ready_i  ),
++    .core_dmi_resp_i      ( dmi_resp_i       ),
++    .core_dmi_ready_o     ( dmi_resp_ready_o ),
++    .core_dmi_valid_i     ( dmi_resp_valid_i )
+   );
+ 
+ endmodule : dmi_jtag
+diff --git a/src/dmi_jtag_tap.sv b/src/dmi_jtag_tap.sv
+index 7d3b67c..eff8a38 100644
+--- a/src/dmi_jtag_tap.sv
++++ b/src/dmi_jtag_tap.sv
+@@ -34,7 +34,8 @@ module dmi_jtag_tap #(
+   input  logic        testmode_i,
+   // JTAG is interested in writing the DTM CSR register
+   output logic        tck_o,
+-  output logic        trst_no,
++  // Synchronous reset of the dmi module triggered by JTAG TAP
++  output logic        dmi_clear_o,
+   output logic        update_o,
+   output logic        capture_o,
+   output logic        shift_o,
+@@ -202,7 +203,7 @@ module dmi_jtag_tap #(
+   // Determination of next state; purely combinatorial
+   always_comb begin : p_tap_fsm
+ 
+-    trst_no            = trst_ni;
++    dmi_clear_o        = 1'b0;
+ 
+     capture_dr         = 1'b0;
+     shift_dr           = 1'b0;
+@@ -216,7 +217,7 @@ module dmi_jtag_tap #(
+     unique case (tap_state_q)
+       TestLogicReset: begin
+         tap_state_d = (tms_i) ? TestLogicReset : RunTestIdle;
+-        trst_no = 1'b1;
++        dmi_clear_o = 1'b1;
+       end
+       RunTestIdle: begin
+         tap_state_d = (tms_i) ? SelectDrScan : RunTestIdle;
+
+From b3cc14aa1a240b2d43165f096553d2cece423e69 Mon Sep 17 00:00:00 2001
+From: Manuel Eggimann <meggimann@iis.ee.ethz.ch>
+Date: Wed, 2 Feb 2022 13:11:12 +0100
+Subject: [PATCH 02/11] Point to draft PR in common_cells for clearable CDC IPs
+
+---
+ Bender.yml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Bender.yml b/Bender.yml
+index 7178d56..9bc553e 100644
+--- a/Bender.yml
++++ b/Bender.yml
+@@ -10,7 +10,7 @@ package:
+ 
+ dependencies:
+   tech_cells_generic: { git: "https://github.com/pulp-platform/tech_cells_generic.git", version: 0.2.3 }
+-  common_cells: {git: https://github.com/pulp-platform/common_cells.git, version: 1.21.0}
++  common_cells: {git: https://github.com/pulp-platform/common_cells.git, rev: clearable_cdcs}
+ 
+ sources:
+   files:
+
+From 5aaa574cbbfa356f51f086a826ad109d5b7d12c8 Mon Sep 17 00:00:00 2001
+From: Manuel Eggimann <meggimann@iis.ee.ethz.ch>
+Date: Wed, 2 Feb 2022 13:11:12 +0100
+Subject: [PATCH 03/11] Fix syntax errors
+
+---
+ src/dmi_cdc.sv  | 2 +-
+ src/dmi_jtag.sv | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/dmi_cdc.sv b/src/dmi_cdc.sv
+index d9e9363..030a120 100644
+--- a/src/dmi_cdc.sv
++++ b/src/dmi_cdc.sv
+@@ -48,7 +48,7 @@ module dmi_cdc (
+ 
+   cdc_2phase_clearable #(.T(dm::dmi_req_t)) i_cdc_req (
+     .src_rst_ni  ( rst_ni               ),
+-    .src_clear_i ( jtag_dmi_cdc_clear_i )
++    .src_clear_i ( jtag_dmi_cdc_clear_i ),
+     .src_clk_i   ( tck_i                ),
+     .src_data_i  ( jtag_dmi_req_i       ),
+     .src_valid_i ( jtag_dmi_valid_i     ),
+diff --git a/src/dmi_jtag.sv b/src/dmi_jtag.sv
+index 04414e6..7106b2d 100644
+--- a/src/dmi_jtag.sv
++++ b/src/dmi_jtag.sv
+@@ -145,7 +145,7 @@ module dmi_jtag #(
+     dmi_req_valid = 1'b0;
+ 
+     if (dmi_clear) begin
+-      state_d   = IDLE;
++      state_d   = Idle;
+       data_d    = '0;
+       error_d   = DMINoError;
+       address_d = '0;
+
+From 9f1e077861e00871c6d388cbba7b14dda1a1f9d4 Mon Sep 17 00:00:00 2001
+From: Manuel Eggimann <meggimann@iis.ee.ethz.ch>
+Date: Thu, 3 Feb 2022 17:10:53 +0100
+Subject: [PATCH 04/11] Fix wrong async reset connection and fix wrong
+ dmi_clear logic
+
+---
+ src/dmi_cdc.sv  | 6 +++---
+ src/dmi_jtag.sv | 5 +++--
+ 2 files changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/src/dmi_cdc.sv b/src/dmi_cdc.sv
+index 030a120..f9b32bc 100644
+--- a/src/dmi_cdc.sv
++++ b/src/dmi_cdc.sv
+@@ -19,7 +19,7 @@
+ module dmi_cdc (
+   // JTAG side (master side)
+   input  logic             tck_i,
+-
++  input  logic             trst_ni,
+   input  dm::dmi_req_t     jtag_dmi_req_i,
+   output logic             jtag_dmi_ready_o,
+   input  logic             jtag_dmi_valid_i,
+@@ -47,7 +47,7 @@ module dmi_cdc (
+ 
+ 
+   cdc_2phase_clearable #(.T(dm::dmi_req_t)) i_cdc_req (
+-    .src_rst_ni  ( rst_ni               ),
++    .src_rst_ni  ( trst_ni              ),
+     .src_clear_i ( jtag_dmi_cdc_clear_i ),
+     .src_clk_i   ( tck_i                ),
+     .src_data_i  ( jtag_dmi_req_i       ),
+@@ -63,7 +63,7 @@ module dmi_cdc (
+     .dst_ready_i ( core_dmi_ready_i     )
+   );
+ 
+-  cdc_2phase #(.T(dm::dmi_resp_t)) i_cdc_resp (
++  cdc_2phase_clearable #(.T(dm::dmi_resp_t)) i_cdc_resp (
+     .src_rst_ni  ( rst_ni               ),
+     .src_clear_i ( 1'b0                 ), // No functional reset from core side
+                                            // used (only async ).
+diff --git a/src/dmi_jtag.sv b/src/dmi_jtag.sv
+index 7106b2d..e1bc369 100644
+--- a/src/dmi_jtag.sv
++++ b/src/dmi_jtag.sv
+@@ -55,12 +55,13 @@ module dmi_jtag #(
+   logic shift;
+   logic tdi;
+ 
+-  assign dmi_clear = jtag_dmi_clear || dtmcs_q.dmihardreset;
++  logic dtmcs_select;
++
++  assign dmi_clear = jtag_dmi_clear || (dtmcs_select && update && dtmcs_q.dmihardreset);
+ 
+   // -------------------------------
+   // Debug Module Control and Status
+   // -------------------------------
+-  logic dtmcs_select;
+ 
+   dm::dtmcs_t dtmcs_d, dtmcs_q;
+ 
+
+From cdd595647acd03256b700ed6cf78d8e723f1cc49 Mon Sep 17 00:00:00 2001
+From: Manuel Eggimann <meggimann@iis.ee.ethz.ch>
+Date: Thu, 3 Feb 2022 17:11:46 +0100
+Subject: [PATCH 05/11] Fix jtag DV IP to reset ir_select reg during reset
+
+---
+ tb/jtag_dmi/jtag_test.sv | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/tb/jtag_dmi/jtag_test.sv b/tb/jtag_dmi/jtag_test.sv
+index 7872d5c..a8db8ad 100644
+--- a/tb/jtag_dmi/jtag_test.sv
++++ b/tb/jtag_dmi/jtag_test.sv
+@@ -33,6 +33,7 @@ package jtag_test;
+       jtag.trst_n <= #TA 0;
+       repeat (2) clock();
+       jtag.trst_n <= #TA 1;
++      this.ir_select = 'h1;
+       clock();
+     endtask
+ 
+
+From 0a794a337dfc0d37084e9860d46effd77a82f232 Mon Sep 17 00:00:00 2001
+From: Manuel Eggimann <meggimann@iis.ee.ethz.ch>
+Date: Thu, 3 Feb 2022 17:12:27 +0100
+Subject: [PATCH 06/11] Modify tb to issue random dmi resets between
+ transactions
+
+---
+ tb/jtag_dmi/tb_jtag_dmi.sv | 30 ++++++++++++++++++++++++++++--
+ 1 file changed, 28 insertions(+), 2 deletions(-)
+
+diff --git a/tb/jtag_dmi/tb_jtag_dmi.sv b/tb/jtag_dmi/tb_jtag_dmi.sv
+index 1e0cdd8..1d64a01 100644
+--- a/tb/jtag_dmi/tb_jtag_dmi.sv
++++ b/tb/jtag_dmi/tb_jtag_dmi.sv
+@@ -242,6 +242,30 @@ module tb_jtag_dmi;
+         riscv_dbg.read_dmi(dm::dm_csr_e'(transaction.addr), rdata);
+         rsp_mbx.put(rdata);
+       end
++      // Randomly reset the dmi using either hard jtag trst_ni, JTAG
++      // TestLogicReset or the dtmcs.dmihardreset bit.
++      if ($urandom_range(0,100) < 5) begin
++        riscv_dbg.wait_idle(30);
++        case ($urandom_range(0,3))
++          0: begin
++            $info("Resetting JTAG DMI using asynchronous JTAG reset signal...");
++            riscv_dbg.reset_master();
++          end
++
++          1: begin
++            $info("Resetting JTAG DMI using JTAG softreset (TestLogicReset TAP state).");
++              riscv_dbg.jtag.soft_reset();
++          end
++
++          2: begin
++            dm::dtmcs_t dtmcs_value;
++            dtmcs_value = '0;
++            dtmcs_value.dmihardreset = 1;
++            $info("Resetting JTAG DMI using DMI dtmcs registers' dmihardreset control bit.");
++            riscv_dbg.write_dtmcs(dtmcs_value);
++          end
++        endcase
++      end
+     end
+     #1000;
+     $finish();
+@@ -261,8 +285,10 @@ module tb_jtag_dmi;
+       req_mbx.get(req);
+       rsp_mbx.get(rsp);
+       nr_transactions++;
+-      assert(req.addr == req_mon.addr);
+-      assert(req.op == req_mon.op);
++      assert(req.addr == req_mon.addr) else
++        $error("Invalid dmi request. Got address %0x instead of %0x.", req_mon.addr, req.addr);
++      assert(req.op == req_mon.op) else
++        $error("Invalid dmi request. Got op %0x instead of %0x.", req_mon.op, req.op);;
+       if (req.op == dm::DTM_READ) begin
+         assert(rsp_mon.data == rsp);
+       end else begin
+
+From 71d8b30010ab9364d96d8e0158047dba77ad0971 Mon Sep 17 00:00:00 2001
+From: Manuel Eggimann <meggimann@iis.ee.ethz.ch>
+Date: Thu, 31 Mar 2022 12:47:52 +0200
+Subject: [PATCH 07/11] Actually reset the dmi on remote_bitbang request
+
+---
+ tb/remote_bitbang/remote_bitbang.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tb/remote_bitbang/remote_bitbang.c b/tb/remote_bitbang/remote_bitbang.c
+index e77c00d..cf24fbb 100644
+--- a/tb/remote_bitbang/remote_bitbang.c
++++ b/tb/remote_bitbang/remote_bitbang.c
+@@ -115,7 +115,7 @@ void rbs_tick(unsigned char *jtag_tck, unsigned char *jtag_tms,
+ 
+ void rbs_reset()
+ {
+-    // trstn = 0;
++    trstn = 0;
+ }
+ 
+ void rbs_set_pins(char _tck, char _tms, char _tdi)
+
+From 407c6aa01bbc47113888e6e8081a665fabb1c458 Mon Sep 17 00:00:00 2001
+From: Manuel Eggimann <meggimann@iis.ee.ethz.ch>
+Date: Thu, 31 Mar 2022 13:33:45 +0200
+Subject: [PATCH 08/11] Bump to latest common cells version and add missing cdc
+ port signals
+
+---
+ Bender.yml     | 2 +-
+ src/dmi_cdc.sv | 4 ++++
+ 2 files changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/Bender.yml b/Bender.yml
+index 9bc553e..d6b9090 100644
+--- a/Bender.yml
++++ b/Bender.yml
+@@ -10,7 +10,7 @@ package:
+ 
+ dependencies:
+   tech_cells_generic: { git: "https://github.com/pulp-platform/tech_cells_generic.git", version: 0.2.3 }
+-  common_cells: {git: https://github.com/pulp-platform/common_cells.git, rev: clearable_cdcs}
++  common_cells: {git: "https://github.com/pulp-platform/common_cells.git", version: 1.24.0}
+ 
+ sources:
+   files:
+diff --git a/src/dmi_cdc.sv b/src/dmi_cdc.sv
+index f9b32bc..91ff3ca 100644
+--- a/src/dmi_cdc.sv
++++ b/src/dmi_cdc.sv
+@@ -50,6 +50,7 @@ module dmi_cdc (
+     .src_rst_ni  ( trst_ni              ),
+     .src_clear_i ( jtag_dmi_cdc_clear_i ),
+     .src_clk_i   ( tck_i                ),
++    .src_clear_pending_o(), // Not used
+     .src_data_i  ( jtag_dmi_req_i       ),
+     .src_valid_i ( jtag_dmi_valid_i     ),
+     .src_ready_o ( jtag_dmi_ready_o     ),
+@@ -57,6 +58,7 @@ module dmi_cdc (
+     .dst_rst_ni  ( rst_ni               ),
+     .dst_clear_i ( 1'b0                 ), // No functional reset from core side
+                                            // used (only async).
++    .dst_clear_pending_o(), // Not used
+     .dst_clk_i   ( clk_i                ),
+     .dst_data_o  ( core_dmi_req_o       ),
+     .dst_valid_o ( core_dmi_valid_o     ),
+@@ -67,6 +69,7 @@ module dmi_cdc (
+     .src_rst_ni  ( rst_ni               ),
+     .src_clear_i ( 1'b0                 ), // No functional reset from core side
+                                            // used (only async ).
++    .src_clear_pending_o(), // Not used
+     .src_clk_i   ( clk_i                ),
+     .src_data_i  ( core_dmi_resp_i      ),
+     .src_valid_i ( core_dmi_valid_i     ),
+@@ -74,6 +77,7 @@ module dmi_cdc (
+ 
+     .dst_rst_ni  ( trst_ni              ),
+     .dst_clear_i ( jtag_dmi_cdc_clear_i ),
++    .dst_clear_pending_o(), //Not used
+     .dst_clk_i   ( tck_i                ),
+     .dst_data_o  ( jtag_dmi_resp_o      ),
+     .dst_valid_o ( jtag_dmi_valid_o     ),
+
+From 6c0703eae20224a2ec5e52a765aec4a02f97a259 Mon Sep 17 00:00:00 2001
+From: Manuel Eggimann <meggimann@iis.ee.ethz.ch>
+Date: Fri, 1 Apr 2022 17:48:13 +0200
+Subject: [PATCH 09/11] Make dmi_rst_ni synchronous in dm_csrs & filter
+ glitches on dmi_rst_no
+
+The dmi_rst_ni signal of dm_top was previously asynchronously resetting the
+response FIFO within dm_csrs. In this commit this behavior changed to make the
+dmi_rst_ni a synchronous clear signal that flushes the FIFO. That way,
+power-on-reset and functional resets are orthogonal to each other. Still, since
+the (undocumented) semantic of the dmi_rst_no signal changed, this commit also
+adds a glitch filter on the dmi_rst_no signal to make it a glitch free
+core_clock synchronous signal. That way, it is safe to use the dmi_rst_no signal
+as either an async or a synchronous reset signal for the core clock domain.
+---
+ src/dm_csrs.sv      | 10 ++++++----
+ src/dm_top.sv       |  4 +++-
+ src/dmi_cdc.sv      | 31 +++++++++++++++++++++++++++++--
+ src/dmi_jtag.sv     |  7 ++++---
+ src/dmi_jtag_tap.sv | 13 ++++++++++---
+ 5 files changed, 52 insertions(+), 13 deletions(-)
+
+diff --git a/src/dm_csrs.sv b/src/dm_csrs.sv
+index f742a2b..350c6c5 100644
+--- a/src/dm_csrs.sv
++++ b/src/dm_csrs.sv
+@@ -23,7 +23,8 @@ module dm_csrs #(
+   input  logic                              clk_i,           // Clock
+   input  logic                              rst_ni,          // Asynchronous reset active low
+   input  logic                              testmode_i,
+-  input  logic                              dmi_rst_ni,      // Debug Module Intf reset active-low
++  input  logic                              dmi_rst_ni,      // sync. DTM reset,
++                                                             // active-low
+   input  logic                              dmi_req_valid_i,
+   output logic                              dmi_req_ready_o,
+   input  dm::dmi_req_t                      dmi_req_i,
+@@ -559,9 +560,10 @@ module dm_csrs #(
+     .dtype            ( logic [31:0]         ),
+     .DEPTH            ( 2                    )
+   ) i_fifo (
+-    .clk_i            ( clk_i                ),
+-    .rst_ni           ( dmi_rst_ni           ), // reset only when system is re-set
+-    .flush_i          ( 1'b0                 ), // we do not need to flush this queue
++    .clk_i,
++    .rst_ni,
++    .flush_i          ( ~dmi_rst_ni          ), // Flush the queue if the DTM is
++                                                // reset
+     .testmode_i       ( testmode_i           ),
+     .full_o           ( resp_queue_full      ),
+     .empty_o          ( resp_queue_empty     ),
+diff --git a/src/dm_top.sv b/src/dm_top.sv
+index ce71d07..3c9c445 100644
+--- a/src/dm_top.sv
++++ b/src/dm_top.sv
+@@ -57,7 +57,9 @@ module dm_top #(
+   input  logic [BusWidth-1:0]   master_r_rdata_i,
+ 
+   // Connection to DTM - compatible to RocketChip Debug Module
+-  input  logic                  dmi_rst_ni,
++  input  logic                  dmi_rst_ni, // Synchronous clear request from
++                                            // the DTM to clear the DMI response
++                                            // FIFO.
+   input  logic                  dmi_req_valid_i,
+   output logic                  dmi_req_ready_o,
+   input  dm::dmi_req_t          dmi_req_i,
+diff --git a/src/dmi_cdc.sv b/src/dmi_cdc.sv
+index 91ff3ca..f9d66fd 100644
+--- a/src/dmi_cdc.sv
++++ b/src/dmi_cdc.sv
+@@ -35,6 +35,7 @@ module dmi_cdc (
+   input  logic             clk_i,
+   input  logic             rst_ni,
+ 
++  output logic             core_dmi_rst_no,
+   output dm::dmi_req_t     core_dmi_req_o,
+   output logic             core_dmi_valid_o,
+   input  logic             core_dmi_ready_i,
+@@ -44,7 +45,7 @@ module dmi_cdc (
+   input  logic             core_dmi_valid_i
+ );
+ 
+-
++  logic                    core_clear_pending;
+ 
+   cdc_2phase_clearable #(.T(dm::dmi_req_t)) i_cdc_req (
+     .src_rst_ni  ( trst_ni              ),
+@@ -58,7 +59,10 @@ module dmi_cdc (
+     .dst_rst_ni  ( rst_ni               ),
+     .dst_clear_i ( 1'b0                 ), // No functional reset from core side
+                                            // used (only async).
+-    .dst_clear_pending_o(), // Not used
++    .dst_clear_pending_o( core_clear_pending ), // use the clear pending signal
++                                                // to synchronously clear the
++                                                // response FIFO in the dm_top
++                                                // csrs
+     .dst_clk_i   ( clk_i                ),
+     .dst_data_o  ( core_dmi_req_o       ),
+     .dst_valid_o ( core_dmi_valid_o     ),
+@@ -84,4 +88,27 @@ module dmi_cdc (
+     .dst_ready_i ( jtag_dmi_ready_i     )
+   );
+ 
++  // We need to flush the DMI response FIFO in DM top using the core clock
++  // synchronous clear signal core_dmi_rst_no. We repurpose the clear
++  // pending signal in the core clock domain by generating a 1 cycle pulse from
++  // it.
++
++  logic                    core_clear_pending_q;
++  logic                    core_dmi_rst_nq;
++  logic                    clear_pending_rise_edge_detect;
++
++  assign clear_pending_rise_edge_detect = !core_clear_pending_q && core_clear_pending;
++
++  always_ff @(posedge clk_i, negedge rst_ni) begin
++    if (!rst_ni) begin
++      core_dmi_rst_nq       <= 1'b1;
++      core_clear_pending_q <= 1'b0;
++    end else begin
++      core_dmi_rst_nq       <= ~clear_pending_rise_edge_detect; // active-low!
++      core_clear_pending_q <= core_clear_pending;
++    end
++  end
++
++  assign core_dmi_rst_no = core_dmi_rst_nq;
++
+ endmodule : dmi_cdc
+diff --git a/src/dmi_jtag.sv b/src/dmi_jtag.sv
+index e1bc369..0712f8c 100644
+--- a/src/dmi_jtag.sv
++++ b/src/dmi_jtag.sv
+@@ -23,7 +23,9 @@ module dmi_jtag #(
+   input  logic         rst_ni,     // Asynchronous reset active low
+   input  logic         testmode_i,
+ 
+-  output logic         dmi_rst_no, // hard reset
++  // active-low glitch free reset signal. Is asserted for one dmi clock cycle
++  // (clk_i) whenever the dmi_jtag is reset (POR or functional reset).
++  output logic         dmi_rst_no,
+   output dm::dmi_req_t dmi_req_o,
+   output logic         dmi_req_valid_o,
+   input  logic         dmi_req_ready_i,
+@@ -99,8 +101,6 @@ module dmi_jtag #(
+   // DMI (Debug Module Interface)
+   // ----------------------------
+ 
+-  assign dmi_rst_no = dmi_clear;
+-
+   logic        dmi_select;
+   logic        dmi_tdo;
+ 
+@@ -314,6 +314,7 @@ module dmi_jtag #(
+     // core side
+     .clk_i,
+     .rst_ni,
++    .core_dmi_rst_no      ( dmi_rst_no       ),
+     .core_dmi_req_o       ( dmi_req_o        ),
+     .core_dmi_valid_o     ( dmi_req_valid_o  ),
+     .core_dmi_ready_i     ( dmi_req_ready_i  ),
+diff --git a/src/dmi_jtag_tap.sv b/src/dmi_jtag_tap.sv
+index eff8a38..0c188c0 100644
+--- a/src/dmi_jtag_tap.sv
++++ b/src/dmi_jtag_tap.sv
+@@ -73,7 +73,7 @@ module dmi_jtag_tap #(
+   logic [IrLength-1:0]  jtag_ir_shift_d, jtag_ir_shift_q;
+   // IR register -> this gets captured from shift register upon update_ir
+   ir_reg_e              jtag_ir_d, jtag_ir_q;
+-  logic capture_ir, shift_ir, update_ir; // pause_ir
++  logic capture_ir, shift_ir, update_ir, test_logic_reset; // pause_ir
+ 
+   always_comb begin : p_jtag
+     jtag_ir_shift_d = jtag_ir_shift_q;
+@@ -93,6 +93,11 @@ module dmi_jtag_tap #(
+     if (update_ir) begin
+       jtag_ir_d = ir_reg_e'(jtag_ir_shift_q);
+     end
++
++    // According to JTAG spec we have to reset the IR to IDCODE in test_logic_reset
++    if (test_logic_reset) begin
++      jtag_ir_d = IDCODE;
++    end
+   end
+ 
+   always_ff @(posedge tck_i, negedge trst_ni) begin : p_jtag_ir_reg
+@@ -203,7 +208,7 @@ module dmi_jtag_tap #(
+   // Determination of next state; purely combinatorial
+   always_comb begin : p_tap_fsm
+ 
+-    dmi_clear_o        = 1'b0;
++    test_logic_reset   = 1'b0;
+ 
+     capture_dr         = 1'b0;
+     shift_dr           = 1'b0;
+@@ -217,7 +222,7 @@ module dmi_jtag_tap #(
+     unique case (tap_state_q)
+       TestLogicReset: begin
+         tap_state_d = (tms_i) ? TestLogicReset : RunTestIdle;
+-        dmi_clear_o = 1'b1;
++        test_logic_reset = 1'b1;
+       end
+       RunTestIdle: begin
+         tap_state_d = (tms_i) ? SelectDrScan : RunTestIdle;
+@@ -308,5 +313,7 @@ module dmi_jtag_tap #(
+   assign update_o = update_dr;
+   assign shift_o = shift_dr;
+   assign capture_o = capture_dr;
++  assign dmi_clear_o = test_logic_reset;
++
+ 
+ endmodule : dmi_jtag_tap
+
+From c17902e672356dd1d4736de5b6839ca37ba1423e Mon Sep 17 00:00:00 2001
+From: Manuel Eggimann <meggimann@iis.ee.ethz.ch>
+Date: Mon, 4 Apr 2022 17:35:07 +0200
+Subject: [PATCH 10/11] Update JTAG Test package to reflect TestLogicReset fix
+
+---
+ tb/jtag_dmi/jtag_test.sv | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/tb/jtag_dmi/jtag_test.sv b/tb/jtag_dmi/jtag_test.sv
+index a8db8ad..60675a4 100644
+--- a/tb/jtag_dmi/jtag_test.sv
++++ b/tb/jtag_dmi/jtag_test.sv
+@@ -43,6 +43,9 @@ package jtag_test;
+       repeat (6) clock();
+       jtag.tms <= #TA 0;
+       clock();
++      // After softreset the IR should be reset to IDCODE so we have to mirror
++      // this in our internal state.
++      this.ir_select = 'h1;
+     endtask
+ 
+     // Set IR, but only if it needs to be set.
+
+From 7c6918a5a5bd865b11d55a1e1f17ddeed32d6e5e Mon Sep 17 00:00:00 2001
+From: Manuel Eggimann <meggimann@iis.ee.ethz.ch>
+Date: Fri, 1 Apr 2022 18:10:18 +0200
+Subject: [PATCH 11/11] Update changelog
+
+---
+ CHANGELOG.md | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 737dea7..c931663 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -8,11 +8,18 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
+ ### Added
+ - Add sbaccess8 and sbaccess16 support (#106) [@noytzach](https://github.com/noytzach)
+ - Implement SBA bad address error (#12) [@msfchaffner](https://github.com/msfschaffner)
++- Added random reset tests to dmi testbench.
+ ### Changed
++- Implement `dmihardreset` functionaliy in `dtmcs` register.
++- `dmi_rst_ni` of `dm_top` is now a synchronous signal. However, `dmi_rst_no` of
++  `dmi_jtag` is glitch-free and asserted during all forms (functional or POR) of
++  resets.
+ ### Fixed
+ - Fixed documentation (csr)
+ - Fixed reset value of sbcs register (#127) [@msfchaffner](https://github.com/msfschaffner)
+ - Fixed various ascent lint warnings [@msfchaffner](https://github.com/msfschaffner)
++- Implement proper CDC flushing behavior on functional resets and JTAG resets (asynchronous or TestLogicReset driven).
++- Fix JTAG non-compliance in TestLogicReset state (IR should reset to IDCODE).
+ 
+ ## [0.4.1] - 2021-05-04
+ ### Added

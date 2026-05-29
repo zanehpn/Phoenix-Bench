@@ -1,0 +1,82 @@
+diff --git a/hw/system/occamy/src/occamy_top.sv b/hw/system/occamy/src/occamy_top.sv
+index ddc3fbaf..ba1b291d 100644
+--- a/hw/system/occamy/src/occamy_top.sv
++++ b/hw/system/occamy/src/occamy_top.sv
+@@ -2405,6 +2405,7 @@ SOC_REGBUS_PERIPH_XBAR_NUM_OUTPUTS
+       .master_gnt_i(sba_gnt),
+       .master_r_valid_i(sba_rvalid),
+       .master_r_rdata_i(sba_rdata),
++      .master_r_err_i(1'b0),
+       .dmi_rst_ni(dmi_rst_n),
+       .dmi_req_valid_i(dmi_req_valid),
+       .dmi_req_ready_o(dmi_req_ready),
+diff --git a/hw/vendor/pulp_platform_riscv_dbg/src/dm_sba.sv b/hw/vendor/pulp_platform_riscv_dbg/src/dm_sba.sv
+index 98c586c6..a732f1d1 100644
+--- a/hw/vendor/pulp_platform_riscv_dbg/src/dm_sba.sv
++++ b/hw/vendor/pulp_platform_riscv_dbg/src/dm_sba.sv
+@@ -31,6 +31,7 @@ module dm_sba #(
+   input  logic                   master_gnt_i,
+   input  logic                   master_r_valid_i,
+   input  logic [BusWidth-1:0]    master_r_rdata_i,
++  input  logic                   master_r_err_i, // AXI-Lite: RRESP/BRESP != OKAY
+ 
+   input  logic [BusWidth-1:0]    sbaddress_i,
+   input  logic                   sbaddress_write_valid_i,
+@@ -63,6 +64,8 @@ module dm_sba #(
+   logic [BusWidth/8-1:0]         be_mask;
+   logic [$clog2(BusWidth/8)-1:0] be_idx;
+ 
++  logic                          bus_err;
++
+   assign sbbusy_o = logic'(state_q != dm::Idle);
+ 
+   always_comb begin : p_be_mask
+@@ -148,6 +151,16 @@ module dm_sba #(
+       sberror_o       = 3'd3;
+     end
+     // further error handling should go here ...
++
++    // handle downstream bus error response
++    if (bus_err) begin
++      req             = 1'b0;
++      state_d         = dm::Idle;
++      sberror_valid_o = 1'b1;
++      sberror_o       = 3'd2; // bus error
++      // do not auto-increment on error
++      sbaddress_o     = sbaddress_i;
++    end
+   end
+ 
+   always_ff @(posedge clk_i or negedge rst_ni) begin : p_regs
+@@ -164,7 +177,11 @@ module dm_sba #(
+   assign master_wdata_o  = sbdata_i[BusWidth-1:0];
+   assign master_be_o     = be[BusWidth/8-1:0];
+   assign gnt             = master_gnt_i;
++
+   assign sbdata_valid_o  = master_r_valid_i;
+   assign sbdata_o        = master_r_rdata_i[BusWidth-1:0];
+ 
++  // any response with error causes SBA error
++  assign bus_err = master_r_valid_i & master_r_err_i;
++
+ endmodule : dm_sba
+diff --git a/hw/vendor/pulp_platform_riscv_dbg/src/dm_top.sv b/hw/vendor/pulp_platform_riscv_dbg/src/dm_top.sv
+index 9887aef6..b80baafa 100644
+--- a/hw/vendor/pulp_platform_riscv_dbg/src/dm_top.sv
++++ b/hw/vendor/pulp_platform_riscv_dbg/src/dm_top.sv
+@@ -50,6 +50,7 @@ module dm_top #(
+   input  logic                  master_gnt_i,
+   input  logic                  master_r_valid_i,
+   input  logic [BusWidth-1:0]   master_r_rdata_i,
++  input  logic                  master_r_err_i,
+ 
+   // Connection to DTM - compatible to RocketChip Debug Module
+   input  logic                  dmi_rst_ni,
+@@ -165,6 +166,7 @@ module dm_top #(
+     .master_gnt_i,
+     .master_r_valid_i,
+     .master_r_rdata_i,
++    .master_r_err_i,
+ 
+     .sbaddress_i             ( sbaddress_csrs_sba    ),
+     .sbaddress_o             ( sbaddress_sba_csrs    ),

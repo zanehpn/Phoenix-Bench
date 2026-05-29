@@ -1,0 +1,3492 @@
+From 7d08876e90a0c523976ff4b304302ceea4859a56 Mon Sep 17 00:00:00 2001
+From: Solal Jacob <tapir42@protonmail.com>
+Date: Sat, 6 Apr 2024 22:47:15 +0200
+Subject: [PATCH 1/6] toki 1.1
+
+---
+ cores/toki/README.md               |  45 +++
+ cores/toki/cfg/game.yaml           |  44 +++
+ cores/toki/cfg/macros.def          | 101 ++++++
+ cores/toki/cfg/mem.yaml            |  48 +++
+ cores/toki/cfg/msg                 |  38 +++
+ cores/toki/hdl/char.v              | 157 +++++++++
+ cores/toki/hdl/dual_ram_buffer.v   |  43 +++
+ cores/toki/hdl/dual_ram_buffer16.v |  48 +++
+ cores/toki/hdl/hvsync.v            |  74 +++++
+ cores/toki/hdl/jttoki_game.v       | 267 +++++++++++++++
+ cores/toki/hdl/main.v              | 508 +++++++++++++++++++++++++++++
+ cores/toki/hdl/sei80bu.v           |  68 ++++
+ cores/toki/hdl/sound.v             | 436 +++++++++++++++++++++++++
+ cores/toki/hdl/sprite.v            | 252 ++++++++++++++
+ cores/toki/hdl/tile.v              | 175 ++++++++++
+ cores/toki/hdl/video.v             | 264 +++++++++++++++
+ cores/toki/hdl/z80_cs.v            |  71 ++++
+ cores/toki/ver/ram2gfx/ram2gfx.py  | 281 ++++++++++++++++
+ 18 files changed, 2920 insertions(+)
+ create mode 100644 cores/toki/README.md
+ create mode 100644 cores/toki/cfg/game.yaml
+ create mode 100644 cores/toki/cfg/macros.def
+ create mode 100644 cores/toki/cfg/mem.yaml
+ create mode 100644 cores/toki/cfg/msg
+ create mode 100644 cores/toki/hdl/char.v
+ create mode 100644 cores/toki/hdl/dual_ram_buffer.v
+ create mode 100644 cores/toki/hdl/dual_ram_buffer16.v
+ create mode 100644 cores/toki/hdl/hvsync.v
+ create mode 100644 cores/toki/hdl/jttoki_game.v
+ create mode 100644 cores/toki/hdl/main.v
+ create mode 100644 cores/toki/hdl/sei80bu.v
+ create mode 100644 cores/toki/hdl/sound.v
+ create mode 100644 cores/toki/hdl/sprite.v
+ create mode 100644 cores/toki/hdl/tile.v
+ create mode 100644 cores/toki/hdl/video.v
+ create mode 100644 cores/toki/hdl/z80_cs.v
+ create mode 100644 cores/toki/ver/ram2gfx/ram2gfx.py
+
+diff --git a/cores/toki/README.md b/cores/toki/README.md
+new file mode 100644
+index 000000000..113345c0c
+--- /dev/null
++++ b/cores/toki/README.md
+@@ -0,0 +1,45 @@
++# Toki / JuJu Densetsu for Mister FPGA :
++
++This is a port of [JuJu Densetsu](http://adb.arcadeitalia.net/dettaglio_mame.php?game_name=juju&lang=en) alias Toki, in verilog for [MiSTer FPGA](https://github.com/MiSTer-devel/Main_MiSTer/wiki).
++
++A plateformer arcade game made by [TAD Corporation](https://en.wikipedia.org/wiki/Toki_(video_game)) in 1989 on [Seibu](https://en.wikipedia.org/wiki/Seibu_Kaihatsu) designed hardware.
++
++This core is based mainly on [MAME sources](https://github.com/mamedev/mame), some PCB measurements and ROM reverse-engineering. 
++
++
++## ROM Files Instructions
++
++ROMs are not included! In order to use this arcade core, you will need to provide the correct ROM file yourself.
++
++To simplify the process .mra files are provided in the releases folder, that specify the required ROMs with their checksums. The ROMs .zip filename refers to the corresponding file from the MAME project.
++
++Please refer to [https://github.com/MiSTer-devel/Main_MiSTer/wiki/Arcade-Roms-and-MRA-files](https://github.com/MiSTer-devel/Main_MiSTer/wiki/Arcade-Roms-and-MRA-files) for information on how to setup and use the environment.
++
++Quick reference for folders and file placement:
++
++```
++/_Arcade/<game name>.mra  
++/_Arcade/cores/<game rbf>.rbf  
++/_Arcade/mame/<mame rom>.zip  
++/_Arcade/hbmame/<hbmame rom>.zip  
++```
++
++
++## How to compile :
++
++- This core use [jtrame](https://github.com/jotego/jtcores/) follow jtcores/jtframe installation instruction
++- Install Quartus 17.0
++- clone this repository inside the jtcores/core directory
++- clone [fx68k](https://github.com/JTFPGA/fx68k.git), [jt6295](https://github.com/jotego/jt6295.git) and [jtopl](https://github.com/jotego/jtopl.git) into the jtcores/modules directory
++- run :
++```
++    source setprj
++    jtframe cfgstr toki
++    jtframe mem toki
++    jtframe msg toki
++    jtcore -mister toki
++``` 
++
++# Author : 
++
++Solal Jacob
+diff --git a/cores/toki/cfg/game.yaml b/cores/toki/cfg/game.yaml
+new file mode 100644
+index 000000000..3c9b2746a
+--- /dev/null
++++ b/cores/toki/cfg/game.yaml
+@@ -0,0 +1,44 @@
++game:
++  - from: toki 
++    get:
++      - jttoki_game.v
++      - main.v
++      - video.v
++      - hvsync.v
++      - char.v
++      - tile.v
++      - sprite.v
++      - sound.v
++      - sei80bu.v
++      - z80_cs.v
++      - dual_ram_buffer.v
++      - dual_ram_buffer16.v
++jtframe:
++  - from: ram
++    get:
++      - jtframe_ram.v
++      - jtframe_ram16.v
++  - from: sdram
++    get:
++      - jtframe_dwnld.v
++  - from: cpu
++    get:
++      - jtframe_virq.v
++      - jtframe_m68k.yaml
++      - jtframe_z80.yaml
++  - from: clocking
++    get:
++      - jtframe_cen48.v
++      - jtframe_frac_cen.v
++  - from: video
++    get:
++      - jtframe_credits.v
++  - from: sound
++    get:
++      - jtframe_mixer.v
++modules:       
++  jt:
++    - name: jt6295        
++  other:
++    - get:
++      - jtopl/hdl/jtopl2.yaml
+diff --git a/cores/toki/cfg/macros.def b/cores/toki/cfg/macros.def
+new file mode 100644
+index 000000000..903abeed5
+--- /dev/null
++++ b/cores/toki/cfg/macros.def
+@@ -0,0 +1,101 @@
++[all]
++CORENAME=TOKI
++GAMETOP=jttoki_game_sdram
++
++JTFRAME_RELEASE
++JTFRAME_OSD_FLIP=0
++JTFRAME_SDRAM_BANKS
++### Screen parameters
++
++JTFRAME_COLORW=4
++JTFRAME_PXLCLK=6
++JTFRAME_HEIGHT=224
++JTFRAME_WIDTH=256
++
++### Audio section
++
++#JTFRAME_ADPCM
++JTFRAME_OSD_SND_EN
++JTFRAME_OSD_VOL
++
++### PCB Configuration
++
++JTFRAME_BUTTONS=2
++
++### OSD Options
++
++JTFRAME_OSD_NOLOAD
++JTFRAME_OSD_NOLOGO
++
++JTFRAME_CLK96
++JTFRAME_CLK48
++JTFRAME_SDRAM96
++
++JTFRAME_BA1_START =0x280000
++#start offset of 2nd bank buses in bytes 
++
++[mister]
++JTFRAME_CREDITS
++JTFRAME_CREDITS_PAGES=2
++JTFRAME_ARX=4
++JTFRAME_ARY=3
++
++#* CPU / 68K
++  #width : 16 bits interleave
++  #mra address : 0x00000-0x5FFFF      
++  #size : 0x60000 (393216)
++  #files :  6e.m10 (131072) |
++           #4e.k10 (131072) |----> interleaved
++
++           #5.m12  (65536)  |
++           #3.k12  (65536)  |----> interleaved
++    
++#* AUDIO CPU / Z80
++ # width : 8 bits
++ # mra address :  0x60000-0x80000 
++ # size : 131072
++ # files : 8.m3 (8192)
++         # zero filled (0xe000)
++         # 7.m7 (65536)  
++
++#* GFX 1 (chars)
++ # width : 8 bits
++ # mra address : 0x80000:0xa0000
++ # size : 131072
++ # files : 1.c5 (65536)
++         # 2.c3 (65536)
++  
++#* GFX 2 (sprites/ obj)
++ # width : 8 bits
++ # mra address : 0xa0000:0x1a0000 
++ # size :  1048576
++ # files : toki\_obj2.c22 (524288)
++         # toki\_obj2.c20 (524288)
++
++#* GFX 3 (tiles1)
++ # width : 8 bits
++ # mra address : 0x1a0000:0x220000
++ # size : 524288
++ # files : toki\_bk1.cd8 (524288)
++ 
++#* GFX 4 (tiles2)
++ # width : 8 bits
++ # mra address :  0x220000:0x2a0000
++ # size : 524288
++ # files : toki\_bk2.ef8 (524288)
++
++#* OKI (ADPCM)
++ # witdh : 8 bits
++ # mra address : 0x2a0000:0x2c0000
++ # size : 131072
++ # files : 9.m1 (131072)
++
++#* PROM (video)
++ # width : 8 bits
++ # mra address : 0x2c0000:0x2c0200 
++ # size : 512
++ # files : prom26.b6 (512)
++   #       prom27.j3 (512)
++
++
++
+diff --git a/cores/toki/cfg/mem.yaml b/cores/toki/cfg/mem.yaml
+new file mode 100644
+index 000000000..36a897608
+--- /dev/null
++++ b/cores/toki/cfg/mem.yaml
+@@ -0,0 +1,48 @@
++params:
++  # gfx bank 1
++  - { name: GFX_1_OFFSET,     value:  "22'h30000" } #divide by 2 for 16 bits ram 
++  - { name: GFX_2_OFFSET,     value:  "22'h40000" }
++  - { name: GFX_3_OFFSET,     value:  "22'hc0000" }
++  - { name: GFX_4_OFFSET,     value:  "22'h100000"}
++  #audio bank 1
++  - { name: BANK_OFFSET,      value: "22'h1000" } # start after 8.m3 (2nd bank start at + BA1_START )
++  - { name: OKI_OFFSET,       value: "22'h9000" } # start at 8.m3 + 7.m7 / 2 
++clocks:
++  clk48:
++    - freq:  1000000
++      outputs:
++        - oki
++sdram:
++  banks:
++    - buses:
++        - name: cpu_rom 
++          addr_width: 19
++          data_width: 16
++        - name: gfx1_rom
++          addr_width: 17
++          data_width: 16
++          offset : GFX_1_OFFSET
++        - name: gfx2_rom
++          addr_width: 20
++          data_width: 16
++          offset : GFX_2_OFFSET
++        - name: gfx3_rom
++          addr_width: 19
++          data_width: 16
++          offset : GFX_3_OFFSET
++        - name: gfx4_rom
++          addr_width: 19
++          data_width: 16
++          offset : GFX_4_OFFSET
++    - buses:
++        - name: z80_rom
++          addr_width: 13 # 8.m3
++          data_width: 8 
++        - name: bank_rom 
++          addr_width: 16 # 7.m7  
++          data_width: 8 
++          offset: BANK_OFFSET 
++        - name: pcm_rom 
++          addr_width: 17 # 9.m1 
++          data_width: 8 
++          offset: OKI_OFFSET 
+diff --git a/cores/toki/cfg/msg b/cores/toki/cfg/msg
+new file mode 100644
+index 000000000..7584425c8
+--- /dev/null
++++ b/cores/toki/cfg/msg
+@@ -0,0 +1,38 @@
++   \BToki\W core by \RSolal :\W
++
++   ko-fi.com/solalretrogaming
++   @s_on_vg 
++
++   Based mainly on MAME sources
++   Some PCB measurements
++   And ROM reverse-engineering
++
++
++   \R[\WSpecial thanks\R]
++
++\R YeahBuddy 
++\R Pierco
++
++
++   \G[\WThanks to ko-fi supporter\G]
++
++\R Andrew B. 
++\B Atrac17
++\G Andrea Bogazzi 
++\W lokillo 
++\R Alex|ArcadeTV
++\B Johan S.
++\G Megahallon
++\W Jon Anderson
++\R Alexisthere
++\B Tonton Kaloun
++\G Pixel Cherry Ninja 
++\W Omar Zafar
++\R Funkycochise 
++\B Tokid 
++\G Fabio Degrassi
++
++
++   \B[\WGreetings\B]
++
++\R The 1004 team : \WRemy & Fred ! 
+diff --git a/cores/toki/hdl/char.v b/cores/toki/hdl/char.v
+new file mode 100644
+index 000000000..f6cdda1de
+--- /dev/null
++++ b/cores/toki/hdl/char.v
+@@ -0,0 +1,157 @@
++////////// char ram  //////////////////////////////////
++//
++// State machine that draw a line of 8x8 tile
++// each time line number change.
++// RAM is fully scanned, address in ram give 
++// tile position on screen, there is 32 tiles by line
++// RAM data describe a tile :
++//  -  [3:0] color
++//  - [11:0] index of tile in ROM 
++//  
++//  Tile data are DWORD stored in ROM as 4 bit planes 
++//  second dword of each data is at address + 0x8000
++//
++//  each pixel of tile are 8 bits : 
++//    4 bits color, 4 bits index (rom data)
++//  pixel are transparent if ROM data is 0xf
++//  pixel value is an index into the video palette 
++//
++module scan_char_ram(
++  input                 clk,
++  input                 rst,
++
++  input           [7:0] line_number,
++
++  output reg     [10:1] ram_addr,
++  input          [15:0] ram_out,
++
++  input          [15:0] gfx_rom_data,
++  input                 gfx_rom_ok,
++  output reg     [16:1] gfx_rom_addr,
++  output reg            gfx_rom_cs,
++
++  input           [7:0] line_buffer_addr,
++  output          [7:0] line_buffer_out
++);
++
++(* ramstyle = "no_rw_check" *)reg [7:0] line_buffer [255:0];
++assign line_buffer_out = line_buffer[line_buffer_addr];
++
++reg [3:0]  state = 4'd0;
++
++parameter STATE_START = 4'd0;
++parameter STATE_FETCH_RAM  = 4'd1;
++parameter STATE_COPY_FIRST_ROM_WORD = 4'd2;
++parameter STATE_COPY_SECOND_ROM_WORD = 4'd3;
++parameter STATE_FETCH_PIXEL = 4'd4;
++parameter STATE_FINISHED = 4'd5;
++parameter STATE_NEXT_PIXEL = 4'd6;
++parameter STATE_WAIT_RAM = 4'd7;
++parameter STATE_FETCH_ROM = 4'd8;
++
++reg  [4:0] tile_index;
++reg [15:0] first_rom_word;
++reg [15:0] second_rom_word;
++reg  [2:0] pix_index;
++reg  [7:0] previous_line_number;
++
++reg  [3:0] color;
++reg [11:0] rom_index; //4096 tiles 
++
++wire [7:0] plane1, plane2, plane3, plane4;
++
++assign plane1 = {first_rom_word[11:8],   first_rom_word[3:0]};  // low nibbles
++assign plane2 = {first_rom_word[15:12],  first_rom_word[7:4]};  // high nibbles
++assign plane3 = {second_rom_word[11:8],  second_rom_word[3:0]}; // low nibbles
++assign plane4 = {second_rom_word[15:12], second_rom_word[7:4]}; // high nibbles
++
++always @(posedge clk, posedge rst) begin
++  if (rst) begin 
++      tile_index <= 0;
++      pix_index <= 0;
++      state <= STATE_START;
++      end
++  else begin  
++    case (state)
++      STATE_START : begin
++        tile_index <= 0;
++        pix_index <= 0;
++        state <= STATE_FETCH_RAM;
++      end
++
++      STATE_FETCH_RAM: begin
++        ram_addr[10:1] <= (({2'b0, line_number}/10'd8)*10'd32) + {5'b0, tile_index[4:0]};
++        state <= STATE_WAIT_RAM; 
++      end
++
++      STATE_WAIT_RAM: begin
++        state <= STATE_FETCH_ROM; 
++      end  
++
++      STATE_FETCH_ROM: begin
++        rom_index[11:0] <= ram_out[11:0];
++        color[3:0] <= ram_out[15:12];
++        gfx_rom_addr[16:1] <= ram_out[11:0]*16'd8 + ({8'h0, line_number}%16'd8);
++        gfx_rom_cs <= 1'b1;
++        state <= STATE_COPY_FIRST_ROM_WORD;
++      end  
++
++      STATE_COPY_FIRST_ROM_WORD : begin 
++        if (gfx_rom_ok)  begin
++          first_rom_word[15:0] <= gfx_rom_data[15:0];
++          gfx_rom_addr[16:1] <= rom_index[11:0]*16'd8 + ({8'h0, line_number}%16'd8) + 16'h8_000;
++          gfx_rom_cs <= 1'b1;
++          state <= STATE_COPY_SECOND_ROM_WORD;
++          end
++      end
++
++      STATE_COPY_SECOND_ROM_WORD : begin
++         if (gfx_rom_ok) begin
++           second_rom_word[15:0] <= gfx_rom_data[15:0];
++           gfx_rom_cs <= 1'b0;
++           pix_index <= 3'b0;
++           state <= STATE_FETCH_PIXEL;
++           end
++      end
++      
++      STATE_FETCH_PIXEL:  begin
++        //8 bits : color 4 bits, 4 bits index 
++        if ({plane4[pix_index],plane3[pix_index],plane2[pix_index],plane1[pix_index]} != 'hf)
++          line_buffer[tile_index*8 + {2'b0, pix_index}] <= {color[3:0],{plane4[pix_index],plane3[pix_index],plane2[pix_index],plane1[pix_index]}};
++        else
++          line_buffer[tile_index*8 + {2'b0, pix_index}] <= 'hf;
++        state <= STATE_NEXT_PIXEL;
++      end
++
++      STATE_NEXT_PIXEL: begin
++        if (pix_index < 3'd7) begin
++          pix_index <= pix_index + 2'd1;
++          state <= STATE_FETCH_PIXEL;
++          end
++        else if (pix_index == 7) begin
++          if (tile_index == 31)
++            state <= STATE_FINISHED;
++          else begin
++            tile_index <= tile_index + 1'b1; 
++            state <= STATE_FETCH_RAM;
++            end
++          end
++      end
++
++      STATE_FINISHED: begin
++        if (previous_line_number != line_number) begin
++          tile_index <= 0;
++          pix_index <= 0;
++          state <= STATE_START;
++          end
++        previous_line_number <= line_number;
++      end
++    
++     default : 
++       state <= STATE_FINISHED;
++
++    endcase 
++    end
++end
++
++endmodule
+diff --git a/cores/toki/hdl/dual_ram_buffer.v b/cores/toki/hdl/dual_ram_buffer.v
+new file mode 100644
+index 000000000..3eb753ae2
+--- /dev/null
++++ b/cores/toki/hdl/dual_ram_buffer.v
+@@ -0,0 +1,43 @@
++////////// dual ram buffer ///////////////////////
++//
++//  8-bits dual ram that copy the ram content to 
++//  a secondary ram at @posedge of trigger
++//  
++//
++module dual_ram_buffer #(parameter W=10)
++(
++	input            clk,
++  input            trigger, // trigger high to copy ram content
++  
++  input            we,      // 1st ram write
++  input    [W-1:0] addr_in, // 1st ram address
++  input      [7:0] data,    // 1st ram data 
++  output reg [7:0] q_in,    // 1st ram data out 
++  
++  input    [W-1:0] addr_out,// 2nd ram addr 
++  output reg [7:0] q        // 2nd ram data out
++);
++
++(* ramstyle = "no_rw_check" *)reg [7:0]      ram[0:(2**W)-1];
++(* ramstyle = "no_rw_check" *)reg [7:0]  ram_out[0:(2**W)-1];
++
++reg [W:0] i = 0;
++
++always @(posedge clk) begin
++  if (clk) begin
++    if (trigger && i <= (2**W)-1) begin
++      ram_out[i[W-1:0]] <= ram[i[W-1:0]];
++      i <= i + 1'b1;
++      end
++    else if (~trigger && i == (2**W))
++      i <= 0;
++
++    if (we == 1'b1)
++      ram[addr_in] <= data;
++
++    q <= ram_out[addr_out];
++    q_in <= ram[addr_in];
++  end
++end
++
++endmodule
+diff --git a/cores/toki/hdl/dual_ram_buffer16.v b/cores/toki/hdl/dual_ram_buffer16.v
+new file mode 100644
+index 000000000..cb9459720
+--- /dev/null
++++ b/cores/toki/hdl/dual_ram_buffer16.v
+@@ -0,0 +1,48 @@
++////////// dual ram buffer 16 /////////////////////
++//
++// 16-bits dual ram that use two 8-bits ram module
++// it copy it's content to a seconday ram @posedge  
++// of trigger
++//
++//
++module dual_ram_buffer16 #(parameter W=10) 
++(
++	input         clk,
++  input         trigger, // trigger high to copy ram content 
++
++  input  [1:0]  we,      // 1st ram write enable
++  input  [W:1]  addr_in, // 1st ram address
++  input  [15:0] data,    // 1st ram data 
++  output [15:0] q_in,    // 1st ram data out 
++  
++  input  [W:1]  addr_out,// 2nd ram addr 
++  output [15:0] q        // 2nd ram data out
++);
++
++// low-byte of the 16 bits ram
++dual_ram_buffer #(.W(W)) u_low 
++(
++  .clk(clk),
++  .trigger(trigger),
++  .we(we[0]),
++  .addr_in(addr_in),
++  .data(data[7:0]),
++  .q_in(q_in[7:0]),
++  .addr_out(addr_out),
++  .q(q[7:0])
++);
++
++// high-byte of the 16 bits ram
++dual_ram_buffer #(.W(W)) u_high
++(
++  .clk(clk),
++  .trigger(trigger),
++  .we(we[1]),
++  .addr_in(addr_in),
++  .data(data[15:8]),
++  .q_in(q_in[15:8]),
++  .addr_out(addr_out),
++  .q(q[15:8])
++);
++
++endmodule
+diff --git a/cores/toki/hdl/hvsync.v b/cores/toki/hdl/hvsync.v
+new file mode 100644
+index 000000000..e1407c91e
+--- /dev/null
++++ b/cores/toki/hdl/hvsync.v
+@@ -0,0 +1,74 @@
++////////// hvsync //////////////////////////////
++//
++// handle crt horizontal and vertical scrolling 
++// generate hblank, vblank, hsync, vsync signal 
++// for the @6mhz video clock 
++//
++module hvsync(
++  input clk,
++  input pxl_cen,
++ 
++  // Video out 
++  output reg hsync,
++  output reg vsync,
++  output reg hblank,
++  output reg vblank,
++  
++  output display_on,
++  
++  output reg [8:0] hpos,
++  output reg [8:0] vpos
++);
++
++parameter HBLANK_START  = 256;
++parameter HBLANK_END 	  = 0;   
++parameter HSYNC_START 	= HBLANK_START + 44;
++parameter HSYNC_END 		= HBLANK_START + 76;
++parameter H_TOTAL			  = 390;
++
++parameter VBLANK_START  = 240;
++parameter VBLANK_END		= 16;
++parameter VSYNC_START	  = VBLANK_START + 10;
++parameter VSYNC_END		  = VBLANK_START + 16;
++parameter V_TOTAL			  = 258;
++
++initial begin
++	hpos = 9'b0;
++	vpos = 9'b0; 
++	hblank = 1'b1;
++	vblank = 1'b0;
++	hsync = 1'b0;
++	vsync = 1'b0;
++end	
++
++always @(posedge clk) if (pxl_cen) begin
++  if (hpos == H_TOTAL-1) begin
++	  hpos <= 0;
++	  vpos <= vpos + 1'd1;
++	 
++	  if (vpos == V_TOTAL-1) begin
++	    vpos <= 0;	
++	  	end
++ 		end 
++  else begin
++	  hpos <= hpos + 1'd1;
++  end
++	 
++  case (hpos)
++	  HBLANK_START : hblank <= 1;
++    HBLANK_END   : hblank <= 0;
++	  HSYNC_START  : hsync <= 1;
++	  HSYNC_END    : hsync <= 0;
++  endcase 
++  
++  case (vpos)
++    VBLANK_START : if (hpos == HBLANK_START) vblank <= 1;
++	  VBLANK_END   : if (hpos == HBLANK_END) vblank <= 0;
++	  VSYNC_START  : if (hpos == HSYNC_START) vsync <= 1;
++	  VSYNC_END 	 : if (hpos == HSYNC_START) vsync <= 0;
++  endcase
++end	
++		
++assign display_on = ~(vblank | hblank);
++  
++endmodule
+diff --git a/cores/toki/hdl/jttoki_game.v b/cores/toki/hdl/jttoki_game.v
+new file mode 100644
+index 000000000..b9ed0bdc5
+--- /dev/null
++++ b/cores/toki/hdl/jttoki_game.v
+@@ -0,0 +1,267 @@
++//Toki MiSTer
++//Copyright (C) 2023 Solal Jacob 
++
++//This program is free software: you can redistribute it and/or modify
++//it under the terms of the GNU General Public License as published by
++//the Free Software Foundation, either version 3 of the License, or
++//(at your option) any later version.
++
++//This program is distributed in the hope that it will be useful,
++//but WITHOUT ANY WARRANTY; without even the implied warranty of
++//MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++//GNU General Public License for more details.
++
++//You should have received a copy of the GNU General Public License
++//along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++////////// toki game main module /////////////////////
++//
++// This is Toki main module that init and wire :
++//  - main module 
++//  - video module
++//  - sound module 
++//
++module jttoki_game(
++    `include "jtframe_game_ports.inc" // see $JTFRAME/hdl/inc/jtframe_game_ports.inc
++  );
++
++wire hblank;
++wire vblank;
++
++assign LHBL = ~hblank;
++assign LVBL = ~vblank;
++
++wire  [8:0] hpos;
++wire  [8:0] vpos;
++wire [10:1] palette_addr;
++wire [15:0] palette_out;
++
++wire [10:1] vram_addr;
++wire [15:0] vram_out;
++
++wire [10:1] bg1_addr;
++wire [15:0] bg1_out;
++
++wire [10:1] bg2_addr;
++wire [15:0] bg2_out;
++
++wire [10:1] sprite_addr;
++wire [15:0] sprite_out;
++
++wire  [6:1] scroll_addr;
++wire [15:0] scroll_out;
++
++wire [8:0]  bg1_scroll_x;
++wire [8:0]  bg1_scroll_y;
++wire [8:0]  bg2_scroll_x;
++wire [8:0]  bg2_scroll_y;
++wire        bg_order;
++
++wire m68k_sound_cs_2;
++wire m68k_sound_cs_4;
++wire m68k_sound_cs_6;
++
++wire [15:0] m68k_sound_latch_0;
++wire [15:0] m68k_sound_latch_1;
++wire [15:0] z80_sound_latch_0; 
++wire [15:0] z80_sound_latch_1;
++wire [15:0] z80_sound_latch_2;
++
++//////// MAIN ////////////
++//
++// main module 
++// - 68k cpu
++// - cpu ram & video ram
++// - scroll latch
++// - sound latch
++//
++toki_main  u_main(
++  .rst(rst),
++
++  // Clock
++  .clk(clk),
++  .clk48(clk48),
++  .pxl_cen(pxl_cen),
++  .pxl2_cen(pxl2_cen),
++
++  // Video 
++  .hsync(HS),
++  .vsync(VS),
++  .vblank(vblank),
++  .hpos(hpos),
++  .vpos(vpos),
++
++  // Input
++  .start_button(cab_1p),
++  .joystick1(joystick1),
++  .joystick2(joystick2),
++
++  // DIP switches
++  .dipsw(dipsw),
++  .dip_pause(dip_pause),
++  .service(service),
++
++  // 68K rom
++  .cpu_rom_addr(cpu_rom_addr),
++  .cpu_rom_cs(cpu_rom_cs),
++  .cpu_rom_ok(cpu_rom_ok),
++  .cpu_rom_data(cpu_rom_data),
++
++  //Shared video RAM 
++  .palette_addr(palette_addr),
++  .palette_out(palette_out),
++
++  .vram_addr(vram_addr),
++  .vram_out(vram_out),
++
++  .bg1_addr(bg1_addr),
++  .bg1_out(bg1_out),
++
++  .bg2_addr(bg2_addr),
++  .bg2_out(bg2_out),
++
++  .sprite_addr(sprite_addr),
++  .sprite_out(sprite_out),
++
++  //Scroll latch
++  .bg1_scroll_x(bg1_scroll_x),
++  .bg1_scroll_y(bg1_scroll_y),
++  .bg2_scroll_x(bg2_scroll_x),
++  .bg2_scroll_y(bg2_scroll_y),
++  .bg_order(bg_order),
++
++  //Sound latch
++  .sound_cs_2(m68k_sound_cs_2),
++  .sound_cs_4(m68k_sound_cs_4),
++  .sound_cs_6(m68k_sound_cs_6),
++
++  .m68k_sound_latch_0(m68k_sound_latch_0),
++  .m68k_sound_latch_1(m68k_sound_latch_1),
++
++  //Sound input from z80
++  .z80_sound_latch_0(z80_sound_latch_0),
++  .z80_sound_latch_1(z80_sound_latch_1),
++  .z80_sound_latch_2(z80_sound_latch_2)
++);
++
++//////// VIDEO ////////////
++//
++// video module 
++// - char, tile & sprite drawing 
++// - vga sync 
++//
++toki_video u_video(
++  .rst(rst),
++  .clk(clk),
++  .pxl_cen(pxl_cen),
++  .pxl2_cen(pxl2_cen),
++
++  // Video signal
++  .hsync(HS),
++  .vsync(VS),
++  .hblank(hblank),
++  .vblank(vblank),
++  .hpos(hpos),
++  .vpos(vpos),
++  .gfx_en(gfx_en),
++
++  .r(red),
++  .g(green),
++  .b(blue),
++
++  //Shared video RAM
++  .palette_addr(palette_addr),
++  .palette_out(palette_out),
++
++  .vram_addr(vram_addr),
++  .vram_out(vram_out),
++
++  .bg1_addr(bg1_addr),
++  .bg1_out(bg1_out),
++
++  .bg2_addr(bg2_addr),
++  .bg2_out(bg2_out),
++
++  .sprite_addr(sprite_addr),
++  .sprite_out(sprite_out),
++
++  //GFX ROM 
++  .gfx1_rom_data(gfx1_rom_data),
++  .gfx1_rom_ok(gfx1_rom_ok),
++  .gfx1_rom_addr(gfx1_rom_addr),
++  .gfx1_rom_cs(gfx1_rom_cs),
++
++  .gfx2_rom_data(gfx2_rom_data),
++  .gfx2_rom_ok(gfx2_rom_ok),
++  .gfx2_rom_addr(gfx2_rom_addr),
++  .gfx2_rom_cs(gfx2_rom_cs),
++
++  .gfx3_rom_data(gfx3_rom_data),
++  .gfx3_rom_ok(gfx3_rom_ok),
++  .gfx3_rom_addr(gfx3_rom_addr),
++  .gfx3_rom_cs(gfx3_rom_cs),
++
++  .gfx4_rom_data(gfx4_rom_data),
++  .gfx4_rom_ok(gfx4_rom_ok),
++  .gfx4_rom_addr(gfx4_rom_addr),
++  .gfx4_rom_cs(gfx4_rom_cs),
++
++  // scroll latch
++  .bg1_scroll_x(bg1_scroll_x),
++  .bg1_scroll_y(bg1_scroll_y),
++  .bg2_scroll_x(bg2_scroll_x),
++  .bg2_scroll_y(bg2_scroll_y),
++  .bg_order(bg_order)
++);
++
++//////// SOUND ////////////
++//
++// sound module
++// seibu sound system: 
++// - z80 
++// - sei80bu z80 rom decypher
++// - oki6295 / pcm 
++// - ym3812 / fm 
++// - coin input 
++// 
++toki_sound u_sound(
++  .rst(rst),
++  .clk(clk),
++  .clk48(clk48),
++
++  .oki_cen(oki_cen),
++
++  .coin_input(coin),
++
++  .snd(snd),
++  .fxlevel(dip_fxlevel),
++  .enable_fm(enable_fm),
++  .enable_psg(enable_psg),
++
++  .z80_rom_addr(z80_rom_addr),
++  .z80_rom_data(z80_rom_data),
++  .z80_rom_ok(z80_rom_ok),
++  .z80_rom_cs(z80_rom_cs),
++
++  .bank_rom_addr(bank_rom_addr),
++  .bank_rom_data(bank_rom_data),
++  .bank_rom_ok(bank_rom_ok),
++  .bank_rom_cs(bank_rom_cs),
++
++  .pcm_rom_addr(pcm_rom_addr),
++  .pcm_rom_data(pcm_rom_data),
++  .pcm_rom_ok(pcm_rom_ok),
++  .pcm_rom_cs(pcm_rom_cs),
++
++  .m68k_sound_cs_2(m68k_sound_cs_2),
++  .m68k_sound_cs_4(m68k_sound_cs_4),
++  .m68k_sound_cs_6(m68k_sound_cs_6),
++
++  .m68k_sound_latch_0(m68k_sound_latch_0),
++  .m68k_sound_latch_1(m68k_sound_latch_1),
++  .z80_sound_latch_0(z80_sound_latch_0),
++  .z80_sound_latch_1(z80_sound_latch_1),
++  .z80_sound_latch_2(z80_sound_latch_2)
++);
++
++endmodule
+diff --git a/cores/toki/hdl/main.v b/cores/toki/hdl/main.v
+new file mode 100644
+index 000000000..379acb13d
+--- /dev/null
++++ b/cores/toki/hdl/main.v
+@@ -0,0 +1,508 @@
++////////// main module  //////////////////////
++//
++//  - Motorola 68k main cpu @10mhz 
++//  - cpu address bus 
++//  - cpu 2*32kx8 ram
++//  - palette / video / bg1 / bg2 / sprite ram
++//  - scrolling & sound latch
++// 
++module toki_main(
++  input             rst,
++
++  // Clock
++  input             clk,
++  input             clk48,
++  input             pxl_cen,
++  input             pxl2_cen,
++
++  // Video
++  input             hsync, 
++  input             vsync,
++  input             vblank,
++  input       [8:0] hpos,
++  input       [8:0] vpos,
++
++  // Input
++  input      [1:0]  start_button,
++  input      [5:0]  joystick1,
++  input      [5:0]  joystick2,
++
++  input      [31:0] dipsw,
++  input             dip_pause,     
++  input             service,
++
++  input      [15:0] cpu_rom_data,
++  input             cpu_rom_ok,
++  output reg [18:1] cpu_rom_addr,
++  output reg        cpu_rom_cs,
++
++  //Shared video RAM 
++  input      [10:1] palette_addr,
++  output     [15:0] palette_out,
++
++  input      [10:1] vram_addr,
++  output     [15:0] vram_out,
++
++
++  input      [10:1] bg1_addr,
++  output     [15:0] bg1_out,
++
++  input      [10:1] bg2_addr,
++  output     [15:0] bg2_out,
++
++  input      [10:1] sprite_addr,
++  output     [15:0] sprite_out,
++
++  output  reg [8:0] bg1_scroll_x,
++  output  reg [8:0] bg1_scroll_y,
++  output  reg [8:0] bg2_scroll_x,
++  output  reg [8:0] bg2_scroll_y,
++
++  output  reg       bg_order,
++
++  output reg        sound_cs_2, 
++  output reg        sound_cs_4,
++  output reg        sound_cs_6,
++
++  output reg [15:0] m68k_sound_latch_0,
++  output reg [15:0] m68k_sound_latch_1,
++
++  input      [15:0] z80_sound_latch_0,
++  input      [15:0] z80_sound_latch_1,
++  input      [15:0] z80_sound_latch_2
++);
++
++wire p1_right    = joystick1[0];
++wire p1_left     = joystick1[1];
++wire p1_down     = joystick1[2];
++wire p1_up       = joystick1[3];
++wire p1_button1  = joystick1[4];
++wire p1_button2  = joystick1[5];
++wire p1_start    = start_button[0];
++
++wire p2_right    = joystick2[0];
++wire p2_left     = joystick2[1];
++wire p2_down     = joystick2[2];
++wire p2_up       = joystick2[3];
++wire p2_button1  = joystick2[4];
++wire p2_button2  = joystick2[5];
++wire p2_start    = start_button[1];
++
++///////// Motorola 68K CPU ///////////////////////////
++//
++// 
++//
++wire cpu_wr;                // Read = 1, Write = 0
++wire cpu_as_n;              // Address strobe
++wire cpu_lds_n;             // Lower byte strobe
++wire cpu_uds_n;             // Upper byte strobe
++(*keep*) wire [2:0]cpu_fc;  // Processor state
++
++// CPU buses
++reg  [15:0] cpu_din;
++wire [15:0] cpu_dout;
++
++wire [23:0] cpu_a;    
++assign cpu_a[0] = 0;   // odd memory address should cause cpu exception
++
++wire bg_n;             // Bus grant
++wire br_n;
++wire bgack_n;
++wire cen10;
++wire cen10b;
++wire dtack_n;
++wire int1;
++
++fx68k fx68k (
++    .clk(clk48),    // Input clock
++    .enPhi1(cen10), // cpu clock 
++    .enPhi2(cen10b), 
++
++    .extReset(rst),
++    .pwrUp(rst),
++    .HALTn(dip_pause),
++
++    //SYSTEM CONTROL 
++    .BERRn(1'b1),
++    .oRESETn(), 
++    .oHALTEDn(), 
++
++    //ADDRESS BUS 
++    .eab(cpu_a[23:1]), //output A23-A0 : 24bits address bus
++
++    //DATA BUS (originally one INOUT bus) 
++    .iEdb(cpu_din),    // input D15-D0 : 16 bits cpu bus data in
++    .oEdb(cpu_dout),   // input D15-D0 : 16 bits cpu bus data out 
++    
++    //ASYNCHRONOUS BUS CONTROL 
++    .ASn(cpu_as_n),    // output : address strobe, tell the memory device that the address inputs are valid. Upon receiving this signal the selected memory device starts the memory access (read/write) indicated by its other inputs.
++    .eRWn(cpu_wr),     // ouput  : write=0, read =1 
++    .UDSn(cpu_uds_n),  // ouput  : upper byte strobe
++    .LDSn(cpu_lds_n),  // output : lower byte strobe
++    .DTACKn(dtack_n),  // input  : data transfer ack
++
++    //BUS ARBITRATION CONTROL 
++    .BRn(1'b1),        // input  : bus request
++    .BGn(bg_n),        // output : bus grant 
++    .BGACKn(1'b1),     // input  : Bus grant ack 
++
++    // PERIPHERAL CONTROL 
++    .E(),              // output : cpu enable 
++    .VMAn(),           // output : valid pheripheral memory address
++    .VPAn(inta_n),     // output :valid peripheral address detected  
++
++    /// PROCESSOR STATUS 
++    .FC0(cpu_fc[0]),   // output 
++    .FC1(cpu_fc[1]),   // output 
++    .FC2(cpu_fc[2]),   // output 
++
++    //INTERUPT CONTROL 
++    .IPL0n(int1),      //int @vblank
++    .IPL1n(1'b1),
++    .IPL2n(1'b1)  
++);
++
++///////// 68K interrupt ///////////////////////////
++//
++// interrupt at each vblank 
++// 59.61hz,59.60hz verified on board
++// interrupt routine fill char, bg1, bg1, palette ram
++// during dip-switch char ram is zero filled @vblank
++// ram drawing and filling is longer than vblank period 
++//
++wire inta_n;
++assign inta_n = ~&{cpu_fc[2], cpu_fc[1], cpu_fc[0], ~cpu_as_n};
++
++jtframe_virq u_virq(
++    .rst        (rst),
++    .clk        (clk48),
++    .LVBL       (vblank),
++    .dip_pause  (dip_pause), //handle cpu pause
++    .skip_en    (),
++    .skip_but   (),
++    .clr        (~inta_n),
++    .custom_in  (),
++    .blin_n     (),
++    .blout_n    (int1),
++    .custom_n   ()
++);
++
++
++///////// 68K dtack //////////////////////////////
++//
++// handle 68k clock and data trasnfer acknowledge
++// bus is busy if cpu rom is not available 
++//
++
++// cpu clock 48*5/24 => 10mhz 
++localparam [3:0] cen_num =  4'd5;
++localparam [4:0] cen_den = 5'd24;
++
++wire bus_cs   = |{cpu_rom_cs};
++wire bus_busy = |{cpu_rom_cs & ~cpu_rom_ok}; 
++
++jtframe_68kdtack_cen  u_dtack(
++    .rst        (rst),
++    .clk        (clk48),
++    .cpu_cen    (cen10),
++    .cpu_cenb   (cen10b),
++    .bus_cs     (bus_cs),
++    .bus_busy   (bus_busy),
++    .bus_legit  (1'b0),
++    .ASn        (cpu_as_n),
++    .DSn        ({cpu_uds_n, cpu_lds_n}), 
++    .num        (cen_num),
++    .den        (cen_den),
++    .DTACKn     (dtack_n),
++    .wait2      (1'b0),
++    .wait3      (1'b0),
++    // unused
++    .fave       (),
++    .fworst     (),
++    .frst       ()
++);
++
++jtframe_68kdma #(.BW(1)) u_arbitration(
++    .clk        (clk48),
++    .cen        (cen10b),
++    .rst        (rst),
++    .cpu_BRn    (br_n),
++    .cpu_BGACKn (bgack_n),
++    .cpu_BGn    (bg_n),
++    .cpu_ASn    (cpu_as_n),
++    .cpu_DTACKn (dtack_n),
++    .dev_br     (1'b1)
++);
++
++///////// 68k bus mapping  ////////////////////
++//
++// 0x000000, 0x05ffff : rom        (393216)(ro)
++// 0x060000, 0x06d7ff : cpu ram     (55296)(rw)
++// 0x06d800, 0x06dfff : spriteram    (2048)(rw) 
++// 0x06e000, 0x06e7ff : palette      (2048)(rw)
++// 0x06e800, 0x06efff : bg1 vram     (2048)(wo) 
++// 0x06f000, 0x06f7ff : bg2 vram     (2048)(wo)
++// 0x06f800, 0x06ffff : videoram     (2048)(wo)
++// gap 
++// 0x080000, 0x08000d : sound latch        (rw) 
++// gap  
++// 0x0a0000, 0x0a005f : scroll latch       (wo)
++// gap 
++// 0x0c0000, 0x0c0001 : dip-switch port    (ro) 
++// 0x0c0002, 0x0c0003 : input port         (ro)
++// 0x0c0004, 0x0c0005 : system port        (ro) 
++//
++reg ram_cs, sprite_cs, palette_cs, bg1_cs, bg2_cs, vram_cs,  
++    scroll_cs, dsw_cs, inputs_cs, system_cs;
++reg sound_cs_3, sound_cs_5;
++
++always @(posedge clk or posedge rst) begin
++  if (rst) begin
++    ram_cs <= 1'd0;
++    sprite_cs <= 1'd0;
++    palette_cs <= 1'd0;
++    bg1_cs <= 1'd0;
++    bg2_cs <= 1'd0;
++    vram_cs <= 1'd0;
++    scroll_cs <= 1'd0;
++    dsw_cs <= 1'd0;
++    inputs_cs <= 1'd0;
++    system_cs <= 1'd0;
++    cpu_rom_addr <= 18'd0;
++  end else begin
++     if(!cpu_as_n) begin
++      if (cpu_a[23:0] < 24'h60000)
++        cpu_rom_addr[18:1] <= cpu_a[18:1];
++
++      cpu_rom_cs <= (                        cpu_a[23:0] < 24'h60000);
++      ram_cs <= (cpu_a[23:0] >= 24'h60000 && cpu_a[23:0] < 24'h6d800);
++      //video 
++      sprite_cs  <= (cpu_a[23:0] >= 24'h6d800 && cpu_a[23:0] < 24'h6e000); //2048
++      palette_cs <= (cpu_a[23:0] >= 24'h6e000 && cpu_a[23:0] < 24'h6e800); //2048
++      bg1_cs     <= (cpu_a[23:0] >= 24'h6e800 && cpu_a[23:0] < 24'h6f000); //2048
++      bg2_cs     <= (cpu_a[23:0] >= 24'h6f000 && cpu_a[23:0] < 24'h6f800); //2048
++      vram_cs    <= (cpu_a[23:0] >= 24'h6f800 && cpu_a[23:0] < 24'h70000); //2048
++      //sound latch
++      sound_cs_2 <= (cpu_a[23:0] == 24'h80004);
++      sound_cs_3 <= (cpu_a[23:0] == 24'h80006);
++      sound_cs_4 <= (cpu_a[23:0] == 24'h80008);
++      sound_cs_5 <= (cpu_a[23:0] == 24'h8000a);
++      sound_cs_6 <= (cpu_a[23:0] == 24'h8000c);
++      //scroll 
++      scroll_cs  <= (cpu_a[23:0] >= 24'ha0000 && cpu_a[23:0] < 24'ha005f); //96 
++      //IO
++      dsw_cs     <= (cpu_a[23:0] >= 24'hc0000 && cpu_a[23:0] < 24'hc0001); //2 
++      inputs_cs  <= (cpu_a[23:0] >= 24'hc0002 && cpu_a[23:0] < 24'hc0003); //2 
++      system_cs  <= (cpu_a[23:0] >= 24'hc0004 && cpu_a[23:0] < 24'hc0005); //2 
++    end else begin
++      ram_cs <= 1'd0;
++      sprite_cs <= 1'd0;
++      palette_cs <= 1'd0;
++      bg1_cs <= 1'd0;
++      bg2_cs <= 1'd0;
++      vram_cs <= 1'd0;
++      scroll_cs <= 1'd0;
++      dsw_cs <= 1'd0;
++      inputs_cs <= 1'd0;
++      system_cs <= 1'd0;
++      cpu_rom_addr <= 18'd0;
++    end
++  end
++end
++
++
++////// 68K databus input   /////////////////////// 
++//
++always @(posedge clk, posedge rst) begin
++  if(rst) begin 
++    cpu_din <= 16'h0000;
++    end
++  else begin
++    if (clk) begin
++      cpu_din <= cpu_rom_cs ? cpu_rom_data[15:0] :  
++                 ram_cs     ? ram_do[15:0] :
++                 palette_cs ? palette_do[15:0] :
++                 sprite_cs  ? sprite_do[15:0] :  
++                 dsw_cs     ? dipsw[15:0] : 
++                 inputs_cs  ? {1'b1,1'b1,p2_button2,p2_button1,p2_right,p2_left,p2_down,p2_up,
++                               1'b1,1'b1,p1_button2,p1_button1,p1_right,p1_left,p1_down,p1_up} :
++                 system_cs  ? {1'b1,1'b1,1'b1,1'b1,1'b1,1'b1,1'b1,1'b1,
++                               1'b1,1'b1,1'b1,p2_start,p1_start,1'b1,1'b1,1'b1} : 
++                 sound_cs_2 ? z80_sound_latch_0 : 
++                 sound_cs_3 ? z80_sound_latch_1 :
++                 sound_cs_5 ? z80_sound_latch_2 :
++                 16'd0;
++      end
++    end
++end
++
++
++//////// Scroll /////////////////////////
++//
++// Scrolling register latch
++//
++reg [15:0] bg1_scroll_x_lo = 0;
++reg [15:0] bg2_scroll_x_lo = 0;
++reg [15:0] bg1_scroll_y_lo = 0;
++reg [15:0] bg2_scroll_y_lo = 0;
++
++always @(posedge clk, posedge rst) begin
++  if (rst) begin
++      bg_order <= 1'b0;
++      bg1_scroll_x <= 9'b0;
++      bg1_scroll_y <= 9'b0;
++      bg2_scroll_x <= 9'b0;
++      bg2_scroll_y <= 9'b0;
++      end
++  else if (clk) begin
++    if (scroll_cs == 'b1) begin
++      if (cpu_a[6:1] == 'h6)
++        bg1_scroll_x_lo[15:0] <= cpu_dout[15:0];
++      else if (cpu_a[6:1] == 'h5)
++        bg1_scroll_x[8:0] <= { cpu_dout[4], bg1_scroll_x_lo[6:0], bg1_scroll_x_lo[7] };
++      else if (cpu_a[6:1] == 'he)
++        bg1_scroll_y_lo[15:0] <= cpu_dout[15:0];
++      else if (cpu_a[6:1] == 'hd) 
++        bg1_scroll_y[8:0] <= { cpu_dout[4], bg1_scroll_y_lo[6:0], bg1_scroll_y_lo[7] };
++      else if (cpu_a[6:1] == 'h16) 
++        bg2_scroll_x_lo[15:0] <= cpu_dout[15:0];
++      else if (cpu_a[6:1] == 'h15) 
++        bg2_scroll_x[8:0] <= { cpu_dout[4], bg2_scroll_x_lo[6:0], bg2_scroll_x_lo[7] };
++      else if (cpu_a[6:1] == 'h1e)
++        bg2_scroll_y_lo[15:0] <= cpu_dout[15:0];
++      else if (cpu_a[6:1] == 'h1d)
++         bg2_scroll_y[8:0] <= { cpu_dout[4], bg2_scroll_y_lo[6:0], bg2_scroll_y_lo[7] };
++      else if (cpu_a[6:1] == 'h28) begin
++        if ((cpu_dout[15:0] & 16'h100) == 16'h0)
++          bg_order <= 1'b0;
++        else
++          bg_order <= 1'b1;
++        end
++    end
++  end
++end
++
++///////// Sound ///////////////
++//
++// Sound register latch
++//
++always @(posedge clk, posedge rst) begin
++  if (rst) begin
++    m68k_sound_latch_0 <= 16'b0;
++    m68k_sound_latch_1 <= 16'b0;
++    end
++  else begin
++    if (cpu_a[23:0] == 24'h80000)
++      m68k_sound_latch_0[15:0] <= cpu_dout[15:0];
++    if (cpu_a[23:0] == 24'h80002)
++      m68k_sound_latch_1[15:0] <= cpu_dout[15:0];
++  end
++end
++
++//////// RAM //////////////////////////
++//
++// 68k cpu ram (64k)
++// 2x Sony58257 - 32kx8 SRAM on PCB
++//
++wire [15:0] ram_do;
++
++jtframe_ram16 #(.AW(15)) u_cpu_ram(
++    .clk(clk),
++    .data(cpu_dout[15:0]), 
++    .addr(cpu_a[15:1]), 
++    .we({ram_cs && !cpu_wr && !cpu_uds_n, ram_cs && !cpu_wr && !cpu_lds_n}),
++    .q(ram_do[15:0])
++);
++
++///////// PALETTE RAM //////////
++//
++// palette ram (2048)
++// palette is read and checked by main cpu 
++//
++wire [15:0]  palette_do;
++
++dual_ram_buffer16 #(.W(10)) u_palette_ram(
++  .clk(clk),
++  .trigger(vblank),
++  .we({palette_cs && !cpu_wr && !cpu_uds_n, palette_cs && !cpu_wr && !cpu_lds_n}),
++  .addr_in(cpu_a[10:1]), 
++  .data(cpu_dout[15:0]),
++  .q_in(palette_do),
++
++  .addr_out(palette_addr[10:1]),
++  .q(palette_out)
++); 
++
++///////// VIDEO RAM //////////
++//
++// video ram (2048)
++// we use special ram that copy content @vblank
++// because during dipswitch (only) vram is reset at each frame
++// that make cpu write to vram longer than a vblank period
++//
++dual_ram_buffer16 #(.W(10)) u_vram_ram(
++  .clk(clk),
++  .trigger(vblank),
++  .we({vram_cs && !cpu_wr && !cpu_uds_n , vram_cs && !cpu_wr && !cpu_lds_n }),
++  .addr_in(cpu_a[10:1]), 
++  .data(cpu_dout[15:0]),
++  .q_in(),
++
++  .addr_out(vram_addr[10:1]),
++  .q(vram_out[15:0])
++); 
++
++///////// BG1 RAM //////////
++//
++// background 1 (2048)
++//
++dual_ram_buffer16 #(.W(10)) u_bg1_ram(
++  .clk(clk),
++  .trigger(vblank),
++  .we({bg1_cs && !cpu_wr && !cpu_uds_n, bg1_cs && !cpu_wr && !cpu_lds_n}),
++  .addr_in(cpu_a[10:1]), 
++  .data(cpu_dout[15:0]),
++  .q_in(),
++
++  .addr_out(bg1_addr[10:1]),
++  .q(bg1_out)
++); 
++
++///////// BG2 RAM //////////
++//
++// background 2 (2048)
++//
++dual_ram_buffer16 #(.W(10)) u_bg2_ram(
++  .clk(clk),
++  .trigger(vblank),
++  .we({bg2_cs && !cpu_wr && !cpu_uds_n, bg2_cs && !cpu_wr && !cpu_lds_n}),
++  .addr_in(cpu_a[10:1]), 
++  .data(cpu_dout[15:0]),
++  .q_in(),
++
++  .addr_out(bg2_addr[10:1]),
++  .q(bg2_out)
++); 
++
++///////// SPRITE RAM //////////
++//
++// sprite ram (2048)
++// sprite ram is read by the cpu 
++// if cpu can't read sprite ram content 
++// there will be no scrolling during the 'cave screen'
++//
++wire [15:0] sprite_do;
++
++dual_ram_buffer16 #(.W(10)) u_sprite_ram(
++  .clk(clk),
++  .trigger(vblank),
++  .we({sprite_cs && !cpu_wr && !cpu_uds_n, sprite_cs && !cpu_wr && !cpu_lds_n}),
++  .addr_in(cpu_a[10:1]), 
++  .data(cpu_dout[15:0]),
++  .q_in(sprite_do),
++
++  .addr_out(sprite_addr[10:1]),
++  .q(sprite_out)
++);
++
++endmodule
+diff --git a/cores/toki/hdl/sei80bu.v b/cores/toki/hdl/sei80bu.v
+new file mode 100644
+index 000000000..a6ed85aca
+--- /dev/null
++++ b/cores/toki/hdl/sei80bu.v
+@@ -0,0 +1,68 @@
++////////// sei80bu  ///////////////////////////////
++//
++// sei80bu decrypt the z80 encrypted rom
++// address is used as key to decrypt for rom data
++// decrypt rom opcode if m1 high or data if m1 low
++//
++module sei80bu(
++  input      [15:0] z80_rom_addr,
++  input       [7:0] z80_rom_data,
++  input             z80_rom_ok,
++  input             z80_rom_cs,
++
++  input             z80_m1,
++
++  output reg  [7:0] decrypt_rom_data,
++  output reg        decrypt_rom_ok
++);
++
++always @(*) begin
++          if (z80_rom_cs == 1'b1 && z80_rom_ok == 1'b1) begin
++            decrypt_rom_data[(z80_m1 == 1'b1 &&(z80_rom_addr[11] & ~z80_rom_addr[6])) ? 6 : 7] 
++                             = (z80_rom_addr[9] & z80_rom_addr[8]) 
++                                 ? z80_rom_data[7] ^ 1'b1 
++                                 : z80_rom_data[7];
++
++            decrypt_rom_data[(z80_m1 == 1'b1 &&(z80_rom_addr[11] & ~z80_rom_addr[6])) ? 7 : 6]
++                             =(z80_rom_addr[11] & z80_rom_addr[4] & z80_rom_addr[1])
++                               ? z80_rom_data[6] ^ 1'b1
++                               : z80_rom_data[6];
++
++            decrypt_rom_data[(z80_m1 == 1'b1 &&(z80_rom_addr[12] & z80_rom_addr[9])) ? 4 : 5] 
++                             = (z80_m1 == 1'b1 && (~z80_rom_addr[13] & z80_rom_addr[12])) 
++                                   ? z80_rom_data[5] ^ 1'b1
++                                   : z80_rom_data[5];
++
++            decrypt_rom_data[(z80_m1 == 1'b1 &&(z80_rom_addr[12] & z80_rom_addr[9])) ? 5 : 4]  
++                             = (z80_m1 == 1'b1 && (~z80_rom_addr[6] & z80_rom_addr[1]))
++                                   ? z80_rom_data[4] ^ 1'b1
++                                   : z80_rom_data[4];
++
++
++            decrypt_rom_data[z80_rom_addr[8] & z80_rom_addr[4] ? 2 : 3]
++                            = (z80_m1 == 1'b1 &&(~z80_rom_addr[12] & z80_rom_addr[2]))
++                                   ? z80_rom_data[3] ^ 1'b1
++                                   : z80_rom_data[3];
++
++            decrypt_rom_data[z80_rom_addr[8] & z80_rom_addr[4] ? 3 : 2]
++                             = (z80_rom_addr[11] & ~z80_rom_addr[8] & z80_rom_addr[1]) 
++                                   ? z80_rom_data[2] ^ 1'b1
++                                   : z80_rom_data[2];
++      
++
++            decrypt_rom_data[(z80_rom_addr[13] & z80_rom_addr[4]) ? 0  : 1]  
++                             = (z80_rom_addr[13] & ~z80_rom_addr[6] & z80_rom_addr[4])
++                                   ? z80_rom_data[1] ^ 1'b1 
++                                   : z80_rom_data[1];
++
++            decrypt_rom_data[(z80_rom_addr[13] & z80_rom_addr[4]) ? 1 : 0] 
++                            = (~z80_rom_addr[11] & z80_rom_addr[9] & z80_rom_addr[2])
++                                   ? z80_rom_data[0] ^ 1'b1
++                                   : z80_rom_data[0];
++            decrypt_rom_ok = 1'b1;
++            end
++          else if (z80_rom_ok == 1'b0)
++            decrypt_rom_ok = 1'b0;
++end
++
++endmodule
+diff --git a/cores/toki/hdl/sound.v b/cores/toki/hdl/sound.v
+new file mode 100644
+index 000000000..52ba2d474
+--- /dev/null
++++ b/cores/toki/hdl/sound.v
+@@ -0,0 +1,436 @@
++////////// seibu sound system  /////////////////////////////
++//
++// seibu sound system is composed of :
++// - Z80 @3.579545 MHz
++// - YM3812 OPL2 @3.579545 MHz
++// - MSM6295 @1Mhz 
++// - YM3931 (not implemented)
++//
++// z80 communicate with the main 68k cpu :
++//   - recv  command for the MSM6295
++//   - recv  data for the YM3812
++//   - send  ack of cmd/data
++//
++// /-----------\         /-------\
++// | z80  rom  |         |68k    |
++// | encrypted |         |       |      
++// | 8.m3 8192 |         |       |
++// |           |         \-------/
++// |           |             |
++// \-----------/        /---------\     /--------\
++//      |               |  latch  |     |ROM 9.m1|
++//      |               |         |     |131072  |
++//      |               \---------/     \--------/
++//      |                    |              |
++// /---------\           /------\        /-------\ 
++// |         |           |      |------- |MSM6295|--->/-------\
++// | sei80bu | z80 rom   | z80  |        \-------/    | sound |
++// |         |---------->|      |        /------\     | mixer |--> sound out
++// |         |           |      |--------|YM3812|---->|       |
++// |         |           \------/        \------/     \-------/
++// \---------/               |
++//                           |
++//                    /----------------\
++//                    | 7.m7 65536     |
++//                    | z80 bank       |
++//                    | encrypted      |
++//                    \----------------/
++//
++module toki_sound(
++  input             rst,
++  input             clk,
++  input             clk48,
++
++  input             oki_cen,
++
++  input       [1:0] coin_input,
++
++  output     [15:0] snd,
++  input       [1:0] fxlevel,
++  input             enable_fm,
++  input             enable_psg,
++
++  input       [7:0] z80_rom_data,
++  input             z80_rom_ok, 
++  output reg [12:0] z80_rom_addr,
++  output            z80_rom_cs,
++
++  input       [7:0] bank_rom_data,
++  input             bank_rom_ok, 
++  output reg [15:0] bank_rom_addr,
++  output            bank_rom_cs,
++
++  // OKI 6295 ADPCM 
++  input       [7:0] pcm_rom_data,
++  input             pcm_rom_ok, 
++  output     [16:0] pcm_rom_addr,
++  output            pcm_rom_cs,
++
++  input             m68k_sound_cs_2,
++  input             m68k_sound_cs_4,
++  input             m68k_sound_cs_6,
++
++  //SEIBU SOUND DEVICE MAIN READ
++  input      [15:0] m68k_sound_latch_0,
++  input      [15:0] m68k_sound_latch_1,
++
++  //SEIBU SOUND DEVICE MAIN WRITE
++  output reg   [15:0] z80_sound_latch_0,
++  output reg   [15:0] z80_sound_latch_1,
++  output reg   [15:0] z80_sound_latch_2
++);
++
++/////// Z80 address bus ///////////////////////////////////
++//
++wire z80_ram_cs, ym_cs_0, ym_cs_1, 
++     m68k_latch0_cs, m68k_latch1_cs, main_data_pending_cs, 
++     read_coin_cs, ym_wr, z80_wr_n, 
++     oki_wr, oki_rd;
++
++wire [7:0]  ym3812_dout;
++wire [15:0] z80_addr;
++wire [7:0]  z80_dout;
++wire        z80_rd_n;
++
++z80_cs u_z80cs(
++  .z80_addr(z80_addr),
++  .z80_wr_n(z80_wr_n),
++  .z80_rd_n(z80_rd_n),
++  .z80_rom_cs(z80_rom_cs),
++  .bank_rom_cs(bank_rom_cs),
++  .z80_ram_cs(z80_ram_cs),
++
++  .ym_cs_0(ym_cs_0),
++  .ym_cs_1(ym_cs_1),
++
++  .m68k_latch0_cs(m68k_latch0_cs),
++  .m68k_latch1_cs(m68k_latch1_cs),
++
++  .main_data_pending_cs(main_data_pending_cs),
++  .read_coin_cs(read_coin_cs),
++
++  .ym_wr(ym_wr),
++  .oki_wr(oki_wr),
++  .oki_rd(oki_rd)
++);
++
++///////// SEIBU80 //////////
++//
++// Decypher z80 ROM 8.m3
++//
++reg [15:0] decrypt_rom_addr;
++wire [7:0] decrypt_rom_data;
++wire       decrypt_rom_ok;
++reg        decrypt_rom_cs_seibu;
++
++wire       z80_m1_n;   //m1 low => opcode
++wire       z80_mreq_n;
++wire       z80_wait_n;
++
++sei80bu u_sei80bu(
++  .z80_rom_addr({3'd0, z80_rom_addr}),
++  .z80_rom_data(z80_rom_data),
++  .z80_rom_ok(z80_rom_ok), 
++  .z80_rom_cs(z80_rom_cs),
++  .z80_m1(~z80_m1_n),
++  .decrypt_rom_data(decrypt_rom_data),
++  .decrypt_rom_ok(decrypt_rom_ok)
++);
++
++///////// Z80 CLOCK /////////////////////////////
++//
++// Generate 3.579545 MHz clock
++//
++wire cen_fm, cen_fm2;
++
++jtframe_cen3p57 u_fmcen(
++    .clk(clk48),      // 48 MHz
++    .cen_3p57(cen_fm),
++    .cen_1p78(cen_fm2)
++);
++
++///////// Z80 WAIT ///////////////////////
++// 
++// make z80 bus wait if rom or banked rom
++// is selected and not available  
++// 
++reg  wait_n;
++
++always @(posedge clk, posedge rst) begin
++  if (rst)
++    wait_n <= 1'b1;
++  else begin
++    if (z80_rom_cs & ~z80_rom_ok)
++      wait_n <= 1'b0;
++    else if (bank_rom_cs & ~bank_rom_ok)
++      wait_n <= 1'b0;
++    else 
++      wait_n <= 1'b1;
++  end 
++end
++
++////// Z80 ROM & bank switch /////////////////////
++//
++//
++reg bank_selected = 1'b0; // switch to data bank
++
++always @(posedge clk) begin
++    // ROM & bank handling
++    if (z80_addr[15:0] < 16'h2000)
++      z80_rom_addr[12:0] <= z80_addr[12:0];
++    // bank size is 0x10000 
++    // z80 address from 0x8000  to 0x10000 is read directly from the rom 
++    // z80 address from 0x10000 to 0x18000 is read after switching bank
++    if (z80_addr[15:0] == 16'h4007) // switch bank usage 
++      bank_selected <= z80_dout[0];
++    if (z80_addr[15:0] >= 16'h8000 && bank_selected == 1'b0)
++      bank_rom_addr[15:0] <= (z80_addr[15:0] - 16'h8000); //0x2000 first bytes
++    else if (z80_addr[15:0] >= 16'h8000 && bank_selected == 1'b1)
++      bank_rom_addr[15:0] <= z80_addr[15:0];
++end
++
++///////// Z80 CPU  /////////////////////// 
++// 
++//
++//
++reg  [7:0] z80_din;
++wire z80_iorq_n;
++wire z80_cen;
++wire z80_busak_n;
++wire ym3812_irq_n; 
++
++jtframe_z80 u_z80(
++    .rst_n(~rst),
++    .clk(clk48),
++    .cen(cen_fm),
++
++    .wait_n(wait_n),
++    .int_n(~(irq_rst10|irq_rst18)), // sound interrupt
++    .nmi_n(1'b1),
++    .busrq_n(1'b1),
++
++    .m1_n(z80_m1_n),
++    .mreq_n(z80_mreq_n),
++    .iorq_n(z80_iorq_n),
++    .rd_n(z80_rd_n), 
++    .wr_n(z80_wr_n),
++    .rfsh_n(),
++    .halt_n(), 
++    .busak_n(),
++
++    .A(z80_addr[15:0]),
++
++    .din(z80_din),
++    .dout(z80_dout) 
++);
++
++////// SOUND ////////////////////
++//
++// sound latch
++//
++reg oki6295_irq_n;
++reg sub2main_pending;
++
++always @(posedge clk, posedge rst) begin //XXX speed must be same than 68k din ?
++  if (rst) begin
++    z80_sound_latch_0 <= 16'b0;
++    z80_sound_latch_1 <= 16'b0;
++    sub2main_pending  <= 1'b0;
++    oki6295_irq_n     <= 1'b1;
++    end
++  else begin
++    // send z80 data to 68k cpu
++    if (z80_addr[15:0] == 16'h4018) 
++      z80_sound_latch_0 <= {8'b0, z80_dout[7:0]};
++    if (z80_addr[15:0] == 16'h4019)
++      z80_sound_latch_1 <= {8'b0, z80_dout[7:0]};
++
++    // data from z80 is pending read from 68k
++    if (z80_addr[15:0] == 16'h4000) begin
++      z80_sound_latch_2 <= 16'b0;
++      sub2main_pending <= 1'b1;
++      end
++    else if (m68k_sound_cs_6 == 1'b1 || m68k_sound_cs_2 == 1'b1) begin
++      z80_sound_latch_2 <= 16'b1;
++      sub2main_pending <= 1'b0;
++      end
++
++    // main cpu assert irq for oki6295
++    if (m68k_sound_cs_4 == 1'b1) 
++      oki6295_irq_n <= 1'b0; 
++    else
++      oki6295_irq_n <= 1'b1;
++    end
++end
++
++////// Z80 databus input   /////////////////////// 
++//
++//  IRQ use z80 interrupt mode 0 :
++//  After interrupt is asserted, the cpu signal it's 
++//  ready by putting iorq and m1 high 
++//  it then read on the databus 
++//  this data is directly executed by the cpu as an opcode 
++//
++//  - ym3821 assert irq and put 0xd7 (rst10) on the bus 
++//  - 68k main cpu assert irq and put 0xdf (rst18) on the bus 
++// 
++//  both interrupt are needed to handle sound and coin input
++//
++reg irq_rst10;
++reg irq_rst18;
++reg stop_irq_10; 
++reg stop_irq_18; 
++wire irq_ack;
++assign irq_ack = ~z80_iorq_n & ~z80_m1_n;
++
++always @(posedge clk, posedge rst) begin
++  if (rst) begin
++    z80_din     <= 8'hff;
++    irq_rst10 <= 1'b0;
++    irq_rst18 <= 1'b0;
++    stop_irq_10 <= 1'b0;
++    stop_irq_18 <= 1'b0;
++    end
++  else begin
++    if (clk) begin
++      if (~irq_ack & stop_irq_10) begin
++        irq_rst10 <= 1'b0;
++        stop_irq_10 <= 1'b0;
++        end
++      else if (~irq_ack & stop_irq_18) begin
++        stop_irq_18 <= 1'b0;
++        irq_rst18 <= 1'b0;
++        end
++      else if (ym3812_irq_n == 1'b0)
++        irq_rst10 <= 1'b1;
++      else if (oki6295_irq_n == 1'b0) //~m68k_sound_cs_4
++        irq_rst18 <= 1'b1;
++          
++      if (irq_ack & irq_rst10)
++        stop_irq_10 <= 1'b1;
++      else if (irq_ack & irq_rst18)
++        stop_irq_18 <= 1'b1;
++
++      z80_din <= irq_ack & irq_rst10                      ? 8'hd7 : 
++                 irq_ack & irq_rst18                      ? 8'hdf :
++                 main_data_pending_cs &  sub2main_pending ? 8'b1  :
++                 main_data_pending_cs & ~sub2main_pending ? 8'b0 :
++                 ym_cs_0 & ~z80_rd_n                      ? ym3812_dout :
++                 oki_rd                                   ? oki_dout :
++                 bank_rom_cs                              ? bank_rom_data :
++                 m68k_latch0_cs                           ? m68k_sound_latch_0[7:0] :
++                 m68k_latch1_cs                           ? m68k_sound_latch_1[7:0] :
++                 read_coin_cs                             ? {6'b0, ~coin_input[1], ~coin_input[0]} :
++                 z80_ram_cs                               ? z80_ram_dout :
++                 z80_rom_cs                               ? decrypt_rom_data :
++                                                            8'hff;
++    end 
++  end
++end
++
++////// Z80 RAM  ///////////////////////
++//
++//  8bits ram  (2048)
++//
++wire [7:0] z80_ram_dout;
++
++jtframe_ram #(.AW(11)) u_z80_cpu_ram(
++    .clk(clk),
++    .cen(1'b1),
++    .data(z80_dout[7:0]),
++    .addr(z80_addr[10:0]), 
++    .we(z80_ram_cs & ~z80_wr_n), //& ~z80_mreq_n ?
++    .q(z80_ram_dout[7:0])
++);
++
++///////// OKIM6295   /////////////////////// 
++//
++// ADPCM sound effects 
++//
++wire [7:0] oki_dout;
++wire       oki_sample;
++wire signed [13:0] oki_snd;
++wire [17:0] adpcm_rom_addr;
++
++assign pcm_rom_cs = 1'b1;
++
++// pcm rom byte 13 and 15 are swapped, that could be a simple encryption 
++assign pcm_rom_addr = { adpcm_rom_addr[16], adpcm_rom_addr[13], adpcm_rom_addr[14] ,adpcm_rom_addr[15] , adpcm_rom_addr[12:0]}; 
++
++jt6295 #(.INTERPOL(1))  u_adpcm(
++    .rst(rst),
++    .clk(clk48),
++    .cen(oki_cen),
++    .ss(1'b1), // pin7 high, select low sample rate
++     //CPU interface
++    .wrn(~oki_wr),   // wr selected
++    .din(z80_dout),  // input data from z80 
++    .dout(oki_dout), // output data to z80
++     //ROM interface
++    .rom_addr(adpcm_rom_addr), // output 18 memory address to read
++    .rom_data(pcm_rom_data),   // input  data read
++    .rom_ok(pcm_rom_ok),       // high when rom_data is valid and matches rom_addr
++     //Sound output
++    .sound(oki_snd[13:0]), // sound output 
++    .sample(oki_sample)    // sample rate  
++);
++
++////////// YM3812 /////////////////////////////////// 
++//
++// MUSIC
++//
++reg ym3812_addr;
++wire signed [15:0] opl_snd;
++wire opl_sample;
++
++jtopl2   u_YM3812(
++    .rst(rst),
++    .clk(clk48),
++    .cen(cen_fm),
++    .din(z80_dout),
++    .addr(ym_cs_1), // cmd addr 
++    .cs_n(~(ym_cs_0 | ym_cs_1)),
++    .wr_n(~ym_wr), 
++    .dout(ym3812_dout),
++    .irq_n(ym3812_irq_n),
++    .snd(opl_snd[15:0]),
++    .sample(opl_sample)
++);
++
++///////// MIXING /////////////////
++//
++// MIX YM3812 & OKI6295 
++//
++//
++//1: pcmgain <= 8'h20 ;   // 200%
++//0: pcmgain <= 8'h10 ;   // 100%
++//2: pcmgain <= 8'h0c ;   // 75%
++//3: pcmgain <= 8'h08 ;   // 50%
++//
++wire signed [7:0] fx_volume = ~enable_psg ? 8'h00 : 
++                        (fxlevel == 2'h0) ? 8'h08 : 
++                        (fxlevel == 2'h1) ? 8'h0c : 
++                        (fxlevel == 2'h2) ? 8'h10 : 
++                                            8'h20; 
++
++wire signed [7:0] fm_volume = ~enable_fm ? 8'h00 :
++                                           8'h10;
++jtframe_mixer #(.W1(14)) u_mixer(
++    .rst(rst),
++    .clk(clk48),
++    .cen(1'b1),
++    // input signals
++    .ch0(opl_snd[15:0]), // fm 
++    .ch1(oki_snd[13:0]), // fx
++    .ch2(16'd0),
++    .ch3(16'd0),
++    //
++    .gain0(fm_volume),
++    .gain1(fx_volume),
++    .gain2(8'd0),
++    .gain3(8'd0),
++    .mixed(snd),
++    .peak()
++);
++
++endmodule
+diff --git a/cores/toki/hdl/sprite.v b/cores/toki/hdl/sprite.v
+new file mode 100644
+index 000000000..bfe1234da
+--- /dev/null
++++ b/cores/toki/hdl/sprite.v
+@@ -0,0 +1,252 @@
++////////// SCAN SPRITE RAM  /////////////////////////////
++//
++// draw 16x16 sprite line by line
++// 
++//
++module scan_sprite_ram(
++  input                 clk,
++  input                 rst,
++
++  input           [7:0] line_number,
++  
++  output reg     [10:1] ram_addr,
++  input          [15:0] ram_out,
++
++  input          [15:0] gfx_rom_data,
++  input                 gfx_rom_ok,
++  output reg     [19:1] gfx_rom_addr,
++  output reg            gfx_rom_cs,
++
++  input           [7:0] line_buffer_addr,
++  output          [7:0] line_buffer_out,
++ 
++  output                used_out
++);
++
++reg  [255:0] used = 256'b0;
++assign used_out = used[line_buffer_addr];
++
++reg [7:0] line_buffer [255:0];
++assign line_buffer_out = line_buffer[line_buffer_addr];
++
++/// STATE MACHINE
++reg [3:0]  state = 0;
++parameter STATE_START = 4'd0;
++parameter STATE_FETCH_RAM_WORDS = 4'd1;
++parameter STATE_COPY_RAM_WORDS = 4'd2;
++parameter STATE_START_DECODING = 4'd3;
++parameter STATE_DECODING_CHECK = 4;
++parameter STATE_FETCH_ROM_WORDS = 4'd5;
++parameter STATE_COPY_ROM_WORDS = 4'd6;
++parameter STATE_COPY_PIXEL = 4'd7;
++parameter STATE_FINISHED = 4'd8;
++parameter STATE_WAIT = 4'd9;
++
++reg  [7:0]  previous_line_number;
++
++reg         flip_x;
++reg  [3:0]  color;
++reg  [8:0]  x;
++reg  [8:0]  y;
++
++reg [12:0] rom_index; //0xFFF / 4096 tiles 
++
++reg  [3:0] pix_index;
++reg [15:0] ram_words [3:0];
++reg  [1:0] ram_words_index;
++reg [15:0] rom_words [3:0];
++reg  [1:0] rom_words_index;
++
++wire [15:0] plane1, plane2, plane3, plane4;
++
++assign plane1[15:0] = {rom_words[3][15:12], rom_words[2][15:12], rom_words[1][15:12],  rom_words[0][15:12]};
++assign plane2[15:0] = { rom_words[3][11:8],  rom_words[2][11:8],  rom_words[1][11:8],   rom_words[0][11:8]};
++assign plane3[15:0] = {  rom_words[3][7:4],   rom_words[2][7:4],   rom_words[1][7:4],    rom_words[0][7:4]};
++assign plane4[15:0] = {  rom_words[3][3:0],   rom_words[2][3:0],   rom_words[1][3:0],    rom_words[0][3:0]};
++
++always @(posedge clk, posedge rst) begin
++    if (rst) begin
++      previous_line_number <= 8'd0;
++      used  <= 256'b0;
++      flip_x <= 1'd0;
++      color <= 4'd0;
++      x <= 9'd0;
++      y <= 9'd0;
++  
++      pix_index <= 4'd0;
++      rom_index <= 13'd0;
++      rom_words_index <= 2'd0;
++      rom_words[0] <= 16'b0;
++      rom_words[1] <= 16'b0;
++      rom_words[2] <= 16'b0;
++      rom_words[3] <= 16'b0;
++      ram_words_index <= 2'b0;
++      ram_words[0] <= 16'b0;
++      ram_words[1] <= 16'b0;
++      ram_words[2] <= 16'b0;
++      ram_words[3] <= 16'b0;
++      rom_words_index <= 2'd0;
++      ram_addr <= 10'h0;
++      state <= STATE_START;
++      end
++    else begin
++    case (state)
++      STATE_START : begin
++        used  <= 256'b0;
++        previous_line_number <= line_number;
++        used[255:0] <= 256'b0;
++        flip_x <= 1'd0;
++        color <= 4'd0;
++        x <= 9'd0;
++        y <= 9'd0;
++        pix_index <= 4'd0;
++
++        rom_index <= 13'd0;
++        rom_words_index <= 2'd0;
++        rom_words[0] <= 16'b0;
++        rom_words[1] <= 16'b0;
++        rom_words[2] <= 16'b0;
++        rom_words[3] <= 16'b0;
++        ram_words_index <= 2'b0;
++        ram_words[0] <= 16'b0;
++        ram_words[1] <= 16'b0;
++        ram_words[2] <= 16'b0;
++        ram_words[3] <= 16'b0;
++        rom_words_index <= 2'd0;
++        ram_addr <= 10'h0;
++        //wait 1 cycle, for ram fetch
++        state <= STATE_WAIT;
++      end      
++
++      STATE_WAIT : begin
++        state <=  STATE_FETCH_RAM_WORDS;
++      end
++
++      STATE_FETCH_RAM_WORDS : begin
++         ram_words[ram_words_index] <= ram_out[15:0];
++         ram_addr <= ram_addr + 10'd1;
++         state <= STATE_COPY_RAM_WORDS;
++      end
++
++      STATE_COPY_RAM_WORDS: begin
++        if (ram_addr == 'h3ff) begin
++           state <= STATE_FINISHED;
++           end
++        else begin
++          if (ram_words_index == 2'd3) begin
++           state <= STATE_START_DECODING;
++           ram_words_index <= 2'd0;
++           end
++          else begin
++           ram_words_index <= ram_words_index + 2'd1; 
++           state <= STATE_FETCH_RAM_WORDS;
++          end
++        end
++      end
++
++      STATE_START_DECODING : begin
++         if ((ram_words[2] != 'hf000) && (ram_words[0] != 'hffff) && ({ram_words[2][15], ram_words[1][11:0]} != 13'b0)) begin
++           flip_x <= ram_words[0][8];
++           color <= ram_words[1][15:12];
++           rom_index[12:0] <= {ram_words[2][15], ram_words[1][11:0]};
++           x[8:0] <= ram_words[2][8:0] + (ram_words[0][7:4] * 8'd16); 
++           y[8:0] <= ram_words[3][8:0] + (ram_words[0][3:0] * 8'd16);
++           rom_words_index <= 2'd0;
++           state <= STATE_DECODING_CHECK;
++           end
++         else
++           state <= STATE_FETCH_RAM_WORDS;
++      end
++
++      STATE_DECODING_CHECK: begin
++         if (({1'b0, line_number} >= y && {1'b0, line_number} <= y + 15) && (x < 256 || x[8:0] > 9'd497)) 
++           state <= STATE_FETCH_ROM_WORDS;
++         else 
++           state <= STATE_FETCH_RAM_WORDS;
++      end
++
++      STATE_FETCH_ROM_WORDS : begin
++        if (rom_words_index <= 1)
++          gfx_rom_addr[19:1] <= rom_index[12:0]*19'd64 + (({11'b0, line_number} - {10'b0, y})*19'd2) + ({17'b0, rom_words_index});
++        else
++          gfx_rom_addr[19:1] <= rom_index[12:0]*19'd64 + (({11'b0, line_number} - {10'b0, y})*19'd2) + ({17'b0, rom_words_index}%19'd2) + 19'd32;
++        gfx_rom_cs <= 1'b1; 
++        state <=  STATE_COPY_ROM_WORDS;
++      end 
++
++      STATE_COPY_ROM_WORDS : begin 
++        if (gfx_rom_ok)  begin
++          rom_words[rom_words_index] <= gfx_rom_data[15:0];
++          gfx_rom_cs <= 1'b0;
++          if (rom_words_index < 3) begin
++            rom_words_index <= rom_words_index + 2'd1; 
++            state <= STATE_FETCH_ROM_WORDS;
++            end
++          else begin
++            rom_words_index <= 0;
++            pix_index <= 0;
++            state <= STATE_COPY_PIXEL;
++            end
++        end
++      end
++
++      STATE_COPY_PIXEL: begin
++          if (!flip_x && x[8:0] + {5'b0, pix_index} > 9'd256) begin 
++              if (pix_index < 15) begin
++                pix_index <= pix_index + 4'd1;
++                state <= STATE_COPY_PIXEL; 
++                end 
++              else 
++                state <= STATE_FETCH_RAM_WORDS;
++              end
++          else if (flip_x && (x[8:0] + 9'd15 - {5'b0, pix_index} > 9'd256)) begin 
++              if (4'd15 -pix_index >= 1) begin
++                pix_index <= pix_index + 4'd1;
++                state <= STATE_COPY_PIXEL; 
++                end 
++              else 
++                state <= STATE_FETCH_RAM_WORDS;
++              end
++          else begin
++            if ({plane1[pix_index],plane2[pix_index],plane3[pix_index],plane4[pix_index]} != 15) begin    
++              if (flip_x) begin
++                 if (x[8:0] + (9'd15 - {5'b0, pix_index[3:0]}) < 9'd256) begin 
++                    if (used[x[7:0] + (8'd15 - {4'b0, pix_index})] == 1'b0) begin
++                      line_buffer[x[7:0] + (8'd15 -  {4'b0, pix_index})] <= {color[3:0], {plane1[pix_index],plane2[pix_index],plane3[pix_index],plane4[pix_index]}};
++                      used[x[7:0] + (8'd15 - {4'b0, pix_index})] <= 1'b1;
++                    end
++                  end
++              end
++              else begin
++                if (x[8:0] + {5'b0, pix_index[3:0]} < 9'd256) begin 
++                  if (used[x[7:0] + {4'b0, pix_index}] == 1'b0) begin
++                    line_buffer[x[7:0] +  {4'b0, pix_index}] <= {color[3:0], {plane1[pix_index],plane2[pix_index],plane3[pix_index],plane4[pix_index]}};
++                    used[x[7:0] + {4'b0, pix_index}] <= 1'b1;
++                  end
++                end
++             end
++          end
++         
++          if (pix_index < 15) begin
++            pix_index <= pix_index + 4'd1;
++            state <= STATE_COPY_PIXEL; end              
++          else if (ram_addr == 'h3ff) begin
++            state <= STATE_FINISHED; end
++          else
++            state <= STATE_FETCH_RAM_WORDS;
++          end
++
++      end 
++  
++      STATE_FINISHED: begin
++        ram_addr <= 10'h0;
++        if (previous_line_number != line_number)
++          state <= STATE_START;
++        previous_line_number <= line_number;
++      end
++      
++    endcase
++  end
++end
++
++endmodule
+diff --git a/cores/toki/hdl/tile.v b/cores/toki/hdl/tile.v
+new file mode 100644
+index 000000000..835683a20
+--- /dev/null
++++ b/cores/toki/hdl/tile.v
+@@ -0,0 +1,175 @@
++////////// SCAN TILE RAM /////////////////////////////
++//
++// draw 16x16 tile line by line 
++// RAM describe a 512x512 zone 
++// current screen position is adjusted 
++// by scroll_x & scroll_y register
++//
++module scan_tile_ram(
++  input                 clk,
++  input                 rst,
++
++  input           [7:0] line_number,
++
++  output reg     [10:1] ram_addr,
++  input          [15:0] ram_out,
++
++  input          [15:0] gfx_rom_data,
++  input                 gfx_rom_ok,
++  output reg     [18:1] gfx_rom_addr,
++  output reg            gfx_rom_cs,
++
++  input           [7:0] line_buffer_addr,
++  output          [7:0] line_buffer_out,
++
++  input           [8:0] scroll_x,
++  input           [8:0] scroll_y
++);
++
++reg [8:0] scroll_x_latch;
++reg [8:0] scroll_y_latch;
++
++(* ramstyle = "no_rw_check" *)reg [7:0] line_buffer [255:0];
++assign line_buffer_out = line_buffer[line_buffer_addr];
++
++reg [2:0]   state = 0;
++parameter   STATE_START = 3'd0;
++parameter   STATE_WAIT_START_DECODING = 3'd1;
++parameter   STATE_FETCH_ROM_WORDS = 3'd3;
++parameter   STATE_COPY_ROM_WORDS = 3'd4;
++parameter   STATE_WAIT_COPY_PIXEL = 3'd5;
++parameter   STATE_COPY_PIXEL = 3'd6;
++parameter   STATE_FINISHED = 3'd7;
++
++reg [15:0]  rom_words [3:0];
++reg  [1:0]  rom_words_index;
++reg  [9:0]  tile_count; // number of tile processed 
++reg  [3:0]  pix_index;
++reg  [7:0]  previous_line_number;
++reg  [7:0]  line_buffer_index;
++
++wire [3:0]  color;
++wire [11:0] rom_index; //0xFFF ()4096 tile possible
++wire [15:0] plane1, plane2, plane3, plane4;
++
++assign plane1[15:0] = {rom_words[3][15:12], rom_words[2][15:12], rom_words[1][15:12], rom_words[0][15:12]};
++assign plane2[15:0] = {rom_words[3][11:8], rom_words[2][11:8], rom_words[1][11:8], rom_words[0][11:8]};
++assign plane3[15:0] = {rom_words[3][7:4], rom_words[2][7:4], rom_words[1][7:4], rom_words[0][7:4]};
++assign plane4[15:0] = {rom_words[3][3:0], rom_words[2][3:0], rom_words[1][3:0], rom_words[0][3:0]};
++
++assign rom_index[11:0] = ram_out[11:0];
++assign color[3:0] = ram_out[15:12];
++
++always @(posedge clk, posedge rst) begin
++    if (rst) begin
++      tile_count <= 0;
++      rom_words[0] <= 16'b0;
++      rom_words[1] <= 16'b0;
++      rom_words[2] <= 16'b0;
++      rom_words[3] <= 16'b0;
++      rom_words_index <= 2'b0;
++      tile_count <= 10'b0; // number of tile processed 
++      pix_index <= 4'b0;
++      previous_line_number <= 8'b0;
++      line_buffer_index <= 8'b0;
++      state <= STATE_START;
++      end
++    else begin
++    case (state)
++      STATE_START : begin 
++         tile_count <= 0;
++         rom_words[0] <= 16'b0;
++         rom_words[1] <= 16'b0;
++         rom_words[2] <= 16'b0;
++         rom_words[3] <= 16'b0;
++         rom_words_index <= 2'b0;
++         pix_index <= 4'b0;
++
++         scroll_x_latch <= scroll_x;
++         scroll_y_latch <= scroll_y;
++ 
++         previous_line_number <= line_number;
++         ram_addr[10:1] <=  (({2'b0, line_number}+{1'b0,scroll_y})/10'd16)*10'd32 + ((({1'b0, scroll_x[8:0]} / 10'd16) + tile_count) %10'd32);
++         rom_words_index <= 0;
++         line_buffer_index <= 0;
++         state <= STATE_WAIT_START_DECODING;
++      end      
++
++      STATE_WAIT_START_DECODING: begin
++           state <= STATE_FETCH_ROM_WORDS;
++      end  
++
++      STATE_FETCH_ROM_WORDS : begin
++        //we need to get the first word (even)
++        //then the odd word that follow
++        //then an even word at +16 words 
++        //then an odd words at +16 words
++        if (rom_words_index <= 1)
++          gfx_rom_addr[18:1] <= rom_index[11:0]*18'd64 + ((({10'b0,line_number}+{9'b0,scroll_y_latch})%18'd16)*18'd2) + ({16'b0, rom_words_index});
++        else
++          gfx_rom_addr[18:1] <= rom_index[11:0]*12'd64 + ((({10'b0, line_number}+{9'b0,scroll_y_latch})%18'd16)*18'd2) + ({16'b0, rom_words_index}%18'd2) + 18'd32;
++        gfx_rom_cs <= 1'b1; 
++        state <=  STATE_COPY_ROM_WORDS;
++      end 
++
++      STATE_COPY_ROM_WORDS : begin 
++        if (gfx_rom_ok)  begin
++           rom_words[rom_words_index] <= gfx_rom_data[15:0];
++           gfx_rom_cs <= 1'b0;
++           if (rom_words_index < 3) begin
++             state <= STATE_FETCH_ROM_WORDS;
++             rom_words_index <= rom_words_index + 2'd1; 
++             end
++           else begin
++             rom_words_index <= 2'd0;
++             tile_count <= tile_count + 10'b1;
++             if ((line_buffer_index + scroll_x_latch) % 9'd16 != 9'b0) begin
++               pix_index <= scroll_x_latch[3:0];   
++               end
++             else
++               pix_index <= 0; 
++               state <= STATE_WAIT_COPY_PIXEL; 
++             end
++           end
++      end
++
++      STATE_WAIT_COPY_PIXEL: begin
++        state <= STATE_COPY_PIXEL;
++      end
++
++      STATE_COPY_PIXEL : begin
++        if ({plane1[pix_index],plane2[pix_index],plane3[pix_index],plane4[pix_index]}  != 'hf) begin
++          line_buffer[line_buffer_index] <= {color[3:0],{plane1[pix_index],plane2[pix_index],plane3[pix_index],plane4[pix_index]}};
++          end
++        else
++          line_buffer[line_buffer_index] <= 'hf;
++        line_buffer_index <= line_buffer_index + 8'b1;
++       
++        if ((line_buffer_index + 8'b1) >= 256)
++          state <= STATE_FINISHED;
++        else if (pix_index <= 14) begin
++          pix_index <= pix_index + 4'd1;
++          state <= STATE_WAIT_COPY_PIXEL;
++          end              
++        else begin
++          ram_addr <=  (({2'b0,line_number}+{1'b0,scroll_y_latch})/10'd16)*10'd32  + ( (({1'b0,scroll_x_latch[8:0]} / 10'd16) + tile_count) %10'd32);
++          rom_words_index <= 0;
++          state <= STATE_WAIT_START_DECODING;
++          end
++      end
++     
++      STATE_FINISHED: begin
++        if (previous_line_number != line_number)
++          state <= STATE_START;
++        tile_count <= 10'd0;
++        previous_line_number <= line_number;
++      end
++     
++      default :
++        state <= STATE_FINISHED;
++
++    endcase
++  end
++end
++
++endmodule
+diff --git a/cores/toki/hdl/video.v b/cores/toki/hdl/video.v
+new file mode 100644
+index 000000000..266bbabf8
+--- /dev/null
++++ b/cores/toki/hdl/video.v
+@@ -0,0 +1,264 @@
++////////// VIDEO ////////////////////////////////////////////
++//
++// - video synchronization (hsync, vsync, vblank, hblank)
++// - char, bg1, bg2, sprite drawing  
++// - char, bg1, bg2, sprite mixing & output 
++//
++module toki_video(
++  input             rst,
++
++  // Clock
++  input             clk,
++  input             pxl_cen,
++  input             pxl2_cen,
++
++  // Video out
++  input       [3:0] gfx_en, // debug : graphical layer enable
++
++  output            hsync,
++  output            vsync, 
++  output            hblank, 
++  output            vblank,
++  output      [8:0] hpos,
++  output      [8:0] vpos, 
++
++  // RGB out
++  output [3:0]      r,
++  output [3:0]      g,
++  output [3:0]      b,
++
++  // Shared video RAM
++  output reg [10:1] palette_addr,
++  input      [15:0] palette_out,
++
++  output     [10:1] vram_addr,
++  input      [15:0] vram_out,
++
++  output     [10:1] bg1_addr,
++  input      [15:0] bg1_out,
++
++  output     [10:1] bg2_addr,
++  input      [15:0] bg2_out,
++
++  output     [10:1] sprite_addr,
++  input      [15:0] sprite_out,
++
++  // ROM data
++  input      [15:0] gfx1_rom_data,
++  input             gfx1_rom_ok,
++  output     [16:1] gfx1_rom_addr,
++  output            gfx1_rom_cs,
++
++  input      [15:0] gfx2_rom_data,
++  input             gfx2_rom_ok,
++  output     [19:1] gfx2_rom_addr,
++  output            gfx2_rom_cs,
++
++  input      [15:0] gfx3_rom_data,
++  input             gfx3_rom_ok,
++  output     [18:1] gfx3_rom_addr,
++  output            gfx3_rom_cs,
++
++  input      [15:0] gfx4_rom_data,
++  input             gfx4_rom_ok,
++  output     [18:1] gfx4_rom_addr,
++  output            gfx4_rom_cs,
++
++  // Scroll latch
++  input      [8:0]  bg1_scroll_x,
++  input      [8:0]  bg1_scroll_y,
++  input      [8:0]  bg2_scroll_x,
++  input      [8:0]  bg2_scroll_y,
++  input             bg_order
++);
++
++////////// VIDEO SYNC /////////////
++//
++wire display_on;
++
++hvsync u_hvsync(
++  .clk(clk),
++  .pxl_cen(pxl_cen),
++
++  .hsync(hsync),
++  .vsync(vsync),
++  .hblank(hblank),
++  .vblank(vblank),
++
++  .display_on(display_on),
++
++  .hpos(hpos),
++  .vpos(vpos)
++);
++
++///////// CHAR DRAWING //////////
++//
++// char : 8x8 tile 
++//
++parameter VRAM_PALETTE_OFFSET = 10'h100;
++
++wire       vram_used;
++wire [7:0] vram_line_buffer_out;
++reg  [7:0] vram_line_buffer_addr;
++
++scan_char_ram vram_scan_char_ram_u(
++  .clk(clk),
++  .rst(rst),
++
++  .line_number(line_number),
++
++  .ram_addr(vram_addr),
++  .ram_out(vram_out),
++
++  .gfx_rom_data(gfx1_rom_data),
++  .gfx_rom_ok(gfx1_rom_ok),
++  .gfx_rom_addr(gfx1_rom_addr),
++  .gfx_rom_cs(gfx1_rom_cs),
++
++  .line_buffer_addr(vram_line_buffer_addr),
++  .line_buffer_out(vram_line_buffer_out)
++);
++
++///////// BG1 DRAWING /////////////////
++//
++// background 1 : 16x16 tile 
++//
++parameter BG1_PALETTE_OFFSET = 10'h200;
++
++wire       bg1_used;
++wire [7:0] bg1_line_buffer_out;
++reg  [7:0] bg1_line_buffer_addr = 0;
++
++scan_tile_ram bg1_scan_tile_ram_u(
++  .clk(clk),
++  .rst(rst),
++
++  .line_number(line_number),
++
++  .ram_addr(bg1_addr),
++  .ram_out(bg1_out),
++
++  .gfx_rom_data(gfx3_rom_data),
++  .gfx_rom_ok(gfx3_rom_ok),
++  .gfx_rom_addr(gfx3_rom_addr),
++  .gfx_rom_cs(gfx3_rom_cs),
++
++  .line_buffer_addr(bg1_line_buffer_addr),
++  .line_buffer_out(bg1_line_buffer_out),
++
++  .scroll_x(bg1_scroll_x),
++  .scroll_y(bg1_scroll_y)
++);
++
++///////// BG2 DRAWING /////////////////
++//
++// background 2 : 16x16 tile 
++//
++parameter BG2_PALETTE_OFFSET = 10'h300;
++
++wire        bg2_used;
++wire [7:0]  bg2_line_buffer_out;
++reg  [7:0]  bg2_line_buffer_addr = 0;
++
++scan_tile_ram bg2_scan_tile_ram_u(
++  .clk(clk),
++  .rst(rst),
++
++  .line_number(line_number),
++
++  .ram_addr(bg2_addr),
++  .ram_out(bg2_out),
++
++  .gfx_rom_data(gfx4_rom_data),
++  .gfx_rom_ok(gfx4_rom_ok),
++  .gfx_rom_addr(gfx4_rom_addr),
++  .gfx_rom_cs(gfx4_rom_cs),
++
++  .line_buffer_addr(bg2_line_buffer_addr),
++  .line_buffer_out(bg2_line_buffer_out),
++
++  .scroll_x(bg2_scroll_x),
++  .scroll_y(bg2_scroll_y)
++);
++
++///////// SPRITE DRAWING /////////////////
++//
++// sprite : 16x16 tile 
++//
++wire        sprite_used;
++wire  [7:0] sprite_line_buffer_out;
++reg   [7:0] sprite_line_buffer_addr = 0;
++
++scan_sprite_ram scan_sprite_ram_u(
++  .clk(clk),
++  .rst(rst),
++
++  .line_number(line_number),
++
++  .ram_addr(sprite_addr),
++  .ram_out(sprite_out),
++
++  .gfx_rom_data(gfx2_rom_data),
++  .gfx_rom_ok(gfx2_rom_ok),
++  .gfx_rom_addr(gfx2_rom_addr),
++  .gfx_rom_cs(gfx2_rom_cs),
++
++  .line_buffer_addr(sprite_line_buffer_addr),
++  .line_buffer_out(sprite_line_buffer_out),
++  .used_out(sprite_used)
++);
++
++///////// COLOR MIX & OUTPUT ////////////////////////////
++//
++// select the right pixel from the different line buffer 
++// go from top layer (char) to background layer
++// check background order
++// check if pixel is transparent
++// get first non-transparent pixel 
++// get pixel final color from the palette
++// output the pixel to the screen
++//
++reg [7:0] line_number;
++
++always @(posedge hblank) begin
++  if (vpos + 1 > 15  && vpos + 1 < 240)
++    line_number <= vpos[7:0] + 8'd1;
++end
++
++assign r = palette_out[3:0];
++assign g = palette_out[7:4];
++assign b = palette_out[11:8];
++
++always @(posedge clk) begin
++  vram_line_buffer_addr <= hpos[7:0] - 8'b1;
++  bg1_line_buffer_addr <= hpos[7:0] - 8'b1;
++  bg2_line_buffer_addr <= hpos[7:0] - 8'b1;
++  sprite_line_buffer_addr <= hpos[7:0] - 8'b1;
++
++  if (display_on) begin
++    if (vram_line_buffer_out[3:0] != 'hf)
++      palette_addr[10:1] <= {2'd0, vram_line_buffer_out} + VRAM_PALETTE_OFFSET;
++    else if (sprite_used == 1'b1)
++      palette_addr[10:1] <= {2'd0, sprite_line_buffer_out}; 
++    else begin
++      if (bg_order == 1'b0) begin
++        if (bg1_line_buffer_out[3:0] != 'hf) 
++          palette_addr[10:1] <= {2'd0, bg1_line_buffer_out} + BG1_PALETTE_OFFSET;
++        else if (bg2_line_buffer_out[3:0] != 'hf) 
++          palette_addr[10:1] <= {2'd0, bg2_line_buffer_out} + BG2_PALETTE_OFFSET;
++        else
++          palette_addr[10:1] <= 'h3ff;
++        end
++      else begin
++        if (bg2_line_buffer_out[3:0] != 'hf) 
++          palette_addr[10:1] <= {2'd0, bg2_line_buffer_out} + BG2_PALETTE_OFFSET;
++        else if (bg1_line_buffer_out[3:0] != 'hf)
++          palette_addr[10:1] <= {2'd0, bg1_line_buffer_out} + BG1_PALETTE_OFFSET;
++        else
++          palette_addr[10:1] <= 'h3ff;
++        end
++     end
++  end
++end
++
++endmodule
+diff --git a/cores/toki/hdl/z80_cs.v b/cores/toki/hdl/z80_cs.v
+new file mode 100644
+index 000000000..1ffa086af
+--- /dev/null
++++ b/cores/toki/hdl/z80_cs.v
+@@ -0,0 +1,71 @@
++////////// Z80 CHIP SELECT /////////////////////////////////
++//
++//
++module z80_cs 
++(
++    input [15:0]      z80_addr,
++    input             z80_wr_n,
++    input             z80_rd_n,
++
++    output reg        z80_rom_cs,
++    output reg        bank_rom_cs,
++    output reg        z80_ram_cs,
++
++    output reg        ym_cs_0,
++    output reg        ym_cs_1,
++
++    output reg        m68k_latch0_cs,
++    output reg        m68k_latch1_cs,
++
++    output reg        main_data_pending_cs,
++    output reg        read_coin_cs,
++
++    output reg        ym_wr,
++    output reg        oki_wr,
++    output reg        oki_rd
++);
++
++///////// z80 bus mapping  ////////////////////
++//
++// 0x0000, 0x1fff : rom (decrypted by sei80bu)
++// 0x2000, 0x27ff : ram (2048) 8bits SRAM (rw)
++// 0x4000, 0x4000 : pending data for 68k (w)
++// 0x4001, 0x4001 : irq clear (wo) ?
++// 0x4002, 0x4002 : rst10 ack (wo) ?
++// 0x4003, 0x4003 : rst18 ack (wo) ?
++// 0x4007, 0x4007 : switch bank (wo) 
++// 0x4008, 0x4009 : ym3812 read / write  
++// 0x4010, 0x4011 : 68k sound latch (ro) 
++// 0x4012, 0x4012 : 68k data pending (ro) 
++// 0x4013, 0x4013 : coin inserted (ro) 
++// 0x4018, 0x4019 : z80 sound latch (wo)
++// 0x401b, 0x401b : write coin inserted ? (wo) 
++// 0x6000, 0x6000 : okim6295 (rw)
++// 0x8000, 0xffff : bank rom data start (ro)
++// if bank switch :
++// 0x0000, 0x8000 : bank rom data (starting at 0x2000 from bank file) 
++//
++
++always @(*) begin
++    // RAM & ROM
++    z80_rom_cs = (z80_addr[15:0] < 16'h2000);
++    z80_ram_cs = (z80_addr[15:0] >= 16'h2000 && z80_addr[15:0] < 16'h2800);
++ 
++    // IO
++    ym_cs_0 =  (z80_addr[15:0] == 16'h4008);
++    ym_cs_1 =  (z80_addr[15:0] == 16'h4009);
++    m68k_latch0_cs =  (z80_addr[15:0] == 16'h4010);
++    m68k_latch1_cs =  (z80_addr[15:0] == 16'h4011);
++    main_data_pending_cs =   (z80_addr[15:0] == 16'h4012);
++    read_coin_cs =   (z80_addr[15:0] == 16'h4013);
++
++    oki_rd = ((z80_addr[15:0] == 16'h6000) && (z80_rd_n == 1'b0));
++    oki_wr = ((z80_addr[15:0] == 16'h6000) && (z80_wr_n == 1'b0));
++
++    bank_rom_cs = (z80_addr[15:0] >= 16'h8000);
++    ym_wr = ((z80_addr[15:0] == 16'h4008 || z80_addr[15:0] == 16'h4009)  && (z80_wr_n == 1'b0));
++end 
++
++endmodule
++
++
+diff --git a/cores/toki/ver/ram2gfx/ram2gfx.py b/cores/toki/ver/ram2gfx/ram2gfx.py
+new file mode 100644
+index 000000000..af072bfe1
+--- /dev/null
++++ b/cores/toki/ver/ram2gfx/ram2gfx.py
+@@ -0,0 +1,281 @@
++#!/usr/bin/python
++
++# Toki verilog
++# Copyright (C) 2024 Solal Jacob
++# This program is free software: you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation, either version 3 of the License, or
++# (at your option) any later version.
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++# Convert toki memory dump to image
++import sys
++import struct
++from PIL import Image
++import matplotlib.pyplot as plt
++
++
++def read_file(file_name, path=None):
++    if path:
++        f = open(path + "/" + file_name, 'rb')
++    else:
++        f = open(file_name, 'rb')
++    buff = f.read()
++    return buff
++
++
++def pack_plan(plans, size=8, flip_x=None):
++    packed = []
++    for x in range(0, size):
++        for y in range(0, size):
++            bin_string = f"{plans[0][x][y]}{plans[1][x][y]}{plans[2][x][y]}{plans[3][x][y]}"
++            if flip_x:
++                packed.append(int(bin_string[::-1], 2))
++            else:
++                packed.append(int(bin_string, 2))
++    return packed
++
++
++def palette_to_rgb(palette, index, offset):
++    # 2048/2 => 1024 entry
++    # xxxxBBBBGGGGRRRR
++    # palette color are in B G R 444, PIL in RGB
++    xb = palette[index*2 + offset]  # 8888
++    gr = palette[index*2+1 + offset]
++
++    blue = (xb & 0xf) << 4  # <<4 == *16 to go from 4 to 8 bits
++    red = (gr & 0xf) << 4  #
++    green = (gr >> 4) << 4  # change for a mask we remove only left nibble
++
++    return (red, green, blue)
++
++
++def put_pixel(img, palette,  x_pos, y_pos, color, char, palette_offset, x_size=8, y_size=8, rom_index=None):
++    for y in range(0, y_size):
++        for x in range(0, x_size):
++            try:
++                palette_index = ((color << 4) ^ char[(y*y_size)+x])
++                converted_color = palette_to_rgb(
++                    palette, palette_index, palette_offset)
++
++                if converted_color != (0x00, 0x00, 0x00):
++                    img.putpixel((x_pos + x, y_pos + y), converted_color)
++            except Exception as e:
++                print(f'{e} put pixel at {x_pos +x} {y_pos+y}')
++
++
++def scan_ram(img, ram, gfx_rom, palette, palette_offset, tile_size):
++    for screen_index in range(int(len(ram)/2)):
++        tile_info = ram[screen_index*2:(screen_index*2)+2]
++        if tile_info != b'\x00\x00':
++            # 32*8 => 256  (32,32) 1024 tile per screen
++            col = int(screen_index % 32)
++            row = int(screen_index / 32)  # 32*8 => 256
++            x_pos = col*tile_size  # 8 or 16
++            y_pos = row*tile_size  # 8 or 16
++            rom_index = ((tile_info[0] & 0xf) << 8) + \
++                tile_info[1]  # 4096 tile in rom
++            color = (tile_info[0] >> 4)
++
++            if tile_size == 8:
++                bits_plans = char_bitplanes(gfx_rom, rom_index)
++            else:
++                bits_plans = tile_bitplanes(gfx_rom, rom_index)
++            packed = pack_plan(bits_plans, size=tile_size)
++            put_pixel(img, palette, x_pos, y_pos, color, packed, palette_offset,
++                      x_size=tile_size, y_size=tile_size, rom_index=rom_index)
++
++
++###################
++#
++# DECODE CHAR
++#
++def char_bitplanes(gfx_rom, rom_index):
++    # 8 bits of a bitplane (or a line of a bitplane) is composed of 1 low nibbles from odd bytes and 1 for even bytes
++    # the second plan is composed of 1 high nibles from odd and 1 high nibles from even bytes
++    low_nibbles_p1 = []
++    high_nibbles_p2 = []
++
++    # first 16 bytes are in first rom
++    for x in range(0, 32, 2):
++        # odd bytes
++        odd = gfx_rom[(rom_index*16+x)]
++        # even bytes
++        even = gfx_rom[(rom_index*16)+x+1]
++
++        # divide bytes in high and low nibbles
++        low_nibbles_p1.append(odd & 0x0f)   # low nibble are used in plan 1
++        low_nibbles_p1.append(even & 0x0f)  # low nibble are used in plan 1
++
++        high_nibbles_p2.append(odd >> 4)   # high nible are used in plan 2
++        high_nibbles_p2.append(even >> 4)  # high nibble are used in plan 2
++
++    # second 16 bytes are in second rom
++    # or rom + 0x10_000 if concatened
++    low_nibbles_p3 = []
++    high_nibbles_p4 = []
++    for x in range(0, 32, 2):
++        # odd bytes
++        odd = gfx_rom[(rom_index*16+x+0x10000)]
++        # even bytes
++        even = gfx_rom[(rom_index*16)+x+1+0x10000]
++
++        # divide bytes in high and low nibbles
++        low_nibbles_p3.append(odd & 0x0f)  # low nibbles are used in plan 3
++        low_nibbles_p3.append(even & 0x0f)
++
++        high_nibbles_p4.append(odd >> 4)   # high nibble are used in plan 4
++        high_nibbles_p4.append(even >> 4)
++
++    plans = []
++
++    for nibbles in [low_nibbles_p1, high_nibbles_p2, low_nibbles_p3, high_nibbles_p4]:
++        plan = []
++        for x in range(0, int(len(nibbles)/2), 2):
++            odd_nibble = nibbles[x]
++            even_nibble = nibbles[x+1]
++
++            line = ""
++            line += f"{odd_nibble:04b}"[::-1]   # odd
++            line += f"{even_nibble:04b}"[::-1]  # even
++            plan.append(line)
++        plans.append(plan)
++
++    return ((plans[3], plans[2], plans[1], plans[0],))
++
++################
++#
++# Tile Bitplanes
++#
++def tile_bitplanes(gfx_rom, rom_index):
++    # each plan is composed of :
++    # plan1 : odd bytes high nibbles
++    # plan2 : odd bytes low nibbles
++    # plan3 : even bytes high nibbles
++    # plan4 : even bytes low nibbles
++    odd_h_nibbles = []  # plan 1
++    odd_l_nibbles = []  # plan 2
++    even_h_nibbles = []  # plan 3
++    even_l_nibbles = []  # plan 4
++    for x in range(0, 128, 2):
++        # odd bytes
++        odd = gfx_rom[(rom_index*128)+x]
++        # divide bytes in high and low nibbles
++        odd_h_nibbles.append(odd >> 4)
++        odd_l_nibbles.append(odd & 0x0f)
++
++        # even bytes
++        even = gfx_rom[(rom_index*128)+x+1]
++        even_h_nibbles.append(even >> 4)
++        even_l_nibbles.append(even & 0x0f)
++
++    # we need to take two odd nibles then two odd nibles for the next group of 4+4+4+4*16 bits
++    # or 4+4*16 if we count nibbles only
++    plans = []
++    for nibbles in [odd_h_nibbles, odd_l_nibbles, even_h_nibbles, even_l_nibbles]:
++        plan = []
++        for x in range(0, int(len(nibbles)/2), 2):
++            line = ""
++            nibble0 = nibbles[x]
++            nibble1 = nibbles[x+1]
++            nibble2 = nibbles[x+32]  # second nibbles is later in memory
++            nibble3 = nibbles[x+32+1]
++            line += f"{nibble0:04b}"[::-1] + f"{nibble1:04b}"[::-1]
++            line += f"{nibble2:04b}"[::-1] + f"{nibble3:04b}"[::-1]
++            plan.append(line)
++        plans.append(plan)
++
++    if rom_index == 0xfbb:
++        print(
++            f"{(plans[2], plans[3], plans[0], plans[1],)}".replace(",", "\n"))
++
++    return ((plans[2], plans[3], plans[0], plans[1],))
++
++################
++#
++# DECODE SPRITE
++#
++def scan_sprite(img, ram, gfx_rom, palette, palette_offset, tile_size=16):
++    for sprite_index in range(int(len(ram)/8)-1, -1, -1):
++        sp_bytes = ram[sprite_index*8:(sprite_index*8)+8]
++        sprite_word = struct.unpack(">HHHH", sp_bytes)
++        # f000 0000 f000 0000     entry not yet used
++        # ffff ???? ???? ????     sprite marked as dead
++        # if ((sprite_word[2] != 0xf000) && (sprite_word[0] != 0xffff))
++        # if dword_0[15] == '1': #?
++        # continue
++        if sprite_word[2] == 0xf000 or sprite_word[0] == 0xffff:
++            continue
++
++        xoffs = sprite_word[0] & 0xf0
++        x = (sprite_word[2] + xoffs) & 0x1f
++        if x > 256:
++            x -= 512
++
++        yoffs = (sprite_word[0] & 0xf) << 4
++        y = (sprite_word[3] + yoffs) & 0x1ff
++        if y > 256:
++            y -= 512
++
++        color = sprite_word[1] >> 12
++        flip_x = sprite_word[0] & 0x100
++        rom_index = (sprite_word[1] & 0xfff) + ((sprite_word[2] & 0x8000) >> 3)
++
++        bitplanes = tile_bitplanes(gfx_rom, rom_index)
++
++        packed = pack_plan(bitplanes, size=tile_size,
++                           flip_x=flip_x)  # flip_x ?
++
++        put_pixel(img, palette, x, y, color, packed, palette_offset,
++                  x_size=16, y_size=16, rom_index=rom_index)
++
++
++##########
++#
++# INIT
++#
++GFX_1_START = 0x60000
++GFX_2_START = 0x80000
++GFX_3_START = 0x180000
++GFX_4_START = 0x200000
++
++
++def ram2gfx(path, show=False):
++    # toki concatened roms in mra order
++    rom = read_file('rom.bin')
++    gfx1_rom = rom[GFX_1_START:GFX_2_START]
++    gfx2_rom = rom[GFX_2_START:GFX_3_START]
++    gfx3_rom = rom[GFX_3_START:GFX_4_START]
++    gfx4_rom = rom[GFX_4_START:GFX_4_START+0x80000]
++
++    # memory dump of the different video ram chipset
++    bg1_ram = read_file('bg1_ram.bin', path)
++    bg2_ram = read_file('bg2_ram.bin', path)
++    palette_ram = read_file('palette_ram.bin', path)
++    # scroll_ram = read_file('scroll_ram.bin', path)
++    sprite_ram = read_file('sprite_ram.bin', path)
++    vram_ram = read_file('vram_ram.bin', path)
++
++    img = Image.new('RGB', (512, 512))
++    scan_ram(img, bg1_ram, gfx3_rom, palette_ram, 0x400, tile_size=16)
++    scan_ram(img, bg2_ram, gfx4_rom, palette_ram, 0x600, tile_size=16)
++    scan_sprite(img, sprite_ram, gfx2_rom, palette_ram, 0x0)
++    scan_ram(img, vram_ram, gfx1_rom, palette_ram, 0x200, tile_size=8)
++
++    img.save(f'{path}/screen.png')
++    if show:
++        plt.imshow(img)
++        plt.show()
++
++
++if __name__ == "__main__":
++    if len(sys.argv) == 2:
++        path = sys.argv[1]
++        ram2gfx(path)
++    else:
++        print(sys.argv[0] + " memory_dumps_path")
+
+From e09104d9a10cf5ef4ea73ce8f7f8a342d5e5c838 Mon Sep 17 00:00:00 2001
+From: Solal Jacob <tapir42@protonmail.com>
+Date: Mon, 15 Apr 2024 23:46:53 +0200
+Subject: [PATCH 2/6] Fixes jotego/jtcores#604
+
+Added missing mame2mra.toml file
+---
+ cores/toki/cfg/mame2mra.toml | 29 ++++++++++++++++++++++++++++-
+ 1 file changed, 28 insertions(+), 1 deletion(-)
+
+diff --git a/cores/toki/cfg/mame2mra.toml b/cores/toki/cfg/mame2mra.toml
+index ef2988ece..6e5c32881 100644
+--- a/cores/toki/cfg/mame2mra.toml
++++ b/cores/toki/cfg/mame2mra.toml
+@@ -1,2 +1,29 @@
++[global]
++mraauthor=["Solal Jacob"]
++author="Solal Jacob"
++webpage="https://ko-fi.com/solalretrogaming"
++twitter="@s_on_vg"
++
+ [parse]
+-sourcefile=["toki.cpp"]
+\ No newline at end of file
++sourcefile=["toki.cpp"]
++skip.Setnames=["tokip"]
++skip.bootlegs=true
++
++[buttons]
++names = [
++    { names="Shoot,Jump" }
++]
++
++[ROM]
++regions=[
++    { name="maincpu", no_offset=true, width=16, reverse=true },
++    { name="gfx1", no_offset=true },
++    { name="gfx2", no_offset=true  },
++    { name="gfx3", no_offset=true  },
++    { name="gfx4", no_offset=true  },
++    { name="audiocpu", no_offset=true },
++    { name="oki", no_offset=true },
++    { name="proms", no_offset=true },
++]
++
++order=[ "maincpu", "gfx1", "gfx2", "gfx3", "gfx4", "audiocpu", "oki", "proms" ]
+
+From 70b2e441b8bcb749b7d02f60727b3fccb003da01 Mon Sep 17 00:00:00 2001
+From: Solal Jacob <tapir42@protonmail.com>
+Date: Thu, 18 Apr 2024 12:21:21 +0200
+Subject: [PATCH 3/6] Fixes jotego/jtcores#605
+
+Fix hold & setup slack on pocket
+---
+ cores/toki/hdl/sound.v | 12 +++++++++---
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/cores/toki/hdl/sound.v b/cores/toki/hdl/sound.v
+index 52ba2d474..10166cfdc 100644
+--- a/cores/toki/hdl/sound.v
++++ b/cores/toki/hdl/sound.v
+@@ -407,14 +407,20 @@ jtopl2   u_YM3812(
+ //2: pcmgain <= 8'h0c ;   // 75%
+ //3: pcmgain <= 8'h08 ;   // 50%
+ //
+-wire signed [7:0] fx_volume = ~enable_psg ? 8'h00 : 
++reg [7:0] fx_volume;
++reg [7:0] fm_volume;
++
++always @(posedge clk48)  begin //posedge clk ?
++  if (clk48) begin
++   fm_volume <=  ~enable_fm ? 8'h00 : 8'h10; 
++   fx_volume <=  ~enable_psg ? 8'h00 : 
+                         (fxlevel == 2'h0) ? 8'h08 : 
+                         (fxlevel == 2'h1) ? 8'h0c : 
+                         (fxlevel == 2'h2) ? 8'h10 : 
+                                             8'h20; 
++   end
++end
+ 
+-wire signed [7:0] fm_volume = ~enable_fm ? 8'h00 :
+-                                           8'h10;
+ jtframe_mixer #(.W1(14)) u_mixer(
+     .rst(rst),
+     .clk(clk48),
+
+From 18fa8dcec2d4e4e704a0b6ce0c9c9f099787a68f Mon Sep 17 00:00:00 2001
+From: Solal Jacob <jacob.solal@gmail.com>
+Date: Fri, 19 Apr 2024 16:14:33 +0200
+Subject: [PATCH 4/6] Fixes vertrex/Arcade-JujuDensetsu_MiSTer#4
+
+Add read from video ram from main cpu to fixes display of names in high
+scores board
+---
+ cores/toki/hdl/main.v | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/cores/toki/hdl/main.v b/cores/toki/hdl/main.v
+index 379acb13d..392851f18 100644
+--- a/cores/toki/hdl/main.v
++++ b/cores/toki/hdl/main.v
+@@ -322,7 +322,8 @@ always @(posedge clk, posedge rst) begin
+       cpu_din <= cpu_rom_cs ? cpu_rom_data[15:0] :  
+                  ram_cs     ? ram_do[15:0] :
+                  palette_cs ? palette_do[15:0] :
+-                 sprite_cs  ? sprite_do[15:0] :  
++                 sprite_cs  ? sprite_do[15:0] : 
++                 vram_cs    ? vram_do[15:0] : 
+                  dsw_cs     ? dipsw[15:0] : 
+                  inputs_cs  ? {1'b1,1'b1,p2_button2,p2_button1,p2_right,p2_left,p2_down,p2_up,
+                                1'b1,1'b1,p1_button2,p1_button1,p1_right,p1_left,p1_down,p1_up} :
+@@ -440,13 +441,15 @@ dual_ram_buffer16 #(.W(10)) u_palette_ram(
+ // because during dipswitch (only) vram is reset at each frame
+ // that make cpu write to vram longer than a vblank period
+ //
++wire [15:0] vram_do;
++
+ dual_ram_buffer16 #(.W(10)) u_vram_ram(
+   .clk(clk),
+   .trigger(vblank),
+   .we({vram_cs && !cpu_wr && !cpu_uds_n , vram_cs && !cpu_wr && !cpu_lds_n }),
+   .addr_in(cpu_a[10:1]), 
+   .data(cpu_dout[15:0]),
+-  .q_in(),
++  .q_in(vram_do),
+ 
+   .addr_out(vram_addr[10:1]),
+   .q(vram_out[15:0])
+
+From 82f4d67558875bad7823b2cf5b134fdf5ee98b35 Mon Sep 17 00:00:00 2001
+From: Solal Jacob <jacob.solal@gmail.com>
+Date: Mon, 22 Apr 2024 13:02:29 +0200
+Subject: [PATCH 5/6] Fixes jotego/jtcores#605
+
+Fix hold & setup slack on pocket @96mhz
+---
+ cores/toki/hdl/sprite.v | 105 +++++++++-------------------------------
+ 1 file changed, 23 insertions(+), 82 deletions(-)
+
+diff --git a/cores/toki/hdl/sprite.v b/cores/toki/hdl/sprite.v
+index bfe1234da..7dc1afcd0 100644
+--- a/cores/toki/hdl/sprite.v
++++ b/cores/toki/hdl/sprite.v
+@@ -23,10 +23,10 @@ module scan_sprite_ram(
+   output                used_out
+ );
+ 
+-reg  [255:0] used = 256'b0;
++(* ramstyle = "no_rw_check" *)reg  [255:0] used = 256'b0;
+ assign used_out = used[line_buffer_addr];
+ 
+-reg [7:0] line_buffer [255:0];
++(* ramstyle = "no_rw_check" *)reg [7:0] line_buffer [255:0];
+ assign line_buffer_out = line_buffer[line_buffer_addr];
+ 
+ /// STATE MACHINE
+@@ -40,7 +40,6 @@ parameter STATE_FETCH_ROM_WORDS = 4'd5;
+ parameter STATE_COPY_ROM_WORDS = 4'd6;
+ parameter STATE_COPY_PIXEL = 4'd7;
+ parameter STATE_FINISHED = 4'd8;
+-parameter STATE_WAIT = 4'd9;
+ 
+ reg  [7:0]  previous_line_number;
+ 
+@@ -64,64 +63,38 @@ assign plane2[15:0] = { rom_words[3][11:8],  rom_words[2][11:8],  rom_words[1][1
+ assign plane3[15:0] = {  rom_words[3][7:4],   rom_words[2][7:4],   rom_words[1][7:4],    rom_words[0][7:4]};
+ assign plane4[15:0] = {  rom_words[3][3:0],   rom_words[2][3:0],   rom_words[1][3:0],    rom_words[0][3:0]};
+ 
++wire [8:0]  line_buffer_index;
++assign line_buffer_index[8:0] = flip_x ?  x[8:0] + 8'd15 - {5'b0, pix_index} : 
++                                          x[8:0] + {5'b0, pix_index};
++
++wire [3:0]  plane_color;
++assign plane_color[3:0] = {plane1[pix_index], plane2[pix_index], plane3[pix_index], plane4[pix_index]};
++
+ always @(posedge clk, posedge rst) begin
+     if (rst) begin
+       previous_line_number <= 8'd0;
+       used  <= 256'b0;
+       flip_x <= 1'd0;
+-      color <= 4'd0;
+-      x <= 9'd0;
+-      y <= 9'd0;
+-  
+       pix_index <= 4'd0;
+       rom_index <= 13'd0;
+       rom_words_index <= 2'd0;
+-      rom_words[0] <= 16'b0;
+-      rom_words[1] <= 16'b0;
+-      rom_words[2] <= 16'b0;
+-      rom_words[3] <= 16'b0;
+       ram_words_index <= 2'b0;
+-      ram_words[0] <= 16'b0;
+-      ram_words[1] <= 16'b0;
+-      ram_words[2] <= 16'b0;
+-      ram_words[3] <= 16'b0;
+-      rom_words_index <= 2'd0;
+       ram_addr <= 10'h0;
+       state <= STATE_START;
+       end
+     else begin
+     case (state)
+       STATE_START : begin
+-        used  <= 256'b0;
+         previous_line_number <= line_number;
+         used[255:0] <= 256'b0;
+-        flip_x <= 1'd0;
+-        color <= 4'd0;
+-        x <= 9'd0;
+-        y <= 9'd0;
+         pix_index <= 4'd0;
+-
+         rom_index <= 13'd0;
+         rom_words_index <= 2'd0;
+-        rom_words[0] <= 16'b0;
+-        rom_words[1] <= 16'b0;
+-        rom_words[2] <= 16'b0;
+-        rom_words[3] <= 16'b0;
+         ram_words_index <= 2'b0;
+-        ram_words[0] <= 16'b0;
+-        ram_words[1] <= 16'b0;
+-        ram_words[2] <= 16'b0;
+-        ram_words[3] <= 16'b0;
+-        rom_words_index <= 2'd0;
+         ram_addr <= 10'h0;
+-        //wait 1 cycle, for ram fetch
+-        state <= STATE_WAIT;
++        state <= STATE_FETCH_RAM_WORDS;
+       end      
+ 
+-      STATE_WAIT : begin
+-        state <=  STATE_FETCH_RAM_WORDS;
+-      end
+-
+       STATE_FETCH_RAM_WORDS : begin
+          ram_words[ram_words_index] <= ram_out[15:0];
+          ram_addr <= ram_addr + 10'd1;
+@@ -191,53 +164,21 @@ always @(posedge clk, posedge rst) begin
+       end
+ 
+       STATE_COPY_PIXEL: begin
+-          if (!flip_x && x[8:0] + {5'b0, pix_index} > 9'd256) begin 
+-              if (pix_index < 15) begin
+-                pix_index <= pix_index + 4'd1;
+-                state <= STATE_COPY_PIXEL; 
+-                end 
+-              else 
+-                state <= STATE_FETCH_RAM_WORDS;
+-              end
+-          else if (flip_x && (x[8:0] + 9'd15 - {5'b0, pix_index} > 9'd256)) begin 
+-              if (4'd15 -pix_index >= 1) begin
+-                pix_index <= pix_index + 4'd1;
+-                state <= STATE_COPY_PIXEL; 
+-                end 
+-              else 
+-                state <= STATE_FETCH_RAM_WORDS;
+-              end
+-          else begin
+-            if ({plane1[pix_index],plane2[pix_index],plane3[pix_index],plane4[pix_index]} != 15) begin    
+-              if (flip_x) begin
+-                 if (x[8:0] + (9'd15 - {5'b0, pix_index[3:0]}) < 9'd256) begin 
+-                    if (used[x[7:0] + (8'd15 - {4'b0, pix_index})] == 1'b0) begin
+-                      line_buffer[x[7:0] + (8'd15 -  {4'b0, pix_index})] <= {color[3:0], {plane1[pix_index],plane2[pix_index],plane3[pix_index],plane4[pix_index]}};
+-                      used[x[7:0] + (8'd15 - {4'b0, pix_index})] <= 1'b1;
+-                    end
+-                  end
+-              end
+-              else begin
+-                if (x[8:0] + {5'b0, pix_index[3:0]} < 9'd256) begin 
+-                  if (used[x[7:0] + {4'b0, pix_index}] == 1'b0) begin
+-                    line_buffer[x[7:0] +  {4'b0, pix_index}] <= {color[3:0], {plane1[pix_index],plane2[pix_index],plane3[pix_index],plane4[pix_index]}};
+-                    used[x[7:0] + {4'b0, pix_index}] <= 1'b1;
+-                  end
+-                end
+-             end
+-          end
+-         
+-          if (pix_index < 15) begin
+-            pix_index <= pix_index + 4'd1;
+-            state <= STATE_COPY_PIXEL; end              
+-          else if (ram_addr == 'h3ff) begin
+-            state <= STATE_FINISHED; end
+-          else
+-            state <= STATE_FETCH_RAM_WORDS;
++        if ((line_buffer_index < 9'd256) && (plane_color != 15) && (used[line_buffer_index[7:0]] == 1'b0)) begin   
++          line_buffer[line_buffer_index[7:0]] <= {color[3:0], plane_color};
++          used[line_buffer_index[7:0]] <= 1'b1;
+           end
+ 
+-      end 
+-  
++        if (pix_index < 15) begin
++          pix_index <= pix_index + 4'd1;
++          state <= STATE_COPY_PIXEL; 
++          end              
++        else if (ram_addr == 'h3ff) 
++          state <= STATE_FINISHED; 
++        else
++          state <= STATE_FETCH_RAM_WORDS;
++      end
++
+       STATE_FINISHED: begin
+         ram_addr <= 10'h0;
+         if (previous_line_number != line_number)
+
+From 592b278096e087550e4edef6f7936ba1f4b9acec Mon Sep 17 00:00:00 2001
+From: Solal Jacob <jacob.solal@gmail.com>
+Date: Mon, 22 Apr 2024 18:45:56 +0200
+Subject: [PATCH 6/6] Fixes jotego/jtcores#606
+
+---
+ cores/toki/hdl/sei80bu.v | 30 +++++++++++++++++++-----------
+ cores/toki/hdl/sound.v   |  2 +-
+ 2 files changed, 20 insertions(+), 12 deletions(-)
+
+diff --git a/cores/toki/hdl/sei80bu.v b/cores/toki/hdl/sei80bu.v
+index fdeb4b00c..202a822e9 100644
+--- a/cores/toki/hdl/sei80bu.v
++++ b/cores/toki/hdl/sei80bu.v
+@@ -5,6 +5,7 @@
+ // decrypt rom opcode if m1 high or data if m1 low
+ //
+ module sei80bu(
++  input             clk,
+   input      [15:0] z80_rom_addr,
+   input       [7:0] z80_rom_data,
+   input             z80_rom_ok,
+@@ -13,53 +14,60 @@ module sei80bu(
+   input             z80_m1,
+ 
+   output reg  [7:0] decrypt_rom_data,
+-  output            decrypt_rom_ok
++  output reg        decrypt_rom_ok
+ );
+ 
+-assign decrypt_rom_ok = z80_rom_ok;
++//assign decrypt_rom_ok = z80_rom_ok;
+ 
+-always @(*) begin
++always @(posedge clk) begin
++  if (z80_rom_cs == 1'b1 && z80_rom_ok == 1'b1) begin
+     decrypt_rom_data[(z80_m1 == 1'b1 &&(z80_rom_addr[11] & ~z80_rom_addr[6])) ? 6 : 7]
+-                     = (z80_rom_addr[9] & z80_rom_addr[8])
++                     <= (z80_rom_addr[9] & z80_rom_addr[8])
+                          ? z80_rom_data[7] ^ 1'b1
+                          : z80_rom_data[7];
+ 
+     decrypt_rom_data[(z80_m1 == 1'b1 &&(z80_rom_addr[11] & ~z80_rom_addr[6])) ? 7 : 6]
+-                     =(z80_rom_addr[11] & z80_rom_addr[4] & z80_rom_addr[1])
++                     <=(z80_rom_addr[11] & z80_rom_addr[4] & z80_rom_addr[1])
+                        ? z80_rom_data[6] ^ 1'b1
+                        : z80_rom_data[6];
+ 
+     decrypt_rom_data[(z80_m1 == 1'b1 &&(z80_rom_addr[12] & z80_rom_addr[9])) ? 4 : 5]
+-                     = (z80_m1 == 1'b1 && (~z80_rom_addr[13] & z80_rom_addr[12]))
++                     <= (z80_m1 == 1'b1 && (~z80_rom_addr[13] & z80_rom_addr[12]))
+                            ? z80_rom_data[5] ^ 1'b1
+                            : z80_rom_data[5];
+ 
+     decrypt_rom_data[(z80_m1 == 1'b1 &&(z80_rom_addr[12] & z80_rom_addr[9])) ? 5 : 4]
+-                     = (z80_m1 == 1'b1 && (~z80_rom_addr[6] & z80_rom_addr[1]))
++                     <= (z80_m1 == 1'b1 && (~z80_rom_addr[6] & z80_rom_addr[1]))
+                            ? z80_rom_data[4] ^ 1'b1
+                            : z80_rom_data[4];
+ 
+ 
+     decrypt_rom_data[z80_rom_addr[8] & z80_rom_addr[4] ? 2 : 3]
+-                    = (z80_m1 == 1'b1 &&(~z80_rom_addr[12] & z80_rom_addr[2]))
++                    <= (z80_m1 == 1'b1 &&(~z80_rom_addr[12] & z80_rom_addr[2]))
+                            ? z80_rom_data[3] ^ 1'b1
+                            : z80_rom_data[3];
+ 
+     decrypt_rom_data[z80_rom_addr[8] & z80_rom_addr[4] ? 3 : 2]
+-                     = (z80_rom_addr[11] & ~z80_rom_addr[8] & z80_rom_addr[1])
++                     <= (z80_rom_addr[11] & ~z80_rom_addr[8] & z80_rom_addr[1])
+                            ? z80_rom_data[2] ^ 1'b1
+                            : z80_rom_data[2];
+ 
+ 
+     decrypt_rom_data[(z80_rom_addr[13] & z80_rom_addr[4]) ? 0  : 1]
+-                     = (z80_rom_addr[13] & ~z80_rom_addr[6] & z80_rom_addr[4])
++                     <= (z80_rom_addr[13] & ~z80_rom_addr[6] & z80_rom_addr[4])
+                            ? z80_rom_data[1] ^ 1'b1
+                            : z80_rom_data[1];
+ 
+     decrypt_rom_data[(z80_rom_addr[13] & z80_rom_addr[4]) ? 1 : 0]
+-                    = (~z80_rom_addr[11] & z80_rom_addr[9] & z80_rom_addr[2])
++                    <= (~z80_rom_addr[11] & z80_rom_addr[9] & z80_rom_addr[2])
+                            ? z80_rom_data[0] ^ 1'b1
+                            : z80_rom_data[0];
++    decrypt_rom_ok <= 1;
++   end
++   else if (z80_rom_cs == 1'b0)
++     decrypt_rom_ok <= 1'b0;
++   else if (z80_rom_ok == 1'b0)
++     decrypt_rom_ok <= 1'b0;
+ end
+ 
+ endmodule
+diff --git a/cores/toki/hdl/sound.v b/cores/toki/hdl/sound.v
+index 10166cfdc..e23da43f7 100644
+--- a/cores/toki/hdl/sound.v
++++ b/cores/toki/hdl/sound.v
+@@ -118,7 +118,6 @@ z80_cs u_z80cs(
+ //
+ // Decypher z80 ROM 8.m3
+ //
+-reg [15:0] decrypt_rom_addr;
+ wire [7:0] decrypt_rom_data;
+ wire       decrypt_rom_ok;
+ reg        decrypt_rom_cs_seibu;
+@@ -128,6 +127,7 @@ wire       z80_mreq_n;
+ wire       z80_wait_n;
+ 
+ sei80bu u_sei80bu(
++  .clk(clk48),
+   .z80_rom_addr({3'd0, z80_rom_addr}),
+   .z80_rom_data(z80_rom_data),
+   .z80_rom_ok(z80_rom_ok), 

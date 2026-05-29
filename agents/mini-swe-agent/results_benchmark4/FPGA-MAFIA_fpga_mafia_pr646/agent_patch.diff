@@ -1,0 +1,33 @@
+diff --git a/source/big_core/big_core_exe.sv b/source/big_core/big_core_exe.sv
+index f0274e4..b76d1e5 100644
+--- a/source/big_core/big_core_exe.sv
++++ b/source/big_core/big_core_exe.sv
+@@ -53,6 +53,7 @@ logic        Hazard1Data1Q102H, Hazard2Data1Q102H, Hazard3Data1Q102H, Hazard1Dat
+ logic [31:0] AluIn1Q102H, AluIn2Q102H;
+ logic [31:0] AluOutIQ102H, AluOutMulQ102H;
+ logic [63:0] AluOutMulFullQ102H;
++logic [31:0] MulSigned1Q102H, MulSigned2Q102H;
+ logic [4:0]  ShamtQ102H;
+ logic [31:0] RegRdData1Q102H, RegRdData2Q102H;
+ //////////////////////////////////////////////////////////////////////////////////////////////////
+@@ -120,15 +121,17 @@ end
+ 
+ // TODO - add all m extension instructions
+ always_comb begin : alu_logic_m_extension
++  MulSigned1Q102H = AluIn1Q102H;
++  MulSigned2Q102H = AluIn2Q102H;
++  AluOutMulFullQ102H = 64'b0;
+   unique casez (Ctrl.AluOpMulDivQ102H) 
+-    // Adder
+     MUL     : AluOutMulQ102H = AluIn1Q102H * AluIn2Q102H; 
+     MULH    : begin 
+-              AluOutMulFullQ102H = $signed(AluIn1Q102H) * $signed(AluIn2Q102H);
++              AluOutMulFullQ102H = $signed(MulSigned1Q102H) * $signed(MulSigned2Q102H);
+               AluOutMulQ102H     = AluOutMulFullQ102H[63:32];
+     end
+     MULHSU  : begin 
+-              AluOutMulFullQ102H = $signed(AluIn1Q102H) * AluIn2Q102H;
++              AluOutMulFullQ102H = $signed(MulSigned1Q102H) * MulSigned2Q102H;
+               AluOutMulQ102H     = AluOutMulFullQ102H[63:32];
+     end
+     MULHU   : begin 

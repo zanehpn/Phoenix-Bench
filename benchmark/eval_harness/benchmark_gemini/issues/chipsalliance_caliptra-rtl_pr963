@@ -1,0 +1,43 @@
+# Undefined macros in AES due to missing includes
+
+- Source URL: https://github.com/chipsalliance/caliptra-rtl/issues/977
+
+On the 2.1 SS FPGA I hack aes_clp_wrapper.sv to include caliptra_reg_field_defines.svh and kv_macros.svh to avoid undefined macro errors. kv_macros.svh gets included from several of the crypto components like ecc, hmac, and sha512 but not for aes. caliptra_reg_field_defines.svh is included mostly from testbenches and soc_ifc.
+The workaround for kv_macros.svh is also being used in the 2.0 FPGA.
+My ask is that we consider if these includes should be added to AES.
+
+Error requiring caliptra_reg_field_defines.svh:
+```
+ERROR: [Synth 8-10157] use of undefined macro 'AES_REG_DATA_IN_0' [/fourtb/jlmahowa/caliptra-mcu-sw-lock/hw/fpga/caliptra_build/caliptra_fpga_project.gen/sources_1/bd/caliptra_fpga_project_bd/ipshared/25c5/src/aes_clp_wrapper.sv:190]
+```
+Error requiring kv_macros.svh:
+```
+ERROR: [Synth 8-10157] use of undefined macro 'CALIPTRA_KV_READ_CTRL_REG2STRUCT' [/fourtb/jlmahowa/caliptra-mcu-sw-lock/hw/fpga/caliptra_build/caliptra_fpga_project.gen/sources_1/bd/caliptra_fpga_project_bd/ipshared/978d/src/aes_clp_wrapper.sv:401]
+
+ERROR: [Synth 8-10157] use of undefined macro 'CALIPTRA_KV_WRITE_CTRL_REG2STRUCT' [/fourtb/jlmahowa/caliptra-mcu-sw-lock/hw/fpga/caliptra_build/caliptra_fpga_project.gen/sources_1/bd/caliptra_fpga_project_bd/ipshared/978d/src/aes_clp_wrapper.sv:402]```
+
+PR Title: [RTL] Update KeyVault error flagging conditions and AES key manager reg stage
+PR Number: #963
+Repository: chipsalliance/caliptra-rtl
+Status: Merged (Aug 27, 2025)
+Base Branch: msft-daily-20250827
+
+Description:
+The pull request addresses three main objectives:
+1. KeyVault Error Status Management: Modified KeyVault clients to "latch and preserve error status on kv access instead of using the status from the final beat of the transfer"
+2. AES Key Zeroization: Updated the AES Caliptra wrapper to "clear (with zeroes) the intermediate key registering stage when reading a new key from keyvault"
+3. Header File Inclusion: Added necessary header files to aes_clp_wrapper to resolve issue #977 regarding undefined macros
+
+Verification Approach:
+The implementation includes:
+- Test cases validating KeyVault client reads with operation interrupts
+- Test assertions for AES zeroization of buffered key values
+- Directed tests for read error recovery scenarios
+
+Contributors:
+- calebofearth (primary contributor)
+- Nitsirks (Michael Norris - co-author)
+- bharatpillilli (reviewer)
+
+Review Status:
+Successfully approved by both reviewers with 131 of 133 checks passing.

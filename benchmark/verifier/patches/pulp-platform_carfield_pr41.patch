@@ -1,0 +1,133 @@
+From 04637be9cca9c2caf08d03bf6dba5e5227fb62ab Mon Sep 17 00:00:00 2001
+From: aottaviano <aottaviano@iis.ee.ethz.ch>
+Date: Wed, 17 May 2023 08:40:52 +0200
+Subject: [PATCH 1/2] Add atomics support to shared L2 memory
+
+Expose extra parameters to config the rsicv_atomic_module. They default
+to Cheshire, which is fine for now.
+---
+ Bender.lock    |  3 ++-
+ Bender.yml     |  2 +-
+ hw/carfield.sv | 10 +++++++++-
+ hw/l2_wrap.sv  | 12 ++++++++++++
+ 4 files changed, 24 insertions(+), 3 deletions(-)
+
+diff --git a/Bender.lock b/Bender.lock
+index e9faac22..968fd4be 100644
+--- a/Bender.lock
++++ b/Bender.lock
+@@ -104,12 +104,13 @@ packages:
+       Git: git@github.com:AlSaqr-platform/can_bus.git
+     dependencies: []
+   car_l2:
+-    revision: 505c35a8df7f042fc8fc07c5dc40bc6412f7b27d
++    revision: 08503a05307ef556ed5439619c70c039ff93d77a
+     version: null
+     source:
+       Git: git@iis-git.ee.ethz.ch:carfield/carfield_l2_mem.git
+     dependencies:
+     - axi
++    - axi_riscv_atomics
+     - common_cells
+     - common_verification
+     - redundancy_cells
+diff --git a/Bender.yml b/Bender.yml
+index 850cdcba..1bdbfb76 100644
+--- a/Bender.yml
++++ b/Bender.yml
+@@ -14,7 +14,7 @@ dependencies:
+   axi:                { git: https://github.com/pulp-platform/axi.git,                  version: 0.39.0-beta.9                        } # overridden in Bender.local to use axi-rt feature
+   cheshire:           { git: https://github.com/pulp-platform/cheshire.git,             rev: 9f0234c1a40cd332f2b502cbbb5f98bd242b29ba } # branch: main
+   hyperbus:           { git: https://github.com/pulp-platform/hyperbus.git,             rev: 4d4d5d05959c83238a6fbf2537c15d411ca11b4b } # branch: main
+-  car_l2:             { git: git@iis-git.ee.ethz.ch:carfield/carfield_l2_mem.git,       rev: 505c35a8df7f042fc8fc07c5dc40bc6412f7b27d } # branch: main
++  car_l2:             { git: git@iis-git.ee.ethz.ch:carfield/carfield_l2_mem.git,       rev: 08503a05307ef556ed5439619c70c039ff93d77a } # branch: main
+   safety_island:      { git: git@iis-git.ee.ethz.ch:carfield/safety-island.git,         rev: 67f0b4ef4c3b08fcd423bc5e70db144b196cd2d1 } # branch: master
+   pulp_cluster:       { git: https://github.com/pulp-platform/pulp_cluster.git,         rev: 43bb73f5f239b6d9bade79ef4b5c62756bd58dc4 } # branch: yt/carfield-integration
+   opentitan:          { git: https://github.com/alsaqr-platform/opentitan.git,          rev: ed1e7f1d53e28de556a3b02bc1bd1b855f51af15 } # branch: lowRISC-rebase
+diff --git a/hw/carfield.sv b/hw/carfield.sv
+index d6ac6ab5..3950df4f 100644
+--- a/hw/carfield.sv
++++ b/hw/carfield.sv
+@@ -1026,7 +1026,15 @@ l2_wrap #(
+   .AxiMaxTrans  ( Cfg.AxiMaxSlvTrans     ),
+   .LogDepth     ( LogDepth               ),
+   .NumRules     ( L2NumRules             ),
+-  .L2MemSize    ( L2MemSize              )
++  .L2MemSize    ( L2MemSize              ),
++  // Atomics
++  .L2MaxReadTxns  ( Cfg.LlcMaxReadTxns   ), // TODO: AMO parameters are default
++                                            // from the LLC (Cheshire), at the
++                                            // moment
++  .L2MaxWriteTxns ( Cfg.LlcMaxWriteTxns  ),
++  .AxiUserAmoMsb  ( Cfg.AxiUserAmoMsb    ),
++  .AxiUserAmoLsb  ( Cfg.AxiUserAmoLsb    ),
++  .L2AmoNumCuts   ( Cfg.LlcAmoNumCuts    )
+ ) i_reconfigurable_l2 (
+   .clk_i               ( l2_clk                               ),
+   .rst_ni              ( l2_rst_n                             ),
+diff --git a/hw/l2_wrap.sv b/hw/l2_wrap.sv
+index 493a62cb..aa8e272e 100644
+--- a/hw/l2_wrap.sv
++++ b/hw/l2_wrap.sv
+@@ -19,6 +19,11 @@ module l2_wrap
+   parameter int unsigned AxiUserWidth = 1,
+   parameter int unsigned AxiMaxTrans  = 8,
+   parameter int unsigned LogDepth     = 3,
++  parameter int unsigned L2MaxReadTxns  = 8,
++  parameter int unsigned L2MaxWriteTxns = 8,
++  parameter int unsigned AxiUserAmoMsb  = 1,
++  parameter int unsigned AxiUserAmoLsb  = 0,
++  parameter int unsigned L2AmoNumCuts   = 1,
+   /// Mapping rules
+   parameter int unsigned NumRules   = car_l2_pkg::NUM_MAP_TYPES * NumPort,
+   /// L2 Memory settings
+@@ -138,6 +143,13 @@ car_l2_top #(
+   .NUM_MAP_RULES       ( NumRules        ),
+   .L2_MEM_SIZE_IN_BYTE ( L2MemSize       ),
+   .map_rule_t          ( map_rule_t      ),
++  .ATM_MAX_READ_TXN    ( L2MaxReadTxns   ),
++  .ATM_MAX_WRIT_TXN    ( L2MaxWriteTxns  ),
++  .ATM_USER_AS_ID      ( 1               ),
++  .ATM_USER_ID_MSB     ( AxiUserAmoMsb   ),
++  .ATM_USER_ID_LSB     ( AxiUserAmoLsb   ),
++  .ATM_RISCV_WORD      ( 64              ),
++  .ATM_NUM_CUTS        ( L2AmoNumCuts    ),
+   .axi_req_t           ( axi_async_req_t ),
+   .axi_resp_t          ( axi_async_rsp_t )
+ ) i_l2_top             (
+
+From b5c609e743916183294a426e981d7ef174697991 Mon Sep 17 00:00:00 2001
+From: Chi Zhang <chizhang@student.ethz.ch>
+Date: Tue, 30 May 2023 07:48:13 +0200
+Subject: [PATCH 2/2] [SW] Set a counter range for timer test
+
+---
+ sw/tests/hostd/system_timer_test.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/sw/tests/hostd/system_timer_test.c b/sw/tests/hostd/system_timer_test.c
+index 27dc2b4c..deb7bb99 100644
+--- a/sw/tests/hostd/system_timer_test.c
++++ b/sw/tests/hostd/system_timer_test.c
+@@ -21,8 +21,8 @@
+ 	} \
+     } while (0)
+ 
+-#define DUMMY_TIMER_CNT_GOLDEN 8070
+-#define HYPER_DUMMY_TIMER_CNT_GOLDEN 8192
++#define DUMMY_TIMER_CNT_GOLDEN_MIN 8050
++#define DUMMY_TIMER_CNT_GOLDEN_MAX 8250
+ 
+ int main(void) {
+ 
+@@ -43,8 +43,8 @@ int main(void) {
+ 
+     // Note: the result is checked against a golden value that is probed from
+     // the waveforms, to check if the value is correctly read from sw.
+-    if ( (time != DUMMY_TIMER_CNT_GOLDEN) && (time != HYPER_DUMMY_TIMER_CNT_GOLDEN) ) {
+-    	return 1;
++    if (time <= DUMMY_TIMER_CNT_GOLDEN_MIN || time >= DUMMY_TIMER_CNT_GOLDEN_MAX) {
++	return 1;
+     }
+     
+     return 0;

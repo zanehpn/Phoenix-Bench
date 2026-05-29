@@ -1,0 +1,73 @@
+The issue localizes to two places:
+
+1. `src/axi_pkg.sv`
+   - `resp_t` is already a package typedef:
+     ```systemverilog
+     typedef logic [1:0] resp_t;
+     ```
+   - But the typedef macros in `include/axi/typedef.svh` also use `resp_t` as a struct name parameter in several places, which can confuse Verilator when expanded in the same scope.
+
+2. `include/axi/typedef.svh`
+   - The problematic macro parameter name is `resp_t` in `AXI_TYPEDEF_RESP_T` and `AXI_LITE_TYPEDEF_RESP_T`.
+   - Renaming the macro parameter to something like `rsp_t` avoids the clash without changing the generated type names for users who instantiate the macro.
+
+Additionally, the issue mentions `src/axi_dw_upsizer.sv` around a `generate`-scoped struct typedef duplication, but that file was not provided here, so I can only fix the clearly visible macro-name collision in the provided sources.
+
+## Proposed fix
+Rename the macro parameter from `resp_t` to `rsp_t` in the typedef macros, while preserving the generated typedef names.
+
+```systemverilog
+### include/axi/typedef.svh
+<<<<<<< SEARCH
+`define AXI_TYPEDEF_RESP_T(resp_t, b_chan_t, r_chan_t)  \
+  typedef struct packed {                               \
+    logic     aw_ready;                                 \
+    logic     ar_ready;                                 \
+    logic     w_ready;                                  \
+    logic     b_valid;                                  \
+    b_chan_t  b;                                        \
+    logic     r_valid;                                  \
+    r_chan_t  r;                                        \
+  } resp_t;
+=======
+`define AXI_TYPEDEF_RESP_T(rsp_t, b_chan_t, r_chan_t)  \
+  typedef struct packed {                              \
+    logic     aw_ready;                                 \
+    logic     ar_ready;                                 \
+    logic     w_ready;                                  \
+    logic     b_valid;                                  \
+    b_chan_t  b;                                        \
+    logic     r_valid;                                  \
+    r_chan_t  r;                                        \
+  } rsp_t;
+>>>>>>> REPLACE
+```
+
+```systemverilog
+### include/axi/typedef.svh
+<<<<<<< SEARCH
+`define AXI_LITE_TYPEDEF_RESP_T(resp_lite_t, b_chan_lite_t, r_chan_lite_t)  \
+  typedef struct packed {                                                   \
+    logic          aw_ready;                                                \
+    logic          w_ready;                                                 \
+    b_chan_lite_t  b;                                                       \
+    logic          b_valid;                                                 \
+    logic          ar_ready;                                                \
+    r_chan_lite_t  r;                                                       \
+    logic          r_valid;                                                 \
+  } resp_lite_t;
+=======
+`define AXI_LITE_TYPEDEF_RESP_T(rsp_lite_t, b_chan_lite_t, r_chan_lite_t)  \
+  typedef struct packed {                                                    \
+    logic          aw_ready;                                                 \
+    logic          w_ready;                                                  \
+    b_chan_lite_t  b;                                                        \
+    logic          b_valid;                                                  \
+    logic          ar_ready;                                                 \
+    r_chan_lite_t  r;                                                        \
+    logic          r_valid;                                                  \
+  } rsp_lite_t;
+>>>>>>> REPLACE
+```
+
+If you want, I can also draft the likely fix for `src/axi_dw_upsizer.sv` once you provide that file, since that appears to be the second Verilator-specific issue mentioned.

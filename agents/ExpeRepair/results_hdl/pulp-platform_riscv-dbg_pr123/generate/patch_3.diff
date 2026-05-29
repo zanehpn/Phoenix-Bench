@@ -1,0 +1,28 @@
+diff --git a/src/dmi_jtag_tap.sv b/src/dmi_jtag_tap.sv
+index 01153ec..f7913b1 100644
+--- a/src/dmi_jtag_tap.sv
++++ b/src/dmi_jtag_tap.sv
+@@ -199,14 +199,7 @@ module dmi_jtag_tap #(
+ 
+ logic trst_sync1, trst_sync2;
+ 
+-always_ff @(posedge tck_i or negedge trst_ni) begin
+-  if (!trst_ni) begin
+-    trst_sync2 <= 1'b0;
+-  end else begin
+-    trst_sync2 <= trst_sync1;
+-    trst_no    <= trst_sync2;
+-  end
+-end
++assign trst_no = trst_ni;
+ 
+   // ----------------
+   // TAP FSM
+@@ -228,7 +221,6 @@ end
+     unique case (tap_state_q)
+       TestLogicReset: begin
+         tap_state_d = (tms_i) ? TestLogicReset : RunTestIdle;
+-        trst_sync1 = 1'b1;
+       end
+       RunTestIdle: begin
+         tap_state_d = (tms_i) ? SelectDrScan : RunTestIdle;

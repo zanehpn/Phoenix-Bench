@@ -1,0 +1,29 @@
+diff --git a/test/tb_axi_lite_regs.sv b/test/tb_axi_lite_regs.sv
+index ec31039c..5480891d 100644
+--- a/test/tb_axi_lite_regs.sv
++++ b/test/tb_axi_lite_regs.sv
+@@ -100,8 +100,12 @@ module tb_axi_lite_regs #(
+     repeat (5) @(posedge clk);
+     // Test known register.
+     // Write to it.
++    //
++    // Note: AXI-Lite data width in this testbench is AxiDataWidth (=32 by default).
++    // Using a 64-bit literal here relies on truncation/casting and can lead to seed-
++    // dependent mismatches when concurrent direct register loads are enabled.
+     lite_axi_master.write(axi_addr_t'(32'h0000_0000), axi_pkg::prot_t'('0),
+-        axi_data_t'(64'hDEADBEEFDEADBEEF), axi_strb_t'(8'hFF), resp);
++        axi_data_t'(32'hDEADBEEF), axi_strb_t'({AxiStrbWidth{1'b1}}), resp);
+     if (PrivProtOnly || SecuProtOnly) begin
+       assert (resp == axi_pkg::RESP_SLVERR) else
+           $fatal(1, "PrivProtOnly || SecuProtOnly: Unprivileged access was falsely granted.");
+@@ -120,8 +124,8 @@ module tb_axi_lite_regs #(
+     end else begin
+       assert (resp == axi_pkg::RESP_OKAY) else
+           $fatal(1, "Access should be granted.");
+-      assert (data == axi_data_t'(64'hDEADBEEFDEADBEEF)) else
+-          $fatal(1, "Data is unexpected, should be axi_data_t'(64'hDEADBEEFDEADBEEF).");
++      assert (data == axi_data_t'(32'hDEADBEEF)) else
++          $fatal(1, "Data is unexpected, should be axi_data_t'(32'hDEADBEEF).");
+     end
+ 
+     // Let random stimuli application checking is separate.

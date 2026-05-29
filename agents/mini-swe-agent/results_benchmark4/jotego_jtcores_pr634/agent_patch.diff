@@ -1,0 +1,36 @@
+diff --git a/cores/toki/hdl/sound.v b/cores/toki/hdl/sound.v
+index 10166cf..003bc1e 100644
+--- a/cores/toki/hdl/sound.v
++++ b/cores/toki/hdl/sound.v
+@@ -379,7 +379,6 @@ jt6295 #(.INTERPOL(1))  u_adpcm(
+ //
+ // MUSIC
+ //
+-reg ym3812_addr;
+ wire signed [15:0] opl_snd;
+ wire opl_sample;
+ 
+@@ -410,15 +409,18 @@ jtopl2   u_YM3812(
+ reg [7:0] fx_volume;
+ reg [7:0] fm_volume;
+ 
+-always @(posedge clk48)  begin //posedge clk ?
+-  if (clk48) begin
+-   fm_volume <=  ~enable_fm ? 8'h00 : 8'h10; 
+-   fx_volume <=  ~enable_psg ? 8'h00 : 
++always @(posedge clk48 or posedge rst) begin
++  if (rst) begin
++    fm_volume <= 8'h00;
++    fx_volume <= 8'h00;
++  end else begin
++    fm_volume <=  ~enable_fm ? 8'h00 : 8'h10; 
++    fx_volume <=  ~enable_psg ? 8'h00 : 
+                         (fxlevel == 2'h0) ? 8'h08 : 
+                         (fxlevel == 2'h1) ? 8'h0c : 
+                         (fxlevel == 2'h2) ? 8'h10 : 
+                                             8'h20; 
+-   end
++  end
+ end
+ 
+ jtframe_mixer #(.W1(14)) u_mixer(

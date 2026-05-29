@@ -1,0 +1,22 @@
+# AXI_BUS instead of AXI_LITE in axi_lite_mux_intf
+
+I am having issues elaborating `axi_lite_mux_intf` with Verilator. Basically it complains that it expects an `AXI_BUS` interface but it is getting an `AXI_LITE` one:
+
+```
+%Error: /path/Top_asic.sv:2000:6: Port 'mst' expects 'AXI_BUS' interface but pin connects 'AXI_LITE' interface
+: ... In instance chip_top.Top_asic_inst
+ 2000 |     .mst      (axi_sauria)
+```
+This is because in the module definition of `axi_lite_mux_intf` (in `axi_lite_mux.sv`) we have:
+
+```
+(
+  input  logic   clk_i,                // Clock
+  input  logic   rst_ni,               // Asynchronous reset active low
+  input  logic   test_i,               // Testmode enable
+  AXI_BUS.Slave  slv [NoSlvPorts-1:0], // slave ports
+  AXI_BUS.Master mst                   // master port
+);
+```
+
+Where the ports `slv` and `mst` are incorrectly declared as `AXI_BUS`. Changing both to `AXI_LITE` seems to solve the problem for me.

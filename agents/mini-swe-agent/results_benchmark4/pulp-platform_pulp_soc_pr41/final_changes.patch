@@ -1,0 +1,24 @@
+diff --git a/rtl/pulp_soc/l2_ram_multi_bank.sv b/rtl/pulp_soc/l2_ram_multi_bank.sv
+index 86ba415..6b91d74 100755
+--- a/rtl/pulp_soc/l2_ram_multi_bank.sv
++++ b/rtl/pulp_soc/l2_ram_multi_bank.sv
+@@ -64,8 +64,8 @@ module l2_ram_multi_bank #(
+                                                .CEN   ( ~mem_slave[i].req                                 ),
+                                                .BEN   ( ~mem_slave[i].be                                  ),
+                                                .WEN   ( mem_slave[i].wen                                  ),
+-                                               .A     ( interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+1:2] ), //Convert from
+-                                                                                                             //byte to word addressing
++                                               .A     ( interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+$clog2(NB_BANKS)+1:$clog2(NB_BANKS)+2] ), //Convert from
++                                                                                                             //byte to word addressing and remove bank index bits
+                                                .D     ( mem_slave[i].wdata                                ),
+                                                .Q     ( mem_slave[i].r_rdata                              )
+                                                );
+@@ -78,7 +78,7 @@ module l2_ram_multi_bank #(
+                .csn_i   (~mem_slave[i].req                                 ),
+                .wen_i   (mem_slave[i].wen                                  ),
+                .be_i    (mem_slave[i].be                                   ),
+-               .addr_i  (interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+1:2] ),
++               .addr_i  (interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+$clog2(NB_BANKS)+1:$clog2(NB_BANKS)+2] ),
+                .wdata_i (mem_slave[i].wdata                                ),
+                .rdata_o (mem_slave[i].r_rdata                              )
+                );

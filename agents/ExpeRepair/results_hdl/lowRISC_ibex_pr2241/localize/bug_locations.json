@@ -1,0 +1,47 @@
+{
+  "instance_id": "lowRISC_ibex_pr2241",
+  "bug_locs": [
+    [
+      {
+        "rel_file_path": "rtl/ibex_register_file_fpga.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/lowRISC_ibex_pr2241/rtl/ibex_register_file_fpga.sv",
+        "start": 3,
+        "end": 30,
+        "class_name": null,
+        "method_name": null,
+        "code": "3 // Licensed under the Apache License, Version 2.0, see LICENSE for details.\n4 // SPDX-License-Identifier: Apache-2.0\n5 \n6 /**\n7  * RISC-V register file\n8  *\n9  * Register file with 31 or 15x 32 bit wide registers. Register 0 is fixed to 0.\n10  *\n11  * This register file is designed to make FPGA synthesis tools infer RAM primitives. For Xilinx\n12  * FPGA architectures, it will produce RAM32M primitives. Other vendors have not yet been tested.\n13  */\n14 module ibex_register_file_fpga #(\n15     parameter bit                   RV32E             = 0,\n16     parameter int unsigned          DataWidth         = 32,\n17     parameter bit                   DummyInstructions = 0,\n18     parameter bit                   WrenCheck         = 0,\n19     parameter bit                   RdataMuxCheck     = 0,\n20     parameter logic [DataWidth-1:0] WordZeroVal       = '0\n21 ) (\n22   // Clock and Reset\n23   input  logic                 clk_i,\n24   input  logic                 rst_ni,\n25 \n26   input  logic                 test_en_i,\n27   input  logic                 dummy_instr_id_i,\n28   input  logic                 dummy_instr_wb_i,\n29 \n30   //Read port R1\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "rtl/ibex_register_file_fpga.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/lowRISC_ibex_pr2241/rtl/ibex_register_file_fpga.sv",
+        "start": 42,
+        "end": 67,
+        "class_name": null,
+        "method_name": null,
+        "code": "42   output logic                 err_o\n43 );\n44 \n45   localparam int ADDR_WIDTH = RV32E ? 4 : 5;\n46   localparam int NUM_WORDS = 2 ** ADDR_WIDTH;\n47 \n48   logic [DataWidth-1:0] mem[NUM_WORDS];\n49   logic we; // write enable if writing to any register other than R0\n50 \n51   logic [DataWidth-1:0] mem_o_a, mem_o_b;\n52 \n53   // WE strobe and one-hot encoded raddr alert.\n54   logic oh_raddr_a_err, oh_raddr_b_err, oh_we_err;\n55   assign err_o = oh_raddr_a_err || oh_raddr_b_err || oh_we_err;\n56 \n57   if (RdataMuxCheck) begin : gen_rdata_mux_check\n58     // Encode raddr_a/b into one-hot encoded signals.\n59     logic [NUM_WORDS-1:0] raddr_onehot_a, raddr_onehot_b;\n60     logic [NUM_WORDS-1:0] raddr_onehot_a_buf, raddr_onehot_b_buf;\n61     prim_onehot_enc #(\n62       .OneHotWidth(NUM_WORDS)\n63     ) u_prim_onehot_enc_raddr_a (\n64       .in_i  (raddr_a_i),\n65       .en_i  (1'b1),\n66       .out_o (raddr_onehot_a)\n67     );\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "rtl/ibex_register_file_fpga.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/lowRISC_ibex_pr2241/rtl/ibex_register_file_fpga.sv",
+        "start": 46,
+        "end": 167,
+        "class_name": null,
+        "method_name": null,
+        "code": "46   localparam int NUM_WORDS = 2 ** ADDR_WIDTH;\n47 \n48   logic [DataWidth-1:0] mem[NUM_WORDS];\n49   logic we; // write enable if writing to any register other than R0\n50 \n51   logic [DataWidth-1:0] mem_o_a, mem_o_b;\n52 \n53   // WE strobe and one-hot encoded raddr alert.\n54   logic oh_raddr_a_err, oh_raddr_b_err, oh_we_err;\n55   assign err_o = oh_raddr_a_err || oh_raddr_b_err || oh_we_err;\n56 \n57   if (RdataMuxCheck) begin : gen_rdata_mux_check\n58     // Encode raddr_a/b into one-hot encoded signals.\n59     logic [NUM_WORDS-1:0] raddr_onehot_a, raddr_onehot_b;\n60     logic [NUM_WORDS-1:0] raddr_onehot_a_buf, raddr_onehot_b_buf;\n61     prim_onehot_enc #(\n62       .OneHotWidth(NUM_WORDS)\n63     ) u_prim_onehot_enc_raddr_a (\n64       .in_i  (raddr_a_i),\n65       .en_i  (1'b1),\n66       .out_o (raddr_onehot_a)\n67     );\n68 \n69     prim_onehot_enc #(\n70       .OneHotWidth(NUM_WORDS)\n71     ) u_prim_onehot_enc_raddr_b (\n72       .in_i  (raddr_b_i),\n73       .en_i  (1'b1),\n74       .out_o (raddr_onehot_b)\n75     );\n76 \n77     // Buffer the one-hot encoded signals so that the checkers\n78     // are not optimized.\n79     prim_buf #(\n80       .Width(NUM_WORDS)\n81     ) u_prim_buf_raddr_a (\n82       .in_i (raddr_onehot_a),\n83       .out_o(raddr_onehot_a_buf)\n84     );\n85 \n86     prim_buf #(\n87       .Width(NUM_WORDS)\n88     ) u_prim_buf_raddr_b (\n89       .in_i (raddr_onehot_b),\n90       .out_o(raddr_onehot_b_buf)\n91     );\n92 \n93     // SEC_CM: DATA_REG_SW.GLITCH_DETECT\n94     // Check the one-hot encoded signals for glitches.\n95     prim_onehot_check #(\n96       .AddrWidth(ADDR_WIDTH),\n97       .OneHotWidth(NUM_WORDS),\n98       .AddrCheck(1),\n99       // When AddrCheck=1 also EnableCheck needs to be 1.\n100       .EnableCheck(1)\n101     ) u_prim_onehot_check_raddr_a (\n102       .clk_i,\n103       .rst_ni,\n104       .oh_i   (raddr_onehot_a_buf),\n105       .addr_i (raddr_a_i),\n106       // Set enable=1 as address is always valid.\n107       .en_i   (1'b1),\n108       .err_o  (oh_raddr_a_err)\n109     );\n110 \n111     prim_onehot_check #(\n112       .AddrWidth(ADDR_WIDTH),\n113       .OneHotWidth(NUM_WORDS),\n114       .AddrCheck(1),\n115       // When AddrCheck=1 also EnableCheck needs to be 1.\n116       .EnableCheck(1)\n117     ) u_prim_onehot_check_raddr_b (\n118       .clk_i,\n119       .rst_ni,\n120       .oh_i   (raddr_onehot_b_buf),\n121       .addr_i (raddr_b_i),\n122       // Set enable=1 as address is always valid.\n123       .en_i   (1'b1),\n124       .err_o  (oh_raddr_b_err)\n125     );\n126 \n127     // MUX register to rdata_a/b_o according to raddr_a/b_onehot.\n128     prim_onehot_mux  #(\n129       .Width(DataWidth),\n130       .Inputs(NUM_WORDS)\n131     ) u_rdata_a_mux (\n132       .clk_i,\n133       .rst_ni,\n134       .in_i  (mem),\n135       .sel_i (raddr_onehot_a),\n136       .out_o (mem_o_a)\n137     );\n138 \n139     prim_onehot_mux  #(\n140       .Width(DataWidth),\n141       .Inputs(NUM_WORDS)\n142     ) u_rdata_b_mux (\n143       .clk_i,\n144       .rst_ni,\n145       .in_i  (mem),\n146       .sel_i (raddr_onehot_b),\n147       .out_o (mem_o_b)\n148     );\n149 \n150     assign rdata_a_o = (raddr_a_i == '0) ? WordZeroVal : mem_o_a;\n151     assign rdata_b_o = (raddr_b_i == '0) ? WordZeroVal : mem_o_b;\n152   end else begin : gen_no_rdata_mux_check\n153     // async_read a\n154     assign rdata_a_o = (raddr_a_i == '0) ? WordZeroVal : mem[raddr_a_i];\n155 \n156     // async_read b\n157     assign rdata_b_o = (raddr_b_i == '0) ? WordZeroVal : mem[raddr_b_i];\n158   end\n159 \n160   // we select\n161   assign we = (waddr_a_i == '0) ? 1'b0 : we_a_i;\n162 \n163   // SEC_CM: DATA_REG_SW.GLITCH_DETECT\n164   // This checks for spurious WE strobes on the regfile.\n165   if (WrenCheck) begin : gen_wren_check\n166     // Since the FPGA uses a memory macro, there is only one write-enable strobe to check.\n167     assign oh_we_err = we && !we_a_i;\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "rtl/ibex_register_file_fpga.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/lowRISC_ibex_pr2241/rtl/ibex_register_file_fpga.sv",
+        "start": 149,
+        "end": 176,
+        "class_name": null,
+        "method_name": null,
+        "code": "149 \n150     assign rdata_a_o = (raddr_a_i == '0) ? WordZeroVal : mem_o_a;\n151     assign rdata_b_o = (raddr_b_i == '0) ? WordZeroVal : mem_o_b;\n152   end else begin : gen_no_rdata_mux_check\n153     // async_read a\n154     assign rdata_a_o = (raddr_a_i == '0) ? WordZeroVal : mem[raddr_a_i];\n155 \n156     // async_read b\n157     assign rdata_b_o = (raddr_b_i == '0) ? WordZeroVal : mem[raddr_b_i];\n158   end\n159 \n160   // we select\n161   assign we = (waddr_a_i == '0) ? 1'b0 : we_a_i;\n162 \n163   // SEC_CM: DATA_REG_SW.GLITCH_DETECT\n164   // This checks for spurious WE strobes on the regfile.\n165   if (WrenCheck) begin : gen_wren_check\n166     // Since the FPGA uses a memory macro, there is only one write-enable strobe to check.\n167     assign oh_we_err = we && !we_a_i;\n168   end else begin : gen_no_wren_check\n169     assign oh_we_err = 1'b0;\n170   end\n171 \n172   // Note that the SystemVerilog LRM requires variables on the LHS of assignments within\n173   // \"always_ff\" to not be written to by any other process. However, to enable the initialization\n174   // of the inferred RAM32M primitives with non-zero values, below \"initial\" procedure is needed.\n175   // Therefore, we use \"always\" instead of the generally preferred \"always_ff\" for the synchronous\n176   // write procedure.\n",
+        "intended_behavior": ""
+      }
+    ]
+  ]
+}

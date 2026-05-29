@@ -1,0 +1,17 @@
+diff --git a/src/mmu/mmu.sv b/src/mmu/mmu.sv
+index bed03e7..d85f1e9 100644
+--- a/src/mmu/mmu.sv
++++ b/src/mmu/mmu.sv
+@@ -151,9 +151,10 @@ module mmu import cvw::*;  #(parameter cvw_t P,
+ 
+   // Access faults
+   // If TLB miss and translating we want to not have faults from the PMA and PMP checkers.
++  // When misaligned accesses are not handled in hardware, prioritize misaligned exceptions over access faults.
+   assign InstrAccessFaultF    = (PMAInstrAccessFaultF    | PMPInstrAccessFaultF)    & ~TLBMiss;
+-  assign LoadAccessFaultM     = (PMALoadAccessFaultM     | PMPLoadAccessFaultM     | AtomicMisalignedCausesAccessFaultM & ReadNoAmoAccessM)     & ~TLBMiss;
+-  assign StoreAmoAccessFaultM = (PMAStoreAmoAccessFaultM | PMPStoreAmoAccessFaultM | AtomicMisalignedCausesAccessFaultM & WriteAccessM) & ~TLBMiss;
++  assign LoadAccessFaultM     = (PMALoadAccessFaultM     | PMPLoadAccessFaultM     | AtomicMisalignedCausesAccessFaultM & ReadNoAmoAccessM)     & ~TLBMiss & ~LoadMisalignedFaultM;
++  assign StoreAmoAccessFaultM = (PMAStoreAmoAccessFaultM | PMPStoreAmoAccessFaultM | AtomicMisalignedCausesAccessFaultM & WriteAccessM) & ~TLBMiss & ~StoreAmoMisalignedFaultM;
+ 
+   // Specify which type of page fault is occurring
+   assign InstrPageFaultF    = TLBPageFault & ExecuteAccessF;

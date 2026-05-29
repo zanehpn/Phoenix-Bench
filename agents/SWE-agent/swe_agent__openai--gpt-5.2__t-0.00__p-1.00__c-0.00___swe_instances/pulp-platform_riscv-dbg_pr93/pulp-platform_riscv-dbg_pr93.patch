@@ -1,0 +1,70 @@
+diff --git a/src/dm_csrs.sv b/src/dm_csrs.sv
+index 78fd32a..5f51cb8 100644
+--- a/src/dm_csrs.sv
++++ b/src/dm_csrs.sv
+@@ -180,11 +180,64 @@ module dm_csrs #(
+ 
+   // a successful response returns zero
+   assign dmi_resp_o.resp = dm::DTM_SUCCESS;
+-  assign dmi_resp_valid_o     = ~resp_queue_empty;
++
++  // For SBA reads/writes, defer the DMI response until the system bus has
++  // completed the access (sbdata_valid_i pulses on completion).
++  // This prevents burst responses from being returned faster than the SBA can
++  // update SBData*, which could otherwise cause dropping/interleaving in slow
++  // simulations (e.g. Verilator).
++  logic sb_dmi_access_pending;
++
++  assign dmi_resp_valid_o     = (~resp_queue_empty) & ~sb_dmi_access_pending;
+   assign dmi_req_ready_o      = ~resp_queue_full;
+   assign resp_queue_push      = dmi_req_valid_i & dmi_req_ready_o;
+   // SBA
+   assign sbautoincrement_o = sbcs_q.sbautoincrement;
++
++
++  // Track whether there is an outstanding SBA access initiated by a DMI
++  // operation that has been accepted into the response queue.
++  // We conservatively set this flag for any DMI operation that can trigger an
++  // SBA access or needs the SBA read result.
++  //
++  // Note: This assumes at most one outstanding SBA access at a time, which is
++  // consistent with dm_sba's single-transaction FSM.
++  always_ff @(posedge clk_i or negedge dmi_rst_ni) begin
++    if (!dmi_rst_ni) begin
++      sb_dmi_access_pending <= 1'b0;
++    end else begin
++      // clear when the bus completes the access
++      if (sbdata_valid_i) begin
++        sb_dmi_access_pending <= 1'b0;
++      end
++
++      // set when a DMI request that may require/wait for a bus completion is accepted
++      if (resp_queue_push) begin
++        unique case (dmi_req_i.op)
++          dm::DTM_READ: begin
++            if (dmi_req_i.addr[6:0] inside {dm::SBData0, dm::SBData1}) begin
++              sb_dmi_access_pending <= 1'b1;
++            end
++          end
++          dm::DTM_WRITE: begin
++            if ((dmi_req_i.addr[6:0] inside {dm::SBAddress0, dm::SBAddress1, dm::SBAddress2, dm::SBAddress3})
++                && sbcs_q.sbreadonaddr) begin
++              sb_dmi_access_pending <= 1'b1;
++            end
++            if ((dmi_req_i.addr[6:0] == dm::SBData0) && (sbcs_q.sbreadondata || sbdata_write_valid_o)) begin
++              // SBData0 write can initiate an SBA access
++              sb_dmi_access_pending <= 1'b1;
++            end
++            if ((dmi_req_i.addr[6:0] == dm::SBData1) && sbcs_q.sbreadondata) begin
++              sb_dmi_access_pending <= 1'b1;
++            end
++          end
++          default: ;
++        endcase
++      end
++    end
++  end
++
+   assign sbreadonaddr_o    = sbcs_q.sbreadonaddr;
+   assign sbreadondata_o    = sbcs_q.sbreadondata;
+   assign sbaccess_o        = sbcs_q.sbaccess;

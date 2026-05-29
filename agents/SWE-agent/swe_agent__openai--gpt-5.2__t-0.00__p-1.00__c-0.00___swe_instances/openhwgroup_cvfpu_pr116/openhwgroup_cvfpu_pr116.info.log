@@ -1,0 +1,637 @@
+2026-01-19 20:57:41,738 - INFO - rex-deploy - Pulling image 'hwebench/openhwgroup_cvfpu:pr116'
+2026-01-19 20:57:46,452 - INFO - rex-deploy - Building image hwebench/openhwgroup_cvfpu:pr116 to install a standalone python to /root. This might take a while (but you only have to do it once). To skip this step, set `python_standalone_dir` to None.
+2026-01-19 20:58:26,409 - INFO - rex-deploy - Starting container hwebenchopenhwgroup_cvfpupr116-fac25d55-882e-41c5-a002-1635321316a2 with image hwebench/openhwgroup_cvfpu:pr116 serving on port 51957
+2026-01-19 20:58:26,418 - INFO - rex-deploy - Starting runtime at 51957
+2026-01-19 20:58:27,187 - INFO - rex-deploy - Runtime started in 0.77s
+2026-01-19 20:58:27,973 - INFO - swea-env - Environment Initialized
+2026-01-19 20:58:30,386 - INFO - swea-agent - Setting up agent for instance openhwgroup_cvfpu_pr116
+2026-01-19 20:58:30,390 - INFO - swea-agent - Trajectory will be saved to /workspace/phoenix-bench/agents/SWE-agent/trajectories/anon/swe_agent__openai--gpt-5.2__t-0.00__p-1.00__c-0.00___swe_instances/openhwgroup_cvfpu_pr116/openhwgroup_cvfpu_pr116.traj
+2026-01-19 20:58:33,069 - INFO - swea-tools - Resetting tools
+2026-01-19 20:58:33,424 - INFO - swea-agent - SYSTEM (main)
+You are an expert agent that can interact with a computer to debug SystemVerilog/Verilog repositories. You are in an environment
+with Verilator, Make, Python3 and Spike RISC-V ISA Simulator.
+2026-01-19 20:58:33,570 - INFO - swea-agent - 🤖 MODEL INPUT
+<uploaded_files>
+/testbed
+</uploaded_files>
+I've uploaded a HDL code repository in the directory /testbed. Consider the following PR description:
+
+<pr_description>
+# NONCOMP clears the result bit for signaling NaNs in "not equal" compare
+
+The NONCOMP block sets the result bit when either operand of a "not equal" comparison is a NaN:
+
+https://github.com/openhwgroup/cvfpu/blob/4aac6b3e87a30c8567dbe7401eba3274eea18afc/src/fpnew_noncomp.sv#L276-L279
+
+However, it does so only for quiet NaNs, not for signaling NaNs.
+
+While the effect of the modifier bit on comparisons is not documented, a comment in the source code indicates that its effect should be to invert the boolean result of comparisons. If either operand is a NaN, the result bit is cleared, except for a "not equal" comparison, which sets the result bit when encountering a NaN. This is in line with the way NaN values are handled in compare instructions in the RISC-V spec.
+
+Hence, in order to treat quiet and signaling NaNs consistently and to be in line with the RISC-V spec, I suggest to modify the NONCOMP compare logic to set the result bit when either of the operands of a "not equal" compare is a signaling NaN.
+
+</pr_description>
+
+Implement the necessary changes to the repository so that the issue specified in the <pr_description> are resolved.
+Your task is to make the minimal changes to files in the /testbed directory to ensure the <pr_description> is fixed.
+Follow these steps to resolve the issue:
+1. As a first step, it might be a good idea to find and read code relevant to the <pr_description>.
+2. Edit the sourcecode of the repo to resolve the issue.
+3. Think about edgecases and make sure your fix handles them as well.
+
+You can use the tools Verilog debugging tools if needed.
+Your thinking should be thorough and so it's fine if it's very long.
+2026-01-19 20:58:33,577 - INFO - swea-agent - ========================= STEP 1 =========================
+2026-01-19 20:58:38,390 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+ls -R /testbed | head
+2026-01-19 20:58:38,650 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+/testbed:
+Bender.yml
+CITATION.cff
+LICENSE.apache
+LICENSE.solderpad
+README.license.md
+README.md
+docs
+ips_list.yml
+src
+
+2026-01-19 20:58:38,655 - INFO - swea-agent - ========================= STEP 2 =========================
+2026-01-19 20:58:40,194 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+sed -n '240,320p' /testbed/src/fpnew_noncomp.sv
+2026-01-19 20:58:40,537 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+        fpnew_pkg::RTZ: minmax_result = operand_a_smaller ? operand_b : operand_a; // MAX
+        default: minmax_result = '{default: fpnew_pkg::DONT_CARE}; // don't care
+      endcase
+    end
+  end
+
+  assign minmax_extension_bit = 1'b1; // NaN-box as result is always a float value
+
+  // ------------
+  // Comparisons
+  // ------------
+  fp_t                cmp_result;
+  fpnew_pkg::status_t cmp_status;
+  logic               cmp_extension_bit;
+
+  // Comparisons - operation is encoded in rnd_mode_q:
+  // RNE = LE, RTZ = LT, RDN = EQ
+  // op_mod_q inverts boolean outputs
+  always_comb begin : comparisons
+    // Default assignment
+    cmp_result = '0; // false
+    cmp_status = '0; // no flags
+
+    // Signalling NaNs always compare as false and are illegal
+    if (signalling_nan) cmp_status.NV = 1'b1; // invalid operation
+    // Otherwise do comparisons
+    else begin
+      unique case (inp_pipe_rnd_mode_q[NUM_INP_REGS])
+        fpnew_pkg::RNE: begin // Less than or equal
+          if (any_operand_nan) cmp_status.NV = 1'b1; // Signalling comparison: NaNs are invalid
+          else cmp_result = (operand_a_smaller | operands_equal) ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+        end
+        fpnew_pkg::RTZ: begin // Less than
+          if (any_operand_nan) cmp_status.NV = 1'b1; // Signalling comparison: NaNs are invalid
+          else cmp_result = (operand_a_smaller & ~operands_equal) ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+        end
+        fpnew_pkg::RDN: begin // Equal
+          if (any_operand_nan) cmp_result = inp_pipe_op_mod_q[NUM_INP_REGS]; // NaN always not equal
+          else cmp_result = operands_equal ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+        end
+        default: cmp_result = '{default: fpnew_pkg::DONT_CARE}; // don't care
+      endcase
+    end
+  end
+
+  assign cmp_extension_bit = 1'b0; // Comparisons always produce booleans in integer registers
+
+  // ---------------
+  // Classification
+  // ---------------
+  fpnew_pkg::status_t    class_status;
+  logic                  class_extension_bit;
+  fpnew_pkg::classmask_e class_mask_d; // the result is actually here
+
+  // Classification - always return the classification mask on the dedicated port
+  always_comb begin : classify
+    if (info_a.is_normal) begin
+      class_mask_d = operand_a.sign       ? fpnew_pkg::NEGNORM    : fpnew_pkg::POSNORM;
+    end else if (info_a.is_subnormal) begin
+      class_mask_d = operand_a.sign       ? fpnew_pkg::NEGSUBNORM : fpnew_pkg::POSSUBNORM;
+    end else if (info_a.is_zero) begin
+      class_mask_d = operand_a.sign       ? fpnew_pkg::NEGZERO    : fpnew_pkg::POSZERO;
+    end else if (info_a.is_inf) begin
+      class_mask_d = operand_a.sign       ? fpnew_pkg::NEGINF     : fpnew_pkg::POSINF;
+    end else if (info_a.is_nan) begin
+      class_mask_d = info_a.is_signalling ? fpnew_pkg::SNAN       : fpnew_pkg::QNAN;
+    end else begin
+      class_mask_d = fpnew_pkg::QNAN; // default value
+    end
+  end
+
+  assign class_status        = '0;   // classification does not set flags
+  assign class_extension_bit = 1'b0; // classification always produces results in integer registers
+
+  // -----------------
+  // Result selection
+  // -----------------
+  fp_t                   result_d;
+  fpnew_pkg::status_t    status_d;
+  logic                  extension_bit_d;
+  logic                  is_class_d;
+
+2026-01-19 20:58:40,548 - INFO - swea-agent - ========================= STEP 3 =========================
+2026-01-19 20:58:42,953 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+grep -n "signalling_nan" -n /testbed/src/fpnew_noncomp.sv | head -n 20
+2026-01-19 20:58:43,213 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+164:  logic signalling_nan;
+169:  assign signalling_nan  = (| {info_a.is_signalling, info_b.is_signalling});
+228:    minmax_status.NV = signalling_nan;
+264:    if (signalling_nan) cmp_status.NV = 1'b1; // invalid operation
+
+2026-01-19 20:58:43,220 - INFO - swea-agent - ========================= STEP 4 =========================
+2026-01-19 20:58:45,418 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+sed -n '140,190p' /testbed/src/fpnew_noncomp.sv
+2026-01-19 20:58:45,678 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+  // ---------------------
+  fpnew_pkg::fp_info_t [1:0] info_q;
+
+  // Classify input
+  fpnew_classifier #(
+    .FpFormat    ( FpFormat ),
+    .NumOperands ( 2        )
+    ) i_class_a (
+    .operands_i ( inp_pipe_operands_q[NUM_INP_REGS] ),
+    .is_boxed_i ( inp_pipe_is_boxed_q[NUM_INP_REGS] ),
+    .info_o     ( info_q                            )
+  );
+
+  fp_t                 operand_a, operand_b;
+  fpnew_pkg::fp_info_t info_a,    info_b;
+
+  // Packing-order-agnostic assignments
+  assign operand_a = inp_pipe_operands_q[NUM_INP_REGS][0];
+  assign operand_b = inp_pipe_operands_q[NUM_INP_REGS][1];
+  assign info_a    = info_q[0];
+  assign info_b    = info_q[1];
+
+  logic any_operand_inf;
+  logic any_operand_nan;
+  logic signalling_nan;
+
+  // Reduction for special case handling
+  assign any_operand_inf = (| {info_a.is_inf,        info_b.is_inf});
+  assign any_operand_nan = (| {info_a.is_nan,        info_b.is_nan});
+  assign signalling_nan  = (| {info_a.is_signalling, info_b.is_signalling});
+
+  logic operands_equal, operand_a_smaller;
+
+  // Equality checks for zeroes too
+  assign operands_equal    = (operand_a == operand_b) || (info_a.is_zero && info_b.is_zero);
+  // Invert result if non-zero signs involved (unsigned comparison)
+  assign operand_a_smaller = (operand_a < operand_b) ^ (operand_a.sign || operand_b.sign);
+
+  // ---------------
+  // Sign Injection
+  // ---------------
+  fp_t                sgnj_result;
+  fpnew_pkg::status_t sgnj_status;
+  logic               sgnj_extension_bit;
+
+  // Sign Injection - operation is encoded in rnd_mode_q:
+  // RNE = SGNJ, RTZ = SGNJN, RDN = SGNJX, RUP = Passthrough (no NaN-box check)
+  always_comb begin : sign_injections
+    logic sign_a, sign_b; // internal signs
+    // Default assignment
+    sgnj_result = operand_a; // result based on operand a
+
+2026-01-19 20:58:45,687 - INFO - swea-agent - ========================= STEP 5 =========================
+2026-01-19 20:58:58,952 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+str_replace_editor str_replace /testbed/src/fpnew_noncomp.sv   --old_str '    // Signalling NaNs always compare as false and are illegal
+    if (signalling_nan) cmp_status.NV = 1'"'"'b1; // invalid operation
+    // Otherwise do comparisons
+    else begin
+      unique case (inp_pipe_rnd_mode_q[NUM_INP_REGS])
+        fpnew_pkg::RNE: begin // Less than or equal
+          if (any_operand_nan) cmp_status.NV = 1'"'"'b1; // Signalling comparison: NaNs are invalid
+          else cmp_result = (operand_a_smaller | operands_equal) ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+        end
+        fpnew_pkg::RTZ: begin // Less than
+          if (any_operand_nan) cmp_status.NV = 1'"'"'b1; // Signalling comparison: NaNs are invalid
+          else cmp_result = (operand_a_smaller & ~operands_equal) ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+        end
+        fpnew_pkg::RDN: begin // Equal
+          if (any_operand_nan) cmp_result = inp_pipe_op_mod_q[NUM_INP_REGS]; // NaN always not equal
+          else cmp_result = operands_equal ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+        end
+        default: cmp_result = '"'"'{default: fpnew_pkg::DONT_CARE}; // don'"'"'t care
+      endcase
+    end' --new_str '    // Signalling NaNs always raise NV.
+    // Result is cleared for signalling NaNs as well, except for "not equal" (op_mod=1 in EQ mode),
+    // which yields true on any NaN (in line with RISC-V compare semantics).
+    if (signalling_nan) begin
+      cmp_status.NV = 1'"'"'b1; // invalid operation
+      if ((inp_pipe_rnd_mode_q[NUM_INP_REGS] == fpnew_pkg::RDN) && inp_pipe_op_mod_q[NUM_INP_REGS]) begin
+        // NaN always not equal
+        cmp_result = 1'"'"'b1;
+      end else begin
+        cmp_result = 1'"'"'b0;
+      end
+    end else begin
+      unique case (inp_pipe_rnd_mode_q[NUM_INP_REGS])
+        fpnew_pkg::RNE: begin // Less than or equal
+          if (any_operand_nan) cmp_status.NV = 1'"'"'b1; // Signalling comparison: NaNs are invalid
+          else cmp_result = (operand_a_smaller | operands_equal) ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+        end
+        fpnew_pkg::RTZ: begin // Less than
+          if (any_operand_nan) cmp_status.NV = 1'"'"'b1; // Signalling comparison: NaNs are invalid
+          else cmp_result = (operand_a_smaller & ~operands_equal) ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+        end
+        fpnew_pkg::RDN: begin // Equal (op_mod=1 => Not equal)
+          if (any_operand_nan) cmp_result = inp_pipe_op_mod_q[NUM_INP_REGS]; // NaN always not equal
+          else cmp_result = operands_equal ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+        end
+        default: cmp_result = '"'"'{default: fpnew_pkg::DONT_CARE}; // don'"'"'t care
+      endcase
+    end'
+2026-01-19 20:58:59,262 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+The file /testbed/src/fpnew_noncomp.sv has been edited. Here's the result of running `cat -n` on a snippet of /testbed/src/fpnew_noncomp.sv:
+   258	  always_comb begin : comparisons
+   259	    // Default assignment
+   260	    cmp_result = '0; // false
+   261	    cmp_status = '0; // no flags
+   262	
+   263	    // Signalling NaNs always raise NV.
+   264	    // Result is cleared for signalling NaNs as well, except for "not equal" (op_mod=1 in EQ mode),
+   265	    // which yields true on any NaN (in line with RISC-V compare semantics).
+   266	    if (signalling_nan) begin
+   267	      cmp_status.NV = 1'b1; // invalid operation
+   268	      if ((inp_pipe_rnd_mode_q[NUM_INP_REGS] == fpnew_pkg::RDN) && inp_pipe_op_mod_q[NUM_INP_REGS]) begin
+   269	        // NaN always not equal
+   270	        cmp_result = 1'b1;
+   271	      end else begin
+   272	        cmp_result = 1'b0;
+   273	      end
+   274	    end else begin
+   275	      unique case (inp_pipe_rnd_mode_q[NUM_INP_REGS])
+   276	        fpnew_pkg::RNE: begin // Less than or equal
+   277	          if (any_operand_nan) cmp_status.NV = 1'b1; // Signalling comparison: NaNs are invalid
+   278	          else cmp_result = (operand_a_smaller | operands_equal) ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+   279	        end
+   280	        fpnew_pkg::RTZ: begin // Less than
+   281	          if (any_operand_nan) cmp_status.NV = 1'b1; // Signalling comparison: NaNs are invalid
+   282	          else cmp_result = (operand_a_smaller & ~operands_equal) ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+   283	        end
+   284	        fpnew_pkg::RDN: begin // Equal (op_mod=1 => Not equal)
+   285	          if (any_operand_nan) cmp_result = inp_pipe_op_mod_q[NUM_INP_REGS]; // NaN always not equal
+   286	          else cmp_result = operands_equal ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+   287	        end
+   288	        default: cmp_result = '{default: fpnew_pkg::DONT_CARE}; // don't care
+   289	      endcase
+   290	    end
+   291	  end
+   292	
+   293	  assign cmp_extension_bit = 1'b0; // Comparisons always produce booleans in integer registers
+Review the changes and make sure they are as expected. Edit the file again if necessary.
+
+2026-01-19 20:58:59,271 - INFO - swea-agent - ========================= STEP 6 =========================
+2026-01-19 20:59:03,998 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+verilator --lint-only -Wall -Wno-fatal /testbed/src/fpnew_noncomp.sv
+2026-01-19 20:59:04,293 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+%Error: /testbed/src/fpnew_noncomp.sv:16:10: Cannot find include file: common_cells/registers.svh
+   16 | `include "common_cells/registers.svh"
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:16:10: This may be because there's no search path specified with -I<dir>.
+   16 | `include "common_cells/registers.svh"
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        ... Looked in:
+             common_cells/registers.svh
+             common_cells/registers.svh.v
+             common_cells/registers.svh.sv
+             obj_dir/common_cells/registers.svh
+             obj_dir/common_cells/registers.svh.v
+             obj_dir/common_cells/registers.svh.sv
+%Error: /testbed/src/fpnew_noncomp.sv:19:13: Package/class 'fpnew_pkg' not found, and needs to be predeclared (IEEE 1800-2017 26.3)
+   19 |   parameter fpnew_pkg::fp_format_e   FpFormat    = fpnew_pkg::fp_format_e'(0),
+      |             ^~~~~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:19:24: syntax error, unexpected IDENTIFIER, expecting TYPE-IDENTIFIER
+   19 |   parameter fpnew_pkg::fp_format_e   FpFormat    = fpnew_pkg::fp_format_e'(0),
+      |                        ^~~~~~~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:21:3: syntax error, unexpected parameter, expecting IDENTIFIER or randomize
+   21 |   parameter fpnew_pkg::pipe_config_t PipeConfig  = fpnew_pkg::BEFORE,
+      |   ^~~~~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:21:24: syntax error, unexpected IDENTIFIER, expecting TYPE-IDENTIFIER
+   21 |   parameter fpnew_pkg::pipe_config_t PipeConfig  = fpnew_pkg::BEFORE,
+      |                        ^~~~~~~~~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:23:3: syntax error, unexpected parameter, expecting IDENTIFIER or TYPE-IDENTIFIER or randomize
+   23 |   parameter type                     AuxType     = logic,
+      |   ^~~~~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:25:3: syntax error, unexpected localparam, expecting IDENTIFIER or TYPE-IDENTIFIER or randomize
+   25 |   localparam int unsigned WIDTH = fpnew_pkg::fp_width(FpFormat),
+      |   ^~~~~~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:26:3: syntax error, unexpected localparam, expecting IDENTIFIER or randomize
+   26 |   localparam int unsigned ExtRegEnaWidth = NumPipeRegs == 0 ? 1 : NumPipeRegs
+      |   ^~~~~~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:27:1: syntax error, unexpected ')', expecting ';'
+   27 | ) (
+      | ^
+%Error: /testbed/src/fpnew_noncomp.sv:29:3: syntax error, unexpected input
+   29 |   input logic                  rst_ni,
+      |   ^~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:31:3: syntax error, unexpected input
+   31 |   input logic [1:0][WIDTH-1:0]     operands_i,  
+      |   ^~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:32:3: syntax error, unexpected input
+   32 |   input logic [1:0]                is_boxed_i,  
+      |   ^~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:33:3: syntax error, unexpected input
+   33 |   input fpnew_pkg::roundmode_e     rnd_mode_i,
+      |   ^~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:36:3: syntax error, unexpected input
+   36 |   input TagType                    tag_i,
+      |   ^~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:37:3: syntax error, unexpected input
+   37 |   input logic                      mask_i,
+      |   ^~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:38:3: syntax error, unexpected input
+   38 |   input AuxType                    aux_i,
+      |   ^~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:40:3: syntax error, unexpected input
+   40 |   input  logic                     in_valid_i,
+      |   ^~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:41:3: syntax error, unexpected output
+   41 |   output logic                     in_ready_o,
+      |   ^~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:42:3: syntax error, unexpected input
+   42 |   input  logic                     flush_i,
+      |   ^~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:44:3: syntax error, unexpected output
+   44 |   output logic [WIDTH-1:0]         result_o,
+      |   ^~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:45:3: syntax error, unexpected output
+   45 |   output fpnew_pkg::status_t       status_o,
+      |   ^~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:47:3: syntax error, unexpected output
+   47 |   output fpnew_pkg::classmask_e    class_mask_o,
+      |   ^~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:49:3: syntax error, unexpected output
+   49 |   output TagType                   tag_o,
+      |   ^~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:50:3: syntax error, unexpected output
+   50 |   output logic                     mask_o,
+      |   ^~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:51:3: syntax error, unexpected output
+   51 |   output AuxType                   aux_o,
+      |   ^~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:53:3: syntax error, unexpected output
+   53 |   output logic                     out_valid_o,
+      |   ^~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:54:3: syntax error, unexpected input
+   54 |   input  logic                     out_ready_i,
+      |   ^~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:56:3: syntax error, unexpected output
+   56 |   output logic                     busy_o,
+      |   ^~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:58:3: syntax error, unexpected input
+   58 |   input  logic [ExtRegEnaWidth-1:0] reg_ena_i
+      |   ^~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:59:1: syntax error, unexpected ')', expecting ',' or ';'
+   59 | );
+      | ^
+%Error: /testbed/src/fpnew_noncomp.sv:93:14: syntax error, unexpected IDENTIFIER, expecting TYPE-IDENTIFIER
+   93 |   fpnew_pkg::roundmode_e [0:NUM_INP_REGS]                 inp_pipe_rnd_mode_q;
+      |              ^~~~~~~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:94:14: syntax error, unexpected IDENTIFIER, expecting TYPE-IDENTIFIER
+   94 |   fpnew_pkg::operation_e [0:NUM_INP_REGS]                 inp_pipe_op_q;
+      |              ^~~~~~~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:104:3: syntax error, unexpected assign
+  104 |   assign inp_pipe_operands_q[0] = operands_i;
+      |   ^~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:122:5: syntax error, unexpected assign
+  122 |     assign inp_pipe_ready[i] = inp_pipe_ready[i+1] | ~inp_pipe_valid_q[i+1];
+      |     ^~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:124:5: Define or directive not defined: '`FFLARNC'
+  124 |     `FFLARNC(inp_pipe_valid_q[i+1], inp_pipe_valid_q[i], inp_pipe_ready[i], flush_i, 1'b0, clk_i, rst_ni)
+      |     ^~~~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:128:5: Define or directive not defined: '`FFL'
+  128 |     `FFL(inp_pipe_operands_q[i+1], inp_pipe_operands_q[i], reg_ena, '0)
+      |     ^~~~
+%Error: /testbed/src/fpnew_noncomp.sv:129:5: Define or directive not defined: '`FFL'
+  129 |     `FFL(inp_pipe_is_boxed_q[i+1], inp_pipe_is_boxed_q[i], reg_ena, '0)
+      |     ^~~~
+%Error: /testbed/src/fpnew_noncomp.sv:130:5: Define or directive not defined: '`FFL'
+  130 |     `FFL(inp_pipe_rnd_mode_q[i+1], inp_pipe_rnd_mode_q[i], reg_ena, fpnew_pkg::RNE)
+      |     ^~~~
+%Error: /testbed/src/fpnew_noncomp.sv:131:5: Define or directive not defined: '`FFL'
+  131 |     `FFL(inp_pipe_op_q[i+1],       inp_pipe_op_q[i],       reg_ena, fpnew_pkg::FMADD)
+      |     ^~~~
+%Error: /testbed/src/fpnew_noncomp.sv:132:5: Define or directive not defined: '`FFL'
+  132 |     `FFL(inp_pipe_op_mod_q[i+1],   inp_pipe_op_mod_q[i],   reg_ena, '0)
+      |     ^~~~
+%Error: /testbed/src/fpnew_noncomp.sv:133:5: Define or directive not defined: '`FFL'
+  133 |     `FFL(inp_pipe_tag_q[i+1],      inp_pipe_tag_q[i],      reg_ena, TagType'('0))
+      |     ^~~~
+%Error: /testbed/src/fpnew_noncomp.sv:134:5: Define or directive not defined: '`FFL'
+  134 |     `FFL(inp_pipe_mask_q[i+1],     inp_pipe_mask_q[i],     reg_ena, '0)
+      |     ^~~~
+%Error: /testbed/src/fpnew_noncomp.sv:135:5: Define or directive not defined: '`FFL'
+  135 |     `FFL(inp_pipe_aux_q[i+1],      inp_pipe_aux_q[i],      reg_ena, AuxType'('0))
+      |     ^~~~
+%Error: /testbed/src/fpnew_noncomp.sv:154:14: syntax error, unexpected IDENTIFIER, expecting TYPE-IDENTIFIER
+  154 |   fpnew_pkg::fp_info_t info_a,    info_b;
+      |              ^~~~~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:167:3: syntax error, unexpected assign
+  167 |   assign any_operand_inf = (| {info_a.is_inf,        info_b.is_inf});
+      |   ^~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:174:3: syntax error, unexpected assign
+  174 |   assign operands_equal    = (operand_a == operand_b) || (info_a.is_zero && info_b.is_zero);
+      |   ^~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:182:14: syntax error, unexpected IDENTIFIER, expecting TYPE-IDENTIFIER
+  182 |   fpnew_pkg::status_t sgnj_status;
+      |              ^~~~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:187:3: syntax error, unexpected always_comb
+  187 |   always_comb begin : sign_injections
+      |   ^~~~~~~~~~~
+%Error: /testbed/src/fpnew_noncomp.sv:190:5: syntax error, unexpected IDENTIFIER
+  190 |     sgnj_result = operand_a;  
+      |     ^~~~~~~~~~~
+%Error: Exiting due to too many errors encountered; --error-limit=50
+
+2026-01-19 20:59:04,312 - INFO - swea-agent - ========================= STEP 7 =========================
+2026-01-19 20:59:13,250 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && make -n 2>/dev/null | head
+2026-01-19 20:59:13,507 - INFO - swea-agent - 🤖 MODEL INPUT
+Your command ran successfully and did not produce any output.
+2026-01-19 20:59:13,515 - INFO - swea-agent - ========================= STEP 8 =========================
+2026-01-19 20:59:18,402 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+ls /testbed | grep -i make
+2026-01-19 20:59:18,658 - INFO - swea-agent - 🤖 MODEL INPUT
+Your command ran successfully and did not produce any output.
+2026-01-19 20:59:18,667 - INFO - swea-agent - ========================= STEP 9 =========================
+2026-01-19 20:59:22,917 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+submit
+2026-01-19 20:59:23,207 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+Thank you for your work on this issue. Please review your changes and run the submit command again to confirm.
+
+Here is a list of all of your changes:
+
+<diff>
+diff --git a/src/fpnew_noncomp.sv b/src/fpnew_noncomp.sv
+index 4dabfaa..dd60f69 100644
+--- a/src/fpnew_noncomp.sv
++++ b/src/fpnew_noncomp.sv
+@@ -260,10 +260,18 @@ module fpnew_noncomp #(
+     cmp_result = '0; // false
+     cmp_status = '0; // no flags
+ 
+-    // Signalling NaNs always compare as false and are illegal
+-    if (signalling_nan) cmp_status.NV = 1'b1; // invalid operation
+-    // Otherwise do comparisons
+-    else begin
++    // Signalling NaNs always raise NV.
++    // Result is cleared for signalling NaNs as well, except for "not equal" (op_mod=1 in EQ mode),
++    // which yields true on any NaN (in line with RISC-V compare semantics).
++    if (signalling_nan) begin
++      cmp_status.NV = 1'b1; // invalid operation
++      if ((inp_pipe_rnd_mode_q[NUM_INP_REGS] == fpnew_pkg::RDN) && inp_pipe_op_mod_q[NUM_INP_REGS]) begin
++        // NaN always not equal
++        cmp_result = 1'b1;
++      end else begin
++        cmp_result = 1'b0;
++      end
++    end else begin
+       unique case (inp_pipe_rnd_mode_q[NUM_INP_REGS])
+         fpnew_pkg::RNE: begin // Less than or equal
+           if (any_operand_nan) cmp_status.NV = 1'b1; // Signalling comparison: NaNs are invalid
+@@ -273,7 +281,7 @@ module fpnew_noncomp #(
+           if (any_operand_nan) cmp_status.NV = 1'b1; // Signalling comparison: NaNs are invalid
+           else cmp_result = (operand_a_smaller & ~operands_equal) ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+         end
+-        fpnew_pkg::RDN: begin // Equal
++        fpnew_pkg::RDN: begin // Equal (op_mod=1 => Not equal)
+           if (any_operand_nan) cmp_result = inp_pipe_op_mod_q[NUM_INP_REGS]; // NaN always not equal
+           else cmp_result = operands_equal ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+         end
+
+</diff>
+
+
+2026-01-19 20:59:23,219 - INFO - swea-agent - ========================= STEP 10 =========================
+2026-01-19 20:59:29,078 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+submit
+2026-01-19 20:59:29,371 - INFO - swea-agent - Found submission: diff --git a/src/fpnew_noncomp.sv b/src/fpnew_noncomp.sv
+index 4dabfaa..dd60f69 100644
+--- a/src/fpnew_noncomp.sv
++++ b/src/fpnew_noncomp.sv
+@@ -260,10 +260,18 @@ module fpnew_noncomp #(
+     cmp_result = '0; // false
+     cmp_status = '0; // no flags
+ 
+-    // Signalling NaNs always compare as false and are illegal
+-    if (signalling_nan) cmp_status.NV = 1'b1; // invalid operation
+-    // Otherwise do comparisons
+-    else begin
++    // Signalling NaNs always raise NV.
++    // Result is cleared for signalling NaNs as well, except for "not equal" (op_mod=1 in EQ mode),
++    // which yields true on any NaN (in line with RISC-V compare semantics).
++    if (signalling_nan) begin
++      cmp_status.NV = 1'b1; // invalid operation
++      if ((inp_pipe_rnd_mode_q[NUM_INP_REGS] == fpnew_pkg::RDN) && inp_pipe_op_mod_q[NUM_INP_REGS]) begin
++        // NaN always not equal
++        cmp_result = 1'b1;
++      end else begin
++        cmp_result = 1'b0;
++      end
++    end else begin
+       unique case (inp_pipe_rnd_mode_q[NUM_INP_REGS])
+         fpnew_pkg::RNE: begin // Less than or equal
+           if (any_operand_nan) cmp_status.NV = 1'b1; // Signalling comparison: NaNs are invalid
+@@ -273,7 +281,7 @@ module fpnew_noncomp #(
+           if (any_operand_nan) cmp_status.NV = 1'b1; // Signalling comparison: NaNs are invalid
+           else cmp_result = (operand_a_smaller & ~operands_equal) ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+         end
+-        fpnew_pkg::RDN: begin // Equal
++        fpnew_pkg::RDN: begin // Equal (op_mod=1 => Not equal)
+           if (any_operand_nan) cmp_result = inp_pipe_op_mod_q[NUM_INP_REGS]; // NaN always not equal
+           else cmp_result = operands_equal ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+         end
+
+2026-01-19 20:59:29,382 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+diff --git a/src/fpnew_noncomp.sv b/src/fpnew_noncomp.sv
+index 4dabfaa..dd60f69 100644
+--- a/src/fpnew_noncomp.sv
++++ b/src/fpnew_noncomp.sv
+@@ -260,10 +260,18 @@ module fpnew_noncomp #(
+     cmp_result = '0; // false
+     cmp_status = '0; // no flags
+ 
+-    // Signalling NaNs always compare as false and are illegal
+-    if (signalling_nan) cmp_status.NV = 1'b1; // invalid operation
+-    // Otherwise do comparisons
+-    else begin
++    // Signalling NaNs always raise NV.
++    // Result is cleared for signalling NaNs as well, except for "not equal" (op_mod=1 in EQ mode),
++    // which yields true on any NaN (in line with RISC-V compare semantics).
++    if (signalling_nan) begin
++      cmp_status.NV = 1'b1; // invalid operation
++      if ((inp_pipe_rnd_mode_q[NUM_INP_REGS] == fpnew_pkg::RDN) && inp_pipe_op_mod_q[NUM_INP_REGS]) begin
++        // NaN always not equal
++        cmp_result = 1'b1;
++      end else begin
++        cmp_result = 1'b0;
++      end
++    end else begin
+       unique case (inp_pipe_rnd_mode_q[NUM_INP_REGS])
+         fpnew_pkg::RNE: begin // Less than or equal
+           if (any_operand_nan) cmp_status.NV = 1'b1; // Signalling comparison: NaNs are invalid
+@@ -273,7 +281,7 @@ module fpnew_noncomp #(
+           if (any_operand_nan) cmp_status.NV = 1'b1; // Signalling comparison: NaNs are invalid
+           else cmp_result = (operand_a_smaller & ~operands_equal) ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+         end
+-        fpnew_pkg::RDN: begin // Equal
++        fpnew_pkg::RDN: begin // Equal (op_mod=1 => Not equal)
+           if (any_operand_nan) cmp_result = inp_pipe_op_mod_q[NUM_INP_REGS]; // NaN always not equal
+           else cmp_result = operands_equal ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+         end
+
+2026-01-19 20:59:29,400 - INFO - swea-agent - Trajectory saved to /workspace/phoenix-bench/agents/SWE-agent/trajectories/anon/swe_agent__openai--gpt-5.2__t-0.00__p-1.00__c-0.00___swe_instances/openhwgroup_cvfpu_pr116/openhwgroup_cvfpu_pr116.traj
+2026-01-19 20:59:29,407 - INFO - swea-env - Beginning environment shutdown...

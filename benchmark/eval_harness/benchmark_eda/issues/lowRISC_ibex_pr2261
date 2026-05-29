@@ -1,0 +1,90 @@
+# simulator report error
+
+<!--
+Thank you for your interest in Ibex. We are continuously improving Ibex, and your bug report will help us with that. To help us understand and reproduce your problem as quickly as possible we have prepared a little template below.
+
+No text in blocks starting with < !-- will be shown in the final bug report.
+
+You can also copy/paste images into the bug report, and you can attach files to it by simply dragging them into the issue window.
+-->
+
+## Observed Behavior
+Test ibex in verilator with cosim, simulator report error illegal instruction.
+```
+001003e8 <main>:
+  1003e8:	1141                	addi	sp,sp,-16
+  1003ea:	c606                	sw	ra,12(sp)
+  1003ec:	0000                	unimp                # <---  This is the illegal instruction!
+  1003ee:	0000                	unimp
+  1003f0:	37b9                	jal	10033e <func>
+  1003f2:	00000517          	auipc	a0,0x0
+  1003f6:	05650513          	addi	a0,a0,86 # 100448 <main+0x60>
+  1003fa:	3959                	jal	100090 <puts>
+  1003fc:	40b2                	lw	ra,12(sp)
+  1003fe:	4501                	li	a0,0
+  100400:	0141                	addi	sp,sp,16
+  100402:	8082                	ret
+```
+```
+DASM(0x00010413)
+mv      s0, sp
+```
+
+![Image](https://github.com/user-attachments/assets/321158de-0306-44b2-a11b-64c2fcfc4a7f)
+
+MTVAL in `ibex_simple_system.log` file is 0x00000000
+<!--
+Please describe the problem you saw. Include waveforms (in VCD or Verilator/GtkWave FST format only please) and log files if possible.
+-->
+
+## Expected Behavior
+The terminal should print right mtval value.
+<!-- Please describe the behavior you expected to see instead. -->
+
+## Steps to reproduce the issue
+Run `build/lowrisc_ibex_ibex_simple_system_cosim_0/sim-verilator/Vibex_simple_system --meminit=ram,ibex/examples/sw/simple_system/input/test.elf`
+```
+#include "simple_system_common.h"
+int main(void){
+    // puts("Starting test");
+    __asm__ volatile(".word 0x000000");
+    puts("Test complete");
+    return 0;
+}
+```
+<!--
+Please help us to reproduce the issue you're seeing by including a detailed description of what you did to get to the problem.
+
+For example:
+* What command did you run? (Also include the output of the command.)
+* What parameters/defines did you set?
+* Did you make modifications to the source code?
+-->
+
+## My Environment
+Build verilator to run ibex by [co-sim](https://ibex-core.readthedocs.io/en/latest/03_reference/cosim.html#quick-build-and-run-instructions).
+<!--
+Let us know how you're using Ibex. This helps us to better understand your problem and find a solution more quickly.
+-->
+
+**EDA tool and version:**
+None
+<!--
+If you are using an EDA tool to work with Ibex let us know which tool and which version you're using.
+For example, "Xilinx Vivado 2020.1" or "Synopsys VCS 2020.03-SP1"
+-->
+
+**Operating system:**
+Ubuntu Linux 18.04
+<!--
+Please let us know the operating system/Linux distribution you're using.
+For example "Ubuntu Linux 18.04" or "CentOS 7.3".
+-->
+
+**Version of the Ibex source code:**
+8f4c75c5e43e61b994248307c814e01860303056
+<!--
+Which version of the Ibex source code are you using?
+You can call `git rev-parse HEAD` in your Ibex source directory to get this information.
+Please also let us know if you have made changes to the code.
+-->

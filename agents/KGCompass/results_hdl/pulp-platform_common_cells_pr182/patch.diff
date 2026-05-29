@@ -1,0 +1,15 @@
+diff --git a/src/clk_int_div.sv b/src/clk_int_div.sv
+index 639e2d1..e2a1c19 100755
+--- a/src/clk_int_div.sv
++++ b/src/clk_int_div.sv
+@@ -184,7 +184,9 @@ module clk_int_div #(
+         // cycles which would yield different output clock phase depending on
+         // the number of wait cycles.
+         toggle_ffs_en = 1'b0;
+-        if (cycle_cntr_q == div_q - 1) begin
++        // Divider values 0 and 1 are bypass mode, so don't wait for a counter
++        // terminal count that would underflow or never be reached.
++        if (clk_div_bypass_en_q || (cycle_cntr_q == div_q - 1)) begin
+           clk_gate_state_d = IDLE;
+         end
+       end

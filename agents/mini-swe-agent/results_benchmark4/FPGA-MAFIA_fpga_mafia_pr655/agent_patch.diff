@@ -1,0 +1,28 @@
+diff --git a/source/mem_ss/d_cache/d_cache_tq.sv b/source/mem_ss/d_cache/d_cache_tq.sv
+index eb6e886..c436de3 100644
+--- a/source/mem_ss/d_cache/d_cache_tq.sv
++++ b/source/mem_ss/d_cache/d_cache_tq.sv
+@@ -150,13 +150,16 @@ assign pre_cache2core_rsp     = pipe_lu_rsp_q3.address[MSB_WORD_OFFSET:LSB_WORD_
+                                 pipe_lu_rsp_q3.address[MSB_WORD_OFFSET:LSB_WORD_OFFSET] == 2'b10 ?  pipe_lu_rsp_q3.cl_data[95:64] :
+                                                                                                     pipe_lu_rsp_q3.cl_data[127:96];
+ 
+-assign cache2core_rsp.data[7:0]    = pipe_lu_rsp_q3.byte_en[0]  ? pre_cache2core_rsp[7:0]        : 8'h0;
+-assign cache2core_rsp.data[15:8]   = pipe_lu_rsp_q3.byte_en[1]  ? pre_cache2core_rsp[15:8]       :
+-                                     pipe_lu_rsp_q3.sign_extend ? {8{cache2core_rsp.data[7]}}    : 8'h0;
+-assign cache2core_rsp.data[23:16]  = pipe_lu_rsp_q3.byte_en[2]  ? pre_cache2core_rsp[23:16]      :
+-                                     pipe_lu_rsp_q3.sign_extend ? {8{cache2core_rsp.data[15]}}   : 8'h0; 
+-assign cache2core_rsp.data[31:24]  = pipe_lu_rsp_q3.byte_en[3]  ? pre_cache2core_rsp[31:24]      :
+-                                     pipe_lu_rsp_q3.sign_extend ? {8{cache2core_rsp.data[23]}}   : 8'h0;                                                                        
++logic [31:0] shifted_cache2core_rsp;
++assign shifted_cache2core_rsp = (pre_cache2core_rsp >> ({pipe_lu_rsp_q3.address[1:0],3'b000}));
++
++assign cache2core_rsp.data[7:0]    = pipe_lu_rsp_q3.byte_en[0]  ? shifted_cache2core_rsp[7:0]   : 8'h0;
++assign cache2core_rsp.data[15:8]   = pipe_lu_rsp_q3.byte_en[1]  ? shifted_cache2core_rsp[15:8]  :
++                                     pipe_lu_rsp_q3.sign_extend ? {8{cache2core_rsp.data[7]}}   : 8'h0;
++assign cache2core_rsp.data[23:16]  = pipe_lu_rsp_q3.byte_en[2]  ? shifted_cache2core_rsp[23:16] :
++                                     pipe_lu_rsp_q3.sign_extend ? {8{cache2core_rsp.data[15]}}  : 8'h0; 
++assign cache2core_rsp.data[31:24]  = pipe_lu_rsp_q3.byte_en[3]  ? shifted_cache2core_rsp[31:24] :
++                                     pipe_lu_rsp_q3.sign_extend ? {8{cache2core_rsp.data[23]}}  : 8'h0;                                                                        
+ 
+ assign cache2core_rsp.address = pipe_lu_rsp_q3.address;
+ assign cache2core_rsp.reg_id  = pipe_lu_rsp_q3.reg_id;

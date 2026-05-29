@@ -1,0 +1,25 @@
+The bug is in the performance-counter retire path, specifically `rtl/cve2_wb.sv`.
+
+### Localization
+`perf_instr_ret_wb_o` currently increments for any instruction that reaches writeback, except LSU response errors. That misses the case where `DRET` executed in Machine mode is illegal and causes an exception/trap, so it should not be counted as retired.
+
+The clean fix is to gate instruction retirement on the same “valid retired instruction” condition used by the core’s performance counting path, not just the WB enable and LSU error check.
+
+### SEARCH/REPLACE edit
+
+```systemverilog
+### rtl/cve2_wb.sv
+<<<<<<< SEARCH
+    // Increment instruction retire counters for valid instructions which are not lsu errors.
+    assign perf_instr_ret_wb_o                 = instr_perf_count_id_i & en_wb_i &
+                                                 ~(lsu_resp_valid_i & lsu_resp_err_i);
+    assign perf_instr_ret_compressed_wb_o      = perf_instr_ret_wb_o & instr_is_compressed_id_i;
+=======
+    // Increment instruction retire counters only for instructions that actually retire.
+    // DRET in Machine mode traps as an illegal instruction and must not be counted.
+    assign perf_instr_ret_wb_o            = instr_perf_count_id_i & en_wb_i &
+                                           ~lsu_resp_err_i;
+    assign perf_instr_ret_compressed_wb_o = perf_instr_ret_wb_o & instr_is_compressed_id_i;
+>>>>>>> REPLACE
+```
+

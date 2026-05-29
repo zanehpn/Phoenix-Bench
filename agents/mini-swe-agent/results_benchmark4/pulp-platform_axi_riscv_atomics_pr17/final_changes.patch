@@ -1,0 +1,15 @@
+diff --git a/src/axi_riscv_amos.sv b/src/axi_riscv_amos.sv
+index d55032e..71cc380 100644
+--- a/src/axi_riscv_amos.sv
++++ b/src/axi_riscv_amos.sv
+@@ -271,6 +271,10 @@ module axi_riscv_amos #(
+             if (slv_aw_valid_i && slv_aw_atop_i) begin
+                 // Default is invalid request
+                 atop_valid_d = INVALID;
++                // Treat ATOP_NONE as a non-ATOP and forward it downstream.
++                if (slv_aw_atop_i[5:4] == axi_pkg::ATOP_NONE) begin
++                    atop_valid_d = NONE;
++                end else
+                 // Valid load operation
+                 if ((slv_aw_atop_i      ==  axi_pkg::ATOP_ATOMICSWAP) ||
+                     (slv_aw_atop_i[5:3] == {axi_pkg::ATOP_ATOMICLOAD , axi_pkg::ATOP_LITTLE_END})) begin

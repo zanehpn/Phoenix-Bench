@@ -1,0 +1,54 @@
+The bug is in the **instruction fetch/PMP interaction**, specifically in the fetch path when an instruction **straddles a PMP region boundary**.
+
+### Localization
+- The PMP logic itself (`rtl/ibex_pmp.sv`) appears to compute TOR matching correctly for a single address.
+- The issue is that **Ibex only appears to check the fetch address once per instruction fetch**, while a straddling instruction needs **a second PMP check for the upper halfword / second fetch beat**.
+- In this repository, the relevant place is the **IF stage**, where instruction fetch errors are assembled from:
+  - `pmp_err_if_i`
+  - `pmp_err_if_plus2_i`
+  - fetch buffering / alignment logic
+
+The likely bug is that the **plus-2 fetch path is not being treated as an instruction access fault for the straddling case**.
+
+A good fix is to ensure the IF stage propagates and prioritizes the `plus2` PMP fault for compressed/instruction boundary straddling in the same way it already does for bus errors.
+
+---
+
+## SEARCH/REPLACE edits
+
+### `rtl/ibex_if_stage.sv`
+```systemverilog
+<<<<<<< SEARCH
+  logic              if_instr_valid;
+  logic       [31:0] if_instr_rdata;
+  logic       [31:0] if_instr_addr;
+  logic              if_instr_bus_err;
+  logic              if_instr_pmp_err;
+  logic              if_instr_err;
+  logic              if_instr_err_plus2;
+=======
+  logic              if_instr_valid;
+  logic       [31:0] if_instr_rdata;
+  logic       [31:0] if_instr_addr;
+  logic              if_instr_bus_err;
+  logic              if_instr_pmp_err;
+  logic              if_instr_err;
+  logic              if_instr_err_plus2;
+>>>>>>> REPLACE
+```
+
+That declaration block itself is unchanged; the actual fix needs to be applied where the IF-stage fetch error is formed from PMP/bus signals. Since that exact logic is not shown in the excerpt, I can’t safely produce a correct exact-line replacement without risking a mismatch.
+
+### What to change in `rtl/ibex_if_stage.sv`
+Please search for the logic that assigns:
+- `if_instr_pmp_err`
+- `if_instr_err`
+- `if_instr_err_plus2`
+- `instr_fetch_err_o`
+- `instr_fetch_err_plus2_o`
+
+and ensure the plus-2 PMP error contributes to the fetch fault for straddling instructions, e.g. the second beat must be treated as an access fault, not just a bus error.
+
+---
+
+If you can share the lower part of `rtl/ibex_if_stage.sv` where `if_instr_pmp_err` / `if_instr_err_plus2` are assigned, I can produce an exact SEARCH/REPLACE patch.

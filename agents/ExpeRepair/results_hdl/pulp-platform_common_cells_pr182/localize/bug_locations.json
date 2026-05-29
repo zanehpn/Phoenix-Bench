@@ -1,0 +1,37 @@
+{
+  "instance_id": "pulp-platform_common_cells_pr182",
+  "bug_locs": [
+    [
+      {
+        "rel_file_path": "src/clk_int_div.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_common_cells_pr182/src/clk_int_div.sv",
+        "start": 136,
+        "end": 199,
+        "class_name": null,
+        "method_name": null,
+        "code": "136     gate_en_d           = 1'b0;\n137     clk_gate_state_d    = clk_gate_state_q;\n138     case (clk_gate_state_q)\n139       IDLE: begin\n140         gate_en_d     = 1'b1;\n141         toggle_ffs_en = 1'b1;\n142         if (div_valid_i) begin\n143           if (div_i == div_q) begin\n144             div_ready_o      = 1'b1;\n145           end else begin\n146             clk_gate_state_d = LOAD_DIV;\n147             gate_en_d        = 1'b0;\n148           end\n149         // If we disabled the clock output, stop the cycle counter and the\n150         // toggle flip-flops at the start of the next period to safe energy.\n151         end else if (!en_i && ungated_output_clock == 1'b0) begin\n152             cycle_counter_en                 = 1'b0;\n153             toggle_ffs_en                    = 1'b0;\n154         end\n155       end\n156 \n157       LOAD_DIV: begin\n158         gate_en_d                 = 1'b0;\n159         toggle_ffs_en             = 1'b1;\n160         // Wait until the ouptut clock is currently deasserted. This ensures\n161         // that the clock gate disable (gate_en) was latched and changing the\n162         // div_q and the cycle_counter_q value cannot affect the output clock\n163         // any longer.\n164         if ((ungated_output_clock == 1'b0) || clk_div_bypass_en_q) begin\n165           // Now clear the cycle counter and the toggle flip flops to have a\n166           // deterministic output phase (rising edge of output clock always\n167           // coincides with first rising edge of input clock when cycl_count_o\n168           // == 0).\n169           toggle_ffs_en           = 1'b0;\n170           div_d                   = div_i;\n171           div_ready_o             = 1'b1;\n172           clear_cycle_counter     = 1'b1;\n173           clear_toggle_flops      = 1'b1;\n174           use_odd_division_d      = div_i[0];\n175           clk_div_bypass_en_d     = (div_i == 0) || (div_i == 1);\n176           clk_gate_state_d        = WAIT_END_PERIOD;\n177         end\n178       end\n179 \n180       WAIT_END_PERIOD: begin\n181         gate_en_d     = 1'b0;\n182         // Keep the toggle flip-flops disabled until we reach idle state.\n183         // Otherwise, the start state of the t-ffs depends on the number of wait\n184         // cycles which would yield different output clock phase depending on\n185         // the number of wait cycles.\n186         toggle_ffs_en = 1'b0;\n187         if (cycle_cntr_q == div_q - 1) begin\n188           clk_gate_state_d = IDLE;\n189         end\n190       end\n191 \n192       default: begin\n193         clk_gate_state_d = IDLE;\n194       end\n195     endcase\n196   end\n197 \n198   localparam logic UseOddDivisionResetValue = DEFAULT_DIV_VALUE[0];\n199   localparam logic ClkDivBypassEnResetValue = (DEFAULT_DIV_VALUE < 2)? 1'b1: 1'b0;\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "src/clk_int_div.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_common_cells_pr182/src/clk_int_div.sv",
+        "start": 188,
+        "end": 223,
+        "class_name": null,
+        "method_name": null,
+        "code": "188           clk_gate_state_d = IDLE;\n189         end\n190       end\n191 \n192       default: begin\n193         clk_gate_state_d = IDLE;\n194       end\n195     endcase\n196   end\n197 \n198   localparam logic UseOddDivisionResetValue = DEFAULT_DIV_VALUE[0];\n199   localparam logic ClkDivBypassEnResetValue = (DEFAULT_DIV_VALUE < 2)? 1'b1: 1'b0;\n200 \n201   always_ff @(posedge clk_i, negedge rst_ni) begin\n202     if (!rst_ni) begin\n203       use_odd_division_q  <= UseOddDivisionResetValue;\n204       clk_div_bypass_en_q <= ClkDivBypassEnResetValue;\n205       div_q               <= DEFAULT_DIV_VALUE;\n206       clk_gate_state_q    <= IDLE;\n207       gate_en_q           <= ENABLE_CLOCK_IN_RESET;\n208     end else begin\n209       use_odd_division_q  <= use_odd_division_d;\n210       clk_div_bypass_en_q <= clk_div_bypass_en_d;\n211       div_q               <= div_d;\n212       clk_gate_state_q    <= clk_gate_state_d;\n213       gate_en_q           <= gate_en_d;\n214     end\n215   end\n216 \n217   //---------------------- Cycle Counter ----------------------\n218 \n219   // Cycle Counter\n220   always_comb begin\n221     cycle_cntr_d = cycle_cntr_q;\n222     // Reset the counter if we load a new divider value.\n223     if (clear_cycle_counter) begin\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "src/clk_int_div.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_common_cells_pr182/src/clk_int_div.sv",
+        "start": 206,
+        "end": 253,
+        "class_name": null,
+        "method_name": null,
+        "code": "206       clk_gate_state_q    <= IDLE;\n207       gate_en_q           <= ENABLE_CLOCK_IN_RESET;\n208     end else begin\n209       use_odd_division_q  <= use_odd_division_d;\n210       clk_div_bypass_en_q <= clk_div_bypass_en_d;\n211       div_q               <= div_d;\n212       clk_gate_state_q    <= clk_gate_state_d;\n213       gate_en_q           <= gate_en_d;\n214     end\n215   end\n216 \n217   //---------------------- Cycle Counter ----------------------\n218 \n219   // Cycle Counter\n220   always_comb begin\n221     cycle_cntr_d = cycle_cntr_q;\n222     // Reset the counter if we load a new divider value.\n223     if (clear_cycle_counter) begin\n224       cycle_cntr_d = '0;\n225     end else begin\n226       if (cycle_counter_en) begin\n227         // During normal operation, reset the counter whenver it reaches\n228         // <target_count>-1. In bypass mode (div == 0 or div == 1) disable the\n229         // counter to save power.\n230         if (clk_div_bypass_en_q || (cycle_cntr_q == div_q-1)) begin\n231           cycle_cntr_d = '0;\n232         end else begin\n233           cycle_cntr_d = cycle_cntr_q + 1;\n234         end\n235       end\n236     end\n237   end\n238 \n239   always_ff @(posedge clk_i, negedge rst_ni) begin\n240     if (!rst_ni) begin\n241       cycle_cntr_q <= '0;\n242     end else begin\n243       cycle_cntr_q <= cycle_cntr_d;\n244     end\n245   end\n246 \n247   assign cycl_count_o = cycle_cntr_q;\n248 \n249   //----------------------- T-Flip-Flops -----------------------\n250 \n251   // These T-Flip-Flop intentionally use blocking assignments! If we were to use\n252   // non-blocking assignment like we normally do for flip-flops, we would create\n253   // a race condition when sampling data from the fast clock domain into\n",
+        "intended_behavior": ""
+      }
+    ]
+  ]
+}

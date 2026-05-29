@@ -1,0 +1,75 @@
+diff --git a/src/dmi_jtag_tap.sv b/src/dmi_jtag_tap.sv
+index 3d11145..6fec33e 100755
+--- a/src/dmi_jtag_tap.sv
++++ b/src/dmi_jtag_tap.sv
+@@ -138,13 +138,15 @@ module dmi_jtag_tap #(
+   logic        bypass_select;
+   dtmcs_t      dtmcs_d, dtmcs_q;
+   logic        bypass_d, bypass_q;  // this is a 1-bit register
++  logic        dmi_reset_pulse_d, dmi_reset_pulse_q;
+ 
+-  assign dmi_reset_o = dtmcs_q.dmireset;
++  assign dmi_reset_o = dmi_reset_pulse_q;
+ 
+   always_comb begin
+     idcode_d = idcode_q;
+     bypass_d = bypass_q;
+     dtmcs_d  = dtmcs_q;
++    dmi_reset_pulse_d = 1'b0;
+ 
+     if (capture_dr_o) begin
+       if (idcode_select) idcode_d = IdcodeValue;
+@@ -166,13 +168,19 @@ module dmi_jtag_tap #(
+     if (shift_dr_o) begin
+       if (idcode_select)  idcode_d = {td_i, 31'(idcode_q >> 1)};
+       if (bypass_select)  bypass_d = td_i;
+-      if (dtmcs_select_o) dtmcs_d  = {td_i, 31'(dtmcs_q >> 1)};
++       if (dtmcs_select_o) dtmcs_d  = {td_i, 31'(dtmcs_q >> 1)};
+     end
+ 
+     if (test_logic_reset_o) begin
+       idcode_d = IdcodeValue;
+       bypass_d = 1'b0;
+     end
++
++    // dmireset is W1 and must behave like a pulse
++    if (update_dr_o && dtmcs_select_o && dtmcs_q.dmireset) begin
++      dmi_reset_pulse_d = 1'b1;
++      dtmcs_d.dmireset  = 1'b0;
++    end
+   end
+ 
+   // ----------------
+@@ -213,10 +221,10 @@ module dmi_jtag_tap #(
+     end
+   end
+ 
+-  // ----------------
+-  // DFT
+-  // ----------------
+-  logic tck_n, tck_ni;
++   // ----------------
++   // DFT
++   // ----------------
++   logic tck_n, tck_ni;
+ 
+   cluster_clock_inverter i_tck_inv (
+     .clk_i ( tck_i  ),
+@@ -233,11 +241,13 @@ module dmi_jtag_tap #(
+   // TDO changes state at negative edge of TCK
+   always_ff @(posedge tck_n, negedge trst_ni) begin : p_tdo_regs
+     if (!trst_ni) begin
+-      td_o     <= 1'b0;
+-      tdo_oe_o <= 1'b0;
++      td_o             <= 1'b0;
++      tdo_oe_o         <= 1'b0;
++      dmi_reset_pulse_q <= 1'b0;
+     end else begin
+-      td_o     <= tdo_mux;
+-      tdo_oe_o <= (shift_ir | shift_dr_o);
++      td_o             <= tdo_mux;
++      tdo_oe_o         <= (shift_ir | shift_dr_o);
++      dmi_reset_pulse_q <= dmi_reset_pulse_d;
+     end
+   end
+   // ----------------

@@ -1,0 +1,30 @@
+diff --git a/libs/libarchopenfpga/src/read_xml_openfpga_arch_utils.cpp b/libs/libarchopenfpga/src/read_xml_openfpga_arch_utils.cpp
+index c5081c4..34808d3 100644
+--- a/libs/libarchopenfpga/src/read_xml_openfpga_arch_utils.cpp
++++ b/libs/libarchopenfpga/src/read_xml_openfpga_arch_utils.cpp
+@@ -19,7 +19,7 @@
+ 
+ /********************************************************************
+  * Parse mode_bits: convert from string to array of digits
+- * We only allow the bit to either '0' or '1'
++ * We only allow the bit to either '0', '1' or don't care 'x'
+  *******************************************************************/
+ std::vector<size_t> parse_mode_bits(pugi::xml_node& xml_mode_bits,
+                                     const pugiutil::loc_data& loc_data,
+diff --git a/openfpga/src/annotation/annotate_pb_types.cpp b/openfpga/src/annotation/annotate_pb_types.cpp
+index 3dd7357..3184b9b 100644
+--- a/openfpga/src/annotation/annotate_pb_types.cpp
++++ b/openfpga/src/annotation/annotate_pb_types.cpp
+@@ -1019,7 +1019,11 @@ static void link_vpr_pb_type_to_mode_bits_explicit_annotation(
+     /* Convert the vector of integer to string */
+     std::string mode_bits_str;
+     for (const size_t& bit : pb_type_annotation.mode_bits()) {
+-      mode_bits_str += std::to_string(bit);
++      if (bit == 2) {
++        mode_bits_str += 'x';
++      } else {
++        mode_bits_str += std::to_string(bit);
++      }
+     }
+ 
+     /* Collect the information about the full hierarchy of physical pb_type to

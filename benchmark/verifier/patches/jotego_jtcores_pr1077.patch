@@ -1,0 +1,1307 @@
+From a3a63448953ea81bc1b85e5456c40a19b83da487 Mon Sep 17 00:00:00 2001
+From: Jose Tejada <jose.tejada@jotego.es>
+Date: Sun, 8 Jun 2025 17:06:08 +0200
+Subject: [PATCH 01/10] Dumpable VRAM
+
+---
+ cores/circus/cfg/macros.def        |  3 +++
+ cores/circus/cfg/mem.yaml          | 21 ++++++++++++++++++++
+ cores/circus/hdl/jtcircus_game.v   | 22 ++++++++++++--------
+ cores/circus/hdl/jtcircus_obj.v    | 29 ++++++++++-----------------
+ cores/circus/hdl/jtcircus_video.v  | 29 +++++++++++++++++----------
+ cores/kicker/hdl/jtkicker_scroll.v | 32 +++++++++++++++++-------------
+ 6 files changed, 85 insertions(+), 51 deletions(-)
+
+diff --git a/cores/circus/cfg/macros.def b/cores/circus/cfg/macros.def
+index 1181cdd8a..0b3a1a273 100644
+--- a/cores/circus/cfg/macros.def
++++ b/cores/circus/cfg/macros.def
+@@ -9,3 +9,6 @@ JTFRAME_BA3_START=0x18000
+ JTFRAME_PROM_START=0x24000
+ 
+ JTFRAME_CREDITS_PAGES=4
++
++# debug
++JTFRAME_IOCTL_RD=3072
+\ No newline at end of file
+diff --git a/cores/circus/cfg/mem.yaml b/cores/circus/cfg/mem.yaml
+index 0d863abbe..d14c9eed1 100644
+--- a/cores/circus/cfg/mem.yaml
++++ b/cores/circus/cfg/mem.yaml
+@@ -46,3 +46,24 @@ sdram:
+       - name: objrom
+         addr_width: 16
+         data_width: 32
++bram:
++  - name: vram
++    addr_width: 11
++    data_width: 16
++    sim_file: true
++    dual_port:
++      name: vramrw
++      din:  "{2{cpu_dout}}"
++      dout: vramrw_dout
++      rw:   true
++    ioctl: { save: true, order: 0 }
++  - name: olut
++    addr_width: 10
++    data_width: 8
++    dual_port:
++      name: oram
++      addr: main_addr[9:0]
++      din:  "cpu_dout"
++      dout: oram_dout
++      rw: true
++    ioctl: { save: true, order: 1 }
+\ No newline at end of file
+diff --git a/cores/circus/hdl/jtcircus_game.v b/cores/circus/hdl/jtcircus_game.v
+index 5e2e59bf1..efa216118 100644
+--- a/cores/circus/hdl/jtcircus_game.v
++++ b/cores/circus/hdl/jtcircus_game.v
+@@ -27,12 +27,14 @@ localparam [24:0] PROM_START = `JTFRAME_PROM_START;
+ 
+ wire        cpu_rnw, cpu_irqn, cpu_nmin, cpu_cen, obj_frame,
+             snd_on, main_pause, mute;
+-wire        vram_cs, vgap_cs, objram_cs, flip;
+-wire [ 7:0] vram_dout, obj_dout, cpu_dout, st_snd, snd_latch;
++wire        vram_cs, vgap_cs, oram_cs, flip;
++wire [ 7:0] vcpu_din, obj_dout, st_snd, snd_latch;
+ 
+ assign dip_flip   = flip^dipsw[16]; // extra DIPSW, not in the original
+ assign main_pause = dip_pause & ~ioctl_ram;
+ assign debug_view = { mute, st_snd[4], 1'd0, dip_flip, st_snd[3:0] };
++assign oram_we    = oram_cs & ~cpu_rnw;
++assign ioctl_din  = 0;
+ 
+ jtcircus_main u_main(
+     .rst            ( rst24         ),
+@@ -55,10 +57,10 @@ jtcircus_main u_main(
+     .cpu_rnw        ( cpu_rnw       ),
+     .vgap_cs        ( vgap_cs       ),
+     .vram_cs        ( vram_cs       ),
+-    .vram_dout      ( vram_dout     ),
++    .vram_dout      ( vcpu_din      ),
+ 
+-    .objram_cs      ( objram_cs     ),
+-    .obj_dout       ( obj_dout      ),
++    .objram_cs      ( oram_cs       ),
++    .obj_dout       ( oram_dout     ),
+     // Sound control
+     .snd_latch      ( snd_latch     ),
+     .snd_irq        ( snd_on        ),
+@@ -119,10 +121,14 @@ jtcircus_video u_video(
+     .vram_cs    ( vram_cs   ),
+     .vram_dout  ( vram_dout ),
+     .vscr_cs    ( vgap_cs   ),
++    .vcpu_din   ( vcpu_din  ),
++    .vramrw_we  ( vramrw_we ),
++    .vramrw_dout(vramrw_dout),
++    .vramrw_addr(vramrw_addr),
++    .vram_addr  ( vram_addr ),
+     // Objects
+-    .objram_cs  ( objram_cs ),
+-    .obj_dout   ( obj_dout  ),
+-
++    .olut_addr  ( olut_addr ),
++    .olut_dout  ( olut_dout ),
+     // PROMs
+     .prog_data  ( prog_data ),
+     .prog_addr  ( prog_addr[9:0] ),
+diff --git a/cores/circus/hdl/jtcircus_obj.v b/cores/circus/hdl/jtcircus_obj.v
+index 2864bd2dc..476596311 100644
+--- a/cores/circus/hdl/jtcircus_obj.v
++++ b/cores/circus/hdl/jtcircus_obj.v
+@@ -27,14 +27,9 @@ module jtcircus_obj(
+     input               clk24,      // 24 MHz
+ 
+     input               pxl_cen,
+-
+-    // CPU interface
+-    input         [9:0] cpu_addr,
+-    input         [7:0] cpu_dout,
+-    input               objram_cs,
+-    input               cpu_rnw,
+-    output        [7:0] obj_dout,
+-
++    // Video RAM
++    output       [ 9:0] olut_addr,
++    input        [ 7:0] olut_dout,
+     // video inputs
+     input               obj_frame,
+     input               hs,
+@@ -64,16 +59,14 @@ parameter REV_SCAN = 0;
+ 
+ localparam FIX = 9'h2d, FIXF = 9'hde;
+ 
+-wire [ 7:0] dma_din, scan_dout;
+-wire        obj_we, obj_bl;
++wire [ 7:0] scan_dout;
++wire        obj_bl;
+ reg  [ 7:0] scan_addr=0;
+ reg         dma_we, dma_done;
+-wire [ 9:0] eff_dma;
+ reg  [ 7:0] dma_addr;
+ wire [ 3:0] pal_data, pre_pxl, pxl_dly;
+ 
+-assign obj_we  = objram_cs & ~cpu_rnw;
+-assign eff_dma = {1'b0,obj_frame,dma_addr};
++assign olut_addr = {1'b0,obj_frame,dma_addr};
+ assign pxl     = obj_bl ? 4'd0 : flip ? pre_pxl : pxl_dly;
+ assign obj_bl  = flip ? hdump>=FIXF : hdump <= FIX;
+ jtframe_sh #(.W(4),.L(5)) u_sh(
+@@ -82,7 +75,7 @@ jtframe_sh #(.W(4),.L(5)) u_sh(
+     .din    ( pre_pxl   ),
+     .drop   ( pxl_dly   )
+ );
+-
++/*
+ jtframe_dual_ram u_hi(
+     // Port 0, CPU
+     .clk0   ( clk24      ),
+@@ -93,16 +86,16 @@ jtframe_dual_ram u_hi(
+     // Port 1
+     .clk1   ( clk        ),
+     .data1  (            ),
+-    .addr1  ( eff_dma    ),
++    .addr1  ( olut_addr    ),
+     .we1    ( 1'b0       ),
+-    .q1     ( dma_din    )
++    .q1     ( olut_dout    )
+ );
+-
++*/
+ // LUT frame buffer and DMA
+ jtframe_dual_ram #(.AW(8)) u_fb(
+     // Port 0, DMA
+     .clk0   ( clk           ),
+-    .data0  ( dma_din       ),
++    .data0  ( olut_dout       ),
+     .addr0  ( dma_addr      ),
+     .we0    ( dma_we        ),
+     .q0     (               ),
+diff --git a/cores/circus/hdl/jtcircus_video.v b/cores/circus/hdl/jtcircus_video.v
+index 09a6eefda..fdd2f8f37 100644
+--- a/cores/circus/hdl/jtcircus_video.v
++++ b/cores/circus/hdl/jtcircus_video.v
+@@ -35,11 +35,17 @@ module jtcircus_video(
+ 
+     input               vram_cs,
+     input               vscr_cs,
+-    output        [7:0] vram_dout,
++    output        [7:0] vcpu_din,
+ 
+-    input               objram_cs,
+-    output        [7:0] obj_dout,
++    output       [ 1:0] vramrw_we,
++    input        [15:0] vramrw_dout,
++    output       [10:1] vramrw_addr,
++    // VRAM read out
++    output       [10:1] vram_addr,
++    input        [15:0] vram_dout,
+ 
++    output       [ 9:0] olut_addr,
++    input        [ 7:0] olut_dout,
+     // PROMs
+     input         [7:0] prog_data,
+     input         [9:0] prog_addr,
+@@ -107,8 +113,13 @@ jtkicker_scroll #(.LAYOUT(6)) u_scroll(
+     .cpu_rnw    ( cpu_rnw   ),
+     .vram_cs    ( vram_cs   ),
+     .vscr_cs    ( vscr_cs   ),
+-    .vram_dout  ( vram_dout ),
++    .cpu_din    ( vcpu_din  ),
+     .vscr_dout  (           ),
++    .vramrw_we  ( vramrw_we ),
++    .vramrw_dout(vramrw_dout),
++    .vramrw_addr(vramrw_addr),
++    .vram_dout  ( vram_dout ),
++    .rd_addr    ( vram_addr ),
+ 
+     // video inputs
+     .LHBL       ( LHBL      ),
+@@ -139,13 +150,9 @@ jtcircus_obj u_obj(
+ 
+     .pxl_cen    ( pxl_cen   ),
+     .obj_frame  ( obj_frame ),
+-    // CPU interface
+-    .cpu_addr   ( cpu_addr[9:0] ),
+-    .cpu_dout   ( cpu_dout  ),
+-    .objram_cs  ( objram_cs ),
+-    .cpu_rnw    ( cpu_rnw   ),
+-    .obj_dout   ( obj_dout  ),
+-
++    // Video RAM
++    .olut_addr  ( olut_addr ),
++    .olut_dout  ( olut_dout ),
+     // video inputs
+     .hs         ( HS        ),
+     .LHBL       ( LHBL      ),
+diff --git a/cores/kicker/hdl/jtkicker_scroll.v b/cores/kicker/hdl/jtkicker_scroll.v
+index 276d8d5cb..4e5814b75 100644
+--- a/cores/kicker/hdl/jtkicker_scroll.v
++++ b/cores/kicker/hdl/jtkicker_scroll.v
+@@ -29,9 +29,16 @@ module jtkicker_scroll(
+     input               cpu_rnw,
+     input               vram_cs,
+     input               vscr_cs,
+-    output        [7:0] vram_dout,
++    output        [7:0] cpu_din,
+     output        [7:0] vscr_dout,
+ 
++    output       [ 1:0] vramrw_we,
++    input        [15:0] vramrw_dout,
++    output reg   [10:1] vramrw_addr,
++
++    // VRAM read out
++    output       [10:1] rd_addr,
++    input        [15:0] vram_dout,
+     // video inputs
+     input               LHBL,
+     input               LVBL,
+@@ -83,26 +90,23 @@ reg  [ 3:0] pal_msb;
+ reg  [ 3:0] cur_pal;
+ reg  [ 1:0] code_msb;
+ reg  [31:0] pxl_data;
+-wire [ 9:0] rd_addr;
+ reg  [ 7:0] hdf, vpos, vscr;
+ reg         cur_hf;
+-wire        vram_we_low, vram_we_high;
+ reg         vflip, hflip;
+-wire        vram_we;
+-reg  [ 9:0] eff_addr;
++wire        vram_prewe;
+ reg         scr_prio;
+ reg         cur_prio;
+ 
+-assign vram_we      = vram_cs & ~cpu_rnw;
+-assign vram_we_low  = vram_we & ~cpu_addr[BSEL];
+-assign vram_we_high = vram_we &  cpu_addr[BSEL];
+-assign vram_dout    = cpu_addr[BSEL] ? vram_high : vram_low;
++assign vram_prewe = vram_cs & ~cpu_rnw;
++assign vramrw_we  = {2{vram_prewe}} &  {cpu_addr[BSEL],~cpu_addr[BSEL]};
++assign cpu_din    = cpu_addr[BSEL] ? vramrw_dout[15:8] : vramrw_dout[7:0];
++assign {code,attr}= vram_dout;
+ 
+ always @* begin
+     hdf = flip ? (~hdump[7:0]-8'd3) : hdump[7:0];
+-    eff_addr =  LAYOUT==5 ? cpu_addr[9:0] :
+-                (NOSCROLL && LAYOUT!=3) ? cpu_addr[10:1] :
+-                cpu_addr[9:0];
++    vramrw_addr =  LAYOUT==5 ? cpu_addr[9:0] :
++            (NOSCROLL && LAYOUT!=3) ? cpu_addr[10:1] :
++            cpu_addr[9:0];
+     case( LAYOUT )
+         0: begin // Kicker
+             vflip    = attr[5];
+@@ -195,7 +199,7 @@ always @(posedge clk) if(pxl_cen) begin
+         pxl_data <= cur_hf ? pxl_data>>4 : pxl_data<<4;
+     end
+ end
+-
++/*
+ jtframe_dual_ram #(.SIMFILE("vram_lo.bin")) u_low(
+     // Port 0, CPU
+     .clk0   ( clk24         ),
+@@ -225,7 +229,7 @@ jtframe_dual_ram #(.SIMFILE("vram_hi.bin")) u_high(
+     .we1    ( 1'b0          ),
+     .q1     ( code          )
+ );
+-
++*/
+ generate
+     if( BYPASS_PROM ) begin
+         assign pxl = pal_addr[3:0];
+
+From 3a552a0cf5c3f4670d5d79d5df5f03337d74358e Mon Sep 17 00:00:00 2001
+From: Jose Tejada <jose.tejada@jotego.es>
+Date: Sun, 8 Jun 2025 17:06:23 +0200
+Subject: [PATCH 02/10] scenes
+
+---
+ cores/circus/ver/circusc/scenes/games/dump.bin | Bin 0 -> 3072 bytes
+ cores/circus/ver/circusc/scenes/head/dump.bin  | Bin 0 -> 3072 bytes
+ cores/circus/ver/circusc/scenes/stars/dump.bin | Bin 0 -> 3072 bytes
+ 3 files changed, 0 insertions(+), 0 deletions(-)
+ create mode 100644 cores/circus/ver/circusc/scenes/games/dump.bin
+ create mode 100644 cores/circus/ver/circusc/scenes/head/dump.bin
+ create mode 100644 cores/circus/ver/circusc/scenes/stars/dump.bin
+
+diff --git a/cores/circus/ver/circusc/scenes/games/dump.bin b/cores/circus/ver/circusc/scenes/games/dump.bin
+new file mode 100644
+index 0000000000000000000000000000000000000000..ec9674496b48cbcd069a39acd02a9666c33d1d5a
+GIT binary patch
+literal 3072
+zcmeH|$#2z09LL9mJi^+a6C%h$-cKZyqz#e}pwf+;Sh@g0U{uNyKqWR=P0QkhEpPw}
+z3G`mzkfX(4z^OtUP}BoL93X00Uik~&kpnF^;5*~-BewIT(nBxQmfwtjGoSf9&-^@Q
+zkM&9VXpJlXsEld$;_m-~-@%9Z7>&{xUBGowk93`G(9DYxcTo$$znj13LwuCndI=gd
+zq4-ffN~Pe%s7_UGqsm3_Hh;%^*(FEuf{NxcG`gvth*)hIeggb1{+54aNBfB;%r>x&
+z)m$0jIXzX86&bz=ekXs!d$^ArQvx0EH=%Sb`5PU7(i2o%t0lurzsEiN10Nw*@lEiz
+zqqk!%*ECUy9;?X03=e-8oxb)jg?|;Ez_sKoM8`Aw0~Oa=km2Fi{HXRf!cS(N98nYF
+zx^yU);iZ2yM(7X6w0|Z1ZDt4crB|CjN=I;C0N)9IAUv)84e&RDcM|qDxJyQ&X6f$=
+z_l1Mu8ML3Gaq{7BG*_k8U-H?Ez*>X%!u{b;coyv^^Ma1RztXHv*{b_<;17hu;W-c|
+z@-^U#W&>6-X{+w94Y!BA;YfHM#PNKc^0%AaiToo{ek=QG;`w<y_wopzhyR!SeB~$U
+zpOJqNFY_;bMEQ4shxr`*Kj#hQZ!}vH`4{^arg4(~HN2mP_$>VWc~bu6W<w(XV*i2+
+zFa6!Tj|ce-{72~u{e=1Nz#HU<IWu}k^Itn75>=)DQ(Oaly0T(L<nMdrAAbVApU04Y
+zLJcbOue~zbJ7typ1HFN_@hI{?;)`ax*_B#<IZ84kqH&}7|C+b5uk&B-KY987y%XzN
+zHbQFtJ^sq5;p6)KLkxWLEVk<YFO51rrTl->EBNKk<5=@k|G=>pr6SVbh3Egmn8zoT
+z|0Vq;^B?_Ot1i{swX*p$!JXhgH){C=_TS5-{EBm|c`4q({*^w8yc+y^-h%I!Q-6t+
+zUv=seMzS+6p}ENj?y&#h{ERn)k9Vws?iGE_<QFZvs8Wj~V?>IVV|bdP>`NNA%vSPC
+zzKJi;I{uh?qO-MUwtm%Ofe5CrieRc&1h)!ea{8K>oH{HfZ#~TU-s_xy@KG-CrgOo;
+zjiPjalPKNZEXwz{i1O_LQ3?h{$sZCWcUY8z5mEL%QFd)1Uf9O3t+sK8ZR2i-ZT!}0
+z8~3_x<AG%x57+J%zpsCTK0;qj!Y?!nf4oHmg;o)a$MOHF{Lr5t^Zftu0nfl&mA>*k
+
+literal 0
+HcmV?d00001
+
+diff --git a/cores/circus/ver/circusc/scenes/head/dump.bin b/cores/circus/ver/circusc/scenes/head/dump.bin
+new file mode 100644
+index 0000000000000000000000000000000000000000..cc3da5d1e49265bc316e05d0b192d2fdb6b28ee9
+GIT binary patch
+literal 3072
+zcmeH|M{g7{7>12d0uk+9r=RvCgcKmil=MRHB;mkefiw`1kUBtm+rR+?r=|P=i!&uO
+z3HU{D+e3gG;#;pLT4qUR=fWlUlSix3K7M9AuWfS37E;?IoWUioE0{qK99+e1zB;&u
+zYBb`dsaJ_RE=^7<4wpZN0S})TB{^2&7xSt>m8lwaQclTfd5`;j9?9j?{pozZ+NrA5
+z3E3wTk09jJ6h0Gwo+?!b)p6Nt`6nrSCjMNtLmg1ZtRI2>QkAIv>Zt4uC7!=juI_KZ
+zA$&0P(av8;ZCCr$5!q+>Vjq7!TJX-)`y{U&Q<K)8=i{$KGv1o|_6I*@{rNurTILr`
+zeYJc!`}_5@^_Lj`CY;4(ME;V$8Z_axsW+CdV17W)SbwgMKP|tyQg`S<Ju7=Lfdx$Z
+zynkB$*xsp!^qlO&cv#?ukKe<qZ05W4u%2iCSa?12tABqlpQYP%w;s_^_K$`)2KDp$
+zZKrM;p(y+BhI0b@9pz9L4bwdP?}XR+`aStoj;d0fG(>ak?+;_yzYXo^#t5RG{lk-A
+z=J%)$8l+kF-@;>DxAVUhZRo-<<~_V8zs&FEHyEH9_M2wse+ydCi6P8+cu#(r-^F}C
+zO>_Q4VgT#kjPvNgAZ9&$T7LNpv``yOasHG1>fb*tzsxsND^1$`yZ+?<ox%Rcd{Zc!
+zM(z4Tu>3LYP-AEVO&I?V{0x?Vs${+)lttslzl86`zw-L`<ew^-uV;RY_uq#I?k{J)
+zj!u)q`~L&D{s89>^R;w}`J3{Ye9k?_A#nN3=HHy6iR>&lm-jz^mgogtq-rYTbHS|u
+z{$HY4bB|St9KBcM#Doy>f7uH}WU)|0bdiX}3WRf^P&kK+grin^hEF2C@L9y2FCyNv
+T(tm>7U+eGBbM?Qi;TiZ1lwoN;
+
+literal 0
+HcmV?d00001
+
+diff --git a/cores/circus/ver/circusc/scenes/stars/dump.bin b/cores/circus/ver/circusc/scenes/stars/dump.bin
+new file mode 100644
+index 0000000000000000000000000000000000000000..47e657e109cef8b15eb15edae0913aca1015b377
+GIT binary patch
+literal 3072
+zcmeH|du&rx9LG1;Cg5M^Zt@2)*e^ug05Qf$a8sBh_X_xc;5Hb-S}22#ZQbsGJ=(F-
+zZN2-!6b2i<a2r<<AE4k95fDUL6h)01ABd0menVo25)%`D_nxZ^R>sP|dTwsh+<rgb
+z&pD^3DRelOxS;V54gG>}Ve>QLM~w)HuxRGHC6y-TXW=$1z!Fhrb7`V8MZO5PVlK)=
+zz~R@Y$QR-k+=+nW7k&LWi1+a|1}NnD7hoFZV6o%BT=endRlJ9<@Y}fy?ET9}F%~)g
+z;b-^{;9Yz<u;0|}tHJSKa)!SZUD!M*KIHg^S$=e26Lw%fKF1e0aUMRK{pDuZ@sG0n
+zSc_h4$36(Yj-QKHT%6R+9Of&`M#rCJ``4fcPvK>}h0pLS{z|@o$`G3$ZO$_*%@ypg
+z7g5n*`|n0Kp2S`p!Ke5If8d>D4a!iP*Ub_$Xg0CG&XXn<+5WrmAhux--o!EdjNkG0
+z*}TFJlyv4V;@Nx6Dl@|VT2BV^*81DA5nHhvZ{QRBlx+RVaOSxK>E;a6XI7gl*}vQ~
+z#PP4j19$>2;V_Qk$E5rS=DCB<&kXobjg{<Q<{9evSK)p<j$L>iAL9p{I(zoavRvT~
+z`}}!Pg$VnXdeR*~;XXWu7x5ZC!uQGcPq|EXFh33@2%?Go<sRYq+i)))#ZDZ;hxjh(
+z{&CdmVE!u1LnT(Qe~D-prS|?CxCdMC0uuND-zHuErOa~&^JDq0KqLF*u=YQO4R{34
+zBaTjdgOf?t&yN)DV0H}O<p_&1CC$!R=U@JAo<lR%;~_lLpSPaa-=EI(Buqz01e6Rr
+zXZc&$`!JqG6zgE(Y5RG<7v*BxuVW%^M+5u$JoB*p1A6-wv0cZF{3~0|em>7UEdPMs
+ze*6v0*R!9`GY|F;eqc2F^O&#eyZ<ThIn3uWUn|No$>vh?XET32rt<$+AhXTpdHsVQ
+zOzW6{Da<bxU19^@>jqCd-=Ec?r$U|1;v}DwLX5|iBLCm(^vCCYN1D2Wj4M`CVsbCJ
+z3rk2lkxhnfP@<)p+#?G~D{Uad-%5#DyUFd}Mw&5E=0o#2?<Xz4gN#F0QzEa8+{<T^
+z7Oj{0u4ZyC4U=}QmkjPm6j#aq<}ETG?Bsj_Y2GX{0t+ZHqLSR1rKJ6NK<4-CBX^ZS
+z+SHk3_!=oO$0z%P$7H@MLT(WtZLCkuN9FnCZXzwxE%VdaZ_PhiOU9ZIB`U|uevSLB
+z^=2O-cYY74+IEWNtfIKuO|Bv@smF6DR@F-Jh)%9iMWl)_#r#o<&)!Kc|5j3C`7&R(
+zkn;;koxGM}2d|;{B!gVbib;*s%X~*OxoX0sUgx9Ogba$$t&#oF%`#uv!TCZ`y~8LL
+zD5dzwAi1(iNj>$7%<tMuu3(JRX$9ODV%{(NgGXh)BSJ2vjMQ=S<$R{_=Xt%PHf@yo
+iJEC&_ky?tiGhdM_`)}Sa^J5N^>!zNx|HprN2mS^jhb_|p
+
+literal 0
+HcmV?d00001
+
+
+From 02c60621fe7354c30f5a3f8affe73a4762cf0653 Mon Sep 17 00:00:00 2001
+From: Jose Tejada <jose.tejada@jotego.es>
+Date: Sun, 8 Jun 2025 17:11:13 +0200
+Subject: [PATCH 03/10] fixes blank line between objects and background
+
+---
+ cores/circus/hdl/jtcircus_obj.v | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/cores/circus/hdl/jtcircus_obj.v b/cores/circus/hdl/jtcircus_obj.v
+index 476596311..161b4ae44 100644
+--- a/cores/circus/hdl/jtcircus_obj.v
++++ b/cores/circus/hdl/jtcircus_obj.v
+@@ -54,7 +54,7 @@ module jtcircus_obj(
+     input         [7:0] debug_bus
+ );
+ 
+-parameter [7:0] HOFFSET = 0;
++parameter [7:0] HOFFSET = 8'd1;
+ parameter REV_SCAN = 0;
+ 
+ localparam FIX = 9'h2d, FIXF = 9'hde;
+
+From 2be39c86ba7a25e47e4f1cbef3cab411237dabc4 Mon Sep 17 00:00:00 2001
+From: Jose Tejada <jose.tejada@jotego.es>
+Date: Sun, 8 Jun 2025 17:11:38 +0200
+Subject: [PATCH 04/10] cosmetic
+
+---
+ cores/circus/hdl/jtcircus_obj.v    | 18 ++----------------
+ cores/kicker/hdl/jtkicker_scroll.v | 30 ------------------------------
+ 2 files changed, 2 insertions(+), 46 deletions(-)
+
+diff --git a/cores/circus/hdl/jtcircus_obj.v b/cores/circus/hdl/jtcircus_obj.v
+index 161b4ae44..d65141ae2 100644
+--- a/cores/circus/hdl/jtcircus_obj.v
++++ b/cores/circus/hdl/jtcircus_obj.v
+@@ -69,28 +69,14 @@ wire [ 3:0] pal_data, pre_pxl, pxl_dly;
+ assign olut_addr = {1'b0,obj_frame,dma_addr};
+ assign pxl     = obj_bl ? 4'd0 : flip ? pre_pxl : pxl_dly;
+ assign obj_bl  = flip ? hdump>=FIXF : hdump <= FIX;
++
+ jtframe_sh #(.W(4),.L(5)) u_sh(
+     .clk    ( clk       ),
+     .clk_en ( pxl_cen   ),
+     .din    ( pre_pxl   ),
+     .drop   ( pxl_dly   )
+ );
+-/*
+-jtframe_dual_ram u_hi(
+-    // Port 0, CPU
+-    .clk0   ( clk24      ),
+-    .data0  ( cpu_dout   ),
+-    .addr0  ( cpu_addr   ),
+-    .we0    ( obj_we     ),
+-    .q0     ( obj_dout   ),
+-    // Port 1
+-    .clk1   ( clk        ),
+-    .data1  (            ),
+-    .addr1  ( olut_addr    ),
+-    .we1    ( 1'b0       ),
+-    .q1     ( olut_dout    )
+-);
+-*/
++
+ // LUT frame buffer and DMA
+ jtframe_dual_ram #(.AW(8)) u_fb(
+     // Port 0, DMA
+diff --git a/cores/kicker/hdl/jtkicker_scroll.v b/cores/kicker/hdl/jtkicker_scroll.v
+index 4e5814b75..83032fadf 100644
+--- a/cores/kicker/hdl/jtkicker_scroll.v
++++ b/cores/kicker/hdl/jtkicker_scroll.v
+@@ -199,37 +199,7 @@ always @(posedge clk) if(pxl_cen) begin
+         pxl_data <= cur_hf ? pxl_data>>4 : pxl_data<<4;
+     end
+ end
+-/*
+-jtframe_dual_ram #(.SIMFILE("vram_lo.bin")) u_low(
+-    // Port 0, CPU
+-    .clk0   ( clk24         ),
+-    .data0  ( cpu_dout      ),
+-    .addr0  ( eff_addr      ),
+-    .we0    ( vram_we_low   ),
+-    .q0     ( vram_low      ),
+-    // Port 1
+-    .clk1   ( clk           ),
+-    .data1  (               ),
+-    .addr1  ( rd_addr       ),
+-    .we1    ( 1'b0          ),
+-    .q1     ( attr          )
+-);
+ 
+-jtframe_dual_ram #(.SIMFILE("vram_hi.bin")) u_high(
+-    // Port 0, CPU
+-    .clk0   ( clk24         ),
+-    .data0  ( cpu_dout      ),
+-    .addr0  ( eff_addr      ),
+-    .we0    ( vram_we_high  ),
+-    .q0     ( vram_high     ),
+-    // Port 1
+-    .clk1   ( clk           ),
+-    .data1  (               ),
+-    .addr1  ( rd_addr       ),
+-    .we1    ( 1'b0          ),
+-    .q1     ( code          )
+-);
+-*/
+ generate
+     if( BYPASS_PROM ) begin
+         assign pxl = pal_addr[3:0];
+
+From bd494753f8814f6c5f8758805f2cc8236cb87b98 Mon Sep 17 00:00:00 2001
+From: Jose Tejada <jose.tejada@jotego.es>
+Date: Sun, 8 Jun 2025 17:40:03 +0200
+Subject: [PATCH 05/10] circus: correct scroll priority. Fixes #1053
+
+---
+ cores/circus/hdl/jtcircus_obj.v    | 7 +------
+ cores/circus/hdl/jtcircus_video.v  | 5 +++--
+ cores/kicker/hdl/jtkicker_scroll.v | 2 +-
+ cores/pinpon/hdl/jtpinpon_video.v  | 1 +
+ cores/roadf/hdl/jtroadf_video.v    | 1 +
+ cores/roc/hdl/jtroc_video.v        | 1 +
+ cores/track/hdl/jttrack_video.v    | 1 +
+ cores/yiear/hdl/jtyiear_colmix.v   | 7 ++++---
+ cores/yiear/hdl/jtyiear_video.v    | 1 +
+ 9 files changed, 14 insertions(+), 12 deletions(-)
+
+diff --git a/cores/circus/hdl/jtcircus_obj.v b/cores/circus/hdl/jtcircus_obj.v
+index d65141ae2..1a07c0287 100644
+--- a/cores/circus/hdl/jtcircus_obj.v
++++ b/cores/circus/hdl/jtcircus_obj.v
+@@ -55,20 +55,15 @@ module jtcircus_obj(
+ );
+ 
+ parameter [7:0] HOFFSET = 8'd1;
+-parameter REV_SCAN = 0;
+-
+-localparam FIX = 9'h2d, FIXF = 9'hde;
+ 
+ wire [ 7:0] scan_dout;
+-wire        obj_bl;
+ reg  [ 7:0] scan_addr=0;
+ reg         dma_we, dma_done;
+ reg  [ 7:0] dma_addr;
+ wire [ 3:0] pal_data, pre_pxl, pxl_dly;
+ 
+ assign olut_addr = {1'b0,obj_frame,dma_addr};
+-assign pxl     = obj_bl ? 4'd0 : flip ? pre_pxl : pxl_dly;
+-assign obj_bl  = flip ? hdump>=FIXF : hdump <= FIX;
++assign pxl     = flip ? pre_pxl : pxl_dly;
+ 
+ jtframe_sh #(.W(4),.L(5)) u_sh(
+     .clk    ( clk       ),
+diff --git a/cores/circus/hdl/jtcircus_video.v b/cores/circus/hdl/jtcircus_video.v
+index fdd2f8f37..18ba2bb53 100644
+--- a/cores/circus/hdl/jtcircus_video.v
++++ b/cores/circus/hdl/jtcircus_video.v
+@@ -74,7 +74,7 @@ module jtcircus_video(
+     input         [7:0] debug_bus
+ );
+ 
+-wire       preLHBL, preLVBL, nc;
++wire       preLHBL, preLVBL, scr_prio, nc;
+ wire [8:0] vdump, vrender, hdump;
+ wire [3:0] obj_pxl, scr_pxl;
+ reg  [2:0] prom_we;
+@@ -138,7 +138,7 @@ jtkicker_scroll #(.LAYOUT(6)) u_scroll(
+     .rom_data   ( scr_data  ),
+     .rom_ok     ( scr_ok    ),
+ 
+-    .prio       (           ),
++    .prio       ( scr_prio  ),
+     .pxl        ( scr_pxl   ),
+     .debug_bus  ( debug_bus )
+ );
+@@ -180,6 +180,7 @@ jtyiear_colmix #(.SIMFILE(""),.BLANK_DLY(9)) u_colmix(
+     .clk        ( clk       ),
+ 
+     .pxl_cen    ( pxl_cen   ),
++    .scr_prio   ( scr_prio  ),
+ 
+     // video inputs
+     .obj_pxl    ( obj_pxl   ),
+diff --git a/cores/kicker/hdl/jtkicker_scroll.v b/cores/kicker/hdl/jtkicker_scroll.v
+index 83032fadf..d7cbac7ff 100644
+--- a/cores/kicker/hdl/jtkicker_scroll.v
++++ b/cores/kicker/hdl/jtkicker_scroll.v
+@@ -127,7 +127,7 @@ always @* begin
+             vflip    = attr[7];
+             hflip    = ~attr[6];
+             pal_msb  = attr[3:0];
+-            scr_prio = attr[4];
++            scr_prio = LAYOUT==6 ? ~attr[4] : attr[4];
+         end
+         4: begin // Road Fighter
+             code_msb = {1'b0,attr[5]};
+diff --git a/cores/pinpon/hdl/jtpinpon_video.v b/cores/pinpon/hdl/jtpinpon_video.v
+index c77cf8ccf..26c96e5aa 100644
+--- a/cores/pinpon/hdl/jtpinpon_video.v
++++ b/cores/pinpon/hdl/jtpinpon_video.v
+@@ -178,6 +178,7 @@ jtyiear_colmix #(.BLANK_DLY(9)) u_colmix(
+     .clk        ( clk       ),
+ 
+     .pxl_cen    ( pxl_cen   ),
++    .scr_prio   ( 1'b0      ),
+ 
+     // video inputs
+     .obj_pxl    ( obj_pxl   ),
+diff --git a/cores/roadf/hdl/jtroadf_video.v b/cores/roadf/hdl/jtroadf_video.v
+index f1b8c5a2b..a4f0b53c0 100644
+--- a/cores/roadf/hdl/jtroadf_video.v
++++ b/cores/roadf/hdl/jtroadf_video.v
+@@ -202,6 +202,7 @@ jtyiear_colmix #(.BLANK_DLY(9)) u_colmix(
+     .clk        ( clk       ),
+ 
+     .pxl_cen    ( pxl_cen   ),
++    .scr_prio   ( 1'b0      ),
+ 
+     // video inputs
+     .obj_pxl    ( obj_pxl   ),
+diff --git a/cores/roc/hdl/jtroc_video.v b/cores/roc/hdl/jtroc_video.v
+index dbb9b710b..dfd64f8c6 100644
+--- a/cores/roc/hdl/jtroc_video.v
++++ b/cores/roc/hdl/jtroc_video.v
+@@ -185,6 +185,7 @@ jtyiear_colmix #(.BLANK_DLY(9),.LOWONLY(1)) u_colmix(
+     .clk        ( clk       ),
+ 
+     .pxl_cen    ( pxl_cen   ),
++    .scr_prio   ( 1'b0      ),
+ 
+     // video inputs
+     .obj_pxl    ( obj_pxl   ),
+diff --git a/cores/track/hdl/jttrack_video.v b/cores/track/hdl/jttrack_video.v
+index b3ab7200a..123fe0925 100644
+--- a/cores/track/hdl/jttrack_video.v
++++ b/cores/track/hdl/jttrack_video.v
+@@ -181,6 +181,7 @@ jtyiear_colmix #(.BLANK_DLY(9)) u_colmix(
+     .clk        ( clk       ),
+ 
+     .pxl_cen    ( pxl_cen   ),
++    .scr_prio   ( 1'b0      ),
+ 
+     // video inputs
+     .obj_pxl    ( obj_pxl   ),
+diff --git a/cores/yiear/hdl/jtyiear_colmix.v b/cores/yiear/hdl/jtyiear_colmix.v
+index e9958d0e1..25a831cc5 100644
+--- a/cores/yiear/hdl/jtyiear_colmix.v
++++ b/cores/yiear/hdl/jtyiear_colmix.v
+@@ -19,7 +19,7 @@
+ module jtyiear_colmix(
+     input               clk,        // 48 MHz
+ 
+-    input               pxl_cen,
++    input               pxl_cen, scr_prio,
+ 
+     // video inputs
+     input         [3:0] obj_pxl,
+@@ -45,10 +45,11 @@ parameter BLANK_DLY=8, LOWONLY=0,SIMFILE="407c10.1g";
+ reg  [4:0] mux;
+ wire       obj_blank = obj_pxl[3:0]==0 || !gfx_en[3];
+ wire [3:0] scr_gated = gfx_en[0] ? scr_pxl : 4'd0;
++wire       scrsel    = scr_prio || obj_blank;
+ 
+ always @(posedge clk) if(pxl_cen) begin
+-    mux[4]   <= obj_blank & ~LOWONLY[0]; // the upper half is used as blanking in Roc'n Rope
+-    mux[3:0] <= obj_blank ? scr_gated : obj_pxl;
++    mux[4]   <= scrsel & ~LOWONLY[0]; // the upper half is used as blanking in Roc'n Rope
++    mux[3:0] <= scrsel ? scr_gated : obj_pxl;
+ end
+ 
+ wire [7:0] raw, rgb;
+diff --git a/cores/yiear/hdl/jtyiear_video.v b/cores/yiear/hdl/jtyiear_video.v
+index 7cc0640f1..9d56cadc6 100644
+--- a/cores/yiear/hdl/jtyiear_video.v
++++ b/cores/yiear/hdl/jtyiear_video.v
+@@ -173,6 +173,7 @@ jtyiear_colmix u_colmix(
+     .clk        ( clk       ),
+ 
+     .pxl_cen    ( pxl_cen   ),
++    .scr_prio   ( 1'b0      ),
+ 
+     // video inputs
+     .obj_pxl    ( obj_pxl   ),
+
+From a512d5131aee55a6879db554ff51401db863fa6b Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Mon, 9 Jun 2025 11:16:38 +0200
+Subject: [PATCH 06/10] kicker: dump vram
+
+---
+ cores/kicker/cfg/macros.def       |  1 +
+ cores/kicker/cfg/mem.yaml         | 13 ++++++++++++-
+ cores/kicker/hdl/jtkicker_game.v  | 15 +++++++++++----
+ cores/kicker/hdl/jtkicker_video.v | 17 +++++++++++++++--
+ 4 files changed, 39 insertions(+), 7 deletions(-)
+
+diff --git a/cores/kicker/cfg/macros.def b/cores/kicker/cfg/macros.def
+index efe3ed74b..92a81c019 100644
+--- a/cores/kicker/cfg/macros.def
++++ b/cores/kicker/cfg/macros.def
+@@ -5,6 +5,7 @@ CORENAME=JTKICKER
+ VIDEO_MODULE=jtkicker_video
+ MAIN_MODULE=jtkicker_main
+ 
++JTFRAME_IOCTL_RD=2048
+ JTFRAME_PROM_START=0x1E000
+ SCR_START=0x10000
+ OBJ_START=0x16000
+diff --git a/cores/kicker/cfg/mem.yaml b/cores/kicker/cfg/mem.yaml
+index a72ec78ad..d85990be2 100644
+--- a/cores/kicker/cfg/mem.yaml
++++ b/cores/kicker/cfg/mem.yaml
+@@ -36,4 +36,15 @@ sdram:
+           offset: PCM_OFFSET
+         - name: main
+           addr_width: 16
+-          data_width: 8
+\ No newline at end of file
++          data_width: 8
++bram:
++  - name: vram
++    addr_width: 11
++    data_width: 16
++    sim_file: true
++    dual_port:
++      name: vramrw
++      din:  vramrw_din
++      dout: vramrw_dout
++      rw:   true
++    ioctl: { save: true, order: 0 }
+\ No newline at end of file
+diff --git a/cores/kicker/hdl/jtkicker_game.v b/cores/kicker/hdl/jtkicker_game.v
+index 23e3f8d95..022a96f24 100644
+--- a/cores/kicker/hdl/jtkicker_game.v
++++ b/cores/kicker/hdl/jtkicker_game.v
+@@ -33,7 +33,7 @@ wire [ 2:0] pal_sel;
+ wire        cpu_cen;
+ wire        cpu_rnw, cpu_irqn, cpu_nmin;
+ wire        vscr_cs, vram_cs, obj1_cs, obj2_cs, flip;
+-wire [ 7:0] vscr_dout, vram_dout, obj_dout, cpu_dout;
++wire [ 7:0] vscr_dout, vcpu_din, obj_dout, cpu_dout;
+ wire        vsync60;
+ wire        is_scr, is_obj;
+ 
+@@ -44,6 +44,8 @@ assign scr_cs = LVBL;
+ assign pcm_cs = 1;
+ assign is_scr = ioctl_addr[21:0] >= SCR_START && ioctl_addr[21:0]<OBJ_START;
+ assign is_obj = ioctl_addr[21:0] >= OBJ_START && ioctl_addr[21:0]<PCM_START;
++assign vramrw_din = {2{cpu_dout}};
++assign ioctl_din  = 0;
+ 
+ always @(*) begin
+     post_addr = prog_addr;
+@@ -82,7 +84,7 @@ end
+ 
+     .vscr_cs        ( vscr_cs       ),
+     .vram_cs        ( vram_cs       ),
+-    .vram_dout      ( vram_dout     ),
++    .vram_dout      ( vcpu_din      ),
+     .vscr_dout      ( vscr_dout     ),
+ 
+     .obj1_cs        ( obj1_cs       ),
+@@ -130,11 +132,16 @@ end
+ 
+     // CPU interface
+     .cpu_addr   ( main_addr[10:0]  ),
+-    .cpu_dout   ( cpu_dout  ),
+-    .cpu_rnw    ( cpu_rnw   ),
++    .cpu_dout   ( cpu_dout   ),
++    .cpu_rnw    ( cpu_rnw    ),
++    .vcpu_din   ( vcpu_din   ),
++    .vramrw_we  ( vramrw_we  ),
++    .vramrw_dout( vramrw_dout),
++    .vramrw_addr( vramrw_addr),
+     // Scroll
+     .vram_cs    ( vram_cs   ),
+     .vscr_cs    ( vscr_cs   ),
++    .vram_addr  ( vram_addr ),
+     .vram_dout  ( vram_dout ),
+     .vscr_dout  ( vscr_dout ),
+     // Objects
+diff --git a/cores/kicker/hdl/jtkicker_video.v b/cores/kicker/hdl/jtkicker_video.v
+index f400b1240..c5049843f 100644
+--- a/cores/kicker/hdl/jtkicker_video.v
++++ b/cores/kicker/hdl/jtkicker_video.v
+@@ -35,13 +35,21 @@ module jtkicker_video(
+ 
+     input               vram_cs,
+     input               vscr_cs,
+-    output        [7:0] vram_dout,
+     output        [7:0] vscr_dout,
++    output        [7:0] vcpu_din,
++
++    output       [ 1:0] vramrw_we,
++    input        [15:0] vramrw_dout,
++    output       [10:1] vramrw_addr,
+ 
+     input               obj1_cs,
+     input               obj2_cs,
+     output        [7:0] obj_dout,
+ 
++    // VRAM read out
++    output       [10:1] vram_addr,
++    input        [15:0] vram_dout,
++
+     // PROMs
+     input         [7:0] prog_data,
+     input        [10:0] prog_addr,
+@@ -108,8 +116,13 @@ jtkicker_scroll u_scroll(
+     .cpu_rnw    ( cpu_rnw   ),
+     .vram_cs    ( vram_cs   ),
+     .vscr_cs    ( vscr_cs   ),
+-    .vram_dout  ( vram_dout ),
++    .cpu_din    ( vcpu_din  ),
+     .vscr_dout  ( vscr_dout ),
++    .vramrw_we  ( vramrw_we ),
++    .vramrw_dout(vramrw_dout),
++    .vramrw_addr(vramrw_addr),
++    .rd_addr    ( vram_addr ),
++    .vram_dout  ( vram_dout ),
+ 
+     // video inputs
+     .LHBL       ( LHBL      ),
+
+From c31f11784f75d7271b88522fe6d54951b5bd26f7 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Mon, 9 Jun 2025 12:16:15 +0200
+Subject: [PATCH 07/10] mikie: dump vram
+
+---
+ cores/mikie/cfg/macros.def      |  1 +
+ cores/mikie/cfg/mem.yaml        | 13 ++++++++++++-
+ cores/mikie/hdl/jtmikie_game.v  | 11 +++++++++--
+ cores/mikie/hdl/jtmikie_video.v | 15 +++++++++++++--
+ 4 files changed, 35 insertions(+), 5 deletions(-)
+
+diff --git a/cores/mikie/cfg/macros.def b/cores/mikie/cfg/macros.def
+index c7276e124..57fe04a98 100644
+--- a/cores/mikie/cfg/macros.def
++++ b/cores/mikie/cfg/macros.def
+@@ -3,6 +3,7 @@ include ../../kicker/cfg/common.def
+ 
+ CORENAME=JTMIKIE
+ 
++JTFRAME_IOCTL_RD=2048
+ SND_START=0x10000
+ SCR_START=0x12000
+ OBJ_START=0x20000
+diff --git a/cores/mikie/cfg/mem.yaml b/cores/mikie/cfg/mem.yaml
+index a7d5d602a..4a6b01bda 100644
+--- a/cores/mikie/cfg/mem.yaml
++++ b/cores/mikie/cfg/mem.yaml
+@@ -57,4 +57,15 @@ sdram:
+         -
+           name: main
+           addr_width: 16
+-          data_width: 8
+\ No newline at end of file
++          data_width: 8
++bram:
++  - name: vram
++    addr_width: 11
++    data_width: 16
++    sim_file: true
++    dual_port:
++      name: vramrw
++      din:  vramrw_din
++      dout: vramrw_dout
++      rw:   true
++    ioctl: { save: true, order: 0 }
+\ No newline at end of file
+diff --git a/cores/mikie/hdl/jtmikie_game.v b/cores/mikie/hdl/jtmikie_game.v
+index 28a236b16..808046d1e 100644
+--- a/cores/mikie/hdl/jtmikie_game.v
++++ b/cores/mikie/hdl/jtmikie_game.v
+@@ -35,7 +35,7 @@ wire [ 2:0] pal_sel;
+ wire        cpu_cen;
+ wire        cpu_rnw, cpu_irqn, cpu_nmin;
+ wire        vram_cs, objram_cs, flip;
+-wire [ 7:0] vscr_dout, vram_dout, obj_dout, cpu_dout, st_snd;
++wire [ 7:0] vscr_dout, vcpu_din, obj_dout, cpu_dout, st_snd;
+ wire        vsync60;
+ wire        snd_cen, psg_cen;
+ 
+@@ -46,7 +46,9 @@ wire        m2s_on;
+ 
+ assign { dipsw_c, dipsw_b, dipsw_a } = dipsw[17:0];
+ assign dip_flip = dipsw_c[0];
++assign vramrw_din = {2{cpu_dout}};
+ assign debug_view = st_snd;
++assign ioctl_din = 0;
+ 
+ always @(*) begin
+     post_data = prog_data;
+@@ -90,7 +92,7 @@ jtmikie_main u_main(
+     .cpu_rnw        ( cpu_rnw       ),
+ 
+     .vram_cs        ( vram_cs       ),
+-    .vram_dout      ( vram_dout     ),
++    .vram_dout      ( vcpu_din      ),
+     .vscr_dout      ( vscr_dout     ),
+ 
+     .objram_cs      ( objram_cs     ),
+@@ -159,9 +161,14 @@ jtmikie_video u_video(
+     .cpu_addr   ( main_addr[10:0]  ),
+     .cpu_dout   ( cpu_dout  ),
+     .cpu_rnw    ( cpu_rnw   ),
++    .vramrw_we  ( vramrw_we ),
++    .vramrw_addr(vramrw_addr),
++    .vramrw_dout(vramrw_dout),
++    .vcpu_din   ( vcpu_din  ),
+     // Scroll
+     .vram_cs    ( vram_cs   ),
+     .vscr_cs    ( 1'b0      ),
++    .vram_addr  ( vram_addr ),
+     .vram_dout  ( vram_dout ),
+     .vscr_dout  ( vscr_dout ),
+     // Objects
+diff --git a/cores/mikie/hdl/jtmikie_video.v b/cores/mikie/hdl/jtmikie_video.v
+index 01399abc0..c7be31abe 100644
+--- a/cores/mikie/hdl/jtmikie_video.v
++++ b/cores/mikie/hdl/jtmikie_video.v
+@@ -35,8 +35,14 @@ module jtmikie_video(
+ 
+     input               vram_cs,
+     input               vscr_cs,
+-    output        [7:0] vram_dout,
+     output        [7:0] vscr_dout,
++    output        [7:0] vcpu_din,
++    output       [ 1:0] vramrw_we,
++    input        [15:0] vramrw_dout,
++    output       [10:1] vramrw_addr,
++    //VRAM read out
++    output       [10:1] vram_addr,
++    input        [15:0] vram_dout,
+ 
+     input               objram_cs,
+     output        [7:0] obj_dout,
+@@ -123,8 +129,13 @@ jtkicker_scroll #(.LAYOUT(LAYOUT),.NOSCROLL(1)) u_scroll(
+     .cpu_rnw    ( cpu_rnw   ),
+     .vram_cs    ( vram_cs   ),
+     .vscr_cs    ( vscr_cs   ),
+-    .vram_dout  ( vram_dout ),
++    .cpu_din    ( vcpu_din  ),
+     .vscr_dout  ( vscr_dout ),
++    .vramrw_we  ( vramrw_we ),
++    .vramrw_addr(vramrw_addr),
++    .vramrw_dout(vramrw_dout),
++    .rd_addr    ( vram_addr ),
++    .vram_dout  ( vram_dout ),
+ 
+     // video inputs
+     .LHBL       ( LHBL      ),
+
+From 37b9dead66074e83656f28f351a3a3ceef9a19cc Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Mon, 9 Jun 2025 12:46:36 +0200
+Subject: [PATCH 08/10] roc: dump vram
+
+---
+ cores/roc/cfg/macros.def    |  1 +
+ cores/roc/cfg/mem.yaml      | 13 ++++++++++++-
+ cores/roc/hdl/jtroc_game.v  | 11 +++++++++--
+ cores/roc/hdl/jtroc_video.v | 15 ++++++++++++++-
+ 4 files changed, 36 insertions(+), 4 deletions(-)
+
+diff --git a/cores/roc/cfg/macros.def b/cores/roc/cfg/macros.def
+index f8080a18a..2634f73d6 100644
+--- a/cores/roc/cfg/macros.def
++++ b/cores/roc/cfg/macros.def
+@@ -3,6 +3,7 @@ include ../../kicker/cfg/common.def
+ 
+ CORENAME=JTROC
+ 
++JTFRAME_IOCTL_RD=2048
+ SND_START =0x0A000
+ SCR_START =0x0C000
+ OBJ_START =0x10000
+diff --git a/cores/roc/cfg/mem.yaml b/cores/roc/cfg/mem.yaml
+index 589deb2b1..83d165fba 100644
+--- a/cores/roc/cfg/mem.yaml
++++ b/cores/roc/cfg/mem.yaml
+@@ -78,4 +78,15 @@ sdram:
+         -
+           name: main
+           addr_width: 16
+-          data_width: 8
+\ No newline at end of file
++          data_width: 8
++bram:
++  - name: vram
++    addr_width: 11
++    data_width: 16
++    sim_file: true
++    dual_port:
++      name: vramrw
++      din:  vramrw_din
++      dout: vramrw_dout
++      rw:   true
++    ioctl: { save: true, order: 0 }
+\ No newline at end of file
+diff --git a/cores/roc/hdl/jtroc_game.v b/cores/roc/hdl/jtroc_game.v
+index 3f12c9bb0..65a147747 100644
+--- a/cores/roc/hdl/jtroc_game.v
++++ b/cores/roc/hdl/jtroc_game.v
+@@ -34,7 +34,7 @@ reg  [ 7:0] view_mux;
+ wire        cpu_cen;
+ wire        cpu_rnw, cpu_irqn, cpu_nmin;
+ wire        vram_cs, objram_cs, flip;
+-wire [ 7:0] vram_dout, obj_dout, cpu_dout;
++wire [ 7:0] vcpu_din, obj_dout, cpu_dout;
+ 
+ // Sound
+ wire [ 7:0] snd_latch;
+@@ -44,7 +44,9 @@ wire        m2s_on;
+ reg  [24:0] dwn_addr;
+ 
+ assign dip_flip   = ~flip;
++assign vramrw_din = {2{cpu_dout}};
+ assign debug_view = view_mux;
++assign ioctl_din  = 0;
+ 
+ always @(*) begin
+     case( debug_bus[7:6])
+@@ -91,7 +93,7 @@ jtroc_main u_main(
+ 
+     .bus_addr       ( cpu_addr      ),
+     .vram_cs        ( vram_cs       ),
+-    .vram_dout      ( vram_dout     ),
++    .vram_dout      ( vcpu_din      ),
+ 
+     .objram_cs      ( objram_cs     ),
+     .obj_dout       ( obj_dout      ),
+@@ -161,8 +163,13 @@ jtroc_video u_video(
+     .cpu_addr   ( cpu_addr[10:0]  ),
+     .cpu_dout   ( cpu_dout  ),
+     .cpu_rnw    ( cpu_rnw   ),
++    .vramrw_we  ( vramrw_we ),
++    .vramrw_addr(vramrw_addr),
++    .vramrw_dout(vramrw_dout),
++    .vcpu_din   ( vcpu_din  ),
+     // Scroll
+     .vram_cs    ( vram_cs   ),
++    .vram_addr  ( vram_addr ),
+     .vram_dout  ( vram_dout ),
+     // Objects
+     .objram_cs  ( objram_cs ),
+diff --git a/cores/roc/hdl/jtroc_video.v b/cores/roc/hdl/jtroc_video.v
+index dfd64f8c6..fd64b7216 100644
+--- a/cores/roc/hdl/jtroc_video.v
++++ b/cores/roc/hdl/jtroc_video.v
+@@ -33,11 +33,19 @@ module jtroc_video(
+     input               cpu_rnw,
+ 
+     input               vram_cs,
+-    output        [7:0] vram_dout,
++    output        [7:0] vcpu_din,
++
++    output       [ 1:0] vramrw_we,
++    input        [15:0] vramrw_dout,
++    output       [10:1] vramrw_addr,
+ 
+     input               objram_cs,
+     output        [7:0] obj_dout,
+ 
++    //VRAM read out
++    output       [10:1] vram_addr,
++    input        [15:0] vram_dout,
++
+     // PROMs
+     input         [7:0] prog_data,
+     input         [9:0] prog_addr,
+@@ -118,6 +126,11 @@ jtkicker_scroll #(.LAYOUT(LAYOUT),.NOSCROLL(1)) u_scroll(
+     .vscr_cs    ( 1'b0      ),
+     .vram_dout  ( vram_dout ),
+     .vscr_dout  (           ),
++    .cpu_din    ( vcpu_din  ),
++    .vramrw_we  ( vramrw_we ),
++    .vramrw_addr(vramrw_addr),
++    .vramrw_dout(vramrw_dout),
++    .rd_addr    ( vram_addr ),
+ 
+     // video inputs
+     .LHBL       ( LHBL      ),
+
+From 6828b83a8688d44f81505db3b81b9544c93beecc Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Mon, 9 Jun 2025 13:08:58 +0200
+Subject: [PATCH 09/10] sbaskt: dump vram
+
+---
+ cores/sbaskt/cfg/macros.def       |  1 +
+ cores/sbaskt/cfg/mem.yaml         | 12 +++++++++++-
+ cores/sbaskt/hdl/jtsbaskt_game.v  | 10 ++++++++--
+ cores/sbaskt/hdl/jtsbaskt_video.v | 17 +++++++++++++++--
+ 4 files changed, 35 insertions(+), 5 deletions(-)
+
+diff --git a/cores/sbaskt/cfg/macros.def b/cores/sbaskt/cfg/macros.def
+index b220be88b..9c5f6d964 100644
+--- a/cores/sbaskt/cfg/macros.def
++++ b/cores/sbaskt/cfg/macros.def
+@@ -11,6 +11,7 @@ KONAMI1=0
+ 
+ JTFRAME_BUTTONS=3
+ 
++JTFRAME_IOCTL_RD=2048
+ # Enable VLM5030 ROM
+ PCM
+ JTFRAME_HEADER=4
+diff --git a/cores/sbaskt/cfg/mem.yaml b/cores/sbaskt/cfg/mem.yaml
+index b23ff721f..0142509ff 100644
+--- a/cores/sbaskt/cfg/mem.yaml
++++ b/cores/sbaskt/cfg/mem.yaml
+@@ -60,4 +60,14 @@ bram:
+     data_width: 8
+     rw: true
+     addr: "main_addr[11:0]"
+-    din: cpu_dout
+\ No newline at end of file
++    din: cpu_dout
++  - name: vram
++    addr_width: 11
++    data_width: 16
++    sim_file: true
++    dual_port:
++      name: vramrw
++      din:  "{2{cpu_dout}}"
++      dout: vramrw_dout
++      rw:   true
++    ioctl: { save: true, order: 0 }
+\ No newline at end of file
+diff --git a/cores/sbaskt/hdl/jtsbaskt_game.v b/cores/sbaskt/hdl/jtsbaskt_game.v
+index cf4ee51a5..1f66b5338 100644
+--- a/cores/sbaskt/hdl/jtsbaskt_game.v
++++ b/cores/sbaskt/hdl/jtsbaskt_game.v
+@@ -30,7 +30,7 @@ wire [ 3:0] pal_sel;
+ wire        obj_frame;
+ wire        cpu_rnw, cpu_irqn, cpu_nmin;
+ wire        vscr_cs, vram_cs, objram_cs, flip;
+-wire [ 7:0] vscr_dout, vram_dout, obj_dout,
++wire [ 7:0] vscr_dout, vcpu_din, obj_dout,
+             debug_snd;
+ wire        vsync60;
+ 
+@@ -39,6 +39,7 @@ reg         decode;
+ 
+ assign { dipsw_b, dipsw_a } = dipsw[15:0];
+ assign dip_flip = flip;
++assign ioctl_din  = 0;
+ assign debug_view = {3'd0, vlm_rcen, psg_rcen, rdac_rcen };
+ 
+ wire [ 7:0] nc, pre_data;
+@@ -79,7 +80,7 @@ jtsbaskt_main u_main(
+ 
+     .vscr_cs        ( vscr_cs       ),
+     .vram_cs        ( vram_cs       ),
+-    .vram_dout      ( vram_dout     ),
++    .vram_dout      ( vcpu_din      ),
+     .vscr_dout      ( vscr_dout     ),
+ 
+     .objram_cs      ( objram_cs     ),
+@@ -157,9 +158,14 @@ jtsbaskt_video u_video(
+     .cpu_addr   ( main_addr[10:0]  ),
+     .cpu_dout   ( cpu_dout  ),
+     .cpu_rnw    ( cpu_rnw   ),
++    .vcpu_din   ( vcpu_din  ),
++    .vramrw_we  ( vramrw_we ),
++    .vramrw_addr(vramrw_addr),
++    .vramrw_dout(vramrw_dout),
+     // Scroll
+     .vram_cs    ( vram_cs   ),
+     .vscr_cs    ( vscr_cs   ),
++    .vram_addr  ( vram_addr ),
+     .vram_dout  ( vram_dout ),
+     .vscr_dout  ( vscr_dout ),
+     // Objects
+diff --git a/cores/sbaskt/hdl/jtsbaskt_video.v b/cores/sbaskt/hdl/jtsbaskt_video.v
+index 412954b83..ccfb5ca3b 100644
+--- a/cores/sbaskt/hdl/jtsbaskt_video.v
++++ b/cores/sbaskt/hdl/jtsbaskt_video.v
+@@ -35,13 +35,21 @@ module jtsbaskt_video(
+ 
+     input               vram_cs,
+     input               vscr_cs,
+-    output        [7:0] vram_dout,
+     output        [7:0] vscr_dout,
++    output        [7:0] vcpu_din,
++
++    output       [ 1:0] vramrw_we,
++    input        [15:0] vramrw_dout,
++    output       [10:1] vramrw_addr,
+ 
+     input               objram_cs,
+     input               obj_frame,
+     output        [7:0] obj_dout,
+ 
++    // VRAM read out
++    output       [10:1] vram_addr,
++    input        [15:0] vram_dout,
++
+     // PROMs
+     input         [7:0] prog_data,
+     input        [10:0] prog_addr,
+@@ -120,8 +128,13 @@ jtkicker_scroll #(.LAYOUT(2)) u_scroll(
+     .cpu_rnw    ( cpu_rnw   ),
+     .vram_cs    ( vram_cs   ),
+     .vscr_cs    ( vscr_cs   ),
+-    .vram_dout  ( vram_dout ),
+     .vscr_dout  ( vscr_dout ),
++    .cpu_din    ( vcpu_din  ),
++    .vramrw_we  ( vramrw_we ),
++    .vramrw_addr(vramrw_addr),
++    .vramrw_dout(vramrw_dout),
++    .vram_dout  ( vram_dout ),
++    .rd_addr    ( vram_addr ),
+ 
+     // video inputs
+     .LHBL       ( LHBL      ),
+
+From 92846533aab0d27044d7fe520927efdda5869b01 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Mon, 9 Jun 2025 13:25:33 +0200
+Subject: [PATCH 10/10] yiear: dump vram
+
+---
+ cores/yiear/cfg/macros.def      |  1 +
+ cores/yiear/cfg/mem.yaml        | 11 +++++++++++
+ cores/yiear/hdl/jtyiear_video.v | 13 ++++++++++++-
+ 3 files changed, 24 insertions(+), 1 deletion(-)
+
+diff --git a/cores/yiear/cfg/macros.def b/cores/yiear/cfg/macros.def
+index 404403769..f4cb6b6d1 100644
+--- a/cores/yiear/cfg/macros.def
++++ b/cores/yiear/cfg/macros.def
+@@ -9,6 +9,7 @@ JTFRAME_BUTTONS=3
+ # Enable VLM5030 ROM
+ PCM
+ 
++JTFRAME_IOCTL_RD=2048
+ JTFRAME_PROM_START=0x26000
+ MAIN_START=0x08000
+ SCR_START =0x10000
+diff --git a/cores/yiear/cfg/mem.yaml b/cores/yiear/cfg/mem.yaml
+index 2cdbfb6c2..85e931a2c 100644
+--- a/cores/yiear/cfg/mem.yaml
++++ b/cores/yiear/cfg/mem.yaml
+@@ -6,3 +6,14 @@ audio:
+   channels:
+     - { name: ti1, module: jt89,    rsum: 1.22k, rc: [{ r:  180, c: 47n}]}
+     - { name: vlm, module: vlm5030, rsum: 1k,    rc: [{ r:  10k, c: 47p }, { r: 2.5k, c: 1n  }] } # equivalent filter
++bram:
++  - name: vram
++    addr_width: 11
++    data_width: 16
++    sim_file: true
++    dual_port:
++      name: vramrw
++      din:  vramrw_din
++      dout: vramrw_dout
++      rw:   true
++    ioctl: { save: true, order: 0 }
+\ No newline at end of file
+diff --git a/cores/yiear/hdl/jtyiear_video.v b/cores/yiear/hdl/jtyiear_video.v
+index 9d56cadc6..3e53f1a77 100644
+--- a/cores/yiear/hdl/jtyiear_video.v
++++ b/cores/yiear/hdl/jtyiear_video.v
+@@ -32,10 +32,16 @@ module jtyiear_video(
+     input        [10:0] cpu_addr,
+     input         [7:0] cpu_dout,
+     input               cpu_rnw,
++    output        [7:0] vcpu_din,
++
++    output       [ 1:0] vramrw_we,
++    input        [15:0] vramrw_dout,
++    output       [10:1] vramrw_addr,
+ 
+     input               vram_cs,
+     input               vscr_cs,
+-    output        [7:0] vram_dout,
++    output       [10:1] vram_addr,
++    input        [15:0] vram_dout,
+     output        [7:0] vscr_dout,
+ 
+     input               obj1_cs,
+@@ -102,6 +108,11 @@ jtkicker_scroll #(.BYPASS_PROM(1),.NOSCROLL(1)) u_scroll(
+     .cpu_rnw    ( cpu_rnw   ),
+     .vram_cs    ( vram_cs   ),
+     .vscr_cs    ( 1'b0      ),  // No 085 chip, so no scroll
++    .cpu_din    ( vcpu_din  ),
++    .vramrw_we  ( vramrw_we ),
++    .vramrw_addr(vramrw_addr),
++    .vramrw_dout(vramrw_dout),
++    .rd_addr    ( vram_addr ),
+     .vram_dout  ( vram_dout ),
+     .vscr_dout  ( vscr_dout ),
+ 

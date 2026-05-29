@@ -1,0 +1,39 @@
+# Bug report: multifmt slice uses wrong FP width for third operand
+
+Hi,
+
+the `fpnew_opgroup_multifmt_slice` uses the wrong FP width for the third operand.
+
+AFAIK the third operand is only used by the `ADDMUL` opgroup, which expects that `operands_i[0]` and `operands_i[1]` have the FP format specified by `src_fmt_i`  and `operands_i[2]` and the result have the FP format `dst_fmt_i`:
+
+https://github.com/openhwgroup/cvfpu/blob/5da3b411f3309d41b39dbc68da7449456f6be444/src/fpnew_fma_multi.sv#L36-L37
+
+Accordingly, the `fpnew_opgroup_multifmt_slice` should use the width of FP format `dst_fmt_i` when assigning the individual elements of `operands_i[2]` to the lane instances. However, the width of `src_fmt_i` is used for all operands:
+
+https://github.com/openhwgroup/cvfpu/blob/5da3b411f3309d41b39dbc68da7449456f6be444/src/fpnew_opgroup_multifmt_slice.sv#L181-L183
+
+As a result, the third operand is incorrect for all lanes (except for the first lane), as shown in the following waveform. The first group of signals shows the `src_fmt_i` (which is `FP16`) and `dst_fmt_i` (which is `FP32`), as well as `operands_i[0]` (for reference) and `operands_i[2]` of the `fpnew_opgroup_multifmt_slice`. The elements of `operands_i[0]` which are 16 bits wide are correctly assigned to the individual `fpnew_fma_multi` instances (as seen in the signal groups below, which show the input operands of the first three instances). However, the elements of `operands_i[2]` which are 32 bits wide are not correctly assigned. The individual elements of these operands are surrounded by rectangles of different colors.
+
+## PR Title
+Fix width of third local operand of multifmt slice
+
+## PR Description
+Michael Platzer proposed a fix for issue #86 by adjusting how the third local operand is assigned in the `fpnew_opgroup_multifmt_slice`. The solution uses the width of the FP format `dst_fmt_i` for proper operand assignment. The submitter included a waveform diagram demonstrating that operands in individual `fpnew_fma_multi` instances are now assigned correctly.
+
+## PR Comments
+
+**stmach** (April 18, 2023):
+Expressed approval while suggesting an alternative approach: "Good catch, see if my suggestion would also work for you"
+
+**zarubaf** (April 19, 2023):
+Asked for clarification on merge authority: "do you want to merge or should I? Not sure how it is handled here"
+
+**lucabertaccini** (April 19, 2023):
+Merged the pull request.
+
+## Linked Issue
+#86: Bug report: multifmt slice uses wrong FP width for third operand
+
+## PR Metadata
+- Repository: openhwgroup/cvfpu
+- Status: Merged on April 19, 2023

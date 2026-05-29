@@ -1,0 +1,50 @@
+# Problem with On the Fly Reset  
+
+- Source URL: https://github.com/taichi-ishitani/tvip-axi/issues/46
+
+Hi @taichi-ishitani ! I have a problem when i have reset on AXI.
+In my test I have AXI4 slave and DUT.  
+When i asserted reset the BValid, Bid not reset to zero.  
+The figure below 
+![1_problem](https://user-images.githubusercontent.com/35744340/209571013-9d82fc3e-18c5-40e0-9aba-e40201c0ee53.jpg)
+
+So i find the problem. I think it happened because of race conditions 
+https://github.com/taichi-ishitani/tvip-axi/blob/master/src/tvip_axi_slave_driver.svh#L524
+
+this happened after 
+```
+  protected task drive_response(bit valid, tvip_axi_slave_driver_response_item item);
+    vif.slave_cb.bvalid <= valid;
+    if (valid) begin
+      vif.slave_cb.bid    <= item.get_id();
+      vif.slave_cb.bresp  <= item.get_response_status();
+    end
+  endtask
+```
+This 
+  ```
+protected task reset_if();
+    vif.awready = configuration.default_awready;
+    vif.wready  = configuration.default_wready;
+    vif.bvalid  = '0;
+    vif.bid     = '0;
+    vif.bresp   = tvip_axi_response'(0);
+  endtask
+```
+
+So my decision 
+```
+  protected task drive_response(bit valid, tvip_axi_slave_driver_response_item item);
+    vif.bvalid <= valid;
+    if (valid) begin
+      vif.bid    <= item.get_id();
+      vif.bresp  <= item.get_response_status();
+    end
+  endtask
+```
+I'm not sure, that I understand your logic correctly, but in my case, it's work fine...
+
+![2_solve](https://user-images.githubusercontent.com/35744340/209571584-3d7cae05-5ffe-4947-88bb-d717157fa537.jpg)
+
+
+Best regards.

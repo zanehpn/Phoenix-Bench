@@ -1,0 +1,2673 @@
+From 9c67f498d29e2bd5ab8067808ceee6f57dbcf681 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Tue, 28 Jan 2025 13:30:58 +0100
+Subject: [PATCH 01/18] Serializer module and test added to jtframe
+
+---
+ modules/jtframe/hdl/jtframe_serializer.v | 58 +++++++++++++++++++
+ modules/jtframe/ver/serializer/gather.f  |  2 +
+ modules/jtframe/ver/serializer/test.v    | 74 ++++++++++++++++++++++++
+ 3 files changed, 134 insertions(+)
+ create mode 100644 modules/jtframe/hdl/jtframe_serializer.v
+ create mode 100644 modules/jtframe/ver/serializer/gather.f
+ create mode 100644 modules/jtframe/ver/serializer/test.v
+
+diff --git a/modules/jtframe/hdl/jtframe_serializer.v b/modules/jtframe/hdl/jtframe_serializer.v
+new file mode 100644
+index 000000000..158aa6fd2
+--- /dev/null
++++ b/modules/jtframe/hdl/jtframe_serializer.v
+@@ -0,0 +1,58 @@
++/*  This file is part of JTCORES.
++    JTCORES program is free software: you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation, either version 3 of the License, or
++    (at your option) any later version.
++
++    JTCORES program is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with JTCORES.  If not, see <http://www.gnu.org/licenses/>.
++
++    Author: Rafael Eduardo Paiva Feener. Copyright: Miki Saito
++    Version: 1.0
++    Date: 24-01-2025 */
++
++module jtframe_serializer#(parameter DW=8, PAR=1)( // Set PAR==0 for even parity
++    input            rst,
++    input            clk,
++    input            cen,
++    input   [DW-1:0] din,
++    input            load,
++    output           sdout,
++    output reg       sclk
++);
++
++localparam CK=$clog2(DW+2);
++reg  [DW+1:0] pre_data;
++reg  [CK-1:0] cnt;
++wire done, par;
++
++assign done  = cnt==0;
++assign sdout = pre_data[0];
++assign par = ^din ^(PAR==1);
++
++always @(posedge clk) begin 
++    if(rst) begin
++        sclk     <= 0;
++        pre_data <= {DW+2{1'b1}};
++        cnt <= 0;
++    end else if(cen) begin
++        sclk <= ~sclk;
++        if(!done ) begin
++            if( !sclk ) begin
++                pre_data <= {1'b1,pre_data[DW+1:1]};
++                cnt <= cnt-1'b1;
++            end
++        end
++        if( load  ) begin
++            pre_data <= {par,din, 1'b0};
++            cnt <= DW+2'd2;
++        end
++    end
++end
++
++endmodule
+\ No newline at end of file
+diff --git a/modules/jtframe/ver/serializer/gather.f b/modules/jtframe/ver/serializer/gather.f
+new file mode 100644
+index 000000000..45604e062
+--- /dev/null
++++ b/modules/jtframe/ver/serializer/gather.f
+@@ -0,0 +1,2 @@
++$JTFRAME/hdl/jtframe_serializer.v
++$JTFRAME/hdl/keyboard/ps2_intf_v.v
+diff --git a/modules/jtframe/ver/serializer/test.v b/modules/jtframe/ver/serializer/test.v
+new file mode 100644
+index 000000000..ba8976930
+--- /dev/null
++++ b/modules/jtframe/ver/serializer/test.v
+@@ -0,0 +1,74 @@
++module test;
++
++localparam DW=8;
++
++reg clk, rst;
++
++reg  [   7:0] cen_cnt=1;
++wire [DW-1:0] data_in;
++wire [DW-1:0] data_out;
++reg        load;
++wire       sd, valid, oddpar, sclk, cen;
++integer    value=0;
++
++
++initial begin
++    $dumpfile("test.lxt");
++    $dumpvars;
++    $dumpon;
++    #2000000
++    $display("FAIL");
++    $finish;
++end
++
++
++initial begin
++    clk=0;
++    forever #10 clk=~clk;
++end
++
++always @(posedge clk) cen_cnt <= {cen_cnt[0],cen_cnt[7:1]};
++
++assign cen     = cen_cnt[0];
++assign oddpar  = ^value[7:0] ^1'b1;
++assign data_in = {oddpar,value[0+:DW]};
++
++initial begin
++    rst    = 1;
++    load   = 0;
++    repeat (20) @(posedge clk);
++    rst  = 0;
++    repeat (20) @(posedge clk);
++    repeat (100) begin
++        value  = $random;
++        wait ( cen==1 && !sclk );
++        load    = 1;
++        repeat (8) @(posedge clk);
++        load    = 0;
++        wait ( valid && data_in == data_out );
++    end
++    repeat (10) @(posedge clk);
++    $display("PASS");
++    $finish;
++end
++
++jtframe_serializer#(.DW(DW)) uut (
++    .clk       ( clk      ),
++    .rst       ( rst      ),
++    .cen       ( cen      ),
++    .din       ( data_in  ),
++    .load      ( load     ),
++    .sdout     ( sd       ),
++    .sclk      ( sclk     )
++);
++
++ps2_intf_v uut_s (
++    .CLK      ( clk      ),
++    .nRESET   ( ~rst     ),
++    .PS2_CLK  ( sclk     ),
++    .PS2_DATA ( sd       ),
++    .DATA     ( data_out ),
++    .VALID    ( valid    ),
++    .ERROR    (          )
++);
++endmodule
+\ No newline at end of file
+
+From 3ab913d29677280ab908f2a0f78d423190e496fe Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Fri, 31 Jan 2025 09:50:53 +0100
+Subject: [PATCH 02/18] minor
+
+---
+ modules/jtframe/hdl/jtframe_serializer.v | 3 ++-
+ modules/jtframe/ver/serializer/test.v    | 6 +++---
+ 2 files changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/modules/jtframe/hdl/jtframe_serializer.v b/modules/jtframe/hdl/jtframe_serializer.v
+index 158aa6fd2..0697ddc0a 100644
+--- a/modules/jtframe/hdl/jtframe_serializer.v
++++ b/modules/jtframe/hdl/jtframe_serializer.v
+@@ -22,6 +22,7 @@ module jtframe_serializer#(parameter DW=8, PAR=1)( // Set PAR==0 for even parity
+     input            cen,
+     input   [DW-1:0] din,
+     input            load,
++    output           done,
+     output           sdout,
+     output reg       sclk
+ );
+@@ -29,7 +30,7 @@ module jtframe_serializer#(parameter DW=8, PAR=1)( // Set PAR==0 for even parity
+ localparam CK=$clog2(DW+2);
+ reg  [DW+1:0] pre_data;
+ reg  [CK-1:0] cnt;
+-wire done, par;
++wire          par;
+ 
+ assign done  = cnt==0;
+ assign sdout = pre_data[0];
+diff --git a/modules/jtframe/ver/serializer/test.v b/modules/jtframe/ver/serializer/test.v
+index ba8976930..5c41e3213 100644
+--- a/modules/jtframe/ver/serializer/test.v
++++ b/modules/jtframe/ver/serializer/test.v
+@@ -8,7 +8,7 @@ reg  [   7:0] cen_cnt=1;
+ wire [DW-1:0] data_in;
+ wire [DW-1:0] data_out;
+ reg        load;
+-wire       sd, valid, oddpar, sclk, cen;
++wire       sd, valid, sclk, cen;
+ integer    value=0;
+ 
+ 
+@@ -30,8 +30,7 @@ end
+ always @(posedge clk) cen_cnt <= {cen_cnt[0],cen_cnt[7:1]};
+ 
+ assign cen     = cen_cnt[0];
+-assign oddpar  = ^value[7:0] ^1'b1;
+-assign data_in = {oddpar,value[0+:DW]};
++assign data_in = value[0+:DW];
+ 
+ initial begin
+     rst    = 1;
+@@ -46,6 +45,7 @@ initial begin
+         repeat (8) @(posedge clk);
+         load    = 0;
+         wait ( valid && data_in == data_out );
++        repeat ($random%10) @(posedge clk);
+     end
+     repeat (10) @(posedge clk);
+     $display("PASS");
+
+From ea1575111e00a13e2d2b2d617a841e2a5ba7a4f5 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Fri, 31 Jan 2025 09:55:49 +0100
+Subject: [PATCH 03/18] Translator from usb hid to ps2
+
+---
+ .../hdl/keyboard/jtframe_hid_ps2_translator.v | 445 ++++++++++++++++++
+ .../jtframe/ver/hid_ps2_translator/gather.f   |   1 +
+ modules/jtframe/ver/hid_ps2_translator/test.v | 354 ++++++++++++++
+ 3 files changed, 800 insertions(+)
+ create mode 100644 modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
+ create mode 100644 modules/jtframe/ver/hid_ps2_translator/gather.f
+ create mode 100644 modules/jtframe/ver/hid_ps2_translator/test.v
+
+diff --git a/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v b/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
+new file mode 100644
+index 000000000..75e8c3997
+--- /dev/null
++++ b/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
+@@ -0,0 +1,445 @@
++/*  This file is part of JTFRAME.
++    JTFRAME program is free software: you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation, either version 3 of the License, or
++    (at your option) any later version.
++
++    JTFRAME program is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with JTFRAME.  If not, see <http://www.gnu.org/licenses/>.
++
++    Author: Rafael Eduardo Paiva Feener. Copyright: Miki Saito
++    Version: 1.0
++    Date: 28-01-2025 */
++
++module jtframe_hid_ps2_translator(
++    input            rst,
++    input            clk,
++    input            cen,
++
++    input  reg [7:0] keycheck,
++    input            released,
++    // output           done,
++    output reg [7:0] ps2_code,
++    output reg       high
++);
++
++localparam [7:0]
++	KEY_HID_NONE=8'h00,                  // KEY_PS2_NONE=8'h00,
++	KEY_HID_ERR_OVF=8'h01,               // KEY_PS2_ERR_OVF=8'h01,
++// 0x02 //  POST Fail
++// 0x03 //  Error Undefined
++	KEY_HID_A=8'h04,                     KEY_PS2_A=8'h1c,
++	KEY_HID_B=8'h05,                     KEY_PS2_B=8'h32,
++	KEY_HID_C=8'h06,                     KEY_PS2_C=8'h21,
++	KEY_HID_D=8'h07,                     KEY_PS2_D=8'h23,
++	KEY_HID_E=8'h08,                     KEY_PS2_E=8'h24,
++	KEY_HID_F=8'h09,                     KEY_PS2_F=8'h2b,
++	KEY_HID_G=8'h0a,                     KEY_PS2_G=8'h34,
++	KEY_HID_H=8'h0b,                     KEY_PS2_H=8'h33,
++	KEY_HID_I=8'h0c,                     KEY_PS2_I=8'h43,
++	KEY_HID_J=8'h0d,                     KEY_PS2_J=8'h3b,
++	KEY_HID_K=8'h0e,                     KEY_PS2_K=8'h42,
++	KEY_HID_L=8'h0f,                     KEY_PS2_L=8'h4b,
++	KEY_HID_M=8'h10,                     KEY_PS2_M=8'h3a,
++	KEY_HID_N=8'h11,                     KEY_PS2_N=8'h31,
++	KEY_HID_O=8'h12,                     KEY_PS2_O=8'h44,
++	KEY_HID_P=8'h13,                     KEY_PS2_P=8'h4d,
++	KEY_HID_Q=8'h14,                     KEY_PS2_Q=8'h15,
++	KEY_HID_R=8'h15,                     KEY_PS2_R=8'h2d,
++	KEY_HID_S=8'h16,                     KEY_PS2_S=8'h1b,
++	KEY_HID_T=8'h17,                     KEY_PS2_T=8'h2c,
++	KEY_HID_U=8'h18,                     KEY_PS2_U=8'h3c,
++	KEY_HID_V=8'h19,                     KEY_PS2_V=8'h2a,
++	KEY_HID_W=8'h1a,                     KEY_PS2_W=8'h1d,
++	KEY_HID_X=8'h1b,                     KEY_PS2_X=8'h22,
++	KEY_HID_Y=8'h1c,                     KEY_PS2_Y=8'h35,
++	KEY_HID_Z=8'h1d,                     KEY_PS2_Z=8'h1a,
++
++	KEY_HID_1=8'h1e,                     KEY_PS2_1=8'h16,
++	KEY_HID_2=8'h1f,                     KEY_PS2_2=8'h1e,
++	KEY_HID_3=8'h20,                     KEY_PS2_3=8'h26,
++	KEY_HID_4=8'h21,                     KEY_PS2_4=8'h25,
++	KEY_HID_5=8'h22,                     KEY_PS2_5=8'h2e,
++	KEY_HID_6=8'h23,                     KEY_PS2_6=8'h36,
++	KEY_HID_7=8'h24,                     KEY_PS2_7=8'h3d,
++	KEY_HID_8=8'h25,                     KEY_PS2_8=8'h3e,
++	KEY_HID_9=8'h26,                     KEY_PS2_9=8'h46,
++	KEY_HID_0=8'h27,                     KEY_PS2_0=8'h45,
++
++	KEY_HID_ENTER=8'h28,                 KEY_PS2_ENTER=8'h5a,
++	KEY_HID_ESC=8'h29,                   KEY_PS2_ESC=8'h76,
++	KEY_HID_BACKSPACE=8'h2a,             KEY_PS2_BACKSPACE=8'h66,
++	KEY_HID_TAB=8'h2b,                   KEY_PS2_TAB=8'h0d,
++	KEY_HID_SPACE=8'h2c,                 KEY_PS2_SPACE=8'h29,
++	KEY_HID_MINUS=8'h2d,                 KEY_PS2_MINUS=8'h4e,
++	KEY_HID_EQUAL=8'h2e,                 KEY_PS2_EQUAL=8'h55,
++	KEY_HID_LEFTBRACE=8'h2f,             KEY_PS2_LEFTBRACE=8'h54,
++	KEY_HID_RIGHTBRACE=8'h30,            KEY_PS2_RIGHTBRACE=8'h5b,
++	KEY_HID_BACKSLASH=8'h31,             KEY_PS2_BACKSLASH=8'h5d,
++	KEY_HID_HASHTILDE=8'h32,             KEY_PS2_HASHTILDE=8'h5d,
++	KEY_HID_SEMICOLON=8'h33,             KEY_PS2_SEMICOLON=8'h4c,
++	KEY_HID_APOSTROPHE=8'h34,            KEY_PS2_APOSTROPHE=8'h52,
++	KEY_HID_GRAVE=8'h35,                 KEY_PS2_GRAVE=8'h0e,
++	KEY_HID_COMMA=8'h36,                 KEY_PS2_COMMA=8'h41,
++	KEY_HID_DOT=8'h37,                   KEY_PS2_DOT=8'h49,
++	KEY_HID_SLASH=8'h38,                 KEY_PS2_SLASH=8'h4a,
++	KEY_HID_CAPSLOCK=8'h39,              KEY_PS2_CAPSLOCK=8'h58,
++
++	KEY_HID_F1=8'h3a,                    KEY_PS2_F1=8'h05,
++	KEY_HID_F2=8'h3b,                    KEY_PS2_F2=8'h06,
++	KEY_HID_F3=8'h3c,                    KEY_PS2_F3=8'h04,
++	KEY_HID_F4=8'h3d,                    KEY_PS2_F4=8'h0c,
++	KEY_HID_F5=8'h3e,                    KEY_PS2_F5=8'h03,
++	KEY_HID_F6=8'h3f,                    KEY_PS2_F6=8'h0b,
++	KEY_HID_F7=8'h40,                    KEY_PS2_F7=8'h83,
++	KEY_HID_F8=8'h41,                    KEY_PS2_F8=8'h0a,
++	KEY_HID_F9=8'h42,                    KEY_PS2_F9=8'h01,
++	KEY_HID_F10=8'h43,                   KEY_PS2_F10=8'h09,
++	KEY_HID_F11=8'h44,                   KEY_PS2_F11=8'h78,
++	KEY_HID_F12=8'h45,                   KEY_PS2_F12=8'h07,
++
++	KEY_HID_SYSRQ=8'h46,                 KEY_PS2_SYSRQ=8'h7c,      // E0
++	KEY_HID_SCROLLLOCK=8'h47,            KEY_PS2_SCROLLLOCK=8'h7e,
++	KEY_HID_PAUSE=8'h48,                 // KEY_PS2_PAUSE=8'h7e,   // E0
++	KEY_HID_INSERT=8'h49,                KEY_PS2_INSERT=8'h70,     // E0
++	KEY_HID_HOME=8'h4a,                  KEY_PS2_HOME=8'h6c,       // E0
++	KEY_HID_PAGEUP=8'h4b,                KEY_PS2_PAGEUP=8'h7d,     // E0
++	KEY_HID_DELETE=8'h4c,                KEY_PS2_DELETE=8'h71,     // E0
++	KEY_HID_END=8'h4d,                   KEY_PS2_END=8'h69,        // E0
++	KEY_HID_PAGEDOWN=8'h4e,              KEY_PS2_PAGEDOWN=8'h7a,   // E0
++	KEY_HID_RIGHT=8'h4f,                 KEY_PS2_RIGHT=8'h74,      // E0
++	KEY_HID_LEFT=8'h50,                  KEY_PS2_LEFT=8'h6b,       // E0
++	KEY_HID_DOWN=8'h51,                  KEY_PS2_DOWN=8'h72,       // E0
++	KEY_HID_UP=8'h52,                    KEY_PS2_UP=8'h75,         // E0
++
++	KEY_HID_NUMLOCK=8'h53,               KEY_PS2_NUMLOCK=8'h77,
++	KEY_HID_KPSLASH=8'h54,               KEY_PS2_KPSLASH=8'h4a,    // E0
++	KEY_HID_KPASTERISK=8'h55,            KEY_PS2_KPASTERISK=8'h7c,
++	KEY_HID_KPMINUS=8'h56,               KEY_PS2_KPMINUS=8'h7b,
++	KEY_HID_KPPLUS=8'h57,                KEY_PS2_KPPLUS=8'h79,
++	KEY_HID_KPENTER=8'h58,               KEY_PS2_KPENTER=8'h5a,    // E0
++	KEY_HID_KP1=8'h59,                   KEY_PS2_KP1=8'h69,
++	KEY_HID_KP2=8'h5a,                   KEY_PS2_KP2=8'h72,
++	KEY_HID_KP3=8'h5b,                   KEY_PS2_KP3=8'h7a,
++	KEY_HID_KP4=8'h5c,                   KEY_PS2_KP4=8'h6b,
++	KEY_HID_KP5=8'h5d,                   KEY_PS2_KP5=8'h73,
++	KEY_HID_KP6=8'h5e,                   KEY_PS2_KP6=8'h74,
++	KEY_HID_KP7=8'h5f,                   KEY_PS2_KP7=8'h6c,
++	KEY_HID_KP8=8'h60,                   KEY_PS2_KP8=8'h75,
++	KEY_HID_KP9=8'h61,                   KEY_PS2_KP9=8'h7d,
++	KEY_HID_KP0=8'h62,                   KEY_PS2_KP0=8'h70,
++	KEY_HID_KPDOT=8'h63,                 KEY_PS2_KPDOT=8'h71,
++
++	KEY_HID_102ND=8'h64,                 KEY_PS2_102ND=8'h61,
++	KEY_HID_COMPOSE=8'h65,               KEY_PS2_COMPOSE=8'h2f,   // E0
++	KEY_HID_POWER=8'h66,                 KEY_PS2_POWER=8'h37,     // E0
++	KEY_HID_KPEQUAL=8'h67,               KEY_PS2_KPEQUAL=8'h0f,
++
++	KEY_HID_F13=8'h68,                   KEY_PS2_F13=8'h08,
++	KEY_HID_F14=8'h69,                   KEY_PS2_F14=8'h10,
++	KEY_HID_F15=8'h6a,                   KEY_PS2_F15=8'h18,
++	KEY_HID_F16=8'h6b,                   KEY_PS2_F16=8'h20,
++	KEY_HID_F17=8'h6c,                   KEY_PS2_F17=8'h28,
++	KEY_HID_F18=8'h6d,                   KEY_PS2_F18=8'h30,
++	KEY_HID_F19=8'h6e,                   KEY_PS2_F19=8'h38,
++	KEY_HID_F20=8'h6f,                   KEY_PS2_F20=8'h40,
++	KEY_HID_F21=8'h70,                   KEY_PS2_F21=8'h48,
++	KEY_HID_F22=8'h71,                   KEY_PS2_F22=8'h50,
++	KEY_HID_F23=8'h72,                   KEY_PS2_F23=8'h57,
++	KEY_HID_F24=8'h73,                   KEY_PS2_F24=8'h5f,
++
++	KEY_HID_OPEN=8'h74,                  // KEY_PS2_OPEN=,       // unassigned
++	KEY_HID_HELP=8'h75,                  // KEY_PS2_HELP=,       // unassigned
++	KEY_HID_PROPS=8'h76,                 // KEY_PS2_PROPS=,      // unassigned
++	KEY_HID_FRONT=8'h77,                 // KEY_PS2_FRONT=,      // unassigned
++	KEY_HID_STOP=8'h78,                  // KEY_PS2_STOP=,       // unassigned
++	KEY_HID_AGAIN=8'h79,                 // KEY_PS2_AGAIN=,      // unassigned
++	KEY_HID_UNDO=8'h7a,                  // KEY_PS2_UNDO=,       // unassigned
++	KEY_HID_CUT=8'h7b,                   // KEY_PS2_CUT=,        // unassigned
++	KEY_HID_COPY=8'h7c,                  // KEY_PS2_COPY=,       // unassigned
++	KEY_HID_PASTE=8'h7d,                 // KEY_PS2_PASTE=,      // unassigned
++	KEY_HID_FIND=8'h7e,                  // KEY_PS2_FIND=,       // unassigned
++	KEY_HID_MUTE=8'h7f,                  // KEY_PS2_MUTE=,       // unassigned
++	KEY_HID_VOLUMEUP=8'h80,              // KEY_PS2_VOLUMEUP=,   // unassigned
++	KEY_HID_VOLUMEDOWN=8'h81,            // KEY_PS2_VOLUMEDOWN=, // unassigned
++// 0x82  Key Locking Tops Lock
++// 0x83  Locking Total Lock
++// 0x84  Locking Scroll Lock
++	KEY_HID_KPCOMMA=8'h85,               KEY_PS2_KPCOMMA=8'h6d,
++// 0x86  Keypad Equal Sign
++	KEY_HID_RO=8'h87,                    KEY_PS2_RO=8'h51,
++	KEY_HID_KATAKANAHIRAGANA=8'h88,      KEY_PS2_KATAKANAHIRAGANA=8'h13,
++	KEY_HID_YEN=8'h89,                   KEY_PS2_YEN=8'h6a,
++	KEY_HID_HENKAN=8'h8a,                KEY_PS2_HENKAN=8'h64,
++	KEY_HID_MUHENKAN=8'h8b,              KEY_PS2_MUHENKAN=8'h67,
++	KEY_HID_KPJPCOMMA=8'h8c,             KEY_PS2_KPJPCOMMA=8'h27,
++// 0x8d  Key International7
++// 0x8e  International8
++// 0x8f  International9
++	KEY_HID_HANGEUL=8'h90,               KEY_PS2_HANGEUL=8'hf2,
++	KEY_HID_HANJA=8'h91,                 KEY_PS2_HANJA=8'hf1,
++	KEY_HID_KATAKANA=8'h92,              KEY_PS2_KATAKANA=8'h63,
++	KEY_HID_HIRAGANA=8'h93,              KEY_PS2_HIRAGANA=8'h62,
++	KEY_HID_ZENKAKUHANKAKU=8'h94,        KEY_PS2_ZENKAKUHANKAKU=8'h5f,
++// 0x95  LANG6
++// 0x96  LANG7
++// 0x97  LANG8
++// 0x98  LANG9
++// 0x99  Change Clearing
++// 0x9a  Type SysReq/Attention
++// 0x9b  Cancel
++// 0x9c  Clear
++// 0x9d  Prior
++    KEY_HID_RETURN=8'h9e,            //  KEY_PS2_RETURN=8'h  , // unassigned
++// 0x9f  Separator
++// 0xa0  Ivories Out
++// 0xa1  Press Oper
++// 0xa2  Clear/Again
++// 0xa3  G CrSel/Props
++// 0xa4  ExSel
++
++// 0xb0  Keypad 00
++// 0xb1  Keypad 000
++// 0xb2  Thousands Separator
++// 0xb3  Denary Separator
++// 0xb4  Currency Unit
++// 0xb5  Currency Sub-unit
++	KEY_HID_KPLEFTPAREN=8'hb6,       //  KEY_PS2_KPLEFTPAREN=,  // reseved
++	KEY_HID_KPRIGHTPAREN=8'hb7,      //  KEY_PS2_KPRIGHTPAREN=, // reseved
++// 0xb8  Keypad {
++// 0xb9  Keypad }
++// 0xba  Keypad Tab
++// 0xbb  Keypad Press
++// 0xbc  Keypad A
++// 0xbd  Keypad B
++// 0xbe  Keypad HUNDRED
++// 0xbf  Keypads D
++// 0xc0  Keypad E
++// 0xc1  Keypad FLUORINE
++// 0xc2  Layout XOR
++// 0xc3  Keypad ^
++// 0xc4  Control %
++// 0xc5  Keypad <
++// 0xc6  Keypad >
++// 0xc7  Front &
++// 0xc8  Keypad &&
++// 0xc9  Keypad |
++// 0xca  Keypad ||
++// 0xcb  Keypad :
++// 0xcc  Keypad #
++// 0xcd  Fingerboard Space
++// 0xce  Keypad @
++// 0xcf  Keypad !
++// 0xd0  Keypad Memory Store
++// 0xd1  Keypad Memory Recall
++// 0xd2  Keypad Memory Clear
++// 0xd3  Keypads Memory Add
++// 0xd4  Keypad Memory Substract
++// 0xd5  Keypad Working Multiply
++// 0xd6  Layout Memory Divide
++// 0xd7  Keypad +/-
++// 0xd8  Keypad Empty
++// 0xd9  Keypad Clear Entry
++// 0xda  Keypad Binary
++// 0xdb  Push Octal
++// 0xdc  Keypad Decimal
++// 0xdd  Keypad Hexadecimal
++
++	KEY_HID_LEFTCTRL=8'he0,              KEY_PS2_LEFTCTRL=8'h14,
++	KEY_HID_LEFTSHIFT=8'he1,             KEY_PS2_LEFTSHIFT=8'h12,
++	KEY_HID_LEFTALT=8'he2,               KEY_PS2_LEFTALT=8'h11,
++	KEY_HID_LEFTMETA=8'he3,              KEY_PS2_LEFTMETA=8'h1f,    // E0
++	KEY_HID_RIGHTCTRL=8'he4,             KEY_PS2_RIGHTCTRL=8'h14,   // E0
++	KEY_HID_RIGHTSHIFT=8'he5,            KEY_PS2_RIGHTSHIFT=8'h59,
++	KEY_HID_RIGHTALT=8'he6,              KEY_PS2_RIGHTALT=8'h11,    // E0
++	KEY_HID_RIGHTMETA=8'he7,             KEY_PS2_RIGHTMETA=8'h27;   // E0
++
++// KEY_HID_MEDIA_PLAYPAUSE=8'he8,    // KEY_PS2_MEDIA_PLAYPAUSE=,
++// KEY_HID_MEDIA_STOPCD=8'he9,       // KEY_PS2_MEDIA_STOPCD=,
++// KEY_HID_MEDIA_PREVIOUSSONG=8'hea, // KEY_PS2_MEDIA_PREVIOUSSONG=,
++// KEY_HID_MEDIA_NEXTSONG=8'heb,     // KEY_PS2_MEDIA_NEXTSONG=,
++// KEY_HID_MEDIA_EJECTCD=8'hec,      // KEY_PS2_MEDIA_EJECTCD=,
++// KEY_HID_MEDIA_VOLUMEUP=8'hed,     // KEY_PS2_MEDIA_VOLUMEUP=,
++// KEY_HID_MEDIA_VOLUMEDOWN=8'hee,   // KEY_PS2_MEDIA_VOLUMEDOWN=,
++// KEY_HID_MEDIA_MUTE=8'hef,         // KEY_PS2_MEDIA_MUTE=,
++// KEY_HID_MEDIA_WWW=8'hf0,          // KEY_PS2_MEDIA_WWW=,
++// KEY_HID_MEDIA_BACK=8'hf1,         // KEY_PS2_MEDIA_BACK=,
++// KEY_HID_MEDIA_FORWARD=8'hf2,      // KEY_PS2_MEDIA_FORWARD=,
++// KEY_HID_MEDIA_STOP=8'hf3,         // KEY_PS2_MEDIA_STOP=,
++// KEY_HID_MEDIA_FIND=8'hf4,         // KEY_PS2_MEDIA_FIND=,
++// KEY_HID_MEDIA_SCROLLUP=8'hf5,     // KEY_PS2_MEDIA_SCROLLUP=,
++// KEY_HID_MEDIA_SCROLLDOWN=8'hf6,   // KEY_PS2_MEDIA_SCROLLDOWN=,
++// KEY_HID_MEDIA_EDIT=8'hf7,         // KEY_PS2_MEDIA_EDIT=,
++// KEY_HID_MEDIA_SLEEP=8'hf8,        // KEY_PS2_MEDIA_SLEEP=,
++// KEY_HID_MEDIA_COFFEE=8'hf9,       // KEY_PS2_MEDIA_COFFEE=,
++// KEY_HID_MEDIA_REFRESH=8'hfa,      // KEY_PS2_MEDIA_REFRESH=,
++// KEY_HID_MEDIA_CALC=8'hfb;         // KEY_PS2_MEDIA_CALC=;
++
++reg [8:0] ps2_pre, ps2_pre_l;
++reg       rel, ph2_l;
++wire      test1, test2;
++wire      ph2, ph3;
++
++assign ph2   = ps2_pre == ps2_pre_l;
++assign ph3   = ph2 & ph2_l;
++assign test1 = ps2_pre[8] &&  !ph2;
++assign test2 = released   && (!ph2 || !ph3);
++
++always @(posedge clk) begin
++ 	if(rst) begin
++        ps2_code  <= 0;
++        high      <= 0;
++        rel       <= 0;
++        ps2_pre_l <= 0;
++        ph2_l     <= 0;
++ 	end else if(cen) begin
++        ps2_pre_l <= ps2_pre;
++        ph2_l     <= ph2;
++ 		ps2_code <= test1 ? 8'he0 : (test2 ? 8'hf0 : ps2_pre[7:0]);
++        high <= ps2_pre[8];
++        rel  <= released;
++ 	end
++ end
++
++always @(posedge clk) begin
++		case(keycheck)
++			KEY_HID_A:                ps2_pre <= KEY_PS2_A;
++			KEY_HID_B:                ps2_pre <= KEY_PS2_B;
++			KEY_HID_C:                ps2_pre <= KEY_PS2_C;
++			KEY_HID_D:                ps2_pre <= KEY_PS2_D;
++			KEY_HID_E:                ps2_pre <= KEY_PS2_E;
++			KEY_HID_F:                ps2_pre <= KEY_PS2_F;
++			KEY_HID_G:                ps2_pre <= KEY_PS2_G;
++			KEY_HID_H:                ps2_pre <= KEY_PS2_H;
++			KEY_HID_I:                ps2_pre <= KEY_PS2_I;
++			KEY_HID_J:                ps2_pre <= KEY_PS2_J;
++			KEY_HID_K:                ps2_pre <= KEY_PS2_K;
++			KEY_HID_L:                ps2_pre <= KEY_PS2_L;
++			KEY_HID_M:                ps2_pre <= KEY_PS2_M;
++			KEY_HID_N:                ps2_pre <= KEY_PS2_N;
++			KEY_HID_O:                ps2_pre <= KEY_PS2_O;
++			KEY_HID_P:                ps2_pre <= KEY_PS2_P;
++			KEY_HID_Q:                ps2_pre <= KEY_PS2_Q;
++			KEY_HID_R:                ps2_pre <= KEY_PS2_R;
++			KEY_HID_S:                ps2_pre <= KEY_PS2_S;
++			KEY_HID_T:                ps2_pre <= KEY_PS2_T;
++			KEY_HID_U:                ps2_pre <= KEY_PS2_U;
++			KEY_HID_V:                ps2_pre <= KEY_PS2_V;
++			KEY_HID_W:                ps2_pre <= KEY_PS2_W;
++			KEY_HID_X:                ps2_pre <= KEY_PS2_X;
++			KEY_HID_Y:                ps2_pre <= KEY_PS2_Y;
++			KEY_HID_Z:                ps2_pre <= KEY_PS2_Z;
++			KEY_HID_1:                ps2_pre <= KEY_PS2_1;
++			KEY_HID_2:                ps2_pre <= KEY_PS2_2;
++			KEY_HID_3:                ps2_pre <= KEY_PS2_3;
++			KEY_HID_4:                ps2_pre <= KEY_PS2_4;
++			KEY_HID_5:                ps2_pre <= KEY_PS2_5;
++			KEY_HID_6:                ps2_pre <= KEY_PS2_6;
++			KEY_HID_7:                ps2_pre <= KEY_PS2_7;
++			KEY_HID_8:                ps2_pre <= KEY_PS2_8;
++			KEY_HID_9:                ps2_pre <= KEY_PS2_9;
++			KEY_HID_0:                ps2_pre <= KEY_PS2_0;
++			KEY_HID_ENTER:            ps2_pre <= KEY_PS2_ENTER;
++			KEY_HID_ESC:              ps2_pre <= KEY_PS2_ESC;
++			KEY_HID_BACKSPACE:        ps2_pre <= KEY_PS2_BACKSPACE;
++			KEY_HID_TAB:              ps2_pre <= KEY_PS2_TAB;
++			KEY_HID_SPACE:            ps2_pre <= KEY_PS2_SPACE;
++			KEY_HID_MINUS:            ps2_pre <= KEY_PS2_MINUS;
++			KEY_HID_EQUAL:            ps2_pre <= KEY_PS2_EQUAL;
++			KEY_HID_LEFTBRACE:        ps2_pre <= KEY_PS2_LEFTBRACE;
++			KEY_HID_RIGHTBRACE:       ps2_pre <= KEY_PS2_RIGHTBRACE;
++			KEY_HID_BACKSLASH:        ps2_pre <= KEY_PS2_BACKSLASH;
++			KEY_HID_HASHTILDE:        ps2_pre <= KEY_PS2_HASHTILDE;
++			KEY_HID_SEMICOLON:        ps2_pre <= KEY_PS2_SEMICOLON;
++			KEY_HID_APOSTROPHE:       ps2_pre <= KEY_PS2_APOSTROPHE;
++			KEY_HID_GRAVE:            ps2_pre <= KEY_PS2_GRAVE;
++			KEY_HID_COMMA:            ps2_pre <= KEY_PS2_COMMA;
++			KEY_HID_DOT:              ps2_pre <= KEY_PS2_DOT;
++			KEY_HID_SLASH:            ps2_pre <= KEY_PS2_SLASH;
++			KEY_HID_CAPSLOCK:         ps2_pre <= KEY_PS2_CAPSLOCK;
++			KEY_HID_F1:               ps2_pre <= KEY_PS2_F1;
++			KEY_HID_F2:               ps2_pre <= KEY_PS2_F2;
++			KEY_HID_F3:               ps2_pre <= KEY_PS2_F3;
++			KEY_HID_F4:               ps2_pre <= KEY_PS2_F4;
++			KEY_HID_F5:               ps2_pre <= KEY_PS2_F5;
++			KEY_HID_F6:               ps2_pre <= KEY_PS2_F6;
++			KEY_HID_F7:               ps2_pre <= KEY_PS2_F7;
++			KEY_HID_F8:               ps2_pre <= KEY_PS2_F8;
++			KEY_HID_F9:               ps2_pre <= KEY_PS2_F9;
++			KEY_HID_F10:              ps2_pre <= KEY_PS2_F10;
++			KEY_HID_F11:              ps2_pre <= KEY_PS2_F11;
++			KEY_HID_F12:              ps2_pre <= KEY_PS2_F12;
++			KEY_HID_SYSRQ:            ps2_pre <= {1'b1,KEY_PS2_SYSRQ};      // E0
++			KEY_HID_SCROLLLOCK:       ps2_pre <= KEY_PS2_SCROLLLOCK;
++			KEY_HID_INSERT:           ps2_pre <= {1'b1,KEY_PS2_INSERT};     // E0
++			KEY_HID_HOME:             ps2_pre <= {1'b1,KEY_PS2_HOME};       // E0
++			KEY_HID_PAGEUP:           ps2_pre <= {1'b1,KEY_PS2_PAGEUP};     // E0
++			KEY_HID_DELETE:           ps2_pre <= {1'b1,KEY_PS2_DELETE};     // E0
++			KEY_HID_END:              ps2_pre <= {1'b1,KEY_PS2_END};        // E0
++			KEY_HID_PAGEDOWN:         ps2_pre <= {1'b1,KEY_PS2_PAGEDOWN};   // E0
++			KEY_HID_RIGHT:            ps2_pre <= {1'b1,KEY_PS2_RIGHT};      // E0
++			KEY_HID_LEFT:             ps2_pre <= {1'b1,KEY_PS2_LEFT};       // E0
++			KEY_HID_DOWN:             ps2_pre <= {1'b1,KEY_PS2_DOWN};       // E0
++			KEY_HID_UP:               ps2_pre <= {1'b1,KEY_PS2_UP};         // E0
++			KEY_HID_NUMLOCK:          ps2_pre <= KEY_PS2_NUMLOCK;
++			KEY_HID_KPSLASH:          ps2_pre <= {1'b1,KEY_PS2_KPSLASH};    // E0
++			KEY_HID_KPASTERISK:       ps2_pre <= KEY_PS2_KPASTERISK;
++			KEY_HID_KPMINUS:          ps2_pre <= KEY_PS2_KPMINUS;
++			KEY_HID_KPPLUS:           ps2_pre <= KEY_PS2_KPPLUS;
++			KEY_HID_KPENTER:          ps2_pre <= {1'b1,KEY_PS2_KPENTER};    // E0
++			KEY_HID_KP1:              ps2_pre <= KEY_PS2_KP1;
++			KEY_HID_KP2:              ps2_pre <= KEY_PS2_KP2;
++			KEY_HID_KP3:              ps2_pre <= KEY_PS2_KP3;
++			KEY_HID_KP4:              ps2_pre <= KEY_PS2_KP4;
++			KEY_HID_KP5:              ps2_pre <= KEY_PS2_KP5;
++			KEY_HID_KP6:              ps2_pre <= KEY_PS2_KP6;
++			KEY_HID_KP7:              ps2_pre <= KEY_PS2_KP7;
++			KEY_HID_KP8:              ps2_pre <= KEY_PS2_KP8;
++			KEY_HID_KP9:              ps2_pre <= KEY_PS2_KP9;
++			KEY_HID_KP0:              ps2_pre <= KEY_PS2_KP0;
++			KEY_HID_KPDOT:            ps2_pre <= KEY_PS2_KPDOT;
++			KEY_HID_102ND:            ps2_pre <= KEY_PS2_102ND;
++			KEY_HID_COMPOSE:          ps2_pre <= {1'b1,KEY_PS2_COMPOSE};   // E0
++			KEY_HID_POWER:            ps2_pre <= {1'b1,KEY_PS2_POWER};     // E0
++			KEY_HID_KPEQUAL:          ps2_pre <= KEY_PS2_KPEQUAL;
++			KEY_HID_F13:              ps2_pre <= KEY_PS2_F13;
++			KEY_HID_F14:              ps2_pre <= KEY_PS2_F14;
++			KEY_HID_F15:              ps2_pre <= KEY_PS2_F15;
++			KEY_HID_F16:              ps2_pre <= KEY_PS2_F16;
++			KEY_HID_F17:              ps2_pre <= KEY_PS2_F17;
++			KEY_HID_F18:              ps2_pre <= KEY_PS2_F18;
++			KEY_HID_F19:              ps2_pre <= KEY_PS2_F19;
++			KEY_HID_F20:              ps2_pre <= KEY_PS2_F20;
++			KEY_HID_F21:              ps2_pre <= KEY_PS2_F21;
++			KEY_HID_F22:              ps2_pre <= KEY_PS2_F22;
++			KEY_HID_F23:              ps2_pre <= KEY_PS2_F23;
++			KEY_HID_F24:              ps2_pre <= KEY_PS2_F24;
++			KEY_HID_KPCOMMA:          ps2_pre <= KEY_PS2_KPCOMMA;
++			KEY_HID_RO:               ps2_pre <= KEY_PS2_RO;
++			KEY_HID_KATAKANAHIRAGANA: ps2_pre <= KEY_PS2_KATAKANAHIRAGANA;
++			KEY_HID_YEN:              ps2_pre <= KEY_PS2_YEN;
++			KEY_HID_HENKAN:           ps2_pre <= KEY_PS2_HENKAN;
++			KEY_HID_MUHENKAN:         ps2_pre <= KEY_PS2_MUHENKAN;
++			KEY_HID_KPJPCOMMA:        ps2_pre <= KEY_PS2_KPJPCOMMA;
++			KEY_HID_HANGEUL:          ps2_pre <= KEY_PS2_HANGEUL;
++			KEY_HID_HANJA:            ps2_pre <= KEY_PS2_HANJA;
++			KEY_HID_KATAKANA:         ps2_pre <= KEY_PS2_KATAKANA;
++			KEY_HID_HIRAGANA:         ps2_pre <= KEY_PS2_HIRAGANA;
++			KEY_HID_ZENKAKUHANKAKU:   ps2_pre <= KEY_PS2_ZENKAKUHANKAKU;
++			KEY_HID_LEFTCTRL:         ps2_pre <= KEY_PS2_LEFTCTRL;
++			KEY_HID_LEFTSHIFT:        ps2_pre <= KEY_PS2_LEFTSHIFT;
++			KEY_HID_LEFTALT:          ps2_pre <= KEY_PS2_LEFTALT;
++			KEY_HID_LEFTMETA:         ps2_pre <= {1'b1,KEY_PS2_LEFTMETA};    // E0
++			KEY_HID_RIGHTCTRL:        ps2_pre <= {1'b1,KEY_PS2_RIGHTCTRL};   // E0
++			KEY_HID_RIGHTSHIFT:       ps2_pre <= KEY_PS2_RIGHTSHIFT;
++			KEY_HID_RIGHTALT:         ps2_pre <= {1'b1,KEY_PS2_RIGHTALT};    // E0
++			KEY_HID_RIGHTMETA:        ps2_pre <= {1'b1,KEY_PS2_RIGHTMETA};   // E0
++			default:                  ps2_pre <= 0;
++		endcase
++end
++endmodule
+\ No newline at end of file
+diff --git a/modules/jtframe/ver/hid_ps2_translator/gather.f b/modules/jtframe/ver/hid_ps2_translator/gather.f
+new file mode 100644
+index 000000000..b1bb6f498
+--- /dev/null
++++ b/modules/jtframe/ver/hid_ps2_translator/gather.f
+@@ -0,0 +1 @@
++$JTFRAME/hdl/keyboard/jtframe_hid_ps2_translator.v
+diff --git a/modules/jtframe/ver/hid_ps2_translator/test.v b/modules/jtframe/ver/hid_ps2_translator/test.v
+new file mode 100644
+index 000000000..f4b81664d
+--- /dev/null
++++ b/modules/jtframe/ver/hid_ps2_translator/test.v
+@@ -0,0 +1,354 @@
++module test;
++
++localparam DW=8;
++
++reg clk, rst;
++
++reg  [    15:0] commands [0:255];
++reg  [     7:0] cen_cnt=1;
++wire [  DW-1:0] data_in, data_out;
++reg  [  DW-1:0] data_out_l=0;
++wire [2*DW-1:0] data_2bytes, dexp;
++wire            high, cen;
++integer         value=0, error_bus=0;
++
++
++initial begin
++    $dumpfile("test.lxt");
++    $dumpvars;
++    $dumpon;
++    #2000000
++    $display("FAIL");
++    $finish;
++end
++
++
++initial begin
++    clk=0;
++    forever #10 clk=~clk;
++end
++
++always @(posedge clk) begin
++    cen_cnt <= {cen_cnt[0],cen_cnt[7:1]};
++    if(cen) data_out_l <= data_out;
++    if( |error_bus ) begin
++        $display("Failed at %d. Expected output: %h", data_in, dexp);
++        #80 $finish;
++    end
++end
++
++assign cen         = cen_cnt[0];
++assign data_in     = value[0+:DW];
++assign data_2bytes = {data_out_l, data_out};
++assign dexp        = commands[value];
++
++initial begin
++    rst    = 1;
++    repeat (20) @(posedge clk);
++    rst  = 0;
++    repeat (20) @(posedge clk);
++
++    for (value = 0; value < 256; value++) begin
++        if( dexp != 0 ) begin
++            wait ( cen==1 );
++        wait ( cen==0 );
++            repeat(3) @(posedge clk);
++            if( high ) begin
++                wait ( cen==1 );
++                wait ( cen==0 );
++                repeat(3) @(posedge clk);
++                assert( data_2bytes == dexp ) else error_bus = dexp;
++            end
++            assert(  data_out == dexp[7:0]  ) else error_bus = dexp;
++        end
++        wait ( cen==1 );
++        wait ( cen==0 );
++        repeat(3) @(posedge clk);
++    end
++    repeat (10) @(posedge clk);
++    $display("PASS");
++    $finish;
++end
++
++jtframe_hid_ps2_translator uut(
++    .rst      ( rst      ),
++    .clk      ( clk      ),
++    .cen      ( cen      ),
++    .released ( 1'b0     ),
++    .keycheck ( data_in  ),
++    .ps2_code ( data_out ),
++    .high     ( high     )
++);
++
++localparam [7:0]
++    KEY_HID_A=8'h04,                     KEY_PS2_A=8'h1c,
++    KEY_HID_B=8'h05,                     KEY_PS2_B=8'h32,
++    KEY_HID_C=8'h06,                     KEY_PS2_C=8'h21,
++    KEY_HID_D=8'h07,                     KEY_PS2_D=8'h23,
++    KEY_HID_E=8'h08,                     KEY_PS2_E=8'h24,
++    KEY_HID_F=8'h09,                     KEY_PS2_F=8'h2b,
++    KEY_HID_G=8'h0a,                     KEY_PS2_G=8'h34,
++    KEY_HID_H=8'h0b,                     KEY_PS2_H=8'h33,
++    KEY_HID_I=8'h0c,                     KEY_PS2_I=8'h43,
++    KEY_HID_J=8'h0d,                     KEY_PS2_J=8'h3b,
++    KEY_HID_K=8'h0e,                     KEY_PS2_K=8'h42,
++    KEY_HID_L=8'h0f,                     KEY_PS2_L=8'h4b,
++    KEY_HID_M=8'h10,                     KEY_PS2_M=8'h3a,
++    KEY_HID_N=8'h11,                     KEY_PS2_N=8'h31,
++    KEY_HID_O=8'h12,                     KEY_PS2_O=8'h44,
++    KEY_HID_P=8'h13,                     KEY_PS2_P=8'h4d,
++    KEY_HID_Q=8'h14,                     KEY_PS2_Q=8'h15,
++    KEY_HID_R=8'h15,                     KEY_PS2_R=8'h2d,
++    KEY_HID_S=8'h16,                     KEY_PS2_S=8'h1b,
++    KEY_HID_T=8'h17,                     KEY_PS2_T=8'h2c,
++    KEY_HID_U=8'h18,                     KEY_PS2_U=8'h3c,
++    KEY_HID_V=8'h19,                     KEY_PS2_V=8'h2a,
++    KEY_HID_W=8'h1a,                     KEY_PS2_W=8'h1d,
++    KEY_HID_X=8'h1b,                     KEY_PS2_X=8'h22,
++    KEY_HID_Y=8'h1c,                     KEY_PS2_Y=8'h35,
++    KEY_HID_Z=8'h1d,                     KEY_PS2_Z=8'h1a,
++    KEY_HID_1=8'h1e,                     KEY_PS2_1=8'h16,
++    KEY_HID_2=8'h1f,                     KEY_PS2_2=8'h1e,
++    KEY_HID_3=8'h20,                     KEY_PS2_3=8'h26,
++    KEY_HID_4=8'h21,                     KEY_PS2_4=8'h25,
++    KEY_HID_5=8'h22,                     KEY_PS2_5=8'h2e,
++    KEY_HID_6=8'h23,                     KEY_PS2_6=8'h36,
++    KEY_HID_7=8'h24,                     KEY_PS2_7=8'h3d,
++    KEY_HID_8=8'h25,                     KEY_PS2_8=8'h3e,
++    KEY_HID_9=8'h26,                     KEY_PS2_9=8'h46,
++    KEY_HID_0=8'h27,                     KEY_PS2_0=8'h45,
++    KEY_HID_ENTER=8'h28,                 KEY_PS2_ENTER=8'h5a,
++    KEY_HID_ESC=8'h29,                   KEY_PS2_ESC=8'h76,
++    KEY_HID_BACKSPACE=8'h2a,             KEY_PS2_BACKSPACE=8'h66,
++    KEY_HID_TAB=8'h2b,                   KEY_PS2_TAB=8'h0d,
++    KEY_HID_SPACE=8'h2c,                 KEY_PS2_SPACE=8'h29,
++    KEY_HID_MINUS=8'h2d,                 KEY_PS2_MINUS=8'h4e,
++    KEY_HID_EQUAL=8'h2e,                 KEY_PS2_EQUAL=8'h55,
++    KEY_HID_LEFTBRACE=8'h2f,             KEY_PS2_LEFTBRACE=8'h54,
++    KEY_HID_RIGHTBRACE=8'h30,            KEY_PS2_RIGHTBRACE=8'h5b,
++    KEY_HID_BACKSLASH=8'h31,             KEY_PS2_BACKSLASH=8'h5d,
++    KEY_HID_HASHTILDE=8'h32,             KEY_PS2_HASHTILDE=8'h5d,
++    KEY_HID_SEMICOLON=8'h33,             KEY_PS2_SEMICOLON=8'h4c,
++    KEY_HID_APOSTROPHE=8'h34,            KEY_PS2_APOSTROPHE=8'h52,
++    KEY_HID_GRAVE=8'h35,                 KEY_PS2_GRAVE=8'h0e,
++    KEY_HID_COMMA=8'h36,                 KEY_PS2_COMMA=8'h41,
++    KEY_HID_DOT=8'h37,                   KEY_PS2_DOT=8'h49,
++    KEY_HID_SLASH=8'h38,                 KEY_PS2_SLASH=8'h4a,
++    KEY_HID_CAPSLOCK=8'h39,              KEY_PS2_CAPSLOCK=8'h58,
++    KEY_HID_F1=8'h3a,                    KEY_PS2_F1=8'h05,
++    KEY_HID_F2=8'h3b,                    KEY_PS2_F2=8'h06,
++    KEY_HID_F3=8'h3c,                    KEY_PS2_F3=8'h04,
++    KEY_HID_F4=8'h3d,                    KEY_PS2_F4=8'h0c,
++    KEY_HID_F5=8'h3e,                    KEY_PS2_F5=8'h03,
++    KEY_HID_F6=8'h3f,                    KEY_PS2_F6=8'h0b,
++    KEY_HID_F7=8'h40,                    KEY_PS2_F7=8'h83,
++    KEY_HID_F8=8'h41,                    KEY_PS2_F8=8'h0a,
++    KEY_HID_F9=8'h42,                    KEY_PS2_F9=8'h01,
++    KEY_HID_F10=8'h43,                   KEY_PS2_F10=8'h09,
++    KEY_HID_F11=8'h44,                   KEY_PS2_F11=8'h78,
++    KEY_HID_F12=8'h45,                   KEY_PS2_F12=8'h07,
++    KEY_HID_SYSRQ=8'h46,                 KEY_PS2_SYSRQ=8'h7c,      // E0
++    KEY_HID_SCROLLLOCK=8'h47,            KEY_PS2_SCROLLLOCK=8'h7e,
++    KEY_HID_INSERT=8'h49,                KEY_PS2_INSERT=8'h70,     // E0
++    KEY_HID_HOME=8'h4a,                  KEY_PS2_HOME=8'h6c,       // E0
++    KEY_HID_PAGEUP=8'h4b,                KEY_PS2_PAGEUP=8'h7d,     // E0
++    KEY_HID_DELETE=8'h4c,                KEY_PS2_DELETE=8'h71,     // E0
++    KEY_HID_END=8'h4d,                   KEY_PS2_END=8'h69,        // E0
++    KEY_HID_PAGEDOWN=8'h4e,              KEY_PS2_PAGEDOWN=8'h7a,   // E0
++    KEY_HID_RIGHT=8'h4f,                 KEY_PS2_RIGHT=8'h74,      // E0
++    KEY_HID_LEFT=8'h50,                  KEY_PS2_LEFT=8'h6b,       // E0
++    KEY_HID_DOWN=8'h51,                  KEY_PS2_DOWN=8'h72,       // E0
++    KEY_HID_UP=8'h52,                    KEY_PS2_UP=8'h75,         // E0
++    KEY_HID_NUMLOCK=8'h53,               KEY_PS2_NUMLOCK=8'h77,
++    KEY_HID_KPSLASH=8'h54,               KEY_PS2_KPSLASH=8'h4a,    // E0
++    KEY_HID_KPASTERISK=8'h55,            KEY_PS2_KPASTERISK=8'h7c,
++    KEY_HID_KPMINUS=8'h56,               KEY_PS2_KPMINUS=8'h7b,
++    KEY_HID_KPPLUS=8'h57,                KEY_PS2_KPPLUS=8'h79,
++    KEY_HID_KPENTER=8'h58,               KEY_PS2_KPENTER=8'h5a,    // E0
++    KEY_HID_KP1=8'h59,                   KEY_PS2_KP1=8'h69,
++    KEY_HID_KP2=8'h5a,                   KEY_PS2_KP2=8'h72,
++    KEY_HID_KP3=8'h5b,                   KEY_PS2_KP3=8'h7a,
++    KEY_HID_KP4=8'h5c,                   KEY_PS2_KP4=8'h6b,
++    KEY_HID_KP5=8'h5d,                   KEY_PS2_KP5=8'h73,
++    KEY_HID_KP6=8'h5e,                   KEY_PS2_KP6=8'h74,
++    KEY_HID_KP7=8'h5f,                   KEY_PS2_KP7=8'h6c,
++    KEY_HID_KP8=8'h60,                   KEY_PS2_KP8=8'h75,
++    KEY_HID_KP9=8'h61,                   KEY_PS2_KP9=8'h7d,
++    KEY_HID_KP0=8'h62,                   KEY_PS2_KP0=8'h70,
++    KEY_HID_KPDOT=8'h63,                 KEY_PS2_KPDOT=8'h71,
++    KEY_HID_102ND=8'h64,                 KEY_PS2_102ND=8'h61,
++    KEY_HID_COMPOSE=8'h65,               KEY_PS2_COMPOSE=8'h2f,   // E0
++    KEY_HID_POWER=8'h66,                 KEY_PS2_POWER=8'h37,     // E0
++    KEY_HID_KPEQUAL=8'h67,               KEY_PS2_KPEQUAL=8'h0f,
++    KEY_HID_F13=8'h68,                   KEY_PS2_F13=8'h08,
++    KEY_HID_F14=8'h69,                   KEY_PS2_F14=8'h10,
++    KEY_HID_F15=8'h6a,                   KEY_PS2_F15=8'h18,
++    KEY_HID_F16=8'h6b,                   KEY_PS2_F16=8'h20,
++    KEY_HID_F17=8'h6c,                   KEY_PS2_F17=8'h28,
++    KEY_HID_F18=8'h6d,                   KEY_PS2_F18=8'h30,
++    KEY_HID_F19=8'h6e,                   KEY_PS2_F19=8'h38,
++    KEY_HID_F20=8'h6f,                   KEY_PS2_F20=8'h40,
++    KEY_HID_F21=8'h70,                   KEY_PS2_F21=8'h48,
++    KEY_HID_F22=8'h71,                   KEY_PS2_F22=8'h50,
++    KEY_HID_F23=8'h72,                   KEY_PS2_F23=8'h57,
++    KEY_HID_F24=8'h73,                   KEY_PS2_F24=8'h5f,
++    KEY_HID_KPCOMMA=8'h85,               KEY_PS2_KPCOMMA=8'h6d,
++    KEY_HID_RO=8'h87,                    KEY_PS2_RO=8'h51,
++    KEY_HID_KATAKANAHIRAGANA=8'h88,      KEY_PS2_KATAKANAHIRAGANA=8'h13,
++    KEY_HID_YEN=8'h89,                   KEY_PS2_YEN=8'h6a,
++    KEY_HID_HENKAN=8'h8a,                KEY_PS2_HENKAN=8'h64,
++    KEY_HID_MUHENKAN=8'h8b,              KEY_PS2_MUHENKAN=8'h67,
++    KEY_HID_KPJPCOMMA=8'h8c,             KEY_PS2_KPJPCOMMA=8'h27,
++    KEY_HID_HANGEUL=8'h90,               KEY_PS2_HANGEUL=8'hf2,
++    KEY_HID_HANJA=8'h91,                 KEY_PS2_HANJA=8'hf1,
++    KEY_HID_KATAKANA=8'h92,              KEY_PS2_KATAKANA=8'h63,
++    KEY_HID_HIRAGANA=8'h93,              KEY_PS2_HIRAGANA=8'h62,
++    KEY_HID_ZENKAKUHANKAKU=8'h94,        KEY_PS2_ZENKAKUHANKAKU=8'h5f,
++    KEY_HID_LEFTCTRL=8'he0,              KEY_PS2_LEFTCTRL=8'h14,
++    KEY_HID_LEFTSHIFT=8'he1,             KEY_PS2_LEFTSHIFT=8'h12,
++    KEY_HID_LEFTALT=8'he2,               KEY_PS2_LEFTALT=8'h11,
++    KEY_HID_LEFTMETA=8'he3,              KEY_PS2_LEFTMETA=8'h1f,    // E0
++    KEY_HID_RIGHTCTRL=8'he4,             KEY_PS2_RIGHTCTRL=8'h14,   // E0
++    KEY_HID_RIGHTSHIFT=8'he5,            KEY_PS2_RIGHTSHIFT=8'h59,
++    KEY_HID_RIGHTALT=8'he6,              KEY_PS2_RIGHTALT=8'h11,    // E0
++    KEY_HID_RIGHTMETA=8'he7,             KEY_PS2_RIGHTMETA=8'h27,   // E0
++
++    KEY_PS2_EXT=8'he0;
++
++    initial begin
++        for (int i = 0; i < 256; i++) begin
++            commands[i] = 0;
++        end
++            commands[KEY_HID_A               ] =  KEY_PS2_A;
++            commands[KEY_HID_B               ] =  KEY_PS2_B;
++            commands[KEY_HID_C               ] =  KEY_PS2_C;
++            commands[KEY_HID_D               ] =  KEY_PS2_D;
++            commands[KEY_HID_E               ] =  KEY_PS2_E;
++            commands[KEY_HID_F               ] =  KEY_PS2_F;
++            commands[KEY_HID_G               ] =  KEY_PS2_G;
++            commands[KEY_HID_H               ] =  KEY_PS2_H;
++            commands[KEY_HID_I               ] =  KEY_PS2_I;
++            commands[KEY_HID_J               ] =  KEY_PS2_J;
++            commands[KEY_HID_K               ] =  KEY_PS2_K;
++            commands[KEY_HID_L               ] =  KEY_PS2_L;
++            commands[KEY_HID_M               ] =  KEY_PS2_M;
++            commands[KEY_HID_N               ] =  KEY_PS2_N;
++            commands[KEY_HID_O               ] =  KEY_PS2_O;
++            commands[KEY_HID_P               ] =  KEY_PS2_P;
++            commands[KEY_HID_Q               ] =  KEY_PS2_Q;
++            commands[KEY_HID_R               ] =  KEY_PS2_R;
++            commands[KEY_HID_S               ] =  KEY_PS2_S;
++            commands[KEY_HID_T               ] =  KEY_PS2_T;
++            commands[KEY_HID_U               ] =  KEY_PS2_U;
++            commands[KEY_HID_V               ] =  KEY_PS2_V;
++            commands[KEY_HID_W               ] =  KEY_PS2_W;
++            commands[KEY_HID_X               ] =  KEY_PS2_X;
++            commands[KEY_HID_Y               ] =  KEY_PS2_Y;
++            commands[KEY_HID_Z               ] =  KEY_PS2_Z;
++            commands[KEY_HID_1               ] =  KEY_PS2_1;
++            commands[KEY_HID_2               ] =  KEY_PS2_2;
++            commands[KEY_HID_3               ] =  KEY_PS2_3;
++            commands[KEY_HID_4               ] =  KEY_PS2_4;
++            commands[KEY_HID_5               ] =  KEY_PS2_5;
++            commands[KEY_HID_6               ] =  KEY_PS2_6;
++            commands[KEY_HID_7               ] =  KEY_PS2_7;
++            commands[KEY_HID_8               ] =  KEY_PS2_8;
++            commands[KEY_HID_9               ] =  KEY_PS2_9;
++            commands[KEY_HID_0               ] =  KEY_PS2_0;
++            commands[KEY_HID_ENTER           ] =  KEY_PS2_ENTER;
++            commands[KEY_HID_ESC             ] =  KEY_PS2_ESC;
++            commands[KEY_HID_BACKSPACE       ] =  KEY_PS2_BACKSPACE;
++            commands[KEY_HID_TAB             ] =  KEY_PS2_TAB;
++            commands[KEY_HID_SPACE           ] =  KEY_PS2_SPACE;
++            commands[KEY_HID_MINUS           ] =  KEY_PS2_MINUS;
++            commands[KEY_HID_EQUAL           ] =  KEY_PS2_EQUAL;
++            commands[KEY_HID_LEFTBRACE       ] =  KEY_PS2_LEFTBRACE;
++            commands[KEY_HID_RIGHTBRACE      ] =  KEY_PS2_RIGHTBRACE;
++            commands[KEY_HID_BACKSLASH       ] =  KEY_PS2_BACKSLASH;
++            commands[KEY_HID_HASHTILDE       ] =  KEY_PS2_HASHTILDE;
++            commands[KEY_HID_SEMICOLON       ] =  KEY_PS2_SEMICOLON;
++            commands[KEY_HID_APOSTROPHE      ] =  KEY_PS2_APOSTROPHE;
++            commands[KEY_HID_GRAVE           ] =  KEY_PS2_GRAVE;
++            commands[KEY_HID_COMMA           ] =  KEY_PS2_COMMA;
++            commands[KEY_HID_DOT             ] =  KEY_PS2_DOT;
++            commands[KEY_HID_SLASH           ] =  KEY_PS2_SLASH;
++            commands[KEY_HID_CAPSLOCK        ] =  KEY_PS2_CAPSLOCK;
++            commands[KEY_HID_F1              ] =  KEY_PS2_F1;
++            commands[KEY_HID_F2              ] =  KEY_PS2_F2;
++            commands[KEY_HID_F3              ] =  KEY_PS2_F3;
++            commands[KEY_HID_F4              ] =  KEY_PS2_F4;
++            commands[KEY_HID_F5              ] =  KEY_PS2_F5;
++            commands[KEY_HID_F6              ] =  KEY_PS2_F6;
++            commands[KEY_HID_F7              ] =  KEY_PS2_F7;
++            commands[KEY_HID_F8              ] =  KEY_PS2_F8;
++            commands[KEY_HID_F9              ] =  KEY_PS2_F9;
++            commands[KEY_HID_F10             ] =  KEY_PS2_F10;
++            commands[KEY_HID_F11             ] =  KEY_PS2_F11;
++            commands[KEY_HID_F12             ] =  KEY_PS2_F12;
++            commands[KEY_HID_SYSRQ           ] = {KEY_PS2_EXT, KEY_PS2_SYSRQ};      // E0
++            commands[KEY_HID_SCROLLLOCK      ] =  KEY_PS2_SCROLLLOCK;
++            commands[KEY_HID_INSERT          ] = {KEY_PS2_EXT, KEY_PS2_INSERT};     // E0
++            commands[KEY_HID_HOME            ] = {KEY_PS2_EXT, KEY_PS2_HOME};       // E0
++            commands[KEY_HID_PAGEUP          ] = {KEY_PS2_EXT, KEY_PS2_PAGEUP};     // E0
++            commands[KEY_HID_DELETE          ] = {KEY_PS2_EXT, KEY_PS2_DELETE};     // E0
++            commands[KEY_HID_END             ] = {KEY_PS2_EXT, KEY_PS2_END};        // E0
++            commands[KEY_HID_PAGEDOWN        ] = {KEY_PS2_EXT, KEY_PS2_PAGEDOWN};   // E0
++            commands[KEY_HID_RIGHT           ] = {KEY_PS2_EXT, KEY_PS2_RIGHT};      // E0
++            commands[KEY_HID_LEFT            ] = {KEY_PS2_EXT, KEY_PS2_LEFT};       // E0
++            commands[KEY_HID_DOWN            ] = {KEY_PS2_EXT, KEY_PS2_DOWN};       // E0
++            commands[KEY_HID_UP              ] = {KEY_PS2_EXT, KEY_PS2_UP};         // E0
++            commands[KEY_HID_NUMLOCK         ] =  KEY_PS2_NUMLOCK;
++            commands[KEY_HID_KPSLASH         ] = {KEY_PS2_EXT, KEY_PS2_KPSLASH};    // E0
++            commands[KEY_HID_KPASTERISK      ] =  KEY_PS2_KPASTERISK;
++            commands[KEY_HID_KPMINUS         ] =  KEY_PS2_KPMINUS;
++            commands[KEY_HID_KPPLUS          ] =  KEY_PS2_KPPLUS;
++            commands[KEY_HID_KPENTER         ] = {KEY_PS2_EXT, KEY_PS2_KPENTER};    // E0
++            commands[KEY_HID_KP1             ] =  KEY_PS2_KP1;
++            commands[KEY_HID_KP2             ] =  KEY_PS2_KP2;
++            commands[KEY_HID_KP3             ] =  KEY_PS2_KP3;
++            commands[KEY_HID_KP4             ] =  KEY_PS2_KP4;
++            commands[KEY_HID_KP5             ] =  KEY_PS2_KP5;
++            commands[KEY_HID_KP6             ] =  KEY_PS2_KP6;
++            commands[KEY_HID_KP7             ] =  KEY_PS2_KP7;
++            commands[KEY_HID_KP8             ] =  KEY_PS2_KP8;
++            commands[KEY_HID_KP9             ] =  KEY_PS2_KP9;
++            commands[KEY_HID_KP0             ] =  KEY_PS2_KP0;
++            commands[KEY_HID_KPDOT           ] =  KEY_PS2_KPDOT;
++            commands[KEY_HID_102ND           ] =  KEY_PS2_102ND;
++            commands[KEY_HID_COMPOSE         ] = {KEY_PS2_EXT, KEY_PS2_COMPOSE};   // E0
++            commands[KEY_HID_POWER           ] = {KEY_PS2_EXT, KEY_PS2_POWER};     // E0
++            commands[KEY_HID_KPEQUAL         ] =  KEY_PS2_KPEQUAL;
++            commands[KEY_HID_F13             ] =  KEY_PS2_F13;
++            commands[KEY_HID_F14             ] =  KEY_PS2_F14;
++            commands[KEY_HID_F15             ] =  KEY_PS2_F15;
++            commands[KEY_HID_F16             ] =  KEY_PS2_F16;
++            commands[KEY_HID_F17             ] =  KEY_PS2_F17;
++            commands[KEY_HID_F18             ] =  KEY_PS2_F18;
++            commands[KEY_HID_F19             ] =  KEY_PS2_F19;
++            commands[KEY_HID_F20             ] =  KEY_PS2_F20;
++            commands[KEY_HID_F21             ] =  KEY_PS2_F21;
++            commands[KEY_HID_F22             ] =  KEY_PS2_F22;
++            commands[KEY_HID_F23             ] =  KEY_PS2_F23;
++            commands[KEY_HID_F24             ] =  KEY_PS2_F24;
++            commands[KEY_HID_KPCOMMA         ] =  KEY_PS2_KPCOMMA;
++            commands[KEY_HID_RO              ] =  KEY_PS2_RO;
++            commands[KEY_HID_KATAKANAHIRAGANA] =  KEY_PS2_KATAKANAHIRAGANA;
++            commands[KEY_HID_YEN             ] =  KEY_PS2_YEN;
++            commands[KEY_HID_HENKAN          ] =  KEY_PS2_HENKAN;
++            commands[KEY_HID_MUHENKAN        ] =  KEY_PS2_MUHENKAN;
++            commands[KEY_HID_KPJPCOMMA       ] =  KEY_PS2_KPJPCOMMA;
++            commands[KEY_HID_HANGEUL         ] =  KEY_PS2_HANGEUL;
++            commands[KEY_HID_HANJA           ] =  KEY_PS2_HANJA;
++            commands[KEY_HID_KATAKANA        ] =  KEY_PS2_KATAKANA;
++            commands[KEY_HID_HIRAGANA        ] =  KEY_PS2_HIRAGANA;
++            commands[KEY_HID_ZENKAKUHANKAKU  ] =  KEY_PS2_ZENKAKUHANKAKU;
++            commands[KEY_HID_LEFTCTRL        ] =  KEY_PS2_LEFTCTRL;
++            commands[KEY_HID_LEFTSHIFT       ] =  KEY_PS2_LEFTSHIFT;
++            commands[KEY_HID_LEFTALT         ] =  KEY_PS2_LEFTALT;
++            commands[KEY_HID_LEFTMETA        ] = {KEY_PS2_EXT, KEY_PS2_LEFTMETA};    // E0
++            commands[KEY_HID_RIGHTCTRL       ] = {KEY_PS2_EXT, KEY_PS2_RIGHTCTRL};   // E0
++            commands[KEY_HID_RIGHTSHIFT      ] =  KEY_PS2_RIGHTSHIFT;
++            commands[KEY_HID_RIGHTALT        ] = {KEY_PS2_EXT, KEY_PS2_RIGHTALT};    // E0
++            commands[KEY_HID_RIGHTMETA       ] = {KEY_PS2_EXT, KEY_PS2_RIGHTMETA};   // E0
++    end
++endmodule
+\ No newline at end of file
+
+From 483ed9261034e7b4c95de1c78a81a7eeeb3116b8 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Mon, 3 Feb 2025 10:57:39 +0100
+Subject: [PATCH 04/18] refactored translator
+
+---
+ .../hdl/keyboard/jtframe_hid_ps2_translator.v | 241 +++++++++---------
+ modules/jtframe/ver/hid_ps2_translator/test.v |   3 +-
+ 2 files changed, 125 insertions(+), 119 deletions(-)
+
+diff --git a/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v b/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
+index 75e8c3997..49aa22981 100644
+--- a/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
++++ b/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
+@@ -23,7 +23,7 @@ module jtframe_hid_ps2_translator(
+ 
+     input  reg [7:0] keycheck,
+     input            released,
+-    // output           done,
++    output           last,
+     output reg [7:0] ps2_code,
+     output reg       high
+ );
+@@ -281,14 +281,18 @@ localparam [7:0]
+ // KEY_HID_MEDIA_CALC=8'hfb;         // KEY_PS2_MEDIA_CALC=;
+ 
+ reg [8:0] ps2_pre, ps2_pre_l;
++wire[7:0] code_nx;
+ reg       rel, ph2_l;
+-wire      test1, test2;
++wire      t1, t2;
+ wire      ph2, ph3;
+ 
+-assign ph2   = ps2_pre == ps2_pre_l;
++assign ph2   = ps2_pre == ps2_pre_l && ps2_pre!=0;
+ assign ph3   = ph2 & ph2_l;
+-assign test1 = ps2_pre[8] &&  !ph2;
+-assign test2 = released   && (!ph2 || !ph3);
++assign t1 = ps2_pre[8] &&  !ph2;
++assign t2 = released   && (!ph2 || (!ph3 && high));
++assign 		last = code_nx == ps2_code;
++assign code_nx = t1 ? 8'he0 : (t2 ? 8'hf0 : ps2_pre[7:0]);
++
+ 
+ always @(posedge clk) begin
+  	if(rst) begin
+@@ -300,82 +304,83 @@ always @(posedge clk) begin
+  	end else if(cen) begin
+         ps2_pre_l <= ps2_pre;
+         ph2_l     <= ph2;
+- 		ps2_code <= test1 ? 8'he0 : (test2 ? 8'hf0 : ps2_pre[7:0]);
++ 		ps2_code <= code_nx;
+         high <= ps2_pre[8];
+         rel  <= released;
++        if( ps2_pre==0 ) ps2_code <= 0;
+  	end
+  end
+ 
+ always @(posedge clk) begin
+ 		case(keycheck)
+-			KEY_HID_A:                ps2_pre <= KEY_PS2_A;
+-			KEY_HID_B:                ps2_pre <= KEY_PS2_B;
+-			KEY_HID_C:                ps2_pre <= KEY_PS2_C;
+-			KEY_HID_D:                ps2_pre <= KEY_PS2_D;
+-			KEY_HID_E:                ps2_pre <= KEY_PS2_E;
+-			KEY_HID_F:                ps2_pre <= KEY_PS2_F;
+-			KEY_HID_G:                ps2_pre <= KEY_PS2_G;
+-			KEY_HID_H:                ps2_pre <= KEY_PS2_H;
+-			KEY_HID_I:                ps2_pre <= KEY_PS2_I;
+-			KEY_HID_J:                ps2_pre <= KEY_PS2_J;
+-			KEY_HID_K:                ps2_pre <= KEY_PS2_K;
+-			KEY_HID_L:                ps2_pre <= KEY_PS2_L;
+-			KEY_HID_M:                ps2_pre <= KEY_PS2_M;
+-			KEY_HID_N:                ps2_pre <= KEY_PS2_N;
+-			KEY_HID_O:                ps2_pre <= KEY_PS2_O;
+-			KEY_HID_P:                ps2_pre <= KEY_PS2_P;
+-			KEY_HID_Q:                ps2_pre <= KEY_PS2_Q;
+-			KEY_HID_R:                ps2_pre <= KEY_PS2_R;
+-			KEY_HID_S:                ps2_pre <= KEY_PS2_S;
+-			KEY_HID_T:                ps2_pre <= KEY_PS2_T;
+-			KEY_HID_U:                ps2_pre <= KEY_PS2_U;
+-			KEY_HID_V:                ps2_pre <= KEY_PS2_V;
+-			KEY_HID_W:                ps2_pre <= KEY_PS2_W;
+-			KEY_HID_X:                ps2_pre <= KEY_PS2_X;
+-			KEY_HID_Y:                ps2_pre <= KEY_PS2_Y;
+-			KEY_HID_Z:                ps2_pre <= KEY_PS2_Z;
+-			KEY_HID_1:                ps2_pre <= KEY_PS2_1;
+-			KEY_HID_2:                ps2_pre <= KEY_PS2_2;
+-			KEY_HID_3:                ps2_pre <= KEY_PS2_3;
+-			KEY_HID_4:                ps2_pre <= KEY_PS2_4;
+-			KEY_HID_5:                ps2_pre <= KEY_PS2_5;
+-			KEY_HID_6:                ps2_pre <= KEY_PS2_6;
+-			KEY_HID_7:                ps2_pre <= KEY_PS2_7;
+-			KEY_HID_8:                ps2_pre <= KEY_PS2_8;
+-			KEY_HID_9:                ps2_pre <= KEY_PS2_9;
+-			KEY_HID_0:                ps2_pre <= KEY_PS2_0;
+-			KEY_HID_ENTER:            ps2_pre <= KEY_PS2_ENTER;
+-			KEY_HID_ESC:              ps2_pre <= KEY_PS2_ESC;
+-			KEY_HID_BACKSPACE:        ps2_pre <= KEY_PS2_BACKSPACE;
+-			KEY_HID_TAB:              ps2_pre <= KEY_PS2_TAB;
+-			KEY_HID_SPACE:            ps2_pre <= KEY_PS2_SPACE;
+-			KEY_HID_MINUS:            ps2_pre <= KEY_PS2_MINUS;
+-			KEY_HID_EQUAL:            ps2_pre <= KEY_PS2_EQUAL;
+-			KEY_HID_LEFTBRACE:        ps2_pre <= KEY_PS2_LEFTBRACE;
+-			KEY_HID_RIGHTBRACE:       ps2_pre <= KEY_PS2_RIGHTBRACE;
+-			KEY_HID_BACKSLASH:        ps2_pre <= KEY_PS2_BACKSLASH;
+-			KEY_HID_HASHTILDE:        ps2_pre <= KEY_PS2_HASHTILDE;
+-			KEY_HID_SEMICOLON:        ps2_pre <= KEY_PS2_SEMICOLON;
+-			KEY_HID_APOSTROPHE:       ps2_pre <= KEY_PS2_APOSTROPHE;
+-			KEY_HID_GRAVE:            ps2_pre <= KEY_PS2_GRAVE;
+-			KEY_HID_COMMA:            ps2_pre <= KEY_PS2_COMMA;
+-			KEY_HID_DOT:              ps2_pre <= KEY_PS2_DOT;
+-			KEY_HID_SLASH:            ps2_pre <= KEY_PS2_SLASH;
+-			KEY_HID_CAPSLOCK:         ps2_pre <= KEY_PS2_CAPSLOCK;
+-			KEY_HID_F1:               ps2_pre <= KEY_PS2_F1;
+-			KEY_HID_F2:               ps2_pre <= KEY_PS2_F2;
+-			KEY_HID_F3:               ps2_pre <= KEY_PS2_F3;
+-			KEY_HID_F4:               ps2_pre <= KEY_PS2_F4;
+-			KEY_HID_F5:               ps2_pre <= KEY_PS2_F5;
+-			KEY_HID_F6:               ps2_pre <= KEY_PS2_F6;
+-			KEY_HID_F7:               ps2_pre <= KEY_PS2_F7;
+-			KEY_HID_F8:               ps2_pre <= KEY_PS2_F8;
+-			KEY_HID_F9:               ps2_pre <= KEY_PS2_F9;
+-			KEY_HID_F10:              ps2_pre <= KEY_PS2_F10;
+-			KEY_HID_F11:              ps2_pre <= KEY_PS2_F11;
+-			KEY_HID_F12:              ps2_pre <= KEY_PS2_F12;
++			KEY_HID_A:                ps2_pre <= {1'b0,KEY_PS2_A};
++			KEY_HID_B:                ps2_pre <= {1'b0,KEY_PS2_B};
++			KEY_HID_C:                ps2_pre <= {1'b0,KEY_PS2_C};
++			KEY_HID_D:                ps2_pre <= {1'b0,KEY_PS2_D};
++			KEY_HID_E:                ps2_pre <= {1'b0,KEY_PS2_E};
++			KEY_HID_F:                ps2_pre <= {1'b0,KEY_PS2_F};
++			KEY_HID_G:                ps2_pre <= {1'b0,KEY_PS2_G};
++			KEY_HID_H:                ps2_pre <= {1'b0,KEY_PS2_H};
++			KEY_HID_I:                ps2_pre <= {1'b0,KEY_PS2_I};
++			KEY_HID_J:                ps2_pre <= {1'b0,KEY_PS2_J};
++			KEY_HID_K:                ps2_pre <= {1'b0,KEY_PS2_K};
++			KEY_HID_L:                ps2_pre <= {1'b0,KEY_PS2_L};
++			KEY_HID_M:                ps2_pre <= {1'b0,KEY_PS2_M};
++			KEY_HID_N:                ps2_pre <= {1'b0,KEY_PS2_N};
++			KEY_HID_O:                ps2_pre <= {1'b0,KEY_PS2_O};
++			KEY_HID_P:                ps2_pre <= {1'b0,KEY_PS2_P};
++			KEY_HID_Q:                ps2_pre <= {1'b0,KEY_PS2_Q};
++			KEY_HID_R:                ps2_pre <= {1'b0,KEY_PS2_R};
++			KEY_HID_S:                ps2_pre <= {1'b0,KEY_PS2_S};
++			KEY_HID_T:                ps2_pre <= {1'b0,KEY_PS2_T};
++			KEY_HID_U:                ps2_pre <= {1'b0,KEY_PS2_U};
++			KEY_HID_V:                ps2_pre <= {1'b0,KEY_PS2_V};
++			KEY_HID_W:                ps2_pre <= {1'b0,KEY_PS2_W};
++			KEY_HID_X:                ps2_pre <= {1'b0,KEY_PS2_X};
++			KEY_HID_Y:                ps2_pre <= {1'b0,KEY_PS2_Y};
++			KEY_HID_Z:                ps2_pre <= {1'b0,KEY_PS2_Z};
++			KEY_HID_1:                ps2_pre <= {1'b0,KEY_PS2_1};
++			KEY_HID_2:                ps2_pre <= {1'b0,KEY_PS2_2};
++			KEY_HID_3:                ps2_pre <= {1'b0,KEY_PS2_3};
++			KEY_HID_4:                ps2_pre <= {1'b0,KEY_PS2_4};
++			KEY_HID_5:                ps2_pre <= {1'b0,KEY_PS2_5};
++			KEY_HID_6:                ps2_pre <= {1'b0,KEY_PS2_6};
++			KEY_HID_7:                ps2_pre <= {1'b0,KEY_PS2_7};
++			KEY_HID_8:                ps2_pre <= {1'b0,KEY_PS2_8};
++			KEY_HID_9:                ps2_pre <= {1'b0,KEY_PS2_9};
++			KEY_HID_0:                ps2_pre <= {1'b0,KEY_PS2_0};
++			KEY_HID_ENTER:            ps2_pre <= {1'b0,KEY_PS2_ENTER};
++			KEY_HID_ESC:              ps2_pre <= {1'b0,KEY_PS2_ESC};
++			KEY_HID_BACKSPACE:        ps2_pre <= {1'b0,KEY_PS2_BACKSPACE};
++			KEY_HID_TAB:              ps2_pre <= {1'b0,KEY_PS2_TAB};
++			KEY_HID_SPACE:            ps2_pre <= {1'b0,KEY_PS2_SPACE};
++			KEY_HID_MINUS:            ps2_pre <= {1'b0,KEY_PS2_MINUS};
++			KEY_HID_EQUAL:            ps2_pre <= {1'b0,KEY_PS2_EQUAL};
++			KEY_HID_LEFTBRACE:        ps2_pre <= {1'b0,KEY_PS2_LEFTBRACE};
++			KEY_HID_RIGHTBRACE:       ps2_pre <= {1'b0,KEY_PS2_RIGHTBRACE};
++			KEY_HID_BACKSLASH:        ps2_pre <= {1'b0,KEY_PS2_BACKSLASH};
++			KEY_HID_HASHTILDE:        ps2_pre <= {1'b0,KEY_PS2_HASHTILDE};
++			KEY_HID_SEMICOLON:        ps2_pre <= {1'b0,KEY_PS2_SEMICOLON};
++			KEY_HID_APOSTROPHE:       ps2_pre <= {1'b0,KEY_PS2_APOSTROPHE};
++			KEY_HID_GRAVE:            ps2_pre <= {1'b0,KEY_PS2_GRAVE};
++			KEY_HID_COMMA:            ps2_pre <= {1'b0,KEY_PS2_COMMA};
++			KEY_HID_DOT:              ps2_pre <= {1'b0,KEY_PS2_DOT};
++			KEY_HID_SLASH:            ps2_pre <= {1'b0,KEY_PS2_SLASH};
++			KEY_HID_CAPSLOCK:         ps2_pre <= {1'b0,KEY_PS2_CAPSLOCK};
++			KEY_HID_F1:               ps2_pre <= {1'b0,KEY_PS2_F1};
++			KEY_HID_F2:               ps2_pre <= {1'b0,KEY_PS2_F2};
++			KEY_HID_F3:               ps2_pre <= {1'b0,KEY_PS2_F3};
++			KEY_HID_F4:               ps2_pre <= {1'b0,KEY_PS2_F4};
++			KEY_HID_F5:               ps2_pre <= {1'b0,KEY_PS2_F5};
++			KEY_HID_F6:               ps2_pre <= {1'b0,KEY_PS2_F6};
++			KEY_HID_F7:               ps2_pre <= {1'b0,KEY_PS2_F7};
++			KEY_HID_F8:               ps2_pre <= {1'b0,KEY_PS2_F8};
++			KEY_HID_F9:               ps2_pre <= {1'b0,KEY_PS2_F9};
++			KEY_HID_F10:              ps2_pre <= {1'b0,KEY_PS2_F10};
++			KEY_HID_F11:              ps2_pre <= {1'b0,KEY_PS2_F11};
++			KEY_HID_F12:              ps2_pre <= {1'b0,KEY_PS2_F12};
+ 			KEY_HID_SYSRQ:            ps2_pre <= {1'b1,KEY_PS2_SYSRQ};      // E0
+-			KEY_HID_SCROLLLOCK:       ps2_pre <= KEY_PS2_SCROLLLOCK;
++			KEY_HID_SCROLLLOCK:       ps2_pre <= {1'b0,KEY_PS2_SCROLLLOCK};
+ 			KEY_HID_INSERT:           ps2_pre <= {1'b1,KEY_PS2_INSERT};     // E0
+ 			KEY_HID_HOME:             ps2_pre <= {1'b1,KEY_PS2_HOME};       // E0
+ 			KEY_HID_PAGEUP:           ps2_pre <= {1'b1,KEY_PS2_PAGEUP};     // E0
+@@ -386,57 +391,57 @@ always @(posedge clk) begin
+ 			KEY_HID_LEFT:             ps2_pre <= {1'b1,KEY_PS2_LEFT};       // E0
+ 			KEY_HID_DOWN:             ps2_pre <= {1'b1,KEY_PS2_DOWN};       // E0
+ 			KEY_HID_UP:               ps2_pre <= {1'b1,KEY_PS2_UP};         // E0
+-			KEY_HID_NUMLOCK:          ps2_pre <= KEY_PS2_NUMLOCK;
++			KEY_HID_NUMLOCK:          ps2_pre <= {1'b0,KEY_PS2_NUMLOCK};
+ 			KEY_HID_KPSLASH:          ps2_pre <= {1'b1,KEY_PS2_KPSLASH};    // E0
+-			KEY_HID_KPASTERISK:       ps2_pre <= KEY_PS2_KPASTERISK;
+-			KEY_HID_KPMINUS:          ps2_pre <= KEY_PS2_KPMINUS;
+-			KEY_HID_KPPLUS:           ps2_pre <= KEY_PS2_KPPLUS;
++			KEY_HID_KPASTERISK:       ps2_pre <= {1'b0,KEY_PS2_KPASTERISK};
++			KEY_HID_KPMINUS:          ps2_pre <= {1'b0,KEY_PS2_KPMINUS};
++			KEY_HID_KPPLUS:           ps2_pre <= {1'b0,KEY_PS2_KPPLUS};
+ 			KEY_HID_KPENTER:          ps2_pre <= {1'b1,KEY_PS2_KPENTER};    // E0
+-			KEY_HID_KP1:              ps2_pre <= KEY_PS2_KP1;
+-			KEY_HID_KP2:              ps2_pre <= KEY_PS2_KP2;
+-			KEY_HID_KP3:              ps2_pre <= KEY_PS2_KP3;
+-			KEY_HID_KP4:              ps2_pre <= KEY_PS2_KP4;
+-			KEY_HID_KP5:              ps2_pre <= KEY_PS2_KP5;
+-			KEY_HID_KP6:              ps2_pre <= KEY_PS2_KP6;
+-			KEY_HID_KP7:              ps2_pre <= KEY_PS2_KP7;
+-			KEY_HID_KP8:              ps2_pre <= KEY_PS2_KP8;
+-			KEY_HID_KP9:              ps2_pre <= KEY_PS2_KP9;
+-			KEY_HID_KP0:              ps2_pre <= KEY_PS2_KP0;
+-			KEY_HID_KPDOT:            ps2_pre <= KEY_PS2_KPDOT;
+-			KEY_HID_102ND:            ps2_pre <= KEY_PS2_102ND;
++			KEY_HID_KP1:              ps2_pre <= {1'b0,KEY_PS2_KP1};
++			KEY_HID_KP2:              ps2_pre <= {1'b0,KEY_PS2_KP2};
++			KEY_HID_KP3:              ps2_pre <= {1'b0,KEY_PS2_KP3};
++			KEY_HID_KP4:              ps2_pre <= {1'b0,KEY_PS2_KP4};
++			KEY_HID_KP5:              ps2_pre <= {1'b0,KEY_PS2_KP5};
++			KEY_HID_KP6:              ps2_pre <= {1'b0,KEY_PS2_KP6};
++			KEY_HID_KP7:              ps2_pre <= {1'b0,KEY_PS2_KP7};
++			KEY_HID_KP8:              ps2_pre <= {1'b0,KEY_PS2_KP8};
++			KEY_HID_KP9:              ps2_pre <= {1'b0,KEY_PS2_KP9};
++			KEY_HID_KP0:              ps2_pre <= {1'b0,KEY_PS2_KP0};
++			KEY_HID_KPDOT:            ps2_pre <= {1'b0,KEY_PS2_KPDOT};
++			KEY_HID_102ND:            ps2_pre <= {1'b0,KEY_PS2_102ND};
+ 			KEY_HID_COMPOSE:          ps2_pre <= {1'b1,KEY_PS2_COMPOSE};   // E0
+ 			KEY_HID_POWER:            ps2_pre <= {1'b1,KEY_PS2_POWER};     // E0
+-			KEY_HID_KPEQUAL:          ps2_pre <= KEY_PS2_KPEQUAL;
+-			KEY_HID_F13:              ps2_pre <= KEY_PS2_F13;
+-			KEY_HID_F14:              ps2_pre <= KEY_PS2_F14;
+-			KEY_HID_F15:              ps2_pre <= KEY_PS2_F15;
+-			KEY_HID_F16:              ps2_pre <= KEY_PS2_F16;
+-			KEY_HID_F17:              ps2_pre <= KEY_PS2_F17;
+-			KEY_HID_F18:              ps2_pre <= KEY_PS2_F18;
+-			KEY_HID_F19:              ps2_pre <= KEY_PS2_F19;
+-			KEY_HID_F20:              ps2_pre <= KEY_PS2_F20;
+-			KEY_HID_F21:              ps2_pre <= KEY_PS2_F21;
+-			KEY_HID_F22:              ps2_pre <= KEY_PS2_F22;
+-			KEY_HID_F23:              ps2_pre <= KEY_PS2_F23;
+-			KEY_HID_F24:              ps2_pre <= KEY_PS2_F24;
+-			KEY_HID_KPCOMMA:          ps2_pre <= KEY_PS2_KPCOMMA;
+-			KEY_HID_RO:               ps2_pre <= KEY_PS2_RO;
+-			KEY_HID_KATAKANAHIRAGANA: ps2_pre <= KEY_PS2_KATAKANAHIRAGANA;
+-			KEY_HID_YEN:              ps2_pre <= KEY_PS2_YEN;
+-			KEY_HID_HENKAN:           ps2_pre <= KEY_PS2_HENKAN;
+-			KEY_HID_MUHENKAN:         ps2_pre <= KEY_PS2_MUHENKAN;
+-			KEY_HID_KPJPCOMMA:        ps2_pre <= KEY_PS2_KPJPCOMMA;
+-			KEY_HID_HANGEUL:          ps2_pre <= KEY_PS2_HANGEUL;
+-			KEY_HID_HANJA:            ps2_pre <= KEY_PS2_HANJA;
+-			KEY_HID_KATAKANA:         ps2_pre <= KEY_PS2_KATAKANA;
+-			KEY_HID_HIRAGANA:         ps2_pre <= KEY_PS2_HIRAGANA;
+-			KEY_HID_ZENKAKUHANKAKU:   ps2_pre <= KEY_PS2_ZENKAKUHANKAKU;
+-			KEY_HID_LEFTCTRL:         ps2_pre <= KEY_PS2_LEFTCTRL;
+-			KEY_HID_LEFTSHIFT:        ps2_pre <= KEY_PS2_LEFTSHIFT;
+-			KEY_HID_LEFTALT:          ps2_pre <= KEY_PS2_LEFTALT;
++			KEY_HID_KPEQUAL:          ps2_pre <= {1'b0,KEY_PS2_KPEQUAL};
++			KEY_HID_F13:              ps2_pre <= {1'b0,KEY_PS2_F13};
++			KEY_HID_F14:              ps2_pre <= {1'b0,KEY_PS2_F14};
++			KEY_HID_F15:              ps2_pre <= {1'b0,KEY_PS2_F15};
++			KEY_HID_F16:              ps2_pre <= {1'b0,KEY_PS2_F16};
++			KEY_HID_F17:              ps2_pre <= {1'b0,KEY_PS2_F17};
++			KEY_HID_F18:              ps2_pre <= {1'b0,KEY_PS2_F18};
++			KEY_HID_F19:              ps2_pre <= {1'b0,KEY_PS2_F19};
++			KEY_HID_F20:              ps2_pre <= {1'b0,KEY_PS2_F20};
++			KEY_HID_F21:              ps2_pre <= {1'b0,KEY_PS2_F21};
++			KEY_HID_F22:              ps2_pre <= {1'b0,KEY_PS2_F22};
++			KEY_HID_F23:              ps2_pre <= {1'b0,KEY_PS2_F23};
++			KEY_HID_F24:              ps2_pre <= {1'b0,KEY_PS2_F24};
++			KEY_HID_KPCOMMA:          ps2_pre <= {1'b0,KEY_PS2_KPCOMMA};
++			KEY_HID_RO:               ps2_pre <= {1'b0,KEY_PS2_RO};
++			KEY_HID_KATAKANAHIRAGANA: ps2_pre <= {1'b0,KEY_PS2_KATAKANAHIRAGANA};
++			KEY_HID_YEN:              ps2_pre <= {1'b0,KEY_PS2_YEN};
++			KEY_HID_HENKAN:           ps2_pre <= {1'b0,KEY_PS2_HENKAN};
++			KEY_HID_MUHENKAN:         ps2_pre <= {1'b0,KEY_PS2_MUHENKAN};
++			KEY_HID_KPJPCOMMA:        ps2_pre <= {1'b0,KEY_PS2_KPJPCOMMA};
++			KEY_HID_HANGEUL:          ps2_pre <= {1'b0,KEY_PS2_HANGEUL};
++			KEY_HID_HANJA:            ps2_pre <= {1'b0,KEY_PS2_HANJA};
++			KEY_HID_KATAKANA:         ps2_pre <= {1'b0,KEY_PS2_KATAKANA};
++			KEY_HID_HIRAGANA:         ps2_pre <= {1'b0,KEY_PS2_HIRAGANA};
++			KEY_HID_ZENKAKUHANKAKU:   ps2_pre <= {1'b0,KEY_PS2_ZENKAKUHANKAKU};
++			KEY_HID_LEFTCTRL:         ps2_pre <= {1'b0,KEY_PS2_LEFTCTRL};
++			KEY_HID_LEFTSHIFT:        ps2_pre <= {1'b0,KEY_PS2_LEFTSHIFT};
++			KEY_HID_LEFTALT:          ps2_pre <= {1'b0,KEY_PS2_LEFTALT};
+ 			KEY_HID_LEFTMETA:         ps2_pre <= {1'b1,KEY_PS2_LEFTMETA};    // E0
+ 			KEY_HID_RIGHTCTRL:        ps2_pre <= {1'b1,KEY_PS2_RIGHTCTRL};   // E0
+-			KEY_HID_RIGHTSHIFT:       ps2_pre <= KEY_PS2_RIGHTSHIFT;
++			KEY_HID_RIGHTSHIFT:       ps2_pre <= {1'b0,KEY_PS2_RIGHTSHIFT};
+ 			KEY_HID_RIGHTALT:         ps2_pre <= {1'b1,KEY_PS2_RIGHTALT};    // E0
+ 			KEY_HID_RIGHTMETA:        ps2_pre <= {1'b1,KEY_PS2_RIGHTMETA};   // E0
+ 			default:                  ps2_pre <= 0;
+diff --git a/modules/jtframe/ver/hid_ps2_translator/test.v b/modules/jtframe/ver/hid_ps2_translator/test.v
+index f4b81664d..7d5d02e8c 100644
+--- a/modules/jtframe/ver/hid_ps2_translator/test.v
++++ b/modules/jtframe/ver/hid_ps2_translator/test.v
+@@ -51,7 +51,7 @@ initial begin
+     for (value = 0; value < 256; value++) begin
+         if( dexp != 0 ) begin
+             wait ( cen==1 );
+-        wait ( cen==0 );
++            wait ( cen==0 );
+             repeat(3) @(posedge clk);
+             if( high ) begin
+                 wait ( cen==1 );
+@@ -75,6 +75,7 @@ jtframe_hid_ps2_translator uut(
+     .clk      ( clk      ),
+     .cen      ( cen      ),
+     .released ( 1'b0     ),
++    .last     (          ),
+     .keycheck ( data_in  ),
+     .ps2_code ( data_out ),
+     .high     ( high     )
+
+From b41230af90bb49acd1b42e9ec751b8042a68194b Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Wed, 5 Feb 2025 18:40:09 +0100
+Subject: [PATCH 05/18] minor
+
+---
+ modules/jtframe/hdl/jtframe_serializer.v                  | 2 +-
+ modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/modules/jtframe/hdl/jtframe_serializer.v b/modules/jtframe/hdl/jtframe_serializer.v
+index 0697ddc0a..4a5e54734 100644
+--- a/modules/jtframe/hdl/jtframe_serializer.v
++++ b/modules/jtframe/hdl/jtframe_serializer.v
+@@ -49,7 +49,7 @@ always @(posedge clk) begin
+                 cnt <= cnt-1'b1;
+             end
+         end
+-        if( load  ) begin
++        if( load && din!=0  ) begin
+             pre_data <= {par,din, 1'b0};
+             cnt <= DW+2'd2;
+         end
+diff --git a/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v b/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
+index 49aa22981..dfd514699 100644
+--- a/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
++++ b/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
+@@ -21,7 +21,7 @@ module jtframe_hid_ps2_translator(
+     input            clk,
+     input            cen,
+ 
+-    input  reg [7:0] keycheck,
++    input      [7:0] keycheck,
+     input            released,
+     output           last,
+     output reg [7:0] ps2_code,
+
+From bc1aca057781c9581be7ae2ec9bda47f7e96e402 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Fri, 14 Feb 2025 11:57:17 +0100
+Subject: [PATCH 06/18] minor
+
+---
+ modules/jtframe/hdl/jtframe_serializer.v         | 16 ++++++++--------
+ .../hdl/keyboard/jtframe_hid_ps2_translator.v    | 16 ++++++++--------
+ 2 files changed, 16 insertions(+), 16 deletions(-)
+
+diff --git a/modules/jtframe/hdl/jtframe_serializer.v b/modules/jtframe/hdl/jtframe_serializer.v
+index 4a5e54734..db2630bfb 100644
+--- a/modules/jtframe/hdl/jtframe_serializer.v
++++ b/modules/jtframe/hdl/jtframe_serializer.v
+@@ -34,24 +34,24 @@ wire          par;
+ 
+ assign done  = cnt==0;
+ assign sdout = pre_data[0];
+-assign par = ^din ^(PAR==1);
++assign par   = ^din ^(PAR==1);
+ 
+ always @(posedge clk) begin 
+     if(rst) begin
+         sclk     <= 0;
+         pre_data <= {DW+2{1'b1}};
+-        cnt <= 0;
++        cnt      <= 0;
+     end else if(cen) begin
+-        sclk <= ~sclk;
+-        if(!done ) begin
+-            if( !sclk ) begin
++        sclk     <= ~sclk;
++        if(!done) begin
++            if(!sclk) begin
+                 pre_data <= {1'b1,pre_data[DW+1:1]};
+-                cnt <= cnt-1'b1;
++                cnt      <= cnt-1'b1;
+             end
+         end
+-        if( load && din!=0  ) begin
++        if( load && din!=0 ) begin
+             pre_data <= {par,din, 1'b0};
+-            cnt <= DW+2'd2;
++            cnt      <= DW+2'd2;
+         end
+     end
+ end
+diff --git a/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v b/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
+index dfd514699..e37e498f8 100644
+--- a/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
++++ b/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
+@@ -286,11 +286,11 @@ reg       rel, ph2_l;
+ wire      t1, t2;
+ wire      ph2, ph3;
+ 
+-assign ph2   = ps2_pre == ps2_pre_l && ps2_pre!=0;
+-assign ph3   = ph2 & ph2_l;
+-assign t1 = ps2_pre[8] &&  !ph2;
+-assign t2 = released   && (!ph2 || (!ph3 && high));
+-assign 		last = code_nx == ps2_code;
++assign ph2     = ps2_pre == ps2_pre_l && ps2_pre!=0;
++assign ph3     = ph2 & ph2_l;
++assign t1      = ps2_pre[8] &&  !ph2;
++assign t2      = released   && (!ph2 || (!ph3 && high));
++assign last    = code_nx == ps2_code;
+ assign code_nx = t1 ? 8'he0 : (t2 ? 8'hf0 : ps2_pre[7:0]);
+ 
+ 
+@@ -304,9 +304,9 @@ always @(posedge clk) begin
+  	end else if(cen) begin
+         ps2_pre_l <= ps2_pre;
+         ph2_l     <= ph2;
+- 		ps2_code <= code_nx;
+-        high <= ps2_pre[8];
+-        rel  <= released;
++ 		ps2_code  <= code_nx;
++        high      <= ps2_pre[8];
++        rel       <= released;
+         if( ps2_pre==0 ) ps2_code <= 0;
+  	end
+  end
+
+From 4d5102fc76a3a3b47b5ccecba21b26c5457bcc8d Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Mon, 17 Feb 2025 18:09:32 +0100
+Subject: [PATCH 07/18] Updated hid/ps2 translator and test
+
+---
+ .../hdl/keyboard/jtframe_hid_ps2_translator.v |  63 ++++++----
+ modules/jtframe/ver/hid_ps2_translator/test.v | 113 +++++++++++-------
+ 2 files changed, 111 insertions(+), 65 deletions(-)
+
+diff --git a/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v b/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
+index e37e498f8..ccb415528 100644
+--- a/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
++++ b/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
+@@ -19,13 +19,14 @@
+ module jtframe_hid_ps2_translator(
+     input            rst,
+     input            clk,
+-    input            cen,
+ 
+     input      [7:0] keycheck,
+     input            released,
+-    output           last,
+-    output reg [7:0] ps2_code,
+-    output reg       high
++    input            next_code,
++    input            load_key,
++    output           tr_ready,
++    output reg       tr_send,
++    output reg [7:0] ps2_code
+ );
+ 
+ localparam [7:0]
+@@ -281,38 +282,56 @@ localparam [7:0]
+ // KEY_HID_MEDIA_CALC=8'hfb;         // KEY_PS2_MEDIA_CALC=;
+ 
+ reg [8:0] ps2_pre, ps2_pre_l;
++reg [7:0] key;
+ wire[7:0] code_nx;
+-reg       rel, ph2_l;
++reg       rel, ph2_l, nx_l, high, new_key;
+ wire      t1, t2;
+-wire      ph2, ph3;
+-
+-assign ph2     = ps2_pre == ps2_pre_l && ps2_pre!=0;
+-assign ph3     = ph2 & ph2_l;
+-assign t1      = ps2_pre[8] &&  !ph2;
+-assign t2      = released   && (!ph2 || (!ph3 && high));
+-assign last    = code_nx == ps2_code;
+-assign code_nx = t1 ? 8'he0 : (t2 ? 8'hf0 : ps2_pre[7:0]);
++wire      ph2, ph3, last;
+ 
++assign ph2      = ps2_pre == ps2_pre_l && !new_key;
++assign ph3      = ph2 & ph2_l;
++assign t1       = ps2_pre[8] &&  !ph2;
++assign t2       = released   && (!ph2 || (!ph3 && high));
++assign last     = code_nx == ps2_code || ps2_pre==0;
++assign code_nx  = t1 ? 8'he0 : (t2 ? 8'hf0 : ps2_pre[7:0]);
++assign tr_ready = last && !tr_send && !new_key || ps2_pre==0;
+ 
+ always @(posedge clk) begin
+  	if(rst) begin
+         ps2_code  <= 0;
+         high      <= 0;
+-        rel       <= 0;
+         ps2_pre_l <= 0;
+         ph2_l     <= 0;
+- 	end else if(cen) begin
+-        ps2_pre_l <= ps2_pre;
+-        ph2_l     <= ph2;
+- 		ps2_code  <= code_nx;
+-        high      <= ps2_pre[8];
+-        rel       <= released;
+-        if( ps2_pre==0 ) ps2_code <= 0;
++        tr_send   <= 0;
++        nx_l      <= 0;
++        new_key   <= 0;
++        key       <= 0;
++ 	end else begin
++ 		nx_l <= next_code;
++ 		if( load_key && tr_ready ) begin
++ 			key     <= keycheck;
++        	new_key <= 1;
++ 		end
++        if( ps2_pre==0 ) begin
++        	ps2_code <= 0;
++        	tr_send  <= 0;
++        	high     <= 0;
++        	tr_send  <= 0;
++        end else
++ 		if( next_code ) begin
++ 			if(!nx_l || new_key ) begin
++            	ps2_code <= code_nx;
++            	high     <= ps2_pre[8];
++            	tr_send  <= 1;
++            	new_key  <= 0;
++ 				{ps2_pre_l,ph2_l} <= {ps2_pre,ph2};
++ 			end
++ 		end else tr_send <= 0;
+  	end
+  end
+ 
+ always @(posedge clk) begin
+-		case(keycheck)
++		case(key)
+ 			KEY_HID_A:                ps2_pre <= {1'b0,KEY_PS2_A};
+ 			KEY_HID_B:                ps2_pre <= {1'b0,KEY_PS2_B};
+ 			KEY_HID_C:                ps2_pre <= {1'b0,KEY_PS2_C};
+diff --git a/modules/jtframe/ver/hid_ps2_translator/test.v b/modules/jtframe/ver/hid_ps2_translator/test.v
+index 7d5d02e8c..f071e2db2 100644
+--- a/modules/jtframe/ver/hid_ps2_translator/test.v
++++ b/modules/jtframe/ver/hid_ps2_translator/test.v
+@@ -1,16 +1,17 @@
+ module test;
+ 
++`include "test_tasks.vh"
++
+ localparam DW=8;
+ 
+ reg clk, rst;
+ 
+ reg  [    15:0] commands [0:255];
+-reg  [     7:0] cen_cnt=1;
+ wire [  DW-1:0] data_in, data_out;
+-reg  [  DW-1:0] data_out_l=0;
+-wire [2*DW-1:0] data_2bytes, dexp;
+-wire            high, cen;
+-integer         value=0, error_bus=0;
++wire [2*DW-1:0] dexp;
++wire            high, ready, send;
++reg             load=0,next=0, released=0;
++integer         value=0, steps=0;
+ 
+ 
+ initial begin
+@@ -22,63 +23,89 @@ initial begin
+     $finish;
+ end
+ 
+-
+ initial begin
+     clk=0;
+     forever #10 clk=~clk;
+ end
+ 
+-always @(posedge clk) begin
+-    cen_cnt <= {cen_cnt[0],cen_cnt[7:1]};
+-    if(cen) data_out_l <= data_out;
+-    if( |error_bus ) begin
+-        $display("Failed at %d. Expected output: %h", data_in, dexp);
+-        #80 $finish;
+-    end
+-end
+-
+-assign cen         = cen_cnt[0];
+ assign data_in     = value[0+:DW];
+-assign data_2bytes = {data_out_l, data_out};
+ assign dexp        = commands[value];
++assign high        = dexp[15:8]==8'he0;
+ 
+ initial begin
+     rst    = 1;
++    released = 0;
+     repeat (20) @(posedge clk);
+     rst  = 0;
+     repeat (20) @(posedge clk);
+ 
+-    for (value = 0; value < 256; value++) begin
+-        if( dexp != 0 ) begin
+-            wait ( cen==1 );
+-            wait ( cen==0 );
+-            repeat(3) @(posedge clk);
+-            if( high ) begin
+-                wait ( cen==1 );
+-                wait ( cen==0 );
+-                repeat(3) @(posedge clk);
+-                assert( data_2bytes == dexp ) else error_bus = dexp;
+-            end
+-            assert(  data_out == dexp[7:0]  ) else error_bus = dexp;
++    repeat (2) begin
++        for (value = 0; value < 256; value++) begin
++            send_new_key();
++            check_commands();
+         end
+-        wait ( cen==1 );
+-        wait ( cen==0 );
+-        repeat(3) @(posedge clk);
++        released = ~released;
+     end
+-    repeat (10) @(posedge clk);
+-    $display("PASS");
+-    $finish;
++    pass();
+ end
+ 
++task send_new_key();
++    assert_msg( ready ==1,"Translator not ready");
++    count_total_steps();
++    @(posedge clk) load = 1;
++    @(posedge clk) load = 0;
++    if( dexp != 0 )
++        @(posedge clk) assert_msg( ready ==0,"Translator should not be ready");
++endtask
++
++task count_total_steps();
++    steps = 1;
++    @(posedge clk);
++    if( high     ) steps = steps+1;
++    if( released ) steps = steps+1;
++endtask
++
++task check_current_output();
++    @(posedge clk);
++    if( steps==2 && released && dexp!=0 )
++        @(posedge clk) assert_msg( data_out==8'hf0,"Released code was expected");
++    else if( steps[1] && dexp!=0 )
++        @(posedge clk) assert_msg( data_out==8'he0,"Extended code was expected");
++    else
++        @(posedge clk) assert_msg( data_out==dexp[7:0],"Received unexpected code");
++endtask
++
++task check_send(input exp);
++    if( dexp == 0 || exp==0 )
++        assert_msg( send==0, "Send signal should not be active");
++    else
++        assert_msg( send==1, "Send signal should be active");
++endtask
++
++task check_commands();
++    repeat (steps) begin
++        check_send(0);
++        @(posedge clk) next=1;
++        check_current_output();
++        check_send(1);
++        @(posedge clk) next=0;
++        check_current_output();
++        check_send(0);
++        steps = steps-1;
++        repeat (5) @(posedge clk);
++    end
++endtask
++
+ jtframe_hid_ps2_translator uut(
+-    .rst      ( rst      ),
+-    .clk      ( clk      ),
+-    .cen      ( cen      ),
+-    .released ( 1'b0     ),
+-    .last     (          ),
+-    .keycheck ( data_in  ),
+-    .ps2_code ( data_out ),
+-    .high     ( high     )
++    .rst       ( rst      ),
++    .clk       ( clk      ),
++    .keycheck  ( data_in  ),
++    .released  ( released ),
++    .load_key  ( load     ),
++    .tr_ready  ( ready    ),
++    .tr_send   ( send     ),
++    .next_code ( next     ),
++    .ps2_code  ( data_out )
+ );
+ 
+ localparam [7:0]
+
+From f748a385060ae80ed0d4c9fb024e9a90ec2a484a Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Mon, 17 Feb 2025 18:10:02 +0100
+Subject: [PATCH 08/18] Updated Serializer and test
+
+---
+ modules/jtframe/hdl/jtframe_serializer.v | 12 ++++++------
+ modules/jtframe/ver/serializer/test.v    | 18 ++++++++++++------
+ 2 files changed, 18 insertions(+), 12 deletions(-)
+
+diff --git a/modules/jtframe/hdl/jtframe_serializer.v b/modules/jtframe/hdl/jtframe_serializer.v
+index db2630bfb..92298fa3f 100644
+--- a/modules/jtframe/hdl/jtframe_serializer.v
++++ b/modules/jtframe/hdl/jtframe_serializer.v
+@@ -43,15 +43,15 @@ always @(posedge clk) begin
+         cnt      <= 0;
+     end else if(cen) begin
+         sclk     <= ~sclk;
+-        if(!done) begin
+-            if(!sclk) begin
++        if(!sclk) begin
++            if(!done) begin
+                 pre_data <= {1'b1,pre_data[DW+1:1]};
+                 cnt      <= cnt-1'b1;
+             end
+-        end
+-        if( load && din!=0 ) begin
+-            pre_data <= {par,din, 1'b0};
+-            cnt      <= DW+2'd2;
++            if(load) begin
++                pre_data <= {par,din, 1'b0};
++                cnt      <= DW[0+:CK] + 'd2;
++            end
+         end
+     end
+ end
+diff --git a/modules/jtframe/ver/serializer/test.v b/modules/jtframe/ver/serializer/test.v
+index 5c41e3213..d062eae32 100644
+--- a/modules/jtframe/ver/serializer/test.v
++++ b/modules/jtframe/ver/serializer/test.v
+@@ -1,5 +1,7 @@
+ module test;
+ 
++`include "test_tasks.vh"
++
+ localparam DW=8;
+ 
+ reg clk, rst;
+@@ -8,7 +10,7 @@ reg  [   7:0] cen_cnt=1;
+ wire [DW-1:0] data_in;
+ wire [DW-1:0] data_out;
+ reg        load;
+-wire       sd, valid, sclk, cen;
++wire       sd, valid, sclk, cen, done;
+ integer    value=0;
+ 
+ 
+@@ -40,16 +42,19 @@ initial begin
+     repeat (20) @(posedge clk);
+     repeat (100) begin
+         value  = $random;
+-        wait ( cen==1 && !sclk );
++        // wait ( cen==1 && !sclk );
++        wait ( done );
++        repeat ($random%10) @(posedge clk);
++        @(posedge clk);
+         load    = 1;
+-        repeat (8) @(posedge clk);
++        wait( done==0 ) @(posedge clk);
+         load    = 0;
+-        wait ( valid && data_in == data_out );
+         repeat ($random%10) @(posedge clk);
++        wait ( valid );
++        assert_msg(data_in == data_out,"Serialized output does not match expected input");
+     end
+     repeat (10) @(posedge clk);
+-    $display("PASS");
+-    $finish;
++    pass();
+ end
+ 
+ jtframe_serializer#(.DW(DW)) uut (
+@@ -58,6 +63,7 @@ jtframe_serializer#(.DW(DW)) uut (
+     .cen       ( cen      ),
+     .din       ( data_in  ),
+     .load      ( load     ),
++    .done      ( done     ),
+     .sdout     ( sd       ),
+     .sclk      ( sclk     )
+ );
+
+From 2e6b43c6f6416a4e9d00bf50847d253d649c92b6 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Thu, 20 Feb 2025 11:17:46 +0100
+Subject: [PATCH 09/18] Renamed and refactored. Working version
+
+---
+ modules/jtframe/hdl/jtframe_serializer.v      | 15 ++++--
+ .../hdl/keyboard/jtframe_hid_ps2_translator.v | 54 +++++++++----------
+ modules/jtframe/ver/hid_ps2_translator/test.v | 12 ++---
+ modules/jtframe/ver/serializer/test.v         | 14 ++---
+ 4 files changed, 49 insertions(+), 46 deletions(-)
+
+diff --git a/modules/jtframe/hdl/jtframe_serializer.v b/modules/jtframe/hdl/jtframe_serializer.v
+index 92298fa3f..33d1912de 100644
+--- a/modules/jtframe/hdl/jtframe_serializer.v
++++ b/modules/jtframe/hdl/jtframe_serializer.v
+@@ -21,16 +21,17 @@ module jtframe_serializer#(parameter DW=8, PAR=1)( // Set PAR==0 for even parity
+     input            clk,
+     input            cen,
+     input   [DW-1:0] din,
+-    input            load,
+-    output           done,
++    input            send,
++    output reg       ready,
+     output           sdout,
+     output reg       sclk
+ );
+ 
+ localparam CK=$clog2(DW+2);
+ reg  [DW+1:0] pre_data;
++reg  [DW-1:0] ser_l;
+ reg  [CK-1:0] cnt;
+-wire          par;
++wire          par, done;
+ 
+ assign done  = cnt==0;
+ assign sdout = pre_data[0];
+@@ -41,16 +42,20 @@ always @(posedge clk) begin
+         sclk     <= 0;
+         pre_data <= {DW+2{1'b1}};
+         cnt      <= 0;
++        ser_l    <= 0;
++        ready    <= 1;
+     end else if(cen) begin
+         sclk     <= ~sclk;
++        ready    <= done;
+         if(!sclk) begin
+             if(!done) begin
+                 pre_data <= {1'b1,pre_data[DW+1:1]};
+                 cnt      <= cnt-1'b1;
+             end
+-            if(load) begin
++            if(send) begin
+                 pre_data <= {par,din, 1'b0};
+-                cnt      <= DW[0+:CK] + 'd2;
++                cnt      <= DW[0+:CK] + {{CK-2{1'b0}},2'd2};
++                ser_l    <= din;
+             end
+         end
+     end
+diff --git a/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v b/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
+index ccb415528..1c40a0c7d 100644
+--- a/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
++++ b/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
+@@ -22,10 +22,10 @@ module jtframe_hid_ps2_translator(
+ 
+     input      [7:0] keycheck,
+     input            released,
+-    input            next_code,
+-    input            load_key,
+-    output           tr_ready,
+-    output reg       tr_send,
++    input            rq,
++    output           idle,
++    input            ser_rdy,
++    output reg       ser_send,
+     output reg [7:0] ps2_code
+ );
+ 
+@@ -288,13 +288,13 @@ reg       rel, ph2_l, nx_l, high, new_key;
+ wire      t1, t2;
+ wire      ph2, ph3, last;
+ 
+-assign ph2      = ps2_pre == ps2_pre_l && !new_key;
+-assign ph3      = ph2 & ph2_l;
+-assign t1       = ps2_pre[8] &&  !ph2;
+-assign t2       = released   && (!ph2 || (!ph3 && high));
+-assign last     = code_nx == ps2_code || ps2_pre==0;
+-assign code_nx  = t1 ? 8'he0 : (t2 ? 8'hf0 : ps2_pre[7:0]);
+-assign tr_ready = last && !tr_send && !new_key || ps2_pre==0;
++assign ph2     = ps2_pre == ps2_pre_l;
++assign ph3     = ph2 & ph2_l;
++assign t1      = ps2_pre[8] &&  !ph2;
++assign t2      = released   && (!ph2 || (!ph3 && high));
++assign last    = code_nx == ps2_code || ps2_pre==0;
++assign code_nx = t1 ? 8'he0 : (t2 ? 8'hf0 : ps2_pre[7:0]);
++assign idle    = last && !ser_send && !new_key || ps2_pre==0;
+ 
+ always @(posedge clk) begin
+  	if(rst) begin
+@@ -302,36 +302,32 @@ always @(posedge clk) begin
+         high      <= 0;
+         ps2_pre_l <= 0;
+         ph2_l     <= 0;
+-        tr_send   <= 0;
++        ser_send  <= 0;
+         nx_l      <= 0;
+         new_key   <= 0;
+         key       <= 0;
+  	end else begin
+- 		nx_l <= next_code;
+- 		if( load_key && tr_ready ) begin
++        nx_l     <= ser_rdy;
++        ser_send <= 0;
++ 		if( rq && idle ) begin
+  			key     <= keycheck;
+         	new_key <= 1;
++        	{ps2_pre_l,ph2_l} <= 0;
+  		end
+-        if( ps2_pre==0 ) begin
+-        	ps2_code <= 0;
+-        	tr_send  <= 0;
+-        	high     <= 0;
+-        	tr_send  <= 0;
+-        end else
+- 		if( next_code ) begin
+- 			if(!nx_l || new_key ) begin
+-            	ps2_code <= code_nx;
+-            	high     <= ps2_pre[8];
+-            	tr_send  <= 1;
+-            	new_key  <= 0;
+- 				{ps2_pre_l,ph2_l} <= {ps2_pre,ph2};
+- 			end
+- 		end else tr_send <= 0;
++ 		if( ser_rdy ) begin
++            ps2_code <= code_nx;
++            high     <= ps2_pre[8];
++            ser_send <= 1;
++            new_key  <= 0;
++ 		end
++ 		if(!ser_rdy && nx_l)
++ 			{ps2_pre_l,ph2_l} <= {ps2_pre,ph2};
+  	end
+  end
+ 
+ always @(posedge clk) begin
+ 		case(key)
++			KEY_HID_NONE:             ps2_pre <= {1'b0,8'hFF};
+ 			KEY_HID_A:                ps2_pre <= {1'b0,KEY_PS2_A};
+ 			KEY_HID_B:                ps2_pre <= {1'b0,KEY_PS2_B};
+ 			KEY_HID_C:                ps2_pre <= {1'b0,KEY_PS2_C};
+diff --git a/modules/jtframe/ver/hid_ps2_translator/test.v b/modules/jtframe/ver/hid_ps2_translator/test.v
+index f071e2db2..f1058cd39 100644
+--- a/modules/jtframe/ver/hid_ps2_translator/test.v
++++ b/modules/jtframe/ver/hid_ps2_translator/test.v
+@@ -1,10 +1,10 @@
+ module test;
+ 
++reg clk, rst;
+ `include "test_tasks.vh"
+ 
+ localparam DW=8;
+ 
+-reg clk, rst;
+ 
+ reg  [    15:0] commands [0:255];
+ wire [  DW-1:0] data_in, data_out;
+@@ -76,7 +76,7 @@ task check_current_output();
+ endtask
+ 
+ task check_send(input exp);
+-    if( dexp == 0 || exp==0 )
++    if( /*dexp == 0 ||*/ exp==0 )
+         assert_msg( send==0, "Send signal should not be active");
+     else
+         assert_msg( send==1, "Send signal should be active");
+@@ -101,10 +101,10 @@ jtframe_hid_ps2_translator uut(
+     .clk       ( clk      ),
+     .keycheck  ( data_in  ),
+     .released  ( released ),
+-    .load_key  ( load     ),
+-    .tr_ready  ( ready    ),
+-    .tr_send   ( send     ),
+-    .next_code ( next     ),
++    .rq        ( load     ),
++    .idle      ( ready    ),
++    .ser_send  ( send     ),
++    .ser_rdy   ( next     ),
+     .ps2_code  ( data_out )
+ );
+ 
+diff --git a/modules/jtframe/ver/serializer/test.v b/modules/jtframe/ver/serializer/test.v
+index d062eae32..05f25cb9c 100644
+--- a/modules/jtframe/ver/serializer/test.v
++++ b/modules/jtframe/ver/serializer/test.v
+@@ -1,11 +1,11 @@
+ module test;
+ 
++reg clk, rst;
++
+ `include "test_tasks.vh"
+ 
+ localparam DW=8;
+ 
+-reg clk, rst;
+-
+ reg  [   7:0] cen_cnt=1;
+ wire [DW-1:0] data_in;
+ wire [DW-1:0] data_out;
+@@ -53,22 +53,24 @@ initial begin
+         wait ( valid );
+         assert_msg(data_in == data_out,"Serialized output does not match expected input");
+     end
++    repeat (30) @(posedge clk);
++    assert_msg(data_in == data_out,"Serialized output does not match expected input");
+     repeat (10) @(posedge clk);
+     pass();
+ end
+ 
+-jtframe_serializer#(.DW(DW)) uut (
++jtframe_serializer#(.DW(DW)) uut(
+     .clk       ( clk      ),
+     .rst       ( rst      ),
+     .cen       ( cen      ),
+     .din       ( data_in  ),
+-    .load      ( load     ),
+-    .done      ( done     ),
++    .send      ( load     ),
++    .ready     ( done     ),
+     .sdout     ( sd       ),
+     .sclk      ( sclk     )
+ );
+ 
+-ps2_intf_v uut_s (
++ps2_intf_v uut_s(
+     .CLK      ( clk      ),
+     .nRESET   ( ~rst     ),
+     .PS2_CLK  ( sclk     ),
+
+From 09b211032f0a5c89a0a08cef92341cea7509c7ee Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Thu, 20 Feb 2025 15:55:50 +0100
+Subject: [PATCH 10/18] If no new inputs, extended and released codes loop with
+ main code if necessary
+
+---
+ .../hdl/keyboard/jtframe_hid_ps2_translator.v | 27 ++++++++++---------
+ modules/jtframe/ver/hid_ps2_translator/test.v | 25 ++++++++++++-----
+ 2 files changed, 34 insertions(+), 18 deletions(-)
+
+diff --git a/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v b/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
+index 1c40a0c7d..8aa78d3f4 100644
+--- a/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
++++ b/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
+@@ -23,7 +23,7 @@ module jtframe_hid_ps2_translator(
+     input      [7:0] keycheck,
+     input            released,
+     input            rq,
+-    output           idle,
++    output reg       idle,
+     input            ser_rdy,
+     output reg       ser_send,
+     output reg [7:0] ps2_code
+@@ -284,17 +284,16 @@ localparam [7:0]
+ reg [8:0] ps2_pre, ps2_pre_l;
+ reg [7:0] key;
+ wire[7:0] code_nx;
+-reg       rel, ph2_l, nx_l, high, new_key;
++reg       rel, ph2_l, nx_l, high, rld;
+ wire      t1, t2;
+ wire      ph2, ph3, last;
+ 
+ assign ph2     = ps2_pre == ps2_pre_l;
+ assign ph3     = ph2 & ph2_l;
+ assign t1      = ps2_pre[8] &&  !ph2;
+-assign t2      = released   && (!ph2 || (!ph3 && high));
+-assign last    = code_nx == ps2_code || ps2_pre==0;
++assign t2      = rld   && (!ph2 || (!ph3 && high));
++assign last    = ps2_pre[7:0] == ps2_code;
+ assign code_nx = t1 ? 8'he0 : (t2 ? 8'hf0 : ps2_pre[7:0]);
+-assign idle    = last && !ser_send && !new_key || ps2_pre==0;
+ 
+ always @(posedge clk) begin
+  	if(rst) begin
+@@ -304,30 +303,34 @@ always @(posedge clk) begin
+         ph2_l     <= 0;
+         ser_send  <= 0;
+         nx_l      <= 0;
+-        new_key   <= 0;
+         key       <= 0;
++        idle <= 1;
+  	end else begin
+         nx_l     <= ser_rdy;
+         ser_send <= 0;
+  		if( rq && idle ) begin
+  			key     <= keycheck;
+-        	new_key <= 1;
++ 			rld     <= released;
+         	{ps2_pre_l,ph2_l} <= 0;
++        	idle <= 0;
+  		end
+  		if( ser_rdy ) begin
+             ps2_code <= code_nx;
+             high     <= ps2_pre[8];
+-            ser_send <= 1;
+-            new_key  <= 0;
++            if(ps2_pre!=0)
++            	{idle, ser_send} <= 2'b01;
++            else
++            	{idle, ser_send} <= 2'b10;
++ 		end
++ 		if(!ser_rdy && nx_l) begin
++ 			{ps2_pre_l,ph2_l} <= last? 0 : {ps2_pre,ph2};
++ 			idle <= last;
+  		end
+- 		if(!ser_rdy && nx_l)
+- 			{ps2_pre_l,ph2_l} <= {ps2_pre,ph2};
+  	end
+  end
+ 
+ always @(posedge clk) begin
+ 		case(key)
+-			KEY_HID_NONE:             ps2_pre <= {1'b0,8'hFF};
+ 			KEY_HID_A:                ps2_pre <= {1'b0,KEY_PS2_A};
+ 			KEY_HID_B:                ps2_pre <= {1'b0,KEY_PS2_B};
+ 			KEY_HID_C:                ps2_pre <= {1'b0,KEY_PS2_C};
+diff --git a/modules/jtframe/ver/hid_ps2_translator/test.v b/modules/jtframe/ver/hid_ps2_translator/test.v
+index f1058cd39..0967b810c 100644
+--- a/modules/jtframe/ver/hid_ps2_translator/test.v
++++ b/modules/jtframe/ver/hid_ps2_translator/test.v
+@@ -1,6 +1,6 @@
+ module test;
+ 
+-reg clk, rst;
++reg clk, rst, bad=0;
+ `include "test_tasks.vh"
+ 
+ localparam DW=8;
+@@ -10,7 +10,7 @@ reg  [    15:0] commands [0:255];
+ wire [  DW-1:0] data_in, data_out;
+ wire [2*DW-1:0] dexp;
+ wire            high, ready, send;
+-reg             load=0,next=0, released=0;
++reg             load=0,next=0, released=0, clr=0, sent_rel=0;
+ integer         value=0, steps=0;
+ 
+ 
+@@ -28,7 +28,7 @@ initial begin
+     forever #10 clk=~clk;
+ end
+ 
+-assign data_in     = value[0+:DW];
++assign data_in     = clr ? 0 : value[0+:DW];
+ assign dexp        = commands[value];
+ assign high        = dexp[15:8]==8'he0;
+ 
+@@ -43,6 +43,8 @@ initial begin
+         for (value = 0; value < 256; value++) begin
+             send_new_key();
+             check_commands();
++            clear_key();
++            issue_same_codes_again();
+         end
+         released = ~released;
+     end
+@@ -51,23 +53,27 @@ end
+ 
+ task send_new_key();
+     assert_msg( ready ==1,"Translator not ready");
+-    count_total_steps();
++    sent_rel <= released; clr = 0;
+     @(posedge clk) load = 1;
+     @(posedge clk) load = 0;
+     if( dexp != 0 )
+         @(posedge clk) assert_msg( ready ==0,"Translator should not be ready");
+ endtask
+ 
++task clear_key();
++    clr = 1;
++endtask
++
+ task count_total_steps();
+     steps = 1;
+     @(posedge clk);
+     if( high     ) steps = steps+1;
+-    if( released ) steps = steps+1;
++    if( sent_rel ) steps = steps+1;
+ endtask
+ 
+ task check_current_output();
+     @(posedge clk);
+-    if( steps==2 && released && dexp!=0 )
++    if( steps==2 && sent_rel && dexp!=0 )
+         @(posedge clk) assert_msg( data_out==8'hf0,"Released code was expected");
+     else if( steps[1] && dexp!=0 )
+         @(posedge clk) assert_msg( data_out==8'he0,"Extended code was expected");
+@@ -83,6 +89,7 @@ task check_send(input exp);
+ endtask
+ 
+ task check_commands();
++    count_total_steps();
+     repeat (steps) begin
+         check_send(0);
+         @(posedge clk) next=1;
+@@ -96,6 +103,12 @@ task check_commands();
+     end
+ endtask
+ 
++task issue_same_codes_again();
++    repeat(30) @(posedge clk);
++    check_commands();
++    repeat(30) @(posedge clk);
++endtask
++
+ jtframe_hid_ps2_translator uut(
+     .rst       ( rst      ),
+     .clk       ( clk      ),
+
+From 27b4f2643aa2a0c606d836ae883ab565e0053015 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Thu, 20 Feb 2025 16:34:32 +0100
+Subject: [PATCH 11/18] minor
+
+---
+ .../hdl/keyboard/jtframe_hid_ps2_translator.v | 36 +++++++++----------
+ modules/jtframe/ver/hid_ps2_translator/test.v |  2 +-
+ 2 files changed, 17 insertions(+), 21 deletions(-)
+
+diff --git a/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v b/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
+index 8aa78d3f4..5fb87177c 100644
+--- a/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
++++ b/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
+@@ -286,45 +286,41 @@ reg [7:0] key;
+ wire[7:0] code_nx;
+ reg       rel, ph2_l, nx_l, high, rld;
+ wire      t1, t2;
+-wire      ph2, ph3, last;
++reg       ph2, ph3, last;
+ 
+-assign ph2     = ps2_pre == ps2_pre_l;
+-assign ph3     = ph2 & ph2_l;
+-assign t1      = ps2_pre[8] &&  !ph2;
++assign t1      = high  &&  !ph2;
+ assign t2      = rld   && (!ph2 || (!ph3 && high));
+-assign last    = ps2_pre[7:0] == ps2_code;
+ assign code_nx = t1 ? 8'he0 : (t2 ? 8'hf0 : ps2_pre[7:0]);
+ 
+ always @(posedge clk) begin
+  	if(rst) begin
+-        ps2_code  <= 0;
+-        high      <= 0;
+-        ps2_pre_l <= 0;
++        ps2_code  <= 0;  ps2_pre_l <= 0;
++        high      <= 0;  rld       <= 0;
++        ser_send  <= 0;  nx_l      <= 0;
++        idle      <= 1;  key       <= 0;
++        ph2       <= 0;  ph3       <= 0;
+         ph2_l     <= 0;
+-        ser_send  <= 0;
+-        nx_l      <= 0;
+-        key       <= 0;
+-        idle <= 1;
+  	end else begin
+-        nx_l     <= ser_rdy;
+         ser_send <= 0;
++        nx_l     <= ser_rdy;
++		high     <= ps2_pre[8];
++		last     <= ps2_pre[7:0] == ps2_code;
++		ph2      <= ps2_pre      == ps2_pre_l;
++		ph3      <= ph2 & ph2_l;
+  		if( rq && idle ) begin
+  			key     <= keycheck;
+  			rld     <= released;
++        	idle    <= 0;
+         	{ps2_pre_l,ph2_l} <= 0;
+-        	idle <= 0;
+  		end
+  		if( ser_rdy ) begin
+             ps2_code <= code_nx;
+-            high     <= ps2_pre[8];
+-            if(ps2_pre!=0)
+-            	{idle, ser_send} <= 2'b01;
+-            else
+-            	{idle, ser_send} <= 2'b10;
++            if(ps2_pre!=0) {idle, ser_send} <= 2'b01;
++            else           {idle, ser_send} <= 2'b10;
+  		end
+  		if(!ser_rdy && nx_l) begin
++ 			idle     <= last;
+  			{ps2_pre_l,ph2_l} <= last? 0 : {ps2_pre,ph2};
+- 			idle <= last;
+  		end
+  	end
+  end
+diff --git a/modules/jtframe/ver/hid_ps2_translator/test.v b/modules/jtframe/ver/hid_ps2_translator/test.v
+index 0967b810c..d4f0e733d 100644
+--- a/modules/jtframe/ver/hid_ps2_translator/test.v
++++ b/modules/jtframe/ver/hid_ps2_translator/test.v
+@@ -82,7 +82,7 @@ task check_current_output();
+ endtask
+ 
+ task check_send(input exp);
+-    if( /*dexp == 0 ||*/ exp==0 )
++    if( dexp == 0 || exp==0 )
+         assert_msg( send==0, "Send signal should not be active");
+     else
+         assert_msg( send==1, "Send signal should be active");
+
+From d26aaecfeda12a9bfda2fcfae4b7e43b7b823de6 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Thu, 20 Feb 2025 18:40:23 +0100
+Subject: [PATCH 12/18] minor
+
+---
+ modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v b/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
+index 5fb87177c..6d1ea6c68 100644
+--- a/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
++++ b/modules/jtframe/hdl/keyboard/jtframe_hid_ps2_translator.v
+@@ -320,7 +320,7 @@ always @(posedge clk) begin
+  		end
+  		if(!ser_rdy && nx_l) begin
+  			idle     <= last;
+- 			{ps2_pre_l,ph2_l} <= last? 0 : {ps2_pre,ph2};
++ 			{ps2_pre_l,ph2_l} <= last? 10'b0 : {ps2_pre,ph2};
+  		end
+  	end
+  end
+
+From 871277c36e29900a927b20c01f924b6c00fb6cde Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Fri, 21 Feb 2025 09:52:10 +0100
+Subject: [PATCH 13/18] minor
+
+---
+ modules/jtframe/hdl/jtframe_serializer.v | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/modules/jtframe/hdl/jtframe_serializer.v b/modules/jtframe/hdl/jtframe_serializer.v
+index 33d1912de..f57ceb116 100644
+--- a/modules/jtframe/hdl/jtframe_serializer.v
++++ b/modules/jtframe/hdl/jtframe_serializer.v
+@@ -28,8 +28,8 @@ module jtframe_serializer#(parameter DW=8, PAR=1)( // Set PAR==0 for even parity
+ );
+ 
+ localparam CK=$clog2(DW+2);
++// reg  [DW-1:0] ser_l;  // Useful for debugging
+ reg  [DW+1:0] pre_data;
+-reg  [DW-1:0] ser_l;
+ reg  [CK-1:0] cnt;
+ wire          par, done;
+ 
+@@ -42,7 +42,7 @@ always @(posedge clk) begin
+         sclk     <= 0;
+         pre_data <= {DW+2{1'b1}};
+         cnt      <= 0;
+-        ser_l    <= 0;
++        // ser_l    <= 0;
+         ready    <= 1;
+     end else if(cen) begin
+         sclk     <= ~sclk;
+@@ -55,7 +55,7 @@ always @(posedge clk) begin
+             if(send) begin
+                 pre_data <= {par,din, 1'b0};
+                 cnt      <= DW[0+:CK] + {{CK-2{1'b0}},2'd2};
+-                ser_l    <= din;
++                // ser_l    <= din;
+             end
+         end
+     end
+
+From 80aa93ce0be662b9e74e7fa4cbfea13d121f696e Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Fri, 21 Feb 2025 12:20:42 +0100
+Subject: [PATCH 14/18] Module for generating cen required by serializer and
+ ps2 collector
+
+---
+ .../hdl/clocking/jtframe_generic_cen.v        | 31 +++++++++++++++++++
+ 1 file changed, 31 insertions(+)
+ create mode 100644 modules/jtframe/hdl/clocking/jtframe_generic_cen.v
+
+diff --git a/modules/jtframe/hdl/clocking/jtframe_generic_cen.v b/modules/jtframe/hdl/clocking/jtframe_generic_cen.v
+new file mode 100644
+index 000000000..bee742164
+--- /dev/null
++++ b/modules/jtframe/hdl/clocking/jtframe_generic_cen.v
+@@ -0,0 +1,31 @@
++/*  This file is part of JTFRAME.
++    JTFRAME program is free software: you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation, either version 3 of the License, or
++    (at your option) any later version.
++
++    JTFRAME program is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with JTFRAME.  If not, see <http://www.gnu.org/licenses/>.
++
++    Author: Rafael Eduardo Paiva Feener. Copyright: Miki Saito
++    Version: 1.0
++    Date: 21-02-2025 */
++
++module jtframe_generic_cen#(parameter CKW=3)(
++    input      clk,
++    output reg cen
++);
++
++reg  [CKW-1:0] cnt=0;
++
++always @(posedge clk) begin
++    cnt <=  cnt + 1'b1;
++    cen <= &cnt;
++end
++
++endmodule
+\ No newline at end of file
+
+From 6601a6d8315dc5cf050a146458284d9b99929088 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Fri, 21 Feb 2025 12:22:47 +0100
+Subject: [PATCH 15/18] Removed board_* references formerly needed by Pocket in
+ jtframe_board
+
+---
+ modules/jtframe/hdl/jtframe_board.v             | 17 +++++------------
+ modules/jtframe/target/mist/hdl/jtframe_mist.sv | 13 -------------
+ .../jtframe/target/mister/hdl/jtframe_mister.sv | 13 -------------
+ 3 files changed, 5 insertions(+), 38 deletions(-)
+
+diff --git a/modules/jtframe/hdl/jtframe_board.v b/modules/jtframe/hdl/jtframe_board.v
+index 1eb51ff39..ee292a3d1 100644
+--- a/modules/jtframe/hdl/jtframe_board.v
++++ b/modules/jtframe/hdl/jtframe_board.v
+@@ -96,13 +96,6 @@ module jtframe_board #(parameter
+     output       [ 3:0] game_coin,       game_start,
+     output              game_service,
+     output              game_tilt,
+-    // keyboard
+-    input        [ 7:0] board_digit,
+-    input               board_reset, board_pause, board_tilt, board_test,
+-                        board_service, board_shift, board_ctrl, board_alt,
+-    // debug features - remove on #935
+-    input        [ 3:0] board_gfx,
+-    input               board_plus, board_minus,
+     // Mouse & Paddle
+     input        [ 8:0] bd_mouse_dx, bd_mouse_dy,
+     output       [15:0] mouse_1p,    mouse_2p,
+@@ -568,12 +561,12 @@ u_inputs(
+     .key_joy4       ( key_joy4        ),
+     .key_start      ( key_start       ),
+     .key_coin       ( key_coin        ),
+-    .key_service    ( key_service | board_service ),
+-    .key_tilt       ( key_tilt    | board_tilt    ),
+-    .key_pause      ( key_pause   | board_pause   ),
+-    .key_test       ( key_test    | board_test    ),
++    .key_service    ( key_service     ),
++    .key_tilt       ( key_tilt        ),
++    .key_pause      ( key_pause       ),
++    .key_test       ( key_test        ),
+     .osd_pause      ( osd_pause       ),
+-    .key_reset      ( key_reset | board_reset     ),
++    .key_reset      ( key_reset       ),
+     .key_ctrl       ( key_ctrl        ),
+     .key_shift      ( key_shift       ),
+     .func_key       ( func_key        ),
+diff --git a/modules/jtframe/target/mist/hdl/jtframe_mist.sv b/modules/jtframe/target/mist/hdl/jtframe_mist.sv
+index 222b1ec6f..bf9d38341 100644
+--- a/modules/jtframe/target/mist/hdl/jtframe_mist.sv
++++ b/modules/jtframe/target/mist/hdl/jtframe_mist.sv
+@@ -399,19 +399,6 @@ jtframe_board #(
+     .dial_y         ( dial_y          ),
+     .spinner_1      ( 9'd0            ),
+     .spinner_2      ( 9'd0            ),
+-    // keyboard
+-    .board_digit    ( 8'd0            ),
+-    .board_gfx      ( 4'd0            ),
+-    .board_reset    ( 1'b0            ),
+-    .board_pause    ( 1'b0            ),
+-    .board_tilt     ( 1'b0            ),
+-    .board_test     ( 1'b0            ),
+-    .board_service  ( 1'b0            ),
+-    .board_shift    ( 1'b0            ),
+-    .board_ctrl     ( 1'b0            ),
+-    .board_alt      ( 1'b0            ),
+-    .board_plus     ( 1'b0            ),
+-    .board_minus    ( 1'b0            ),
+     // Mouse & paddle
+     .bd_mouse_dx    ( bd_mouse_dx     ),
+     .bd_mouse_dy    ( bd_mouse_dy     ),
+diff --git a/modules/jtframe/target/mister/hdl/jtframe_mister.sv b/modules/jtframe/target/mister/hdl/jtframe_mister.sv
+index 699f7aba3..49db53feb 100644
+--- a/modules/jtframe/target/mister/hdl/jtframe_mister.sv
++++ b/modules/jtframe/target/mister/hdl/jtframe_mister.sv
+@@ -679,19 +679,6 @@ jtframe_board #(
+     .game_start     ( game_start      ),
+     .game_service   ( game_service    ),
+     .game_tilt      ( game_tilt       ),
+-    // keyboard
+-    .board_digit    ( 8'd0            ),
+-    .board_gfx      ( 4'd0            ),
+-    .board_reset    ( 1'b0            ),
+-    .board_pause    ( 1'b0            ),
+-    .board_tilt     ( 1'b0            ),
+-    .board_test     ( 1'b0            ),
+-    .board_service  ( 1'b0            ),
+-    .board_shift    ( 1'b0            ),
+-    .board_ctrl     ( 1'b0            ),
+-    .board_alt      ( 1'b0            ),
+-    .board_plus     ( 1'b0            ),
+-    .board_minus    ( 1'b0            ),
+     // Mouse & paddle
+     .bd_mouse_dx    ( mouse_dx        ),
+     .bd_mouse_dy    ( mouse_dy        ),
+
+From a30edf647cd1cb99d53eccc0da1c99f8097eba8d Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Fri, 21 Feb 2025 12:28:51 +0100
+Subject: [PATCH 16/18] pocket submodule
+
+---
+ modules/jtframe/target/pocket | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/modules/jtframe/target/pocket b/modules/jtframe/target/pocket
+index c7b180c86..b1d5d678b 160000
+--- a/modules/jtframe/target/pocket
++++ b/modules/jtframe/target/pocket
+@@ -1 +1 @@
+-Subproject commit c7b180c868e53278666b1597504eaa42f490035c
++Subproject commit b1d5d678b5161a7061d40383016fd51715643ae7
+
+From 36f95d52fc6f38f903f0d726d04db93a7e124901 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Fri, 21 Feb 2025 12:36:03 +0100
+Subject: [PATCH 17/18] Requested changes
+
+---
+ .../hdl/clocking/{jtframe_generic_cen.v => jtframe_int_cen.v}  | 2 +-
+ modules/jtframe/hdl/jtframe_serializer.v                       | 3 ---
+ 2 files changed, 1 insertion(+), 4 deletions(-)
+ rename modules/jtframe/hdl/clocking/{jtframe_generic_cen.v => jtframe_int_cen.v} (95%)
+
+diff --git a/modules/jtframe/hdl/clocking/jtframe_generic_cen.v b/modules/jtframe/hdl/clocking/jtframe_int_cen.v
+similarity index 95%
+rename from modules/jtframe/hdl/clocking/jtframe_generic_cen.v
+rename to modules/jtframe/hdl/clocking/jtframe_int_cen.v
+index bee742164..d0a44cb0d 100644
+--- a/modules/jtframe/hdl/clocking/jtframe_generic_cen.v
++++ b/modules/jtframe/hdl/clocking/jtframe_int_cen.v
+@@ -16,7 +16,7 @@
+     Version: 1.0
+     Date: 21-02-2025 */
+ 
+-module jtframe_generic_cen#(parameter CKW=3)(
++module jtframe_int_cen#(parameter CKW=3)(
+     input      clk,
+     output reg cen
+ );
+diff --git a/modules/jtframe/hdl/jtframe_serializer.v b/modules/jtframe/hdl/jtframe_serializer.v
+index f57ceb116..e6f25d577 100644
+--- a/modules/jtframe/hdl/jtframe_serializer.v
++++ b/modules/jtframe/hdl/jtframe_serializer.v
+@@ -28,7 +28,6 @@ module jtframe_serializer#(parameter DW=8, PAR=1)( // Set PAR==0 for even parity
+ );
+ 
+ localparam CK=$clog2(DW+2);
+-// reg  [DW-1:0] ser_l;  // Useful for debugging
+ reg  [DW+1:0] pre_data;
+ reg  [CK-1:0] cnt;
+ wire          par, done;
+@@ -42,7 +41,6 @@ always @(posedge clk) begin
+         sclk     <= 0;
+         pre_data <= {DW+2{1'b1}};
+         cnt      <= 0;
+-        // ser_l    <= 0;
+         ready    <= 1;
+     end else if(cen) begin
+         sclk     <= ~sclk;
+@@ -55,7 +53,6 @@ always @(posedge clk) begin
+             if(send) begin
+                 pre_data <= {par,din, 1'b0};
+                 cnt      <= DW[0+:CK] + {{CK-2{1'b0}},2'd2};
+-                // ser_l    <= din;
+             end
+         end
+     end
+
+From 7c000ca9c53bd833498ffc5e1741408a1d136b17 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Fri, 21 Feb 2025 12:41:34 +0100
+Subject: [PATCH 18/18] minor
+
+---
+ modules/jtframe/target/pocket | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/modules/jtframe/target/pocket b/modules/jtframe/target/pocket
+index b1d5d678b..633000362 160000
+--- a/modules/jtframe/target/pocket
++++ b/modules/jtframe/target/pocket
+@@ -1 +1 @@
+-Subproject commit b1d5d678b5161a7061d40383016fd51715643ae7
++Subproject commit 633000362d400cb97a0093f69b4e3cae63a52c10

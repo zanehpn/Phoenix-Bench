@@ -1,0 +1,10 @@
+{
+    "task_info": {
+        "base_commit": "963867c259402c4eae320ffca4b816310cf47ed9",
+        "problem_statement": "# RVFI \"pmpaddr\" wrong width\n\n**Component:RTL**: For issues in the RTL (e.g. for files in the rtl directory)\n**Component:Other**: For any other issues\n\n\n### Description\n\nWhen using PMP `G` different from 0.\nXcelium cannot compile.\n(G=3 in the example below.)\n```\nxmelab: *E,TYCMPAT (/work/ropeders/src/core-v-verif-pmp/core-v-cores/cv32e40s/bhv/cv32e40s_wrapper.sv,606|72):\nport or terminal connection type check failed on instance 'uvmt_cv32e40s_tb.dut_wrap.cv32e40s_wrapper_i'\n(expecting datatype compatible with 'unpacked array [0:63] of packed array [31:0] of logic'\nbut found 'unpacked array [0:63] of packed array [29:0] of logic' instead).\n```\n\nThe wrapper connects rvfi probing like `.csr_pmpaddr_q_i          ( core_i.cs_registers_i.pmp_addr_rdata`.\nBut RVFI expects 32 bits `input logic [31:0]                         csr_pmpaddr_q_i[PMP_MAX_REGIONS]`.\nWhile RTL saved a few bits `logic [PMP_ADDR_WIDTH-1:0]    pmp_addr_rdata[PMP_MAX_REGIONS];`.\n\n(This also causes CEXes in formal, because the rvfi pmpaddr csr values are wrong.)\n\n\n### Steps to Reproduce\n\n1. Use my fork and branch: https://github.com/silabs-robin/core-v-verif/tree/pmp_assert, hash `f7e1416c`.\n2. Go to `cv32e40s/sim/uvmt` and run `make comp CFG=pmp`.\n",
+        "instance_id": "openhwgroup_cv32e40s_pr254"
+    },
+    "setup_info": {
+        "repo_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/openhwgroup_cv32e40s_pr254"
+    }
+}

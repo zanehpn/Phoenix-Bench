@@ -1,0 +1,216 @@
+From 61b27b582e56ff1dc4061a22080a79be5edbf2db Mon Sep 17 00:00:00 2001
+From: Nils Wistoff <nwistoff@iis.ee.ethz.ch>
+Date: Tue, 27 Jun 2023 18:13:32 +0200
+Subject: [PATCH 1/2] axi_riscv_lrsc: Set reservation granularity to AXI DW
+
+... and parametrise it.
+
+Signed-off-by: Nils Wistoff <nwistoff@iis.ee.ethz.ch>
+---
+ src/axi_riscv_atomics.sv   |  5 ++++-
+ src/axi_riscv_lrsc.sv      | 29 +++++++++++++++--------------
+ src/axi_riscv_lrsc_wrap.sv |  2 ++
+ test/axi_riscv_lrsc_tb.sv  |  2 ++
+ 4 files changed, 23 insertions(+), 15 deletions(-)
+
+diff --git a/src/axi_riscv_atomics.sv b/src/axi_riscv_atomics.sv
+index 8da19ae..12ad0fb 100644
+--- a/src/axi_riscv_atomics.sv
++++ b/src/axi_riscv_atomics.sv
+@@ -34,6 +34,8 @@ module axi_riscv_atomics
+     parameter int unsigned AXI_USER_ID_MSB = 0,
+     // LSB of the ID in the user signal
+     parameter int unsigned AXI_USER_ID_LSB = 0,
++    // LSB of the AXI address for reservations (determines the reservation granularity)
++    parameter int unsigned AXI_ADDR_LSB = $clog2(AXI_DATA_WIDTH/8),
+     // Word width of the widest RISC-V processor that can issue requests to this module.
+     // 32 for RV32; 64 for RV64, where both 32-bit (.W suffix) and 64-bit (.D suffix) AMOs are
+     // supported if `aw_strb` is set correctly.
+@@ -485,7 +487,8 @@ module axi_riscv_atomics
+         .AXI_MAX_WRITE_TXNS (AXI_MAX_WRITE_TXNS),
+         .AXI_USER_AS_ID     (AXI_USER_AS_ID),
+         .AXI_USER_ID_MSB    (AXI_USER_ID_MSB),
+-        .AXI_USER_ID_LSB    (AXI_USER_ID_LSB)
++        .AXI_USER_ID_LSB    (AXI_USER_ID_LSB),
++        .AXI_ADDR_LSB       (AXI_ADDR_LSB)
+     ) i_lrsc (
+         .clk_i              ( clk_i                 ),
+         .rst_ni             ( rst_ni                ),
+diff --git a/src/axi_riscv_lrsc.sv b/src/axi_riscv_lrsc.sv
+index afbc3b1..6d2842c 100644
+--- a/src/axi_riscv_lrsc.sv
++++ b/src/axi_riscv_lrsc.sv
+@@ -41,6 +41,7 @@ module axi_riscv_lrsc #(
+     parameter bit AXI_USER_AS_ID = 1'b0,           // Use the AXI User signal instead of the AXI ID to track reservations
+     parameter int unsigned AXI_USER_ID_MSB = 0,    // MSB of the ID in the user signal
+     parameter int unsigned AXI_USER_ID_LSB = 0,    // LSB of the ID in the user signal
++    parameter int unsigned AXI_ADDR_LSB = $clog2(AXI_DATA_WIDTH/8), // log2 of granularity for reservations (ignored LSBs)
+     /// Enable debug prints (not synthesizable).
+     parameter bit DEBUG = 1'b0,
+     /// Derived Parameters (do NOT change manually!)
+@@ -157,13 +158,13 @@ module axi_riscv_lrsc #(
+             AXI_USER_ID_MSB - AXI_USER_ID_LSB + 1
+             : AXI_ID_WIDTH;
+ 
+-    typedef logic [AXI_ADDR_WIDTH-1:0]  axi_addr_t;
+-    typedef logic [AXI_DATA_WIDTH-1:0]  axi_data_t;
+-    typedef logic [AXI_ID_WIDTH-1:0]    axi_id_t;
+-    typedef logic [1:0]                 axi_resp_t;
+-    typedef logic [AXI_USER_WIDTH-1:0]  axi_user_t;
+-    typedef logic [AXI_ADDR_WIDTH-3:0]  res_addr_t; // Track reservations word wise.
+-    typedef logic [RES_ID_WIDTH-1:0]    res_id_t;
++    typedef logic [AXI_ADDR_WIDTH-1:0]               axi_addr_t;
++    typedef logic [AXI_DATA_WIDTH-1:0]               axi_data_t;
++    typedef logic [AXI_ID_WIDTH-1:0]                 axi_id_t;
++    typedef logic [1:0]                              axi_resp_t;
++    typedef logic [AXI_USER_WIDTH-1:0]               axi_user_t;
++    typedef logic [AXI_ADDR_WIDTH-AXI_ADDR_LSB-1:0]  res_addr_t; // Track reservations with given granularity.
++    typedef logic [RES_ID_WIDTH-1:0]                 res_id_t;
+ 
+     typedef enum logic [1:0] {
+         B_REGULAR='0, B_EXCLUSIVE, B_INJECT
+@@ -431,11 +432,11 @@ module axi_riscv_lrsc #(
+ 
+             AR_IDLE: begin
+                 if (slv_ar_valid_i) begin
+-                    ar_push_addr = slv_ar_addr_i[AXI_ADDR_WIDTH-1:2];
++                    ar_push_addr = slv_ar_addr_i[AXI_ADDR_WIDTH-1:AXI_ADDR_LSB];
+                     ar_push_excl = (slv_ar_addr_i >= ADDR_BEGIN && slv_ar_addr_i <= ADDR_END &&
+                             slv_ar_lock_i && slv_ar_len_i == 8'h00);
+                     if (ar_push_excl) begin
+-                        ar_wifq_exists_inp.data.addr = slv_ar_addr_i[AXI_ADDR_WIDTH-1:2];
++                        ar_wifq_exists_inp.data.addr = slv_ar_addr_i[AXI_ADDR_WIDTH-1:AXI_ADDR_LSB];
+                         ar_wifq_exists_req = 1'b1;
+                         if (ar_wifq_exists_gnt) begin
+                             ar_push_res = !wifq_exists;
+@@ -533,7 +534,7 @@ module axi_riscv_lrsc #(
+         .clk_i              (clk_i),
+         .rst_ni             (rst_ni),
+         .inp_id_i           (mst_aw_id_o),
+-        .inp_data_i         ({mst_aw_addr_o[AXI_ADDR_WIDTH-1:2], slv_aw_lock_i}),
++        .inp_data_i         ({mst_aw_addr_o[AXI_ADDR_WIDTH-1:AXI_ADDR_LSB], slv_aw_lock_i}),
+         .inp_req_i          (mst_aw_valid && mst_aw_ready),
+         .inp_gnt_o          (wifq_inp_gnt),
+         .exists_data_i      (wifq_exists_inp.data),
+@@ -680,15 +681,15 @@ module axi_riscv_lrsc #(
+                         // Inside exclusively-accessible range.
+                         // Make sure no exclusive AR to the same address is currently waiting.
+                         if (!(slv_ar_valid_i && slv_ar_lock_i &&
+-                                slv_ar_addr_i[AXI_ADDR_WIDTH-1:2] == slv_aw_addr_i[AXI_ADDR_WIDTH-1:2])) begin
++                                slv_ar_addr_i[AXI_ADDR_WIDTH-1:AXI_ADDR_LSB] == slv_aw_addr_i[AXI_ADDR_WIDTH-1:AXI_ADDR_LSB])) begin
+                             // Make sure no exclusive write to the same address is currently in
+                             // flight.
+-                            aw_wifq_exists_inp.data.addr = slv_aw_addr_i[AXI_ADDR_WIDTH-1:2];
++                            aw_wifq_exists_inp.data.addr = slv_aw_addr_i[AXI_ADDR_WIDTH-1:AXI_ADDR_LSB];
+                             aw_wifq_exists_inp.data.excl = 1'b1;
+                             aw_wifq_exists_req = 1'b1;
+                             if (aw_wifq_exists_gnt && !wifq_exists) begin
+                                 // Check reservation and clear identical addresses.
+-                                art_check_clr_addr  = slv_aw_addr_i[AXI_ADDR_WIDTH-1:2];
++                                art_check_clr_addr  = slv_aw_addr_i[AXI_ADDR_WIDTH-1:AXI_ADDR_LSB];
+                                 art_check_clr_excl  = slv_aw_lock_i;
+                                 if (mst_aw_ready) begin
+                                     art_check_clr_req = 1'b1;
+@@ -954,7 +955,7 @@ module axi_riscv_lrsc #(
+             slv_ar_user_i[AXI_USER_ID_MSB:AXI_USER_ID_LSB]
+             : slv_ar_id_i;
+     axi_res_tbl #(
+-        .AXI_ADDR_WIDTH (AXI_ADDR_WIDTH-2), // Track reservations word-wise.
++        .AXI_ADDR_WIDTH (AXI_ADDR_WIDTH-AXI_ADDR_LSB), // Track reservations with given granularity.
+         .AXI_ID_WIDTH   (RES_ID_WIDTH)
+     ) i_art (
+         .clk_i                  (clk_i),
+diff --git a/src/axi_riscv_lrsc_wrap.sv b/src/axi_riscv_lrsc_wrap.sv
+index 2380c86..bf2e5c1 100644
+--- a/src/axi_riscv_lrsc_wrap.sv
++++ b/src/axi_riscv_lrsc_wrap.sv
+@@ -29,6 +29,7 @@ module axi_riscv_lrsc_wrap #(
+     parameter bit AXI_USER_AS_ID = 1'b0,           // Use the AXI User signal instead of the AXI ID to track reservations
+     parameter int unsigned AXI_USER_ID_MSB = 0,    // MSB of the ID in the user signal
+     parameter int unsigned AXI_USER_ID_LSB = 0,    // LSB of the ID in the user signal
++    parameter int unsigned AXI_ADDR_LSB = $clog2(AXI_DATA_WIDTH/8), // log2 of granularity for reservations (ignored LSBs)
+     /// Enable debug prints (not synthesizable).
+     parameter bit DEBUG = 1'b0,
+     /// Derived Parameters (do NOT change manually!)
+@@ -52,6 +53,7 @@ module axi_riscv_lrsc_wrap #(
+         .AXI_USER_AS_ID         (AXI_USER_AS_ID),
+         .AXI_USER_ID_MSB        (AXI_USER_ID_MSB),
+         .AXI_USER_ID_LSB        (AXI_USER_ID_LSB),
++        .AXI_ADDR_LSB           (AXI_ADDR_LSB),
+         .DEBUG                  (DEBUG)
+     ) i_lrsc (
+         .clk_i           ( clk_i         ),
+diff --git a/test/axi_riscv_lrsc_tb.sv b/test/axi_riscv_lrsc_tb.sv
+index 937ef17..ee03863 100644
+--- a/test/axi_riscv_lrsc_tb.sv
++++ b/test/axi_riscv_lrsc_tb.sv
+@@ -21,6 +21,7 @@ module axi_riscv_lrsc_tb #(
+     parameter int unsigned ADDR_END = 8'hAF,
+     parameter int unsigned AXI_MAX_READ_TXNS = 16,
+     parameter int unsigned AXI_MAX_WRITE_TXNS = 16,
++    parameter int unsigned AXI_ADDR_LSB = 3,
+     parameter bit DEBUG = 1'b0,
+     // TB Parameters
+     parameter int unsigned REQ_MIN_WAIT_CYCLES = 0,
+@@ -98,6 +99,7 @@ module axi_riscv_lrsc_tb #(
+         .AXI_USER_WIDTH         (AXI_USER_WIDTH),
+         .AXI_MAX_READ_TXNS      (AXI_MAX_READ_TXNS),
+         .AXI_MAX_WRITE_TXNS     (AXI_MAX_WRITE_TXNS),
++        .AXI_ADDR_LSB           (AXI_ADDR_LSB),
+         .DEBUG                  (DEBUG)
+     ) dut (
+         .clk_i  (clk),
+
+From ff7ecc8c65e5359a3f9b55361d9a378370cd6f06 Mon Sep 17 00:00:00 2001
+From: Nils Wistoff <nwistoff@iis.ee.ethz.ch>
+Date: Mon, 3 Jul 2023 13:55:50 +0200
+Subject: [PATCH 2/2] axi_riscv_atomics_[wrap|structs]: Propagate AXI_ADDR_LSB
+ param
+
+Signed-off-by: Nils Wistoff <nwistoff@iis.ee.ethz.ch>
+---
+ src/axi_riscv_atomics_structs.sv | 2 ++
+ src/axi_riscv_atomics_wrap.sv    | 3 +++
+ 2 files changed, 5 insertions(+)
+
+diff --git a/src/axi_riscv_atomics_structs.sv b/src/axi_riscv_atomics_structs.sv
+index cea2306..24afec4 100644
+--- a/src/axi_riscv_atomics_structs.sv
++++ b/src/axi_riscv_atomics_structs.sv
+@@ -30,6 +30,7 @@ module axi_riscv_atomics_structs #(
+   parameter int unsigned  AxiUserIdLsb    = 0,
+   parameter int unsigned  RiscvWordWidth  = 0,
+   parameter int unsigned  NAxiCuts        = 0,
++  parameter int unsigned  AxiAddrLSB      = $clog2(AxiDataWidth/8),
+   parameter type          axi_req_t       = logic,
+   parameter type          axi_rsp_t       = logic
+ ) (
+@@ -71,6 +72,7 @@ module axi_riscv_atomics_structs #(
+     .AXI_USER_AS_ID     ( AxiUserAsId     ),
+     .AXI_USER_ID_MSB    ( AxiUserIdMsb    ),
+     .AXI_USER_ID_LSB    ( AxiUserIdLsb    ),
++    .AXI_ADDR_LSB       ( AxiAddrLSB      ),
+     .RISCV_WORD_WIDTH   ( RiscvWordWidth  ),
+     .N_AXI_CUT          ( NAxiCuts        )
+   ) i_axi_riscv_atomics_wrap (
+diff --git a/src/axi_riscv_atomics_wrap.sv b/src/axi_riscv_atomics_wrap.sv
+index 5006ec1..f63af61 100644
+--- a/src/axi_riscv_atomics_wrap.sv
++++ b/src/axi_riscv_atomics_wrap.sv
+@@ -31,6 +31,8 @@ module axi_riscv_atomics_wrap #(
+     parameter int unsigned AXI_USER_ID_MSB = 0,
+     // LSB of the ID in the user signal
+     parameter int unsigned AXI_USER_ID_LSB = 0,
++    // LSB of the AXI address for reservations (determines the reservation granularity)
++    parameter int unsigned AXI_ADDR_LSB = $clog2(AXI_DATA_WIDTH/8),
+     // Word width of the widest RISC-V processor that can issue requests to this module.
+     // 32 for RV32; 64 for RV64, where both 32-bit (.W suffix) and 64-bit (.D suffix) AMOs are
+     // supported if `aw_strb` is set correctly.
+@@ -56,6 +58,7 @@ module axi_riscv_atomics_wrap #(
+         .AXI_USER_AS_ID     (AXI_USER_AS_ID),
+         .AXI_USER_ID_MSB    (AXI_USER_ID_MSB),
+         .AXI_USER_ID_LSB    (AXI_USER_ID_LSB),
++        .AXI_ADDR_LSB       (AXI_ADDR_LSB),
+         .RISCV_WORD_WIDTH   (RISCV_WORD_WIDTH),
+         .N_AXI_CUT          (N_AXI_CUT)
+     ) i_atomics (

@@ -1,0 +1,24 @@
+diff --git a/src/axi_xbar.sv b/src/axi_xbar.sv
+index 5d0b79c..ff93fa8 100755
+--- a/src/axi_xbar.sv
++++ b/src/axi_xbar.sv
+@@ -58,6 +58,7 @@ module axi_xbar #(
+     mst_port_idx_t                     slv_aw_select, slv_ar_select;
+     logic                              dec_aw_valid,  dec_aw_error;
+     logic                              dec_ar_valid,  dec_ar_error;
++    slv_resp_t                         err_slv_resp;
+ 
+     addr_decode #(
+       .NoIndices  ( Cfg.NoMstPorts  ),
+@@ -165,8 +166,10 @@ module axi_xbar #(
+       .test_i,  // Testmode enable
+       // slave port
+       .slv_req_i  ( slv_reqs[i][Cfg.NoMstPorts]   ),
+-      .slv_resp_o ( slv_resps[i][Cfg.NoMstPorts]  )
++      .slv_resp_o ( err_slv_resp                 )
+     );
++
++    assign slv_resps[i][Cfg.NoMstPorts] = err_slv_resp;
+   end
+ 
+   // cross all channels

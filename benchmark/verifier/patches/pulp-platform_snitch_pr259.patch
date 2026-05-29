@@ -1,0 +1,232 @@
+From c9d19a64af9632739376588ff2c1721f390b80df Mon Sep 17 00:00:00 2001
+From: Florian Zaruba <zarubaf@iis.ee.ethz.ch>
+Date: Thu, 16 Sep 2021 18:30:59 +0200
+Subject: [PATCH] occamy: Create AXI Lite to AXI connection
+
+---
+ hw/system/occamy/src/occamy_pkg.sv        |  9 ++--
+ hw/system/occamy/src/occamy_top.sv        | 64 ++++++++++++++++++-----
+ hw/system/occamy/src/occamy_top.sv.tpl    |  7 ++-
+ util/occamygen.py                         |  4 ++
+ util/solder/solder.axi_lite_to_axi.sv.tpl |  2 +
+ 5 files changed, 70 insertions(+), 16 deletions(-)
+
+diff --git a/hw/system/occamy/src/occamy_pkg.sv b/hw/system/occamy/src/occamy_pkg.sv
+index e831e01ed..651dace97 100644
+--- a/hw/system/occamy/src/occamy_pkg.sv
++++ b/hw/system/occamy/src/occamy_pkg.sv
+@@ -91,6 +91,7 @@ package occamy_pkg;
+   /// Outputs of the `soc_axi_lite_periph_xbar` crossbar.
+   typedef enum int {
+     SOC_AXI_LITE_PERIPH_XBAR_OUT_DEBUG,
++    SOC_AXI_LITE_PERIPH_XBAR_OUT_SOC,
+     SOC_AXI_LITE_PERIPH_XBAR_NUM_OUTPUTS
+   } soc_axi_lite_periph_xbar_outputs_e;
+ 
+@@ -106,12 +107,13 @@ package occamy_pkg;
+   AxiIdUsedSlvPorts:  0,
+   AxiAddrWidth:       48,
+   AxiDataWidth:       64,
+-  NoAddrRules:        1
++  NoAddrRules:        2
+ };
+ 
+   /// Address map of the `soc_axi_lite_periph_xbar` crossbar.
+-  localparam xbar_rule_48_t [0:0] SocAxiLitePeriphXbarAddrmap = '{
+-  '{ idx: 0, start_addr: 48'h00000000, end_addr: 48'h00001000 }
++  localparam xbar_rule_48_t [1:0] SocAxiLitePeriphXbarAddrmap = '{
++  '{ idx: 0, start_addr: 48'h00000000, end_addr: 48'h00001000 },
++  '{ idx: 1, start_addr: 48'h01000000, end_addr: 48'h1200000000 }
+ };
+ 
+   // AXI plugs of the `soc_axi_lite_periph_xbar` crossbar.
+@@ -284,6 +286,7 @@ package occamy_pkg;
+     SOC_NARROW_XBAR_IN_S1_QUADRANT_7,
+     SOC_NARROW_XBAR_IN_CVA6,
+     SOC_NARROW_XBAR_IN_SOC_WIDE,
++    SOC_NARROW_XBAR_IN_PERIPH,
+     SOC_NARROW_XBAR_NUM_INPUTS
+   } soc_narrow_xbar_inputs_e;
+ 
+diff --git a/hw/system/occamy/src/occamy_top.sv b/hw/system/occamy/src/occamy_top.sv
+index ddc3fbaff..c7873c9ab 100644
+--- a/hw/system/occamy/src/occamy_top.sv
++++ b/hw/system/occamy/src/occamy_top.sv
+@@ -187,8 +187,8 @@ module occamy_top
+ 
+   axi_lite_a48_d64_req_t [1:0] soc_axi_lite_periph_xbar_in_req;
+   axi_lite_a48_d64_rsp_t [1:0] soc_axi_lite_periph_xbar_in_rsp;
+-  axi_lite_a48_d64_req_t [0:0] soc_axi_lite_periph_xbar_out_req;
+-  axi_lite_a48_d64_rsp_t [0:0] soc_axi_lite_periph_xbar_out_rsp;
++  axi_lite_a48_d64_req_t [1:0] soc_axi_lite_periph_xbar_out_req;
++  axi_lite_a48_d64_rsp_t [1:0] soc_axi_lite_periph_xbar_out_rsp;
+ 
+   // The `soc_axi_lite_periph_xbar` crossbar.
+   axi_lite_xbar #(
+@@ -333,14 +333,14 @@ SOC_REGBUS_PERIPH_XBAR_NUM_OUTPUTS
+   '{ idx: 7, start_addr: s1_quadrant_base_addr[7], end_addr: s1_quadrant_base_addr[7] + S1QuadrantAddressSpace }
+ };
+ 
+-  soc_narrow_xbar_in_req_t   [ 9:0] soc_narrow_xbar_in_req;
+-  soc_narrow_xbar_in_resp_t  [ 9:0] soc_narrow_xbar_in_rsp;
++  soc_narrow_xbar_in_req_t   [10:0] soc_narrow_xbar_in_req;
++  soc_narrow_xbar_in_resp_t  [10:0] soc_narrow_xbar_in_rsp;
+   soc_narrow_xbar_out_req_t  [11:0] soc_narrow_xbar_out_req;
+   soc_narrow_xbar_out_resp_t [11:0] soc_narrow_xbar_out_rsp;
+ 
+   axi_xbar #(
+       .Cfg(SocNarrowXbarCfg),
+-      .Connectivity  ( 120'b101111111111111111111111111101111111111110111111111111011111111111101111111111110111111111111011111111111101111111111110 ),
++      .Connectivity  ( 132'b111011111111101111111111111111111111111101111111111110111111111111011111111111101111111111110111111111111011111111111101111111111110 ),
+       .AtopSupport(1),
+       .slv_aw_chan_t(axi_a48_d64_i4_u0_aw_chan_t),
+       .mst_aw_chan_t(axi_a48_d64_i8_u0_aw_chan_t),
+@@ -2158,8 +2158,8 @@ SOC_REGBUS_PERIPH_XBAR_NUM_OUTPUTS
+   /////////////////
+   // Peripherals //
+   /////////////////
+-  axi_a48_d64_i8_u0_req_t  axi_lite_cdc_req;
+-  axi_a48_d64_i8_u0_resp_t axi_lite_cdc_rsp;
++  axi_a48_d64_i8_u0_req_t  axi_lite_from_soc_cdc_req;
++  axi_a48_d64_i8_u0_resp_t axi_lite_from_soc_cdc_rsp;
+ 
+   axi_cdc #(
+       .aw_chan_t (axi_a48_d64_i8_u0_aw_chan_t),
+@@ -2170,15 +2170,15 @@ SOC_REGBUS_PERIPH_XBAR_NUM_OUTPUTS
+       .axi_req_t (axi_a48_d64_i8_u0_req_t),
+       .axi_resp_t(axi_a48_d64_i8_u0_resp_t),
+       .LogDepth  (2)
+-  ) i_axi_lite_cdc (
++  ) i_axi_lite_from_soc_cdc (
+       .src_clk_i (clk_i),
+       .src_rst_ni(rst_ni),
+       .src_req_i (soc_narrow_xbar_out_req[SOC_NARROW_XBAR_OUT_PERIPH]),
+       .src_resp_o(soc_narrow_xbar_out_rsp[SOC_NARROW_XBAR_OUT_PERIPH]),
+       .dst_clk_i (clk_periph_i),
+       .dst_rst_ni(rst_periph_ni),
+-      .dst_req_o (axi_lite_cdc_req),
+-      .dst_resp_i(axi_lite_cdc_rsp)
++      .dst_req_o (axi_lite_from_soc_cdc_req),
++      .dst_resp_i(axi_lite_from_soc_cdc_rsp)
+   );
+ 
+   axi_to_axi_lite #(
+@@ -2197,14 +2197,54 @@ SOC_REGBUS_PERIPH_XBAR_NUM_OUTPUTS
+       .clk_i(clk_periph_i),
+       .rst_ni(rst_periph_ni),
+       .test_i(test_mode_i),
+-      .slv_req_i(axi_lite_cdc_req),
+-      .slv_resp_o(axi_lite_cdc_rsp),
++      .slv_req_i(axi_lite_from_soc_cdc_req),
++      .slv_resp_o(axi_lite_from_soc_cdc_rsp),
+       .mst_req_o(soc_axi_lite_periph_xbar_in_req[SOC_AXI_LITE_PERIPH_XBAR_IN_SOC]),
+       .mst_resp_i(soc_axi_lite_periph_xbar_in_rsp[SOC_AXI_LITE_PERIPH_XBAR_IN_SOC])
+   );
+ 
+ 
+ 
++  axi_lite_a48_d64_req_t axi_lite_to_soc_cdc_req;
++  axi_lite_a48_d64_rsp_t axi_lite_to_soc_cdc_rsp;
++
++  axi_cdc #(
++      .aw_chan_t (axi_lite_a48_d64_aw_chan_t),
++      .w_chan_t  (axi_lite_a48_d64_w_chan_t),
++      .b_chan_t  (axi_lite_a48_d64_b_chan_t),
++      .ar_chan_t (axi_lite_a48_d64_ar_chan_t),
++      .r_chan_t  (axi_lite_a48_d64_r_chan_t),
++      .axi_req_t (axi_lite_a48_d64_req_t),
++      .axi_resp_t(axi_lite_a48_d64_rsp_t),
++      .LogDepth  (2)
++  ) i_axi_lite_to_soc_cdc (
++      .src_clk_i (clk_periph_i),
++      .src_rst_ni(rst_periph_ni),
++      .src_req_i (soc_axi_lite_periph_xbar_out_req[SOC_AXI_LITE_PERIPH_XBAR_OUT_SOC]),
++      .src_resp_o(soc_axi_lite_periph_xbar_out_rsp[SOC_AXI_LITE_PERIPH_XBAR_OUT_SOC]),
++      .dst_clk_i (clk_i),
++      .dst_rst_ni(rst_ni),
++      .dst_req_o (axi_lite_to_soc_cdc_req),
++      .dst_resp_i(axi_lite_to_soc_cdc_rsp)
++  );
++
++  axi_lite_to_axi #(
++      .AxiDataWidth(64),
++      .req_lite_t  (axi_lite_a48_d64_req_t),
++      .resp_lite_t (axi_lite_a48_d64_rsp_t),
++      .req_t       (axi_a48_d64_i4_u0_req_t),
++      .resp_t      (axi_a48_d64_i4_u0_resp_t)
++  ) i_axi_lite_to_axi_periph_pc (
++      .slv_req_lite_i (axi_lite_to_soc_cdc_req),
++      .slv_resp_lite_o(axi_lite_to_soc_cdc_rsp),
++      .slv_aw_cache_i (axi_pkg::CACHE_MODIFIABLE),
++      .slv_ar_cache_i (axi_pkg::CACHE_MODIFIABLE),
++      .mst_req_o      (soc_narrow_xbar_in_req[SOC_NARROW_XBAR_IN_PERIPH]),
++      .mst_resp_i     (soc_narrow_xbar_in_rsp[SOC_NARROW_XBAR_IN_PERIPH])
++  );
++
++
++
+   axi_a48_d64_i8_u0_req_t  periph_cdc_req;
+   axi_a48_d64_i8_u0_resp_t periph_cdc_rsp;
+ 
+diff --git a/hw/system/occamy/src/occamy_top.sv.tpl b/hw/system/occamy/src/occamy_top.sv.tpl
+index d1e16c05b..03c30a4da 100644
+--- a/hw/system/occamy/src/occamy_top.sv.tpl
++++ b/hw/system/occamy/src/occamy_top.sv.tpl
+@@ -332,9 +332,14 @@ module occamy_top
+   // Peripherals //
+   /////////////////
+   <% soc_narrow_xbar.out_periph \
+-      .cdc(context, "clk_periph_i", "rst_periph_ni", "axi_lite_cdc") \
++      .cdc(context, "clk_periph_i", "rst_periph_ni", "axi_lite_from_soc_cdc") \
+       .to_axi_lite(context, "axi_to_axi_lite_periph", to=soc_periph_xbar.in_soc) %>
+ 
++    <% soc_periph_xbar.out_soc \
++      .cdc(context, "clk_i", "rst_ni", "axi_lite_to_soc_cdc") \
++      .to_axi(context, "axi_lite_to_axi_periph", to=soc_narrow_xbar.in_periph)
++    %>
++
+   <% soc_narrow_xbar.out_regbus_periph \
+       .cdc(context, "clk_periph_i", "rst_periph_ni", "periph_cdc") \
+       .change_dw(context, 32, "axi_to_axi_lite_dw") \
+diff --git a/util/occamygen.py b/util/occamygen.py
+index e6cb9c682..cc2b57d71 100755
+--- a/util/occamygen.py
++++ b/util/occamygen.py
+@@ -232,6 +232,8 @@ def main():
+ 
+     am_soc_wide_xbar.attach(am_soc_narrow_xbar)
+ 
++    am_soc_axi_lite_periph_xbar.attach(am_soc_narrow_xbar)
++
+     # HBI
+     am_hbi = am.new_leaf("hbi", 0x10000000000,
+                          0x10000000000).attach_to(am_wide_xbar_quadrant_s1)
+@@ -253,6 +255,7 @@ def main():
+     soc_axi_lite_periph_xbar.add_input("soc")
+     soc_axi_lite_periph_xbar.add_input("debug")
+     soc_axi_lite_periph_xbar.add_output_entry("debug", am_debug)
++    soc_axi_lite_periph_xbar.add_output_entry("soc", am_soc_narrow_xbar)
+ 
+     ##########
+     # RegBus #
+@@ -344,6 +347,7 @@ def main():
+ 
+     soc_narrow_xbar.add_input("cva6")
+     soc_narrow_xbar.add_input("soc_wide")
++    soc_narrow_xbar.add_input("periph")
+     dts.add_cpu("eth,ariane")
+ 
+     soc_narrow_xbar.add_output_entry("periph", am_soc_axi_lite_periph_xbar)
+diff --git a/util/solder/solder.axi_lite_to_axi.sv.tpl b/util/solder/solder.axi_lite_to_axi.sv.tpl
+index 8f3593ba4..103f2f8dc 100644
+--- a/util/solder/solder.axi_lite_to_axi.sv.tpl
++++ b/util/solder/solder.axi_lite_to_axi.sv.tpl
+@@ -7,6 +7,8 @@
+   ) ${name} (
+     .slv_req_lite_i  ( ${bus_in.req_name()} ),
+     .slv_resp_lite_o ( ${bus_in.rsp_name()} ),
++    .slv_aw_cache_i  ( axi_pkg::CACHE_MODIFIABLE ),
++    .slv_ar_cache_i  ( axi_pkg::CACHE_MODIFIABLE ),
+     .mst_req_o       ( ${bus_out.req_name()} ),
+     .mst_resp_i      ( ${bus_out.rsp_name()} )
+   );

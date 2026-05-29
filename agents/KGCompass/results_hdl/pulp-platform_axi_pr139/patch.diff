@@ -1,0 +1,43 @@
+diff --git a/src/axi_lite_regs.sv b/src/axi_lite_regs.sv
+index 6c38fc6..78df881 100755
+--- a/src/axi_lite_regs.sv
++++ b/src/axi_lite_regs.sv
+@@ -184,12 +184,16 @@ module axi_lite_regs #(
+   // Flag for telling that the protection level is the right one.
+   assign aw_prot_ok = (PrivProtOnly ? axi_req_i.aw.prot[0] : 1'b1) &
+                       (SecuProtOnly ? axi_req_i.aw.prot[1] : 1'b1);
+-  // Have a flag which is true if any of the bytes inside a chunk are directly loaded.
+-  logic [AxiStrbWidth-1:0] load;
+-  logic [AxiStrbWidth-1:0] read_only;
+-  // Address of the lowest byte byte of a chunk accessed by an AXI write transaction.
+-  addr_t byte_w_addr;
+-  assign byte_w_addr = addr_t'(aw_chunk_idx * AxiStrbWidth);
++   // Have a flag which is true if any of the bytes inside a chunk are directly loaded.
++   logic [AxiStrbWidth-1:0] load;
++   logic [AxiStrbWidth-1:0] read_only;
++   // Address of the lowest byte byte of a chunk accessed by an AXI write transaction.
++   addr_t byte_w_addr;
++   assign byte_w_addr = addr_t'(aw_chunk_idx * AxiStrbWidth);
++
++   // Read-side equivalent of `chunk_loaded`: if any byte in the current read chunk is being
++   // directly loaded, the read must not complete in the same cycle.
++   logic rd_chunk_loaded;
+ 
+   for (genvar i = 0; i < AxiStrbWidth; i++) begin : gen_load_assign
+     // Indexed byte address
+@@ -201,10 +205,11 @@ module axi_lite_regs #(
+     // Flag to find out that all bytes of the chunk are read only.
+     assign read_only[i] = (reg_w_idx < RegNumBytes) ? AxiReadOnly[reg_w_idx] : 1'b1;
+   end
+-  // Only assert the loaded flag if there could be a load conflict between a strobe and load
+-  // signal.
+-  assign chunk_loaded = |(load & axi_req_i.w.strb);
+-  assign chunk_ro     = &read_only;
++   // Only assert the loaded flag if there could be a load conflict between a strobe and load
++   // signal.
++   assign chunk_loaded   = |(load & axi_req_i.w.strb);
++   assign rd_chunk_loaded = |load;
++   assign chunk_ro       = &read_only;
+ 
+ 
+   // Register write logic.

@@ -1,0 +1,10 @@
+{
+    "task_info": {
+        "base_commit": "ff2f7e3bd7445b57a45c4fee16b63ba63272fa50",
+        "problem_statement": "# axi_dw_up/downsizer: Latch inference when synthesizing with Mentor Precision\n\nWhen synthesizing with _Mentor Precision_, the tool infers latches in the `axi_dw_upsizer` and `axi_dw_downsizer`.\nSeems the tool has an issue with the automatic variable `r_data` and `w_data` in both modules. \nLinks to the of the offending codelines of `axi_dw_upsizer` and `axi_dw_downsizer`:\nhttps://github.com/pulp-platform/axi/blob/f847575bab7269f88f6caa36f01275de2007378a/src/axi_dw_upsizer.sv#L478-L492\nhttps://github.com/pulp-platform/axi/blob/f847575bab7269f88f6caa36f01275de2007378a/src/axi_dw_upsizer.sv#L595-L607\nhttps://github.com/pulp-platform/axi/blob/f847575bab7269f88f6caa36f01275de2007378a/src/axi_dw_downsizer.sv#L550-L562\nhttps://github.com/pulp-platform/axi/blob/f847575bab7269f88f6caa36f01275de2007378a/src/axi_dw_downsizer.sv#L722-L737\n\nAt least in `axi_dw_upsizer` the assignment of `r_data` should still be the default `'0`. So `r_data` is only _saving_ the initialization value, which is then conditionally overwritten.\n\nThen however when synthesizing with _SYNOPSYS_ the latches are not there.\n\nWhen adding an `else` statement to the `if` then the latch goes away at least in the first code snippet. So an idea for a fix from my side is to add the `else` condition and remove the automatic variable.\n",
+        "instance_id": "pulp-platform_axi_pr185"
+    },
+    "setup_info": {
+        "repo_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_axi_pr185"
+    }
+}

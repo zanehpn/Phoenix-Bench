@@ -1,0 +1,1021 @@
+From 975063cb5c84c5f29e360ae0253e0216f8aeddd2 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Mon, 24 Mar 2025 09:53:27 +0100
+Subject: [PATCH 1/8] Temp changes to enable saving scenes
+
+---
+ cores/aliens/cfg/macros.def       | 4 ++--
+ cores/aliens/hdl/jt051960.v       | 2 +-
+ cores/aliens/hdl/jtaliens_game.v  | 4 ++--
+ cores/aliens/hdl/jtaliens_video.v | 6 +++---
+ 4 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/cores/aliens/cfg/macros.def b/cores/aliens/cfg/macros.def
+index 177e8448c..a49dd6992 100644
+--- a/cores/aliens/cfg/macros.def
++++ b/cores/aliens/cfg/macros.def
+@@ -23,8 +23,8 @@ JTFRAME_BA3_START =0x240000
+ JTFRAME_PROM_START=0x3C0000
+ 
+ # Debugging
+-# JTFRAME_IOCTL_RD=19472
+-JTFRAME_INPUT_RECORD
++JTFRAME_IOCTL_RD=19472
++# JTFRAME_INPUT_RECORD
+ 
+ [mist|sidi]
+ # OSD credits cannot be used when
+diff --git a/cores/aliens/hdl/jt051960.v b/cores/aliens/hdl/jt051960.v
+index ade0ad795..28f136c5b 100644
+--- a/cores/aliens/hdl/jt051960.v
++++ b/cores/aliens/hdl/jt051960.v
+@@ -256,7 +256,7 @@ always @(posedge clk, posedge rst) begin
+                         7    : {code[5],code[3],code[1]} <= ( ydiff[6:4]^{3{vflip}});
+                     endcase
+                     hcode <= {code[4],code[2],code[0]};
+-                    if( !inzone ) begin
++                    if( !inzone || (scan_obj!=7'h64 && scan_obj!=7'h63) ) begin
+                         scan_sub <= 1;
+                         scan_obj <= scan_obj + 1'd1;
+                         if( &scan_obj ) done <= 1;
+diff --git a/cores/aliens/hdl/jtaliens_game.v b/cores/aliens/hdl/jtaliens_game.v
+index b07b53a63..3eca647fb 100644
+--- a/cores/aliens/hdl/jtaliens_game.v
++++ b/cores/aliens/hdl/jtaliens_game.v
+@@ -20,7 +20,7 @@ module jtaliens_game(
+     `include "jtframe_game_ports.inc" // see $JTFRAME/hdl/inc/jtframe_game_ports.inc
+ );
+ 
+-/* verilator tracing_off */
++/* verilator tracing_on */
+ wire [ 7:0] snd_latch;
+ wire        cpu_cen, snd_irq, rmrd, rst8, init;
+ wire        pal_we, cpu_we, tilesys_cs, objsys_cs;
+@@ -150,7 +150,7 @@ jtaliens_sound u_sound(
+     .st_dout    ( st_snd        )
+ );
+ 
+-/* verilator tracing_off */
++/* verilator tracing_on */
+ jtaliens_video u_video (
+     .rst            ( rst           ),
+     .rst8           ( rst8          ),
+diff --git a/cores/aliens/hdl/jtaliens_video.v b/cores/aliens/hdl/jtaliens_video.v
+index 9f4643e90..22577d3d9 100644
+--- a/cores/aliens/hdl/jtaliens_video.v
++++ b/cores/aliens/hdl/jtaliens_video.v
+@@ -171,7 +171,7 @@ function [7:0] cgate( input [7:0] c);
+                             { c[7:6], 6'd0       };
+ endfunction
+ 
+-/* verilator tracing_on */
++/* verilator tracing_off */
+ jtaliens_scroll u_scroll(
+     .rst        ( rst       ),
+     .clk        ( clk       ),
+@@ -256,7 +256,7 @@ jtaliens_scroll u_scroll(
+     .st_dout    ( st_scr    )
+ );
+ 
+-/* verilator tracing_off */
++/* verilator tracing_on */
+ jtaliens_obj u_obj(    // sprite logic
+     .rst        ( rst       ),
+     .clk        ( clk       ),
+@@ -305,7 +305,7 @@ jtaliens_obj u_obj(    // sprite logic
+     .st_dout    ( st_obj    )
+ );
+ 
+-/* verilator tracing_on */
++/* verilator tracing_off */
+ jtaliens_colmix u_colmix(
+     .rst        ( rst       ),
+     .clk        ( clk       ),
+
+From 096dbcf4749f54b7244adebc4757c642caf41d90 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Fri, 28 Mar 2025 16:22:05 +0100
+Subject: [PATCH 2/8] Correction for horizontal zoom draw
+
+---
+ modules/jtframe/hdl/video/jtframe_draw.v | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/modules/jtframe/hdl/video/jtframe_draw.v b/modules/jtframe/hdl/video/jtframe_draw.v
+index 6e8d60ffc..dd9c91ac3 100644
+--- a/modules/jtframe/hdl/video/jtframe_draw.v
++++ b/modules/jtframe/hdl/video/jtframe_draw.v
+@@ -117,7 +117,7 @@ always @(posedge clk, posedge rst) begin
+                 cnt     <= 8;
+                 no_zoom <= hzoom == HZONE || hzoom == 0; // zoom=0 is not valid. Makes counts keep going and busy stays forever. Check simpsons/scene 32
+                 if( !hz_keep ) begin
+-                    hz_cnt   <= 0;
++                    hz_cnt   <= ~0;
+                     buf_addr <= xpos;
+                 end else begin
+                     hz_cnt <= nx_hz;
+
+From 51742c5e2131f92f58403eae465a319633de106a Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Fri, 28 Mar 2025 16:31:55 +0100
+Subject: [PATCH 3/8] linter for -d NOMAIN
+
+---
+ cores/aliens/hdl/jtaliens_main.v | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/cores/aliens/hdl/jtaliens_main.v b/cores/aliens/hdl/jtaliens_main.v
+index 1fe60bcd0..c7b47be53 100644
+--- a/cores/aliens/hdl/jtaliens_main.v
++++ b/cores/aliens/hdl/jtaliens_main.v
+@@ -394,6 +394,10 @@ jtkcpu u_cpu(
+     assign st_dout  = 0;
+     assign pal_we   = 0;
+     assign rom_addr = 0;
++    assign pmc_we   = 0;
++    assign pmc_addr = 0;
++    assign pmc_din  = 0;
++    assign cpu2pmc_we = 0;
+ 
+     reg [7:0] prio_init[0:0];
+     integer f,fcnt=0;
+
+From b603c2a80ee9b6adc9a7ba59acec484ee9cf2e63 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Tue, 1 Apr 2025 17:47:56 +0200
+Subject: [PATCH 4/8] always draw first pixel when evaluating zoom
+
+---
+ cores/aliens/hdl/jt051960.v              |  2 +-
+ modules/jtframe/hdl/video/jtframe_draw.v | 14 ++++++++++----
+ 2 files changed, 11 insertions(+), 5 deletions(-)
+
+diff --git a/cores/aliens/hdl/jt051960.v b/cores/aliens/hdl/jt051960.v
+index 28f136c5b..ade0ad795 100644
+--- a/cores/aliens/hdl/jt051960.v
++++ b/cores/aliens/hdl/jt051960.v
+@@ -256,7 +256,7 @@ always @(posedge clk, posedge rst) begin
+                         7    : {code[5],code[3],code[1]} <= ( ydiff[6:4]^{3{vflip}});
+                     endcase
+                     hcode <= {code[4],code[2],code[0]};
+-                    if( !inzone || (scan_obj!=7'h64 && scan_obj!=7'h63) ) begin
++                    if( !inzone ) begin
+                         scan_sub <= 1;
+                         scan_obj <= scan_obj + 1'd1;
+                         if( &scan_obj ) done <= 1;
+diff --git a/modules/jtframe/hdl/video/jtframe_draw.v b/modules/jtframe/hdl/video/jtframe_draw.v
+index dd9c91ac3..bda26dd3c 100644
+--- a/modules/jtframe/hdl/video/jtframe_draw.v
++++ b/modules/jtframe/hdl/video/jtframe_draw.v
+@@ -69,7 +69,7 @@ reg      [ 3:0] cnt;
+ wire     [ 3:0] ysubf, pxl;
+ reg    [ZW-1:0] hz_cnt, nx_hz;
+ wire  [ZW-1:ZI] hzint;
+-reg             cen=0, moveon, readon, no_zoom;
++reg             cen=0, moveon, readon, no_zoom, start;
+ // wire            msb;
+ 
+ // assign msb     = !trunc[0] ? cnt[3] : trunc[1] ? cnt[1] : cnt[2]; // 16, 4 or 8 pixels
+@@ -90,11 +90,12 @@ always @* begin
+         moveon = hzint <= 1; // buffer moves (enlarge)
+         nx_hz = readon ? hz_cnt - HZONE : hz_cnt;
+         if( moveon  ) nx_hz = nx_hz + hzoom;
+-        if( no_zoom ) {moveon, readon} = 2'b11;
+     end else begin
+         readon = 1;
+         { moveon, nx_hz } = {1'b1, hz_cnt}-{1'b0,hzoom};
+     end
++    if( start   ) {moveon, readon} = 2'b10;
++    if( no_zoom ) {moveon, readon} = 2'b11;
+ end
+ 
+ always @(posedge clk) cen <= ~cen;
+@@ -116,9 +117,11 @@ always @(posedge clk, posedge rst) begin
+                 busy    <= 1;
+                 cnt     <= 8;
+                 no_zoom <= hzoom == HZONE || hzoom == 0; // zoom=0 is not valid. Makes counts keep going and busy stays forever. Check simpsons/scene 32
++                start    <= 0;
+                 if( !hz_keep ) begin
+-                    hz_cnt   <= ~0;
++                    hz_cnt   <= 0;
+                     buf_addr <= xpos;
++                    start    <= 1;
+                 end else begin
+                     hz_cnt <= nx_hz;
+                 end
+@@ -142,7 +145,10 @@ always @(posedge clk, posedge rst) begin
+                     cnt      <= cnt+1'd1;
+                     pxl_data <= hflip ? pxl_data << 1 : pxl_data >> 1;
+                 end
+-                if( moveon ) buf_addr <= buf_addr+1'd1;
++                if( moveon ) begin
++                    buf_addr <= buf_addr+1'd1;
++                    start    <= 0;
++                end
+                 rom_lsb  <= ~hflip;
+                 if( cnt[2:0]==7 && !rom_cs && readon ) busy <= 0; // 16 pixels
+                 if( cnt[2:0]==7 && trunc==2'b10      ) busy <= 0; //  8 pixels
+
+From a2ecb677dff7f2b2fc25039140f09db197e2a664 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Tue, 1 Apr 2025 17:52:26 +0200
+Subject: [PATCH 5/8] Scenes
+
+---
+ cores/aliens/ver/aliens/scene.sh            |  57 ++++++++++++++++++++
+ cores/aliens/ver/aliens/scenes/1/1.crc      |   1 +
+ cores/aliens/ver/aliens/scenes/1/ALIENS.RAM | Bin 0 -> 19472 bytes
+ cores/aliens/ver/aliens/scenes/2/2.crc      |   1 +
+ cores/aliens/ver/aliens/scenes/2/ALIENS.RAM | Bin 0 -> 19472 bytes
+ cores/aliens/ver/aliens/scenes/3/3.crc      |   1 +
+ cores/aliens/ver/aliens/scenes/3/ALIENS.RAM | Bin 0 -> 19472 bytes
+ cores/aliens/ver/aliens/scenes/4/4.crc      |   1 +
+ cores/aliens/ver/aliens/scenes/4/ALIENS.RAM | Bin 0 -> 19472 bytes
+ cores/aliens/ver/aliens/scenes/5/5.crc      |   1 +
+ cores/aliens/ver/aliens/scenes/5/ALIENS.RAM | Bin 0 -> 19472 bytes
+ cores/aliens/ver/aliens/scenes/6/6.crc      |   1 +
+ cores/aliens/ver/aliens/scenes/6/ALIENS.RAM | Bin 0 -> 19472 bytes
+ cores/aliens/ver/aliens/sim.sh              |  55 +++++++++++++++++++
+ 14 files changed, 118 insertions(+)
+ create mode 100755 cores/aliens/ver/aliens/scene.sh
+ create mode 100644 cores/aliens/ver/aliens/scenes/1/1.crc
+ create mode 100644 cores/aliens/ver/aliens/scenes/1/ALIENS.RAM
+ create mode 100644 cores/aliens/ver/aliens/scenes/2/2.crc
+ create mode 100644 cores/aliens/ver/aliens/scenes/2/ALIENS.RAM
+ create mode 100644 cores/aliens/ver/aliens/scenes/3/3.crc
+ create mode 100644 cores/aliens/ver/aliens/scenes/3/ALIENS.RAM
+ create mode 100644 cores/aliens/ver/aliens/scenes/4/4.crc
+ create mode 100644 cores/aliens/ver/aliens/scenes/4/ALIENS.RAM
+ create mode 100644 cores/aliens/ver/aliens/scenes/5/5.crc
+ create mode 100644 cores/aliens/ver/aliens/scenes/5/ALIENS.RAM
+ create mode 100644 cores/aliens/ver/aliens/scenes/6/6.crc
+ create mode 100644 cores/aliens/ver/aliens/scenes/6/ALIENS.RAM
+ create mode 100755 cores/aliens/ver/aliens/sim.sh
+
+diff --git a/cores/aliens/ver/aliens/scene.sh b/cores/aliens/ver/aliens/scene.sh
+new file mode 100755
+index 000000000..9bd7a7008
+--- /dev/null
++++ b/cores/aliens/ver/aliens/scene.sh
+@@ -0,0 +1,57 @@
++#!/bin/bash
++
++# Video simulation
++
++SCENE=
++FNAME=
++OTHER=
++
++while [ $# -gt 0 ]; do
++    case $1 in
++        -s|--scene)
++            shift
++            SCENE=$1;;
++        -f|--file)
++            shift
++            FNAME=$1;;
++        *)
++            OTHER="$OTHER $1";;
++    esac
++    shift
++done
++
++if [ -z "$FNAME" ]; then
++    FNAME=$(basename $(pwd))
++    FNAME=${FNAME^^}
++    echo $FNAME
++    if [ $FNAME = GAME ]; then
++        echo "Cannot determine game name. Using dump.bin for scene data"
++        FNAME=dump.bin
++    else
++        FNAME=${FNAME}.RAM
++        echo "Using $FNAME as file name for scene data"
++    fi
++fi
++
++if [ -z $SCENE ]; then
++    echo "Generate scenes on MiST by saving the NVRAM"
++    echo "And copying $FNAME from MiST's SD card to here"
++    exit 0
++fi
++
++TMP=scenes/$SCENE/$FNAME
++NULLDD="dd status=none if=$TMP"
++
++# 16 kB Tilemap VRAM
++$NULLDD of=scr1.bin    count=16
++$NULLDD of=scr0.bin    count=16 skip=16
++# 2 kB PAL
++$NULLDD of=pal.bin     count=4 skip=32
++# 1 kB Sprite LUT
++$NULLDD of=obj.bin     count=2 skip=36
++# 8 bytes for tilemap MMR
++$NULLDD of=scr_mmr.bin count=1 skip=2432  bs=8
++# 8 bytes for object MMR
++$NULLDD of=obj_mmr.bin count=1 skip=2433  bs=8
++# Priority config
++$NULLDD of=prio.bin    count=1 skip=19471 bs=1
+diff --git a/cores/aliens/ver/aliens/scenes/1/1.crc b/cores/aliens/ver/aliens/scenes/1/1.crc
+new file mode 100644
+index 000000000..05840176e
+--- /dev/null
++++ b/cores/aliens/ver/aliens/scenes/1/1.crc
+@@ -0,0 +1 @@
++ed57c635
+diff --git a/cores/aliens/ver/aliens/scenes/1/ALIENS.RAM b/cores/aliens/ver/aliens/scenes/1/ALIENS.RAM
+new file mode 100644
+index 0000000000000000000000000000000000000000..d70a249f3a65890ad18de385360fcbcac6f32f8f
+GIT binary patch
+literal 19472
+zcmeHP30PFu6~1poWM^;%g#gOv3^L##Ba0v~3MzugAh-iAiM1}c;D*AWY2#X>(JGp>
+zn65@cVohs^#)h;8v#N+TnzlM>6jX@HxIm&z?*HcAum$WVHVyTi&o}=&=idLmcm8|t
+zd5;eVxtyDZ8b5ChTk6+Ryy;ji^%LWQ!VCQcTNxp8`Lj{cx}h<0xy%wp3z4_VN0+_(
+zmc!`T;xS43<dhlf)~;D2U$eey-Fh@Xl7HxMHVl0;<g)4VteyEgcF1?^dbo4ff5b<p
+zR_u}2Z-t8{iU0lUv?X1d%GpxCmf{k>u>vjW)Ka`LTUx&@>C{qO(yy@sE$M_f5o8@2
+z_ipaB#+SQv?sBO)rBS3czL$6JKGltSH+Nd&H}Bm%^55b&ztRs8AtZ0r>gRC~YNx5;
+znQvojXYb(X<oqI?PpgjBow)Ddh+d6t^Ol#k;y@I9Jo8=MdiHYnc*Ya+*|l5u9^7~L
+zXv~GT`_<q476;D3&zL%Gx>Dua-%sryfcf-M^zFxeKQ($aw*7xP@D>h4!Jofi;i8bx
+zu)*OGLm~%g0tW_Z2L*FKJfbldUh(^X`}@y+{=yn?VbEg4$hcAQ38NFC#ju#z;qcKf
+zKA}1PWa+80ZNJ>U!@@p&8d{8>Fmcl4DQW4@Vr)w4IQZx{c}jD>@#3Y+zx(|k{>b^z
+z;wQ6yI(yFCd702+#<S1OgpYo6<~HZwx?OGh^Is0W&H2z`+4AfaD|2!U&?0N`lBMv`
+zZ)HwXzO5bR898!3@?5)a{f3Rd*z_W_fHp@zC^?3Hh+#d9(I+R%>DuUI<JJ@Nj2t;1
+zdFJoj_3|sf`gH-c5Vbk;kI&H$F|3D-Y14;#(Y4XTRppC$Mvk11Jomh|ci-!UZ@dXD
+zpv{+8u9l-8VptDJ^A|infUb>x%Fr;(Gjim7<XQC2p~LSU`RjYo0@~cUd+$E_A%^uZ
+zHE-3HD7rR+L##UTyf`1Ze)!SHpM3h+@e|MmJ~Y63fRBUgBJ0q#8_$dLPt#n_p8MjT
+z|N8g&3!*O6hX!;#B*MqRb?My2N5S*reB@ej?fQ+%s;_QB7x>Ts>j6Fvu1oJeL0X;{
+z=Ofpe+ONNP@UYGdUEo6ltOxiwxGsSM*Kgpta6WS7^A8QM9-s$eIB%%W+I72L=DBb_
+za^>?64X_@d2VyvHs89aRz594BoR3`j{6hn*2k3zq&Kv5p=e0wJc`lrfT>1P%1FQ$=
+zL1RTYZ>UevJ9hRwC(cLdLyRNNu@5o-*w0x1ye8V%_Uy%T;(U}o#5m#{`w;a2<6!;s
+zn&|50>uWMuvf_MN`jm)p#5v}CPGw~!#=-ix)I^oaR~1J2CZuKJe3U)}7`}^h%=yZk
+zoSbN#Zm2IcOHHKwP^FTtwvX`K=KK+Hqr`O%#NI&d7xx3bKD|~@eMO8<P%2HPiu-5J
+zq0VzYY8}=%5PJi)U)&Eh-+-^JuZWYUP~TK>r{WswJm;sSr==rbAod1ozqlW2#p@5^
+z6>%0dk$<<Q7ImKUQ7f|+XDtO{Z=m*L{wu#0`N6y*PN8Np{SePs=^By(k^+(fk^+(f
+zk^+(f4Hanm^O)p6T?$w~UFk~MHc`N(i7&a50+Irf0zV1`1koP<R@%xZ0>MAYBn2b|
+zBn2b|e(VaoPpvKY2!2!>252k44VP}GRE_2XYPYB%0X(p`Qrpe!0JCal_<alh|3gFj
+zf8kqRR$9*ANUgQ}+b93><)hR}sI_+g$o(QU<PW<<4S1Pad*>qutpD%JAKL(1plSZd
+z9R@C}{qjvF%pZ*B|7sIM{+N4|087@5KP~L`%I9}qfB!OSsBavRJB;TK25KIxp54Cr
+z$c4{8^0uM|#6E|y@?YIB_lEhmUw%7%Y)iK-DIh5zDIh5zDIh5zDIh7(P8BF=r}r)0
+z_LEUS`u+ct(eZIdkv}d`;yn=s0-wkzZ674B?L$272!g>#<N@Yf<7&gIfeVTa#@u2<
+zZA779_VXB>MF;(^ed&?V<CgXg#e(s>cG96r<4HUdFRk>9c9N0E`-6=JQ_jBnb|2zL
+zydBk<p{HWC`uy4H9imoeP=21QfS3t!Cuk2L*>xT^ia1T7PEW26kSm=PDpj1fjhK`(
+z={59_W+S;S*b5250a+>`3RURw(Tg%y5X#n&h^UcynvE&OX&Fm1=nda=FZZ_L?OjWJ
+z%Kh@fjqx878)8Qsh!c@xd~X|7Ttp$g{xvsS#ccIPZ<Y4skS=jM{EXp7(ka?2C2xt>
+zye))0ichWxN@2ZHybIS7_i}}b93vHioiLh^73b;wck)`}vqyPNV;3>kwS?Hamp5q_
+zQ~ck3Of&1kwFedX-t%P_NUz*XgUf;wnvHRK;%uO^Lx}!@E=~J|Q0zTM{R#2Zy^(pp
+zr>Br1iyC})w%DF&7@Zz-KXs1x7{#p6Pjy`uy&`NS$Au-tv9AIArM1~F<=hs=rub{B
+z{UZlu>CVPR3IW1d)tQ;0Vta7*)|}fUE5Sc>b990Blx|t9mh2DmP@S<{-@VeqU$G_7
+zMYk|Hb!I_odh~^eCF($*O<oRkHersWlynyif>~w=Fb_8y%=&FQdBja^p?Wr&^#wY2
+z^-hmq`CAT|Hlv8mICJk@$MeD@QbZP_o!FB?!A1C7mOkWy!5nZaZbR4z)lvO6g(~7E
+znw1WI&I3AYdc+h=^nA`d(ELog+N{X8v|D)-5?+-Mkh3UfdyYA`z+jFygquT>l_%=?
+z$@hlq1NZy-b}Mmv!6hcioU}Mv6XI0gPKd$W&DXnsbg4Q)pBnL|V$-PcF7fKy{((cb
+zr`8a1uKR~I`w#A3v^gm+F>lVQp`-hT=Bd3hSHx=c;&)zSoI)HX8sa>o&xbD425EzE
+z&!oX)WnRGqb97`-wa3huTWYiFXj*XC2%oCB4T-lb`ilLf4@m(@fu~S`su@NZ$&i&+
+z&e%<WHz)wFA1iipSm9oJO+?Rt3W{rwylquZapQYMHCIJE?0lu{q~q(QC%^i#Y&XTS
+zuG3u;tshj@U7WTo-1?zI-NmUz!>m6eSB)8E#c1!5j`oVW8);~_sk<?SwjVWLs+tVn
+z`a$g^I?hAaI`c%@A2@-I|Iqb;aXgEUWAW6o{bG9xi;wlX6Gg@ge#u_<fbn_@j!&}0
+zL&h*ak<BrEIE%)=P#@3yQ4Hf4j$}B3;c$kr3}YA$V>pzdj$t&zD29;?hcM)S5FniS
+zgBgY~6d#fFJcRkd3<ojPGPIO^LIyIQzt?J*KY(EXLw|;9hJFnDGxTMsVyI-;k6~Yi
+z3Wh!m`!MXykUk(q^J3`9@EL|44BZ*_V%U?R8$(xyJs5Up*o|RVhFutTX2^fO<qt$>
+z7I$Lk$k2hIJwwZ@1tGS~x4ekbmpSJ1?@e@Mz7@j`4C&vm5=~&pL3|~mPA&`ZKZvlB
+t`SgWWv}}gU87^bEl;IMFiy3AyT*T1wYD35Z=FexC$#5P+{{4Th)3-YZz9j$v
+
+literal 0
+HcmV?d00001
+
+diff --git a/cores/aliens/ver/aliens/scenes/2/2.crc b/cores/aliens/ver/aliens/scenes/2/2.crc
+new file mode 100644
+index 000000000..4099bb9f7
+--- /dev/null
++++ b/cores/aliens/ver/aliens/scenes/2/2.crc
+@@ -0,0 +1 @@
++3d1fe19a
+diff --git a/cores/aliens/ver/aliens/scenes/2/ALIENS.RAM b/cores/aliens/ver/aliens/scenes/2/ALIENS.RAM
+new file mode 100644
+index 0000000000000000000000000000000000000000..e32184390ef3cbc0633e7eca44f504b4dce3b0f9
+GIT binary patch
+literal 19472
+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
+aYiYw@7ou-V_4(*qODq1`_BTg1oxT8UTf1HW
+
+literal 0
+HcmV?d00001
+
+diff --git a/cores/aliens/ver/aliens/scenes/3/3.crc b/cores/aliens/ver/aliens/scenes/3/3.crc
+new file mode 100644
+index 000000000..4099bb9f7
+--- /dev/null
++++ b/cores/aliens/ver/aliens/scenes/3/3.crc
+@@ -0,0 +1 @@
++3d1fe19a
+diff --git a/cores/aliens/ver/aliens/scenes/3/ALIENS.RAM b/cores/aliens/ver/aliens/scenes/3/ALIENS.RAM
+new file mode 100644
+index 0000000000000000000000000000000000000000..f8c041b543872f2194bb67f9a096e941e3f4bbd7
+GIT binary patch
+literal 19472
+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
+
+literal 0
+HcmV?d00001
+
+diff --git a/cores/aliens/ver/aliens/scenes/4/4.crc b/cores/aliens/ver/aliens/scenes/4/4.crc
+new file mode 100644
+index 000000000..6f02f5498
+--- /dev/null
++++ b/cores/aliens/ver/aliens/scenes/4/4.crc
+@@ -0,0 +1 @@
++d2c88f05
+diff --git a/cores/aliens/ver/aliens/scenes/4/ALIENS.RAM b/cores/aliens/ver/aliens/scenes/4/ALIENS.RAM
+new file mode 100644
+index 0000000000000000000000000000000000000000..83fe3adf1f183a44ca721aa59b63bfecfbe1b1f0
+GIT binary patch
+literal 19472
+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
+T7BYVU!y<--4Egu}`F;KulFO;h
+
+literal 0
+HcmV?d00001
+
+diff --git a/cores/aliens/ver/aliens/scenes/5/5.crc b/cores/aliens/ver/aliens/scenes/5/5.crc
+new file mode 100644
+index 000000000..fdb75ff85
+--- /dev/null
++++ b/cores/aliens/ver/aliens/scenes/5/5.crc
+@@ -0,0 +1 @@
++ebc4a201
+diff --git a/cores/aliens/ver/aliens/scenes/5/ALIENS.RAM b/cores/aliens/ver/aliens/scenes/5/ALIENS.RAM
+new file mode 100644
+index 0000000000000000000000000000000000000000..f3dea38d631e552a602be81eca37d826ad644e24
+GIT binary patch
+literal 19472
+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%0AWlPcN4yWwdcL)u
+zv!-Hv3Zg6GWJDLlNr=vfPKb_(QpAaf6A&E`2Wz7*{`x2@jhso|AeRk;c&QHiZ$qp_
+rd>rvH#I1-mh+7ahBUU3;AzDfs?z$3vYpO3t-%?s}*Vex|Vle(cLs&?^
+
+literal 0
+HcmV?d00001
+
+diff --git a/cores/aliens/ver/aliens/scenes/6/6.crc b/cores/aliens/ver/aliens/scenes/6/6.crc
+new file mode 100644
+index 000000000..0b8d0eed6
+--- /dev/null
++++ b/cores/aliens/ver/aliens/scenes/6/6.crc
+@@ -0,0 +1 @@
++15a50fcb
+diff --git a/cores/aliens/ver/aliens/scenes/6/ALIENS.RAM b/cores/aliens/ver/aliens/scenes/6/ALIENS.RAM
+new file mode 100644
+index 0000000000000000000000000000000000000000..97c5139ff59efb3dd042f135f2889ab0c13c494e
+GIT binary patch
+literal 19472
+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
+O*3yc-=Kki0)9Et+pIXWQ
+
+literal 0
+HcmV?d00001
+
+diff --git a/cores/aliens/ver/aliens/sim.sh b/cores/aliens/ver/aliens/sim.sh
+new file mode 100755
+index 000000000..8797ab323
+--- /dev/null
++++ b/cores/aliens/ver/aliens/sim.sh
+@@ -0,0 +1,55 @@
++#!/bin/bash
++
++OTHER=
++SCENE=
++BATCH=
++CRC=
++if [ $(basename $(pwd)) = aliens ]; then ALIENS=1; else ALIENS=;fi
++
++while [ $# -gt 0 ]; do
++    case $1 in
++        -s|--scene)
++            shift
++            SCENE=$1
++            OTHER="-d NOMAIN -d NOSOUND -zoom -video 2 -w"
++            if [ ! -d scenes/$1 ]; then
++                echo "Cannot open folder $SCENE"
++                exit 1
++            fi;;
++        --crc)
++            CRC=1;;
++        --batch) BATCH=1;;
++        *) OTHER="$OTHER $1";;
++    esac
++    shift
++done
++
++if [[ ! -e nvram.bin && -z "$ALIENS" && -z "$SCENE" ]]; then
++    cat <<EOF
++This system requires a valid nvram.bin file to boot up properly
++Use MAME's simpsons.12c.nv file for the "simpsons" set
++EOF
++    exit 0
++fi
++
++scene.sh --scene "$SCENE"
++
++jtsim $OTHER
++
++if [[ ! -z "SCENE" && -e frames/frame_00001.jpg ]]; then
++    rm -f scenes/$SCENE/frame*.jpg
++    cp `ls frames/*jpg|tail -n 1` scenes/$SCENE/$SCENE.jpg
++    if which eom > /dev/null; then
++        if [[ ! -z "$SCENE" && -e frames/frame_00001.jpg && -z "$BATCH" ]]; then
++            eom `ls frames/frame_*.jpg | tail -n 1` &
++        fi
++    fi
++    if [[ ! -e scenes/$SCENE/$SCENE.crc || $CRC = 1 ]]; then
++        tail -n 1 frames/frames.crc > scenes/$SCENE/$SCENE.crc
++    else
++        if ! diff -q <(tail -n 1 frames/frames.crc) scenes/$SCENE/$SCENE.crc > /dev/null; then
++            echo "WARNING: the image CRC has changed for scene $SCENE"
++            exit 1
++        fi
++    fi
++fi
+
+From f045fd88ff7e183146ea1dfe49916792459a78c0 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Fri, 4 Apr 2025 10:56:15 +0200
+Subject: [PATCH 6/8] Using hz_cnt <= nx_hz; when draw=1 and hz_keep=1 makes
+ hzoom being added twice in between steps. Removed
+
+---
+ modules/jtframe/hdl/video/jtframe_draw.v | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/modules/jtframe/hdl/video/jtframe_draw.v b/modules/jtframe/hdl/video/jtframe_draw.v
+index bda26dd3c..a076f2240 100644
+--- a/modules/jtframe/hdl/video/jtframe_draw.v
++++ b/modules/jtframe/hdl/video/jtframe_draw.v
+@@ -94,7 +94,6 @@ always @* begin
+         readon = 1;
+         { moveon, nx_hz } = {1'b1, hz_cnt}-{1'b0,hzoom};
+     end
+-    if( start   ) {moveon, readon} = 2'b10;
+     if( no_zoom ) {moveon, readon} = 2'b11;
+ end
+ 
+@@ -109,6 +108,7 @@ always @(posedge clk, posedge rst) begin
+         cnt      <= 0;
+         hz_cnt   <= 0;
+         no_zoom  <= 0;
++        start    <= 0;
+     end else begin
+         if( !busy ) begin
+             if( draw ) begin
+@@ -122,9 +122,9 @@ always @(posedge clk, posedge rst) begin
+                     hz_cnt   <= 0;
+                     buf_addr <= xpos;
+                     start    <= 1;
+-                end else begin
+-                    hz_cnt <= nx_hz;
+-                end
++                end // else begin
++                    // hz_cnt <= nx_hz;
++                // end
+             end
+         end else if(KEEP_OLD==0 || cen || cnt[3] ) begin
+             // cen is required when old buffer data must be preserved but it
+
+From 602903260022e107be793e1f30919d8a12eba8c5 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Fri, 4 Apr 2025 17:41:51 +0200
+Subject: [PATCH 7/8] starting point at hz_cnt=0.5 seems to work in all konami
+ cores correctly
+
+---
+ modules/jtframe/hdl/video/jtframe_draw.v | 18 +++++-------------
+ 1 file changed, 5 insertions(+), 13 deletions(-)
+
+diff --git a/modules/jtframe/hdl/video/jtframe_draw.v b/modules/jtframe/hdl/video/jtframe_draw.v
+index a076f2240..7fd15cb59 100644
+--- a/modules/jtframe/hdl/video/jtframe_draw.v
++++ b/modules/jtframe/hdl/video/jtframe_draw.v
+@@ -69,7 +69,7 @@ reg      [ 3:0] cnt;
+ wire     [ 3:0] ysubf, pxl;
+ reg    [ZW-1:0] hz_cnt, nx_hz;
+ wire  [ZW-1:ZI] hzint;
+-reg             cen=0, moveon, readon, no_zoom, start;
++reg             cen=0, moveon, readon, no_zoom;
+ // wire            msb;
+ 
+ // assign msb     = !trunc[0] ? cnt[3] : trunc[1] ? cnt[1] : cnt[2]; // 16, 4 or 8 pixels
+@@ -90,11 +90,11 @@ always @* begin
+         moveon = hzint <= 1; // buffer moves (enlarge)
+         nx_hz = readon ? hz_cnt - HZONE : hz_cnt;
+         if( moveon  ) nx_hz = nx_hz + hzoom;
++        if( no_zoom ) {moveon, readon} = 2'b11;
+     end else begin
+         readon = 1;
+         { moveon, nx_hz } = {1'b1, hz_cnt}-{1'b0,hzoom};
+     end
+-    if( no_zoom ) {moveon, readon} = 2'b11;
+ end
+ 
+ always @(posedge clk) cen <= ~cen;
+@@ -108,7 +108,6 @@ always @(posedge clk, posedge rst) begin
+         cnt      <= 0;
+         hz_cnt   <= 0;
+         no_zoom  <= 0;
+-        start    <= 0;
+     end else begin
+         if( !busy ) begin
+             if( draw ) begin
+@@ -117,14 +116,10 @@ always @(posedge clk, posedge rst) begin
+                 busy    <= 1;
+                 cnt     <= 8;
+                 no_zoom <= hzoom == HZONE || hzoom == 0; // zoom=0 is not valid. Makes counts keep going and busy stays forever. Check simpsons/scene 32
+-                start    <= 0;
+                 if( !hz_keep ) begin
+-                    hz_cnt   <= 0;
++                    hz_cnt   <= HZONE >> 1;
+                     buf_addr <= xpos;
+-                    start    <= 1;
+-                end // else begin
+-                    // hz_cnt <= nx_hz;
+-                // end
++                end
+             end
+         end else if(KEEP_OLD==0 || cen || cnt[3] ) begin
+             // cen is required when old buffer data must be preserved but it
+@@ -145,10 +140,7 @@ always @(posedge clk, posedge rst) begin
+                     cnt      <= cnt+1'd1;
+                     pxl_data <= hflip ? pxl_data << 1 : pxl_data >> 1;
+                 end
+-                if( moveon ) begin
+-                    buf_addr <= buf_addr+1'd1;
+-                    start    <= 0;
+-                end
++                if( moveon ) buf_addr <= buf_addr+1'd1;
+                 rom_lsb  <= ~hflip;
+                 if( cnt[2:0]==7 && !rom_cs && readon ) busy <= 0; // 16 pixels
+                 if( cnt[2:0]==7 && trunc==2'b10      ) busy <= 0; //  8 pixels
+
+From 78bba319448912fff3c217a378843cfba7642277 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Fri, 4 Apr 2025 17:46:20 +0200
+Subject: [PATCH 8/8] minor
+
+---
+ cores/aliens/cfg/macros.def       |  4 +--
+ cores/aliens/hdl/jtaliens_game.v  |  4 +--
+ cores/aliens/hdl/jtaliens_video.v |  6 ++--
+ cores/aliens/ver/aliens/runall.sh | 60 +++++++++++++++++++++++++++++++
+ 4 files changed, 67 insertions(+), 7 deletions(-)
+ create mode 100755 cores/aliens/ver/aliens/runall.sh
+
+diff --git a/cores/aliens/cfg/macros.def b/cores/aliens/cfg/macros.def
+index a49dd6992..177e8448c 100644
+--- a/cores/aliens/cfg/macros.def
++++ b/cores/aliens/cfg/macros.def
+@@ -23,8 +23,8 @@ JTFRAME_BA3_START =0x240000
+ JTFRAME_PROM_START=0x3C0000
+ 
+ # Debugging
+-JTFRAME_IOCTL_RD=19472
+-# JTFRAME_INPUT_RECORD
++# JTFRAME_IOCTL_RD=19472
++JTFRAME_INPUT_RECORD
+ 
+ [mist|sidi]
+ # OSD credits cannot be used when
+diff --git a/cores/aliens/hdl/jtaliens_game.v b/cores/aliens/hdl/jtaliens_game.v
+index 3eca647fb..b07b53a63 100644
+--- a/cores/aliens/hdl/jtaliens_game.v
++++ b/cores/aliens/hdl/jtaliens_game.v
+@@ -20,7 +20,7 @@ module jtaliens_game(
+     `include "jtframe_game_ports.inc" // see $JTFRAME/hdl/inc/jtframe_game_ports.inc
+ );
+ 
+-/* verilator tracing_on */
++/* verilator tracing_off */
+ wire [ 7:0] snd_latch;
+ wire        cpu_cen, snd_irq, rmrd, rst8, init;
+ wire        pal_we, cpu_we, tilesys_cs, objsys_cs;
+@@ -150,7 +150,7 @@ jtaliens_sound u_sound(
+     .st_dout    ( st_snd        )
+ );
+ 
+-/* verilator tracing_on */
++/* verilator tracing_off */
+ jtaliens_video u_video (
+     .rst            ( rst           ),
+     .rst8           ( rst8          ),
+diff --git a/cores/aliens/hdl/jtaliens_video.v b/cores/aliens/hdl/jtaliens_video.v
+index 22577d3d9..9f4643e90 100644
+--- a/cores/aliens/hdl/jtaliens_video.v
++++ b/cores/aliens/hdl/jtaliens_video.v
+@@ -171,7 +171,7 @@ function [7:0] cgate( input [7:0] c);
+                             { c[7:6], 6'd0       };
+ endfunction
+ 
+-/* verilator tracing_off */
++/* verilator tracing_on */
+ jtaliens_scroll u_scroll(
+     .rst        ( rst       ),
+     .clk        ( clk       ),
+@@ -256,7 +256,7 @@ jtaliens_scroll u_scroll(
+     .st_dout    ( st_scr    )
+ );
+ 
+-/* verilator tracing_on */
++/* verilator tracing_off */
+ jtaliens_obj u_obj(    // sprite logic
+     .rst        ( rst       ),
+     .clk        ( clk       ),
+@@ -305,7 +305,7 @@ jtaliens_obj u_obj(    // sprite logic
+     .st_dout    ( st_obj    )
+ );
+ 
+-/* verilator tracing_off */
++/* verilator tracing_on */
+ jtaliens_colmix u_colmix(
+     .rst        ( rst       ),
+     .clk        ( clk       ),
+diff --git a/cores/aliens/ver/aliens/runall.sh b/cores/aliens/ver/aliens/runall.sh
+new file mode 100755
+index 000000000..86715dec8
+--- /dev/null
++++ b/cores/aliens/ver/aliens/runall.sh
+@@ -0,0 +1,60 @@
++#!/bin/bash
++
++main() {
++    parse_args $*
++    simulate_all_scenes
++    save_scenes_in_folder
++    report_bad_scenes
++}
++
++parse_args() {
++    BAD=
++    VERBOSE=
++    ARGS=()
++    while [ $# -gt 0 ]; do
++        case $1 in
++            -v|--verbose)
++                VERBOSE=1;;
++            *) ARGS+=("$1");;
++        esac
++        shift
++    done
++}
++
++simulate_scene() {
++    if ! sim.sh -s $(basename $i) --batch "${ARGS[@]}"; then
++        BAD="$(basename $i) $BAD"
++    fi
++}
++
++simulate_all_scenes() {
++    for i in scenes/*; do
++        if [ "$VERBOSE" = 1 ]; then
++            simulate_scene
++        else
++            simulate_scene > /dev/null 2>&1
++        fi
++    done
++}
++
++remove_old_folder() {
++    if [ -d all ]; then
++        rm -rf all.old
++        mv all all.old
++    fi
++}
++
++save_scenes_in_folder() {
++    remove_old_folder
++    mkdir all
++    find scenes -name "*jpg" | xargs -I_ mv _ all
++    (find scenes -name "*crc" | xargs cat)>all/crc
++}
++
++report_bad_scenes() {
++    if [ ! -z "$BAD" ]; then
++        echo "Bad scenes: $BAD"
++    fi
++}
++
++main $*
+\ No newline at end of file

@@ -1,0 +1,147 @@
+From f3ca1e184cc21f2f1a14266aff08662afd9b507d Mon Sep 17 00:00:00 2001
+From: Srinivasan Venkataramanan <svenka3@gmail.com>
+Date: Thu, 18 Jan 2024 09:20:29 +0000
+Subject: [PATCH] Added rule for #184
+
+---
+ exec_dir/Makefile            |  1 +
+ exec_dir/pyslint.log         | 20 +++++++++++++++-----
+ py_src/pyslint.py            | 28 ++++++++++++++++++++++++++++
+ sv_tests/test_issue_184_f.sv | 33 +++++++++++++++++++++++++++++++++
+ 4 files changed, 77 insertions(+), 5 deletions(-)
+ create mode 100644 sv_tests/test_issue_184_f.sv
+
+diff --git a/exec_dir/Makefile b/exec_dir/Makefile
+index a871aab..8e7bbb3 100644
+--- a/exec_dir/Makefile
++++ b/exec_dir/Makefile
+@@ -104,6 +104,7 @@ naming:
+ 	python3 ../py_src/pyslint.py -t ../sv_tests/test_issue_174_f.sv >> pyslint.log
+ 	python3 ../py_src/pyslint.py -t ../sv_tests/test_issue_178_f.sv >> pyslint.log
+ 	python3 ../py_src/pyslint.py -t ../sv_tests/test_issue_222_f.sv >> pyslint.log
++	python3 ../py_src/pyslint.py -t ../sv_tests/test_issue_184_f.sv >> pyslint.log
+ 
+ 	cat pyslint.log
+ 
+diff --git a/exec_dir/pyslint.log b/exec_dir/pyslint.log
+index 843dbe4..246c9c6 100644
+--- a/exec_dir/pyslint.log
++++ b/exec_dir/pyslint.log
+@@ -1118,10 +1118,20 @@ PySlint: Violation: [COMPAT_CL_MISSING_PARAM_DEF_VAL]: Found a parameter in a cl
+ 	 without default value. Parameter name:  dwidth
+ 	 Though IEEE 1800 LRM allows such usage some tools do NOT compile.
+ 	 To avoid compatibility issues, assign a default value to this parameter.
+-PySlint: Violation: [COMPAT_DPI_NO_PURE_TASK]: DPI import tasks can not be delcared as "pure" as per LRM IEEE 1800.
+-	While some tools do compile this, others do not. To avoid compatibility issues, please remove "pure" keyword.
+-	Found code as: 
+-
++PySlint: Violation: [FUNC_DPI_NO_4STATE_IN_ARGS]: DPI functions shall use arguments of 2-state types.
++	 Using 4-state type can lead to unnecessary complications
++	 as C-side does not naturally support 4-state value system
+ // BAD code - pure task is not allowed
+ // but some tools compile
+- import "DPI-C" pure
++ import "DPI-C" pure task bad_pure_dpi_t (logic [3:0] a);
++PySlint: Violation: [FUNC_DPI_NO_4STATE_IN_ARGS]: DPI functions shall use arguments of 2-state types.
++	 Using 4-state type can lead to unnecessary complications
++	 as C-side does not naturally support 4-state value system
++ import "DPI-C" pure task normal_dpi_t (logic [3:0] a);
++PySlint: Violation: [CL_METHOD_NOT_EXTERN]: method is not declared extern:  post_randomize
++PySlint: Violation: [FUNC_CNST_WRONG_OPER_SEL_PRI]: Potentially incorrect constraint expression!
++	An expression involving operators with different precedence is observed. As per LRM,
++	Equality operators have higher precedence than CONDITIONAL-Sel/MUX ? operator.
++	Review and use '( )' appropriately around the constraint expression:
++    foo == (foo_sel) ? 5 :6;
++PySlint: Violation: [DBG_CL_MISSING_ENDLABEL]: Missing End Label for class: bli_c
+diff --git a/py_src/pyslint.py b/py_src/pyslint.py
+index 28bdfe5..287c873 100644
+--- a/py_src/pyslint.py
++++ b/py_src/pyslint.py
+@@ -54,6 +54,7 @@ def pyslint_update_rule_ids():
+   lv_sv_ruleid_l.append('PERF_CG_TOO_MANY_CROSS')
+   lv_sv_ruleid_l.append('FUNC_CNST_MISSING_CAST')
+   lv_sv_ruleid_l.append('FUNC_CNST_WRONG_OPER_PRI')
++  lv_sv_ruleid_l.append('FUNC_CNST_WRONG_OPER_SEL_PRI')
+   lv_sv_ruleid_l.append('FUNC_CNST_DIST_COL_EQ')
+   lv_sv_ruleid_l.append('REUSE_NO_TDEF_IN_MOD')
+   lv_sv_ruleid_l.append('COMPAT_CG_OPT_PI_CL')
+@@ -269,6 +270,32 @@ def FUNC_CNST_WRONG_OPER_PRI (lv_cu_scope):
+               lv_rule_id = "FUNC_CNST_WRONG_OPER_PRI"
+               pyslint_msg(lv_rule_id, msg)
+ 
++def FUNC_CNST_WRONG_OPER_SEL_PRI (lv_cu_scope):
++  if (lv_cu_scope.kind.name == 'ClassDeclaration'):
++    for cl_item in (lv_cu_scope.items):
++      if (cl_item.kind.name == 'ConstraintDeclaration'):
++        for lv_cnst_i in (cl_item.block.items):
++          if (not hasattr(lv_cnst_i, 'expr')):
++            continue
++          if (not hasattr(lv_cnst_i.expr, 'question')):
++            continue
++          if (not hasattr(lv_cnst_i.expr, 'predicate')):
++            continue
++          if (not hasattr(lv_cnst_i.expr.predicate, 'conditions')):
++            continue
++          lv_code_s = str(lv_cnst_i)
++          msg  = 'Potentially incorrect constraint expression!'
++          msg += '\n\tAn expression involving operators with different'
++          msg += ' precedence is observed. As per LRM,'
++          msg += '\n\tEquality operators have higher precedence than'
++          msg += ' CONDITIONAL-Sel/MUX ? operator.'
++          msg += '\n\tReview and use \'( )\' appropriately'
++          msg += ' around the constraint expression:'
++          msg += lv_code_s
++          lv_rule_id = "FUNC_CNST_WRONG_OPER_SEL_PRI"
++          pyslint_msg(lv_rule_id, msg)
++
++
+ def COMPAT_CL_MISSING_PARAM_DEF_VAL(lv_m):
+   if (lv_m.kind.name == 'ClassDeclaration'):
+     if (not hasattr(lv_m, 'parameters')):
+@@ -1253,6 +1280,7 @@ def chk_naming(lv_cu_scope):
+   COMPAT_POST_RAND_NON_VOID(scope_i)
+   FUNC_CNST_MISSING_CAST(scope_i)
+   FUNC_CNST_WRONG_OPER_PRI(scope_i)
++  FUNC_CNST_WRONG_OPER_SEL_PRI(scope_i)
+   DBG_CL_MISSING_ENDLABEL(scope_i)
+   REUSE_NO_TDEF_IN_MOD(scope_i)
+   COMPAT_SVA_NO_CONC_IN_FE(scope_i)
+diff --git a/sv_tests/test_issue_184_f.sv b/sv_tests/test_issue_184_f.sv
+new file mode 100644
+index 0000000..9d162f2
+--- /dev/null
++++ b/sv_tests/test_issue_184_f.sv
+@@ -0,0 +1,33 @@
++class bli_c;
++  bit foo_sel;
++  bit impl_foo;
++  
++  rand int foo;
++  
++  constraint cst_ok {
++    foo == (foo_sel ? 5 :6);
++  }
++  
++  constraint cst_ok_impl {
++    impl_foo -> (foo_sel) ? 5 :6;
++  }
++  
++  constraint cst_bad {
++    foo == (foo_sel) ? 5 :6;
++  }
++  
++  function void post_randomize();
++    $display ("%p", this);
++  endfunction
++endclass
++
++module m;
++  bli_c u_bli_c_0;
++  
++  initial begin
++    u_bli_c_0 = new();
++    repeat (5) u_bli_c_0.randomize(); 
++    #10;
++    $finish (2);
++  end
++endmodule

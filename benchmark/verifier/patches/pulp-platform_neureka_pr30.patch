@@ -1,0 +1,145 @@
+From eaafb05bd511a639642b5a054d6bd855c4b9e883 Mon Sep 17 00:00:00 2001
+From: Luigi Ghionda <luigi.ghionda2@unibo.it>
+Date: Mon, 10 Mar 2025 10:14:01 +0100
+Subject: [PATCH 1/3] Add DW tests to basic regression
+
+---
+ regr/basic.yml | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/regr/basic.yml b/regr/basic.yml
+index b9f3191..d188c5d 100644
+--- a/regr/basic.yml
++++ b/regr/basic.yml
+@@ -53,4 +53,9 @@ neureka_basic_tests:
+   t11:
+     path: .
+     command: make stimuli sw-all run gui=0 FS=1 QW=6 K_IN=48 K_OUT=48 H_IN=4 W_IN=4 NOPRINT=1
+-
++  t12:
++    path: .
++    command: make stimuli sw-all run gui=0 FS=3 QW=8 K_IN=32 K_OUT=32 H_IN=6 W_IN=6 DW=1 NOPRINT=1
++  t13:
++    path: .
++    command: make stimuli sw-all run gui=0 FS=3 QW=8 K_IN=64 K_OUT=64 H_IN=6 W_IN=6 DW=1 NOPRINT=1
+
+From ff55351efdaa5ec5e1ca3bdcc49117a35b4ae7ae Mon Sep 17 00:00:00 2001
+From: Luigi Ghionda <luigi.ghionda2@unibo.it>
+Date: Mon, 10 Mar 2025 10:17:28 +0100
+Subject: [PATCH 2/3] Fix depthwise issues in accumulator_normquant
+
+---
+ rtl/accumulator/neureka_accumulator_normquant.sv | 9 ++++++---
+ rtl/neureka_engine.sv                            | 3 +--
+ 2 files changed, 7 insertions(+), 5 deletions(-)
+
+diff --git a/rtl/accumulator/neureka_accumulator_normquant.sv b/rtl/accumulator/neureka_accumulator_normquant.sv
+index 3b87323..b900901 100644
+--- a/rtl/accumulator/neureka_accumulator_normquant.sv
++++ b/rtl/accumulator/neureka_accumulator_normquant.sv
+@@ -153,7 +153,7 @@ module neureka_accumulator_normquant #(
+   always_comb
+   begin
+     ctrl_normquant = ctrl_i.ctrl_normquant;
+-    ctrl_normquant.start = (fsm_state_q == AQ_NORMQUANT) ? 1'b1 : (fsm_state_q == AQ_ACCUM & ctrl_i.weight_offset == 1) ? 1'b1 : 1'b0;
++    ctrl_normquant.start = (fsm_state_q == AQ_NORMQUANT | (OUTREG_NORMQUANT & fsm_state_q == AQ_ACCUM & ctrl_i.weight_offset == 1)) ? 1'b1 : 1'b0;
+   end
+  
+   assign streamin_i.ready = ~ctrl_i.enable_streamout ? 1'b1 : 
+@@ -205,6 +205,7 @@ module neureka_accumulator_normquant #(
+       addr_cnt_stage2_q    <= '0;
+       addr_cnt_stage2_2q   <= '0;
+       addr_cnt_en_stage1_q <= '0;
++      addr_cnt_en_stage1_2q <= '0;
+       addr_cnt_en_stage2_q <= '0;
+ 
+     end
+@@ -472,8 +473,10 @@ module neureka_accumulator_normquant #(
+       we_all      = ctrl_i.weight_offset ? OUTREG_NORMQUANT ? conv_handshake_2q : conv_handshake_q : conv_handshake_d; // during weight offset the normalization takes 1 cycle thus handshaking with conv_handshake_q (2 cycles if normquant is pipelined, so conv_handshake_2q)
+       we          = 1'b0;
+       adder_enable= ctrl_i.weight_offset & (!ctrl_i.depthwise) ? '1 :
+-                    depthwise_accumulator_active  ? '1 : 
+-                    ctrl_i.weight_offset & (ctrl_i.depthwise)  ? 32'h01<<addr_cnt_stage2_q : 32'h01<<addr_cnt_stage1_q;
++                    depthwise_accumulator_active  ? '1 :
++                    ctrl_i.weight_offset & (ctrl_i.depthwise)  ?
++                    OUTREG_NORMQUANT ? 32'h01<<addr_cnt_stage2_2q : 32'h01<<addr_cnt_stage2_q :
++                    32'h01<<addr_cnt_stage1_q;
+       we_all_mask = adder_enable;
+      
+     end
+diff --git a/rtl/neureka_engine.sv b/rtl/neureka_engine.sv
+index 103da86..668b335 100644
+--- a/rtl/neureka_engine.sv
++++ b/rtl/neureka_engine.sv
+@@ -411,8 +411,7 @@ module neureka_engine #(
+       neureka_accumulator_normquant #(
+         .TP               ( TP_IN   ),
+         .AP               ( TP_OUT  ),
+-        .ACC              ( 32      ),
+-        .OUTREG_NORMQUANT ( 1       )
++        .ACC              ( 32      )
+       ) i_accumulator (
+         .clk_i       ( clk_i                                              ),
+         .rst_ni      ( rst_ni                                             ),
+
+From 395115159149bf670ada108db9437c494522b5db Mon Sep 17 00:00:00 2001
+From: Luigi Ghionda <luigi.ghionda2@unibo.it>
+Date: Mon, 10 Mar 2025 16:05:57 +0100
+Subject: [PATCH 3/3] Revert "Reactivate also binconv gating!" to fix depthwise
+ execution
+
+This reverts commit fcfd25d7c1e06208c8fb67e927e8b93c721717fc.
+---
+ rtl/array/neureka_binconv_pe.sv |  4 ++--
+ rtl/ctrl/neureka_ctrl.sv        | 10 ++++------
+ rtl/neureka_package.sv          |  1 -
+ 3 files changed, 6 insertions(+), 9 deletions(-)
+
+diff --git a/rtl/array/neureka_binconv_pe.sv b/rtl/array/neureka_binconv_pe.sv
+index e9122e2..4eaa720 100644
+--- a/rtl/array/neureka_binconv_pe.sv
++++ b/rtl/array/neureka_binconv_pe.sv
+@@ -118,8 +118,8 @@ module neureka_binconv_pe #(
+       begin
+         ctrl_col = ctrl_i.ctrl_col;
+         ctrl_col.scale_shift = ii/4; // used for 1x1
+-        ctrl_col.dw_weight_offset = ctrl_i.dw_weight_offset[ii] | depthwise_accumulator_active;
+-        ctrl_col.enable_block = ctrl_col.enable_block & ctrl_i.enable_col_pw[9*(ii_rem_4+1)-1:9*ii_rem_4] & {9{ctrl_i.enable_col[ii]}};
++        ctrl_col.dw_weight_offset = ctrl_i.enable_col[ii] | depthwise_accumulator_active;
++        ctrl_col.enable_block = ctrl_col.enable_block & ctrl_i.enable_col_pw[9*(ii_rem_4+1)-1:9*ii_rem_4];
+       end
+ 
+       neureka_binconv_column #(
+diff --git a/rtl/ctrl/neureka_ctrl.sv b/rtl/ctrl/neureka_ctrl.sv
+index 46be203..466b3ce 100644
+--- a/rtl/ctrl/neureka_ctrl.sv
++++ b/rtl/ctrl/neureka_ctrl.sv
+@@ -979,12 +979,10 @@ module neureka_ctrl #(
+   assign fs1_row_mask     = {{{1'b0}, {kin_onehot[31:24]}},{{1'b0}, {kin_onehot[23:16]}},{{1'b0}, {kin_onehot[15:8]}},{{1'b0}, {kin_onehot[7:0]}}};
+   assign fs1_kin_col_mask = {8{((k_in_lim < 8) ? 4'b01 : (k_in_lim < 16) ? 4'b11 : (k_in_lim < 24) ? 4'b111 : 4'b1111)}};
+   
+-  assign ctrl_engine.ctrl_binconv_array.ctrl_pe.enable_col    = (config_.filter_mode == NEUREKA_FILTER_MODE_1X1) ? fs1_qw_col_mask & fs1_kin_col_mask : 
+-                                                                                                                   (1 << k_in_lim) - 1;
+-  assign ctrl_engine.ctrl_binconv_array.ctrl_pe.dw_weight_offset = (config_.filter_mode == NEUREKA_FILTER_MODE_1X1) ? ((state==WEIGHTOFFS) ? 
+-                                                                   (fs1_qw_col_mask & 32'h0F & fs1_kin_col_mask) : 
+-                                                                    fs1_qw_col_mask & fs1_kin_col_mask) : 
+-                                                                    (1 << k_in_lim) - 1;
++  assign ctrl_engine.ctrl_binconv_array.ctrl_pe.enable_col    = (config_.filter_mode == NEUREKA_FILTER_MODE_1X1) ? ((state==WEIGHTOFFS) ? 
++                                                                  (fs1_qw_col_mask & 32'h0F & fs1_kin_col_mask) : 
++                                                                  fs1_qw_col_mask & fs1_kin_col_mask) : 
++                                                                  (1 << k_in_lim) - 1;
+   assign ctrl_engine.ctrl_binconv_array.ctrl_pe.enable_col_pw = (config_.filter_mode == NEUREKA_FILTER_MODE_1X1) ?  fs1_row_mask : 
+                                                                   '1;
+ 
+diff --git a/rtl/neureka_package.sv b/rtl/neureka_package.sv
+index d711a30..58c8de9 100644
+--- a/rtl/neureka_package.sv
++++ b/rtl/neureka_package.sv
+@@ -288,7 +288,6 @@ package neureka_package;
+   typedef struct packed {
+     ctrl_binconv_col_t                ctrl_col;
+     logic [NEUREKA_BLOCK_SIZE-1:0]    enable_col;
+-    logic [NEUREKA_BLOCK_SIZE-1:0]    dw_weight_offset;
+     logic [4*NEUREKA_COLUMN_SIZE-1:0] enable_col_pw;
+     logic                             dw_accum;
+     logic [31:0]                      padding_value;

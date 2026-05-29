@@ -1,0 +1,41 @@
+diff --git a/src/axi_lite_regs.sv b/src/axi_lite_regs.sv
+index 6c38fc6..ffb1885 100755
+--- a/src/axi_lite_regs.sv
++++ b/src/axi_lite_regs.sv
+@@ -276,6 +276,7 @@ module axi_lite_regs #(
+   r_chan_lite_t r_chan;
+   logic         r_valid,      r_ready;
+   logic         ar_prot_ok;
++  logic         ar_chunk_conflict;
+   assign ar_prot_ok = (PrivProtOnly ? axi_req_i.ar.prot[0] : 1'b1) &
+                       (SecuProtOnly ? axi_req_i.ar.prot[1] : 1'b1);
+   // Multiplexer to determine R channel
+@@ -292,17 +293,27 @@ module axi_lite_regs #(
+     // Read is valid on a chunk
+     if (ar_dec_valid && ar_prot_ok) begin
+       // Calculate the corresponding byte index from `ar_chunk_idx`.
++      ar_chunk_conflict = 1'b0;
+       for (int unsigned i = 0; i < AxiStrbWidth; i++) begin
+         reg_byte_idx = unsigned'(ar_chunk_idx) * AxiStrbWidth + i;
+         // Guard to not index outside the `reg_q_o` array.
+         if (reg_byte_idx < RegNumBytes) begin
+-          r_chan.data[8*i+:8]       = reg_q_o[reg_byte_idx];
++          if (reg_load_i[reg_byte_idx] && !AxiReadOnly[reg_byte_idx]) begin
++            ar_chunk_conflict = 1'b1;
++          end else begin
++            r_chan.data[8*i+:8]       = reg_q_o[reg_byte_idx];
++          end
+           rd_active_o[reg_byte_idx] = r_valid & r_ready;
+         end else begin
+           r_chan.data[8*i+:8] = 8'h00;
+         end
+       end
+-      r_chan.resp = axi_pkg::RESP_OKAY;
++      if (ar_chunk_conflict) begin
++        r_chan.resp = axi_pkg::RESP_SLVERR;
++        r_chan.data = axi_data_t'(32'hBA5E1E55);
++      end else begin
++        r_chan.resp = axi_pkg::RESP_OKAY;
++      end
+     end
+   end

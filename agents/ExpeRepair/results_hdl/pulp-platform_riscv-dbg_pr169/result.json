@@ -1,0 +1,59 @@
+{
+  "case_name": "pulp-platform_riscv-dbg_pr169",
+  "status": "completed",
+  "num_patches": 4,
+  "bug_locs": [
+    [
+      {
+        "rel_file_path": "src/dmi_jtag_tap.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_riscv-dbg_pr169/src/dmi_jtag_tap.sv",
+        "start": 205,
+        "end": 252,
+        "class_name": null,
+        "method_name": null,
+        "code": "205       td_o     <= 1'b0;\n206       tdo_oe_o <= 1'b0;\n207     end else begin\n208       td_o     <= tdo_mux;\n209       tdo_oe_o <= (shift_ir | shift_dr);\n210     end\n211   end\n212   // ----------------\n213   // TAP FSM\n214   // ----------------\n215   // Determination of next state; purely combinatorial\n216   always_comb begin : p_tap_fsm\n217 \n218     test_logic_reset   = 1'b0;\n219 \n220     capture_dr         = 1'b0;\n221     shift_dr           = 1'b0;\n222     update_dr          = 1'b0;\n223 \n224     capture_ir         = 1'b0;\n225     shift_ir           = 1'b0;\n226     // pause_ir           = 1'b0; unused\n227     update_ir          = 1'b0;\n228 \n229     unique case (tap_state_q)\n230       TestLogicReset: begin\n231         tap_state_d = (tms_i) ? TestLogicReset : RunTestIdle;\n232         test_logic_reset = 1'b1;\n233       end\n234       RunTestIdle: begin\n235         tap_state_d = (tms_i) ? SelectDrScan : RunTestIdle;\n236       end\n237       // DR Path\n238       SelectDrScan: begin\n239         tap_state_d = (tms_i) ? SelectIrScan : CaptureDr;\n240       end\n241       CaptureDr: begin\n242         capture_dr = 1'b1;\n243         tap_state_d = (tms_i) ? Exit1Dr : ShiftDr;\n244       end\n245       ShiftDr: begin\n246         shift_dr = 1'b1;\n247         tap_state_d = (tms_i) ? Exit1Dr : ShiftDr;\n248       end\n249       Exit1Dr: begin\n250         tap_state_d = (tms_i) ? UpdateDr : PauseDr;\n251       end\n252       PauseDr: begin\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "src/dmi_jtag_tap.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_riscv-dbg_pr169/src/dmi_jtag_tap.sv",
+        "start": 293,
+        "end": 322,
+        "class_name": null,
+        "method_name": null,
+        "code": "293       // shift register is latched to the latch bank of the Instruction\n294       // Register on every falling edge of TCK. This instruction becomes\n295       // the current instruction once it is latched.\n296       UpdateIr: begin\n297         update_ir = 1'b1;\n298         tap_state_d = (tms_i) ? SelectDrScan : RunTestIdle;\n299       end\n300       default: ; // can't actually happen since case is full\n301     endcase\n302   end\n303 \n304   always_ff @(posedge tck_i or negedge trst_ni) begin : p_regs\n305     if (!trst_ni) begin\n306       tap_state_q <= RunTestIdle;\n307       idcode_q    <= IdcodeValue;\n308       bypass_q    <= 1'b0;\n309     end else begin\n310       tap_state_q <= tap_state_d;\n311       idcode_q    <= idcode_d;\n312       bypass_q    <= bypass_d;\n313     end\n314   end\n315 \n316   // Pass through JTAG signals to debug custom DR logic.\n317   // In case of a single TAP those are just feed-through.\n318   assign tck_o = tck_i;\n319   assign tdi_o = td_i;\n320   assign update_o = update_dr;\n321   assign shift_o = shift_dr;\n322   assign capture_o = capture_dr;\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "src/dmi_jtag_tap.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_riscv-dbg_pr169/src/dmi_jtag_tap.sv",
+        "start": 306,
+        "end": 325,
+        "class_name": null,
+        "method_name": null,
+        "code": "306       tap_state_q <= RunTestIdle;\n307       idcode_q    <= IdcodeValue;\n308       bypass_q    <= 1'b0;\n309     end else begin\n310       tap_state_q <= tap_state_d;\n311       idcode_q    <= idcode_d;\n312       bypass_q    <= bypass_d;\n313     end\n314   end\n315 \n316   // Pass through JTAG signals to debug custom DR logic.\n317   // In case of a single TAP those are just feed-through.\n318   assign tck_o = tck_i;\n319   assign tdi_o = td_i;\n320   assign update_o = update_dr;\n321   assign shift_o = shift_dr;\n322   assign capture_o = capture_dr;\n323   assign dmi_clear_o = test_logic_reset;\n324 \n325 \n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "src/dmi_jtag_tap.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_riscv-dbg_pr169/src/dmi_jtag_tap.sv",
+        "start": 94,
+        "end": 121,
+        "class_name": null,
+        "method_name": null,
+        "code": "94       jtag_ir_d = ir_reg_e'(jtag_ir_shift_q);\n95     end\n96 \n97     if (test_logic_reset) begin\n98       // Bring all TAP state to the initial value.\n99       jtag_ir_shift_d = '0;\n100       jtag_ir_d = IDCODE;\n101     end\n102   end\n103 \n104   always_ff @(posedge tck_i, negedge trst_ni) begin : p_jtag_ir_reg\n105     if (!trst_ni) begin\n106       jtag_ir_shift_q <= '0;\n107       jtag_ir_q       <= IDCODE;\n108     end else begin\n109       jtag_ir_shift_q <= jtag_ir_shift_d;\n110       jtag_ir_q       <= jtag_ir_d;\n111     end\n112   end\n113 \n114   // ----------------\n115   // TAP DR Regs\n116   // ----------------\n117   // - Bypass\n118   // - IDCODE\n119   // - DTM CS\n120   logic [31:0] idcode_d, idcode_q;\n121   logic        idcode_select;\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "src/dmi_jtag_tap.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_riscv-dbg_pr169/src/dmi_jtag_tap.sv",
+        "start": 84,
+        "end": 111,
+        "class_name": null,
+        "method_name": null,
+        "code": "84       jtag_ir_shift_d = {td_i, jtag_ir_shift_q[IrLength-1:1]};\n85     end\n86 \n87     // capture IR register\n88     if (capture_ir) begin\n89       jtag_ir_shift_d =  IrLength'(4'b0101);\n90     end\n91 \n92     // update IR register\n93     if (update_ir) begin\n94       jtag_ir_d = ir_reg_e'(jtag_ir_shift_q);\n95     end\n96 \n97     if (test_logic_reset) begin\n98       // Bring all TAP state to the initial value.\n99       jtag_ir_shift_d = '0;\n100       jtag_ir_d = IDCODE;\n101     end\n102   end\n103 \n104   always_ff @(posedge tck_i, negedge trst_ni) begin : p_jtag_ir_reg\n105     if (!trst_ni) begin\n106       jtag_ir_shift_q <= '0;\n107       jtag_ir_q       <= IDCODE;\n108     end else begin\n109       jtag_ir_shift_q <= jtag_ir_shift_d;\n110       jtag_ir_q       <= jtag_ir_d;\n111     end\n",
+        "intended_behavior": ""
+      }
+    ]
+  ]
+}

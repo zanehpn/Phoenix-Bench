@@ -1,0 +1,800 @@
+===============================================================================
+Module : fpnew_noncomp
+===============================================================================
+SCORE  LINE   COND   TOGGLE FSM    BRANCH 
+ 65.21  72.73  85.71  31.68 --      70.73 
+
+Source File(s) : 
+
+/workspace/phoenix-bench/HDL_verified_new/testbench/openhwgroup_cvfpu_pr116/../../snapshots/openhwgroup_cvfpu_pr116/src/fpnew_noncomp.sv
+
+Module self-instances :
+
+SCORE  LINE   COND   TOGGLE FSM    BRANCH NAME                            
+ 65.21  72.73  85.71  31.68 --      70.73 tb_fpnew_noncomp_snan_patch.dut 
+
+
+
+-------------------------------------------------------------------------------
+Line Coverage for Module : fpnew_noncomp
+
+             Line No.   Total   Covered  Percent
+TOTAL                       66       48    72.73
+ALWAYS            190       11        8    72.73
+ALWAYS            225       12       12   100.00
+ALWAYS            260       16       15    93.75
+ALWAYS            298       11        9    81.82
+ALWAYS            326       16        4    25.00
+
+189                         // Default assignment
+190        1/1              sgnj_result = operand_a; // result based on operand a
+191                     
+192                         // NaN-boxing check will treat invalid inputs as canonical NaNs
+193        1/2     ==>      if (!info_a.is_boxed) sgnj_result = '{sign: 1'b0, exponent: '1, mantissa: 2**(MAN_BITS-1)};
+                        MISSING_ELSE
+194                     
+195                         // Internal signs are treated as positive in case of non-NaN-boxed values
+196        1/1              sign_a = operand_a.sign & info_a.is_boxed;
+197        1/1              sign_b = operand_b.sign & info_b.is_boxed;
+198                     
+199                         // Do the sign injection based on rm field
+200        1/1              unique case (inp_pipe_rnd_mode_q[NUM_INP_REGS])
+201        1/1                fpnew_pkg::RNE: sgnj_result.sign = sign_b;          // SGNJ
+202        1/1                fpnew_pkg::RTZ: sgnj_result.sign = ~sign_b;         // SGNJN
+203        1/1                fpnew_pkg::RDN: sgnj_result.sign = sign_a ^ sign_b; // SGNJX
+204        0/1     ==>        fpnew_pkg::RUP: sgnj_result      = operand_a;       // passthrough
+205        0/1     ==>        default: sgnj_result = '{default: fpnew_pkg::DONT_CARE}; // don't care
+206                         endcase
+207                       end
+208                     
+209                       assign sgnj_status = '0;        // sign injections never raise exceptions
+210                     
+211                       // op_mod_q enables integer sign-extension of result (for storing to integer regfile)
+212                       assign sgnj_extension_bit = inp_pipe_op_mod_q[NUM_INP_REGS] ? sgnj_result.sign : 1'b1;
+213                     
+214                       // ------------------
+215                       // Minimum / Maximum
+216                       // ------------------
+217                       fp_t                minmax_result;
+218                       fpnew_pkg::status_t minmax_status;
+219                       logic               minmax_extension_bit;
+220                     
+221                       // Minimum/Maximum - operation is encoded in rnd_mode_q:
+222                       // RNE = MIN, RTZ = MAX
+223                       always_comb begin : min_max
+224                         // Default assignment
+225        1/1              minmax_status = '0;
+226                     
+227                         // Min/Max use quiet comparisons - only sNaN are invalid
+228        1/1              minmax_status.NV = signalling_nan;
+229                     
+230                         // Both NaN inputs cause a NaN output
+231        1/1              if (info_a.is_nan && info_b.is_nan)
+232        1/1                minmax_result = '{sign: 1'b0, exponent: '1, mantissa: 2**(MAN_BITS-1)}; // canonical qNaN
+233                         // If one operand is NaN, the non-NaN operand is returned
+234        2/2              else if (info_a.is_nan) minmax_result = operand_b;
+235        2/2              else if (info_b.is_nan) minmax_result = operand_a;
+236                         // Otherwise decide according to the operation
+237                         else begin
+238        1/1                unique case (inp_pipe_rnd_mode_q[NUM_INP_REGS])
+239        1/1                  fpnew_pkg::RNE: minmax_result = operand_a_smaller ? operand_a : operand_b; // MIN
+240        1/1                  fpnew_pkg::RTZ: minmax_result = operand_a_smaller ? operand_b : operand_a; // MAX
+241        1/1                  default: minmax_result = '{default: fpnew_pkg::DONT_CARE}; // don't care
+242                           endcase
+243                         end
+244                       end
+245                     
+246                       assign minmax_extension_bit = 1'b1; // NaN-box as result is always a float value
+247                     
+248                       // ------------
+249                       // Comparisons
+250                       // ------------
+251                       fp_t                cmp_result;
+252                       fpnew_pkg::status_t cmp_status;
+253                       logic               cmp_extension_bit;
+254                     
+255                       // Comparisons - operation is encoded in rnd_mode_q:
+256                       // RNE = LE, RTZ = LT, RDN = EQ
+257                       // op_mod_q inverts boolean outputs
+258                       always_comb begin : comparisons
+259                         // Default assignment
+260        1/1              cmp_result = '0; // false
+261        1/1              cmp_status = '0; // no flags
+262                     
+263                         // Signalling NaNs always compare as false (except for "not equal" compares) and are illegal
+264        1/1              if (signalling_nan) begin
+265        1/1                cmp_status.NV = 1'b1; // invalid operation
+266        1/1                cmp_result    = inp_pipe_rnd_mode_q[NUM_INP_REGS] == fpnew_pkg::RDN && inp_pipe_op_mod_q[NUM_INP_REGS];
+267                         // Otherwise do comparisons
+268                         end else begin
+269        1/1                unique case (inp_pipe_rnd_mode_q[NUM_INP_REGS])
+270                             fpnew_pkg::RNE: begin // Less than or equal
+271        2/2                    if (any_operand_nan) cmp_status.NV = 1'b1; // Signalling comparison: NaNs are invalid
+272        1/1                    else cmp_result = (operand_a_smaller | operands_equal) ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+273                             end
+274                             fpnew_pkg::RTZ: begin // Less than
+275        2/2                    if (any_operand_nan) cmp_status.NV = 1'b1; // Signalling comparison: NaNs are invalid
+276        1/1                    else cmp_result = (operand_a_smaller & ~operands_equal) ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+277                             end
+278                             fpnew_pkg::RDN: begin // Equal
+279        2/2                    if (any_operand_nan) cmp_result = inp_pipe_op_mod_q[NUM_INP_REGS]; // NaN always not equal
+280        1/1                    else cmp_result = operands_equal ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+281                             end
+282        0/1     ==>          default: cmp_result = '{default: fpnew_pkg::DONT_CARE}; // don't care
+283                           endcase
+284                         end
+285                       end
+286                     
+287                       assign cmp_extension_bit = 1'b0; // Comparisons always produce booleans in integer registers
+288                     
+289                       // ---------------
+290                       // Classification
+291                       // ---------------
+292                       fpnew_pkg::status_t    class_status;
+293                       logic                  class_extension_bit;
+294                       fpnew_pkg::classmask_e class_mask_d; // the result is actually here
+295                     
+296                       // Classification - always return the classification mask on the dedicated port
+297                       always_comb begin : classify
+298        1/1              if (info_a.is_normal) begin
+299        1/1                class_mask_d = operand_a.sign       ? fpnew_pkg::NEGNORM    : fpnew_pkg::POSNORM;
+300        1/1              end else if (info_a.is_subnormal) begin
+301        0/1     ==>        class_mask_d = operand_a.sign       ? fpnew_pkg::NEGSUBNORM : fpnew_pkg::POSSUBNORM;
+302        1/1              end else if (info_a.is_zero) begin
+303        1/1                class_mask_d = operand_a.sign       ? fpnew_pkg::NEGZERO    : fpnew_pkg::POSZERO;
+304        1/1              end else if (info_a.is_inf) begin
+305        1/1                class_mask_d = operand_a.sign       ? fpnew_pkg::NEGINF     : fpnew_pkg::POSINF;
+306        1/1              end else if (info_a.is_nan) begin
+307        1/1                class_mask_d = info_a.is_signalling ? fpnew_pkg::SNAN       : fpnew_pkg::QNAN;
+308                         end else begin
+309        0/1     ==>        class_mask_d = fpnew_pkg::QNAN; // default value
+310                         end
+311                       end
+312                     
+313                       assign class_status        = '0;   // classification does not set flags
+314                       assign class_extension_bit = 1'b0; // classification always produces results in integer registers
+315                     
+316                       // -----------------
+317                       // Result selection
+318                       // -----------------
+319                       fp_t                   result_d;
+320                       fpnew_pkg::status_t    status_d;
+321                       logic                  extension_bit_d;
+322                       logic                  is_class_d;
+323                     
+324                       // Select result
+325                       always_comb begin : select_result
+326        1/1              unique case (inp_pipe_op_q[NUM_INP_REGS])
+327                           fpnew_pkg::SGNJ: begin
+328        0/1     ==>          result_d        = sgnj_result;
+329        0/1     ==>          status_d        = sgnj_status;
+330        0/1     ==>          extension_bit_d = sgnj_extension_bit;
+331                           end
+332                           fpnew_pkg::MINMAX: begin
+333        0/1     ==>          result_d        = minmax_result;
+334        0/1     ==>          status_d        = minmax_status;
+335        0/1     ==>          extension_bit_d = minmax_extension_bit;
+336                           end
+337                           fpnew_pkg::CMP: begin
+338        1/1                  result_d        = cmp_result;
+339        1/1                  status_d        = cmp_status;
+340        1/1                  extension_bit_d = cmp_extension_bit;
+341                           end
+342                           fpnew_pkg::CLASSIFY: begin
+343        0/1     ==>          result_d        = '{default: fpnew_pkg::DONT_CARE}; // unused
+344        0/1     ==>          status_d        = class_status;
+345        0/1     ==>          extension_bit_d = class_extension_bit;
+346                           end
+347                           default: begin
+348        0/1     ==>          result_d        = '{default: fpnew_pkg::DONT_CARE}; // dont care
+349        0/1     ==>          status_d        = '{default: fpnew_pkg::DONT_CARE}; // dont care
+350        0/1     ==>          extension_bit_d = fpnew_pkg::DONT_CARE;             // dont care
+
+-------------------------------------------------------------------------------
+Cond Coverage for Module : fpnew_noncomp
+
+               Total   Covered  Percent
+Conditions         28       24    85.71
+Logical            28       24    85.71
+Non-Logical         0        0
+Event               0        0
+
+ LINE       231
+ EXPRESSION (info_a.is_nan && info_b.is_nan)
+             ------1------    ------2------
+
+-1- -2- Status
+ 0   1  Covered
+ 1   0  Covered
+ 1   1  Covered
+
+ LINE       239
+ EXPRESSION (operand_a_smaller ? operand_a : operand_b)
+             --------1--------
+
+-1- Status
+ 0  Covered
+ 1  Covered
+
+ LINE       240
+ EXPRESSION (operand_a_smaller ? operand_b : operand_a)
+             --------1--------
+
+-1- Status
+ 0  Covered
+ 1  Not Covered
+
+ LINE       266
+ EXPRESSION ((inp_pipe_rnd_mode_q[NUM_INP_REGS] == RDN) && inp_pipe_op_mod_q[NUM_INP_REGS])
+             ---------------------1--------------------    ---------------2---------------
+
+-1- -2- Status
+ 0   1  Covered
+ 1   0  Covered
+ 1   1  Covered
+
+ LINE       299
+ EXPRESSION (operand_a.sign ? NEGNORM : POSNORM)
+             -------1------
+
+-1- Status
+ 0  Covered
+ 1  Covered
+
+ LINE       301
+ EXPRESSION (operand_a.sign ? NEGSUBNORM : POSSUBNORM)
+             -------1------
+
+-1- Status
+ 0  Not Covered
+ 1  Not Covered
+
+ LINE       303
+ EXPRESSION (operand_a.sign ? NEGZERO : POSZERO)
+             -------1------
+
+-1- Status
+ 0  Covered
+ 1  Covered
+
+ LINE       305
+ EXPRESSION (operand_a.sign ? NEGINF : POSINF)
+             -------1------
+
+-1- Status
+ 0  Covered
+ 1  Covered
+
+ LINE       307
+ EXPRESSION (info_a.is_signalling ? SNAN : QNAN)
+             ----------1---------
+
+-1- Status
+ 0  Covered
+ 1  Covered
+
+ LINE       174
+ EXPRESSION ((operand_a == operand_b) || (info_a.is_zero && info_b.is_zero))
+             ------------1-----------    -----------------2----------------
+
+-1- -2- Status
+ 0   0  Covered
+ 0   1  Covered
+ 1   0  Covered
+
+ LINE       174
+ SUB-EXPRESSION (info_a.is_zero && info_b.is_zero)
+                 -------1------    -------2------
+
+-1- -2- Status
+ 0   1  Not Covered
+ 1   0  Covered
+ 1   1  Covered
+
+ LINE       212
+ EXPRESSION (inp_pipe_op_mod_q[NUM_INP_REGS] ? sgnj_result.sign : 1'b1)
+             ---------------1---------------
+
+-1- Status
+ 0  Covered
+ 1  Covered
+
+-------------------------------------------------------------------------------
+Toggle Coverage for Module : fpnew_noncomp
+                Total Covered Percent 
+Totals          115   38      33.04   
+Total Bits      950   301     31.68   
+Total Bits 0->1 475   151     31.79   
+Total Bits 1->0 475   150     31.58   
+
+                             
+Ports          29  6  20.69  
+Port Bits      280 85 30.36  
+Port Bits 0->1 140 43 30.71  
+Port Bits 1->0 140 42 30.00  
+
+                                
+Signals          86  32  37.21  
+Signal Bits      670 216 32.24  
+Signal Bits 0->1 335 108 32.24  
+Signal Bits 1->0 335 108 32.24  
+
+Port Details
+                                    Toggle Toggle 1->0 Toggle 0->1 Direction 
+clk_i                               Yes    Yes         Yes         INPUT     
+rst_ni                              No     No          Yes         INPUT     
+operands_i[0][1:0]                  Yes    Yes         Yes         INPUT     
+operands_i[0][31:21]                Yes    Yes         Yes         INPUT     
+operands_i[1][0]                    Yes    Yes         Yes         INPUT     
+operands_i[1][31:21]                Yes    Yes         Yes         INPUT     
+Other bits of operands_i[1:0][31:0] No     No          No          INPUT     
+is_boxed_i[1:0]                     No     No          No          INPUT     
+rnd_mode_i[1:0]                     Yes    Yes         Yes         INPUT     
+rnd_mode_i[2]                       No     No          No          INPUT     
+op_i[3:0]                           No     No          No          INPUT     
+op_mod_i                            Yes    Yes         Yes         INPUT     
+tag_i[1:0]                          No     No          No          INPUT     
+mask_i                              No     No          No          INPUT     
+aux_i                               No     No          No          INPUT     
+in_valid_i                          Yes    Yes         Yes         INPUT     
+in_ready_o                          No     No          No          OUTPUT    
+flush_i                             No     No          No          INPUT     
+result_o[0]                         Yes    Yes         Yes         OUTPUT    
+result_o[31:1]                      No     No          No          OUTPUT    
+status_o.NX                         No     No          No          OUTPUT    
+status_o.UF                         No     No          No          OUTPUT    
+status_o.OF                         No     No          No          OUTPUT    
+status_o.DZ                         No     No          No          OUTPUT    
+status_o.NV                         Yes    Yes         Yes         OUTPUT    
+extension_bit_o                     No     No          No          OUTPUT    
+class_mask_o[1:0]                   Yes    Yes         Yes         OUTPUT    
+class_mask_o[2]                     No     No          No          OUTPUT    
+class_mask_o[4:3]                   Yes    Yes         Yes         OUTPUT    
+class_mask_o[5]                     No     No          No          OUTPUT    
+class_mask_o[9:6]                   Yes    Yes         Yes         OUTPUT    
+is_class_o                          No     No          No          OUTPUT    
+tag_o[1:0]                          No     No          No          OUTPUT    
+mask_o                              No     No          No          OUTPUT    
+aux_o                               No     No          No          OUTPUT    
+out_valid_o                         Yes    Yes         Yes         OUTPUT    
+out_ready_i                         No     No          No          INPUT     
+busy_o                              Yes    Yes         Yes         OUTPUT    
+reg_ena_i                           No     No          No          INPUT     
+
+Signal Details
+                                                Toggle Toggle 1->0 Toggle 0->1 
+inp_pipe_operands_q[0][0][1:0]                  Yes    Yes         Yes         
+inp_pipe_operands_q[0][0][31:21]                Yes    Yes         Yes         
+inp_pipe_operands_q[0][1][0]                    Yes    Yes         Yes         
+inp_pipe_operands_q[0][1][31:21]                Yes    Yes         Yes         
+Other bits of inp_pipe_operands_q[0][1:0][31:0] No     No          No          
+inp_pipe_is_boxed_q[0][1:0]                     No     No          No          
+inp_pipe_op_mod_q                               Yes    Yes         Yes         
+inp_pipe_tag_q[0][1:0]                          No     No          No          
+inp_pipe_mask_q                                 No     No          No          
+inp_pipe_aux_q                                  No     No          No          
+inp_pipe_valid_q                                Yes    Yes         Yes         
+inp_pipe_ready                                  No     No          No          
+operand_a.mantissa[1:0]                         Yes    Yes         Yes         
+operand_a.mantissa[20:2]                        No     No          No          
+operand_a.mantissa[22:21]                       Yes    Yes         Yes         
+operand_a.exponent[7:0]                         Yes    Yes         Yes         
+operand_a.sign                                  Yes    Yes         Yes         
+operand_b.mantissa[0]                           Yes    Yes         Yes         
+operand_b.mantissa[20:1]                        No     No          No          
+operand_b.mantissa[22:21]                       Yes    Yes         Yes         
+operand_b.exponent[7:0]                         Yes    Yes         Yes         
+operand_b.sign                                  Yes    Yes         Yes         
+info_a.is_boxed                                 No     No          No          
+info_a.is_quiet                                 Yes    Yes         Yes         
+info_a.is_signalling                            Yes    Yes         Yes         
+info_a.is_nan                                   Yes    Yes         Yes         
+info_a.is_inf                                   Yes    Yes         Yes         
+info_a.is_zero                                  Yes    Yes         Yes         
+info_a.is_subnormal                             No     No          No          
+info_a.is_normal                                Yes    Yes         Yes         
+info_b.is_boxed                                 No     No          No          
+info_b.is_quiet                                 Yes    Yes         Yes         
+info_b.is_signalling                            Yes    Yes         Yes         
+info_b.is_nan                                   Yes    Yes         Yes         
+info_b.is_inf                                   Yes    Yes         Yes         
+info_b.is_zero                                  Yes    Yes         Yes         
+info_b.is_subnormal                             No     No          No          
+info_b.is_normal                                Yes    Yes         Yes         
+any_operand_inf                                 Yes    Yes         Yes         
+any_operand_nan                                 Yes    Yes         Yes         
+signalling_nan                                  Yes    Yes         Yes         
+operands_equal                                  Yes    Yes         Yes         
+operand_a_smaller                               Yes    Yes         Yes         
+sgnj_result.mantissa[1:0]                       Yes    Yes         Yes         
+sgnj_result.mantissa[20:2]                      No     No          No          
+sgnj_result.mantissa[22:21]                     Yes    Yes         Yes         
+sgnj_result.exponent[7:0]                       Yes    Yes         Yes         
+sgnj_result.sign                                Yes    Yes         Yes         
+sgnj_status.NX                                  No     No          No          
+sgnj_status.UF                                  No     No          No          
+sgnj_status.OF                                  No     No          No          
+sgnj_status.DZ                                  No     No          No          
+sgnj_status.NV                                  No     No          No          
+sgnj_extension_bit                              Yes    Yes         Yes         
+minmax_result.mantissa[0]                       Yes    Yes         Yes         
+minmax_result.mantissa[21:1]                    No     No          No          
+minmax_result.mantissa[22]                      Yes    Yes         Yes         
+minmax_result.exponent[7:0]                     Yes    Yes         Yes         
+minmax_result.sign                              Yes    Yes         Yes         
+minmax_status.NX                                No     No          No          
+minmax_status.UF                                No     No          No          
+minmax_status.OF                                No     No          No          
+minmax_status.DZ                                No     No          No          
+minmax_status.NV                                Yes    Yes         Yes         
+minmax_extension_bit                            No     No          No          
+cmp_result.mantissa[0]                          Yes    Yes         Yes         
+cmp_result.mantissa[22:1]                       No     No          No          
+cmp_result.exponent[7:0]                        No     No          No          
+cmp_result.sign                                 No     No          No          
+cmp_status.NX                                   No     No          No          
+cmp_status.UF                                   No     No          No          
+cmp_status.OF                                   No     No          No          
+cmp_status.DZ                                   No     No          No          
+cmp_status.NV                                   Yes    Yes         Yes         
+cmp_extension_bit                               No     No          No          
+class_status.NX                                 No     No          No          
+class_status.UF                                 No     No          No          
+class_status.OF                                 No     No          No          
+class_status.DZ                                 No     No          No          
+class_status.NV                                 No     No          No          
+class_extension_bit                             No     No          No          
+class_mask_d[1:0]                               Yes    Yes         Yes         
+class_mask_d[2]                                 No     No          No          
+class_mask_d[4:3]                               Yes    Yes         Yes         
+class_mask_d[5]                                 No     No          No          
+class_mask_d[9:6]                               Yes    Yes         Yes         
+result_d.mantissa[0]                            Yes    Yes         Yes         
+result_d.mantissa[22:1]                         No     No          No          
+result_d.exponent[7:0]                          No     No          No          
+result_d.sign                                   No     No          No          
+status_d.NX                                     No     No          No          
+status_d.UF                                     No     No          No          
+status_d.OF                                     No     No          No          
+status_d.DZ                                     No     No          No          
+status_d.NV                                     Yes    Yes         Yes         
+extension_bit_d                                 No     No          No          
+is_class_d                                      No     No          No          
+out_pipe_extension_bit_q                        No     No          No          
+out_pipe_is_class_q                             No     No          No          
+out_pipe_tag_q[0][1:0]                          No     No          No          
+out_pipe_mask_q                                 No     No          No          
+out_pipe_aux_q                                  No     No          No          
+out_pipe_valid_q                                Yes    Yes         Yes         
+out_pipe_ready                                  No     No          No          
+
+
+-------------------------------------------------------------------------------
+Branch Coverage for Module : fpnew_noncomp
+         Line No. Total Covered Percent 
+Branches          41    29      70.73   
+TERNARY  212      2     2       100.00  
+IF       193      2     1       50.00   
+CASE     200      5     3       60.00   
+IF       231      8     7       87.50   
+IF       264      8     7       87.50   
+IF       298      11    8       72.73   
+CASE     326      5     1       20.00   
+
+
+212          assign sgnj_extension_bit = inp_pipe_op_mod_q[NUM_INP_REGS] ? sgnj_result.sign : 1'b1;
+                                                                         -1-  
+                                                                         ==>  
+                                                                         ==>  
+
+Branches:
+
+-1- Status  
+1   Covered 
+0   Covered 
+
+
+193            if (!info_a.is_boxed) sgnj_result = '{sign: 1'b0, exponent: '1, mantissa: 2**(MAN_BITS-1)};
+               -1-  
+               ==>
+               MISSING_ELSE
+               ==>
+
+Branches:
+
+-1- Status      
+1   Not Covered 
+0   Covered     
+
+
+200            unique case (inp_pipe_rnd_mode_q[NUM_INP_REGS])
+                      -1-  
+201              fpnew_pkg::RNE: sgnj_result.sign = sign_b;          // SGNJ
+                 ==>
+202              fpnew_pkg::RTZ: sgnj_result.sign = ~sign_b;         // SGNJN
+                 ==>
+203              fpnew_pkg::RDN: sgnj_result.sign = sign_a ^ sign_b; // SGNJX
+                 ==>
+204              fpnew_pkg::RUP: sgnj_result      = operand_a;       // passthrough
+                 ==>
+205              default: sgnj_result = '{default: fpnew_pkg::DONT_CARE}; // don't care
+                 ==>
+
+Branches:
+
+-1-     Status      
+RNE     Covered     
+RTZ     Covered     
+RDN     Covered     
+RUP     Not Covered 
+default Not Covered 
+
+
+231            if (info_a.is_nan && info_b.is_nan)
+               -1-  
+232              minmax_result = '{sign: 1'b0, exponent: '1, mantissa: 2**(MAN_BITS-1)}; // canonical qNaN
+                 ==>
+233            // If one operand is NaN, the non-NaN operand is returned
+234            else if (info_a.is_nan) minmax_result = operand_b;
+                    -2-  
+               ==>
+235            else if (info_b.is_nan) minmax_result = operand_a;
+                    -3-  
+               ==>
+236            // Otherwise decide according to the operation
+237            else begin
+238              unique case (inp_pipe_rnd_mode_q[NUM_INP_REGS])
+                        -4-  
+239                fpnew_pkg::RNE: minmax_result = operand_a_smaller ? operand_a : operand_b; // MIN
+                                                                     -5-  
+                                                                     ==>  
+                                                                     ==>  
+240                fpnew_pkg::RTZ: minmax_result = operand_a_smaller ? operand_b : operand_a; // MAX
+                                                                     -6-  
+                                                                     ==>  
+                                                                     ==>  
+241                default: minmax_result = '{default: fpnew_pkg::DONT_CARE}; // don't care
+                   ==>
+
+Branches:
+
+-1- -2- -3- -4-     -5- -6- Status      
+1   -   -   -       -   -   Covered     
+0   1   -   -       -   -   Covered     
+0   0   1   -       -   -   Covered     
+0   0   0   RNE     1   -   Covered     
+0   0   0   RNE     0   -   Covered     
+0   0   0   RTZ     -   1   Not Covered 
+0   0   0   RTZ     -   0   Covered     
+0   0   0   default -   -   Covered     
+
+
+264            if (signalling_nan) begin
+               -1-  
+265              cmp_status.NV = 1'b1; // invalid operation
+                 ==>
+266              cmp_result    = inp_pipe_rnd_mode_q[NUM_INP_REGS] == fpnew_pkg::RDN && inp_pipe_op_mod_q[NUM_INP_REGS];
+267            // Otherwise do comparisons
+268            end else begin
+269              unique case (inp_pipe_rnd_mode_q[NUM_INP_REGS])
+                        -2-  
+270                fpnew_pkg::RNE: begin // Less than or equal
+271                  if (any_operand_nan) cmp_status.NV = 1'b1; // Signalling comparison: NaNs are invalid
+                     -3-  
+                     ==>
+272                  else cmp_result = (operand_a_smaller | operands_equal) ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+                     ==>
+273                end
+274                fpnew_pkg::RTZ: begin // Less than
+275                  if (any_operand_nan) cmp_status.NV = 1'b1; // Signalling comparison: NaNs are invalid
+                     -4-  
+                     ==>
+276                  else cmp_result = (operand_a_smaller & ~operands_equal) ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+                     ==>
+277                end
+278                fpnew_pkg::RDN: begin // Equal
+279                  if (any_operand_nan) cmp_result = inp_pipe_op_mod_q[NUM_INP_REGS]; // NaN always not equal
+                     -5-  
+                     ==>
+280                  else cmp_result = operands_equal ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+                     ==>
+281                end
+282                default: cmp_result = '{default: fpnew_pkg::DONT_CARE}; // don't care
+                   ==>
+
+Branches:
+
+-1- -2-     -3- -4- -5- Status      
+1   -       -   -   -   Covered     
+0   RNE     1   -   -   Covered     
+0   RNE     0   -   -   Covered     
+0   RTZ     -   1   -   Covered     
+0   RTZ     -   0   -   Covered     
+0   RDN     -   -   1   Covered     
+0   RDN     -   -   0   Covered     
+0   default -   -   -   Not Covered 
+
+
+298            if (info_a.is_normal) begin
+               -1-  
+299              class_mask_d = operand_a.sign       ? fpnew_pkg::NEGNORM    : fpnew_pkg::POSNORM;
+                                                     -2-  
+                                                     ==>  
+                                                     ==>  
+300            end else if (info_a.is_subnormal) begin
+                        -3-  
+301              class_mask_d = operand_a.sign       ? fpnew_pkg::NEGSUBNORM : fpnew_pkg::POSSUBNORM;
+                                                     -4-  
+                                                     ==>  
+                                                     ==>  
+302            end else if (info_a.is_zero) begin
+                        -5-  
+303              class_mask_d = operand_a.sign       ? fpnew_pkg::NEGZERO    : fpnew_pkg::POSZERO;
+                                                     -6-  
+                                                     ==>  
+                                                     ==>  
+304            end else if (info_a.is_inf) begin
+                        -7-  
+305              class_mask_d = operand_a.sign       ? fpnew_pkg::NEGINF     : fpnew_pkg::POSINF;
+                                                     -8-  
+                                                     ==>  
+                                                     ==>  
+306            end else if (info_a.is_nan) begin
+                        -9-  
+307              class_mask_d = info_a.is_signalling ? fpnew_pkg::SNAN       : fpnew_pkg::QNAN;
+                                                     -10-  
+                                                     ==>  
+                                                     ==>  
+308            end else begin
+309              class_mask_d = fpnew_pkg::QNAN; // default value
+                 ==>
+
+Branches:
+
+-1- -2- -3- -4- -5- -6- -7- -8- -9- -10- Status      
+1   1   -   -   -   -   -   -   -   -    Covered     
+1   0   -   -   -   -   -   -   -   -    Covered     
+0   -   1   1   -   -   -   -   -   -    Not Covered 
+0   -   1   0   -   -   -   -   -   -    Not Covered 
+0   -   0   -   1   1   -   -   -   -    Covered     
+0   -   0   -   1   0   -   -   -   -    Covered     
+0   -   0   -   0   -   1   1   -   -    Covered     
+0   -   0   -   0   -   1   0   -   -    Covered     
+0   -   0   -   0   -   0   -   1   1    Covered     
+0   -   0   -   0   -   0   -   1   0    Covered     
+0   -   0   -   0   -   0   -   0   -    Not Covered 
+
+
+326            unique case (inp_pipe_op_q[NUM_INP_REGS])
+                      -1-  
+327              fpnew_pkg::SGNJ: begin
+328                result_d        = sgnj_result;
+                   ==>
+329                status_d        = sgnj_status;
+330                extension_bit_d = sgnj_extension_bit;
+331              end
+332              fpnew_pkg::MINMAX: begin
+333                result_d        = minmax_result;
+                   ==>
+334                status_d        = minmax_status;
+335                extension_bit_d = minmax_extension_bit;
+336              end
+337              fpnew_pkg::CMP: begin
+338                result_d        = cmp_result;
+                   ==>
+339                status_d        = cmp_status;
+340                extension_bit_d = cmp_extension_bit;
+341              end
+342              fpnew_pkg::CLASSIFY: begin
+343                result_d        = '{default: fpnew_pkg::DONT_CARE}; // unused
+                   ==>
+344                status_d        = class_status;
+345                extension_bit_d = class_extension_bit;
+346              end
+347              default: begin
+348                result_d        = '{default: fpnew_pkg::DONT_CARE}; // dont care
+                   ==>
+
+Branches:
+
+-1-       Status      
+SGNJ      Not Covered 
+MINMAX    Not Covered 
+CMP       Covered     
+CLASSIFY  Not Covered 
+default   Not Covered 
+
+
+-------------------------------------------------------------------------------
+===============================================================================
+Module Instance : tb_fpnew_noncomp_snan_patch.dut
+===============================================================================
+
+Instance :
+
+SCORE  LINE   COND   TOGGLE FSM    BRANCH 
+ 65.21  72.73  85.71  31.68 --      70.73 
+
+
+Instance's subtree :
+
+SCORE  LINE   COND   TOGGLE FSM    BRANCH 
+ 65.21  72.73  85.71  31.68 --      70.73 
+
+
+Module : 
+
+SCORE  LINE   COND   TOGGLE FSM    BRANCH NAME          
+ 65.21  72.73  85.71  31.68 --      70.73 fpnew_noncomp 
+
+
+Parent : 
+
+SCORE  LINE   COND   TOGGLE FSM    BRANCH NAME                        
+--     --     --     --     --     --     tb_fpnew_noncomp_snan_patch 
+
+
+Subtrees :
+
+
+no children
+----------------
+
+
+-------------------------------------------------------------------------------
+Since this is the module's only instance, the coverage report is the same as for the module.
+===============================================================================
+Module : tb_fpnew_noncomp_snan_patch
+===============================================================================
+SCORE  LINE   COND   TOGGLE FSM    BRANCH 
+--     --     --     --     --     --     
+
+Source File(s) : 
+
+/workspace/phoenix-bench/HDL_verified_new/testbench/openhwgroup_cvfpu_pr116/tb_fpnew_noncomp_snan_patch.sv
+
+Module self-instances :
+
+SCORE  LINE   COND   TOGGLE FSM    BRANCH NAME                        
+--     --     --     --     --     --     tb_fpnew_noncomp_snan_patch 
+
+
+
+-------------------------------------------------------------------------------
+===============================================================================
+Module Instance : tb_fpnew_noncomp_snan_patch
+===============================================================================
+
+Instance :
+
+SCORE  LINE   COND   TOGGLE FSM    BRANCH 
+--     --     --     --     --     --     
+
+
+Instance's subtree :
+
+SCORE  LINE   COND   TOGGLE FSM    BRANCH 
+ 65.21  72.73  85.71  31.68 --      70.73 
+
+
+Module : 
+
+SCORE  LINE   COND   TOGGLE FSM    BRANCH NAME                        
+--     --     --     --     --     --     tb_fpnew_noncomp_snan_patch 
+
+
+Parent : 
+
+none
+----------------
+
+
+Subtrees :
+
+SCORE  LINE   COND   TOGGLE FSM    BRANCH NAME 
+ 65.21  72.73  85.71  31.68 --      70.73 dut  
+
+
+
+-------------------------------------------------------------------------------
+Since this is the module's only instance, the coverage report is the same as for the module.

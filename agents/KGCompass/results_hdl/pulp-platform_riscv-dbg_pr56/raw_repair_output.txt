@@ -1,0 +1,18 @@
+The bug is in `src/dm_csrs.sv`, in the `p_reduction1` block.  
+The loop bound uses `NrHarts/2**5+1`, which can exceed the actual size of `halted_reshaped0` declared as `[(NrHarts-1)/2**5:0]`. This can lead to out-of-bounds access for some `NrHarts` values.
+
+Here is the fix as a SEARCH/REPLACE edit:
+
+```systemverilog
+### src/dm_csrs.sv
+<<<<<<< SEARCH
+    for (int unsigned k = 0; k < NrHarts/2**5+1; k++) begin
+      halted_flat1[k] = |halted_reshaped0[k];
+    end
+=======
+    for (int unsigned k = 0; k < (NrHarts-1)/2**5+1; k++) begin
+      halted_flat1[k] = |halted_reshaped0[k];
+    end
+>>>>>>> REPLACE
+```
+

@@ -1,0 +1,10 @@
+{
+    "task_info": {
+        "base_commit": "8059b8bb3856a582373562bfaa8255b1594ca959",
+        "problem_statement": "# Incorrect Exception Priority\n\nWorking on Ssstrict Csr test for supervisor mode and accidentally included the satp register. This caused a strange exception and led to a mismatch between IDV and Wally. According to the Priv spec exception code 4 should be returned when Zicclsm is not enabled. \n\nThis occurs when lh x5,0(x5) is executed at address 0x800001c4 in the included elf file. 0x5 contains value 0xffffffff since on instruction address 800054a4 the csr 0x2a test loaded -1 into a random register which happened to be x1 (ra). Then there was an instruction access faulty exception on instruction 0x80007a14 while testing csr 0x174. This IAF exception caused ra (holding all 1s) to replace the value in mepc. When instruction 0x800001c4 in the traphandler (lh x5,0(x5)) was executed, this misaligned and access fault address caused an exception. Wally classified this as a load access fault but IDV classified this as a load address misaligned.  \n\nRunning the SsstrictCsrS.elf file should replicate this error. Make sure satp is not skipped in addins/cvw-arch-verif/bin/csrtest.py\n(line 207 of csrtest.py is `csrtests(pathname, sCsrSkip + uCsrSkip + [0x180] ) # 0x180 is the satp register`).\n\n![Image](https://github.com/user-attachments/assets/a34f6128-f42c-420a-9773-26b0c20bfb8d)\n\n[SsstrictCsrS.elf.gz](https://github.com/user-attachments/files/19660253/SsstrictCsrS.elf.gz)\n",
+        "instance_id": "openhwgroup_cvw_pr1554"
+    },
+    "setup_info": {
+        "repo_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/openhwgroup_cvw_pr1554"
+    }
+}

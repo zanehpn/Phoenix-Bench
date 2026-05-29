@@ -1,0 +1,24 @@
+From c75ffcf92183c1777e84a87170e6759eaff70d17 Mon Sep 17 00:00:00 2001
+From: Andreas Tiemeyer <andreas.tiemeyer@gmx.com>
+Date: Mon, 21 Jan 2019 15:18:49 +0000
+Subject: [PATCH] Fix sign bug: the result of -a + a is +0 (positive zero).
+ Without this fix, the module returns -0 (negative zero).
+
+---
+ adder/adder.v | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/adder/adder.v b/adder/adder.v
+index 8f3550f..206d2b2 100644
+--- a/adder/adder.v
++++ b/adder/adder.v
+@@ -251,6 +251,9 @@ module adder(
+         if ($signed(z_e) == -126 && z_m[23] == 0) begin
+           z[30 : 23] <= 0;
+         end
++        if ($signed(z_e) == -126 && z_m[23:0] == 24'h0) begin
++          z[31] <= 1'b0; // FIX SIGN BUG: -a + a = +0.
++        end
+         //if overflow occurs, return inf
+         if ($signed(z_e) > 127) begin
+           z[22 : 0] <= 0;

@@ -1,0 +1,29 @@
+# loop bounds incorrect in dm_csrc.sv (line 126)
+
+Hi guys,
+
+there seems to be a bug in dm_csrs.sv (master branch, https://github.com/pulp-platform/riscv-dbg/blob/master/src/dm_csrs.sv) line 126:
+
+```
+for (int unsigned k = 0; k < NrHarts/2**5+1; k++) begin
+      halted_flat1[k] = |halted_reshaped0[k];
+end
+```
+
+The array halted_reshaped0 is defined as:
+
+```
+logic [(NrHarts-1)/2**5:0][31:0] halted_reshaped0;
+```
+
+Therefore, the loop above will access elements which are non-existing because the loop accesses elements above (NrHarts-1)/2**5+1.
+
+The code should look imho as follows:
+
+```
+for (int unsigned k = 0; k < (NrHarts-1)/2**5+1; k++) begin
+      halted_flat1[k] = |halted_reshaped0[k];
+end
+```
+
+BR, Dustin

@@ -1,0 +1,22 @@
+[
+    {
+        "role": "system",
+        "content": "As a software developer maintaining the GitHub repository openhwgroup_cvfpu_pr114, you are responsible for analyzing a submitted issue and identifying the exact location in the repository where the issue occurs."
+    },
+    {
+        "role": "user",
+        "content": "Here is the issue description:\n# Proposal: allow the FMA addend to be in either `src_fmt_i` or `dst_fmt_i`\nCurrently, the addend operand of the FMA shares its FP format with the result:\nhttps://github.com/openhwgroup/cvfpu/blob/4aac6b3e87a30c8567dbe7401eba3274eea18afc/src/fpnew_fma_multi.sv#L37-L38\nThis makes sense when considering the various fused multiply-accumulate operations of the RISC-V spec, which add the product of two multiplicands given in one FP format to an accumulator in another FP format. However, the RISC-V vector spec defines [widening FP add and subtract operations](https://github.com/riscv/riscv-v-spec/blob/master/v-spec.adoc#133-vector-widening-floating-point-addsubtract-instructions) that come in two flavors:\n- one which sums two narrow operands and produces a wider result\n- one which sums one narrow and one wide operand to produce a wide result\nThe latter is directly supported by CVFPU but the former is not, as that would require the addend operand of the FMA to be in `src_fmt_i` as well.\nLooking at the source code of the FMA, nothing is fundamentally preventing the FMA addend to be in a different format than the result. It would suffice to change the following lines, which unpack the 3 operands, to use a different format for `operand_c` (and `info_c`):\nhttps://github.com/openhwgroup/cvfpu/blob/4aac6b3e87a30c8567dbe7401eba3274eea18afc/src/fpnew_fma_multi.sv#L234-L240\nHence, in order to improve support for these type of widening FP add/sub and potentially other operations and to generally increase the flexibility of CVFPU, **I propose to allow the FMA addend to be in either `src_fmt_i` or `dst_fmt_i` (at least for the add operation)**.\nThis change could be implemented, for instance, by:\n- Adding a new port `add_fmt_i` to the FMA, all opgroup modules and the `fpnew_top` module that specifies the format of the addend. This would be the most flexible option but changes the ports of the top module.\n- Adding a new operation `ADDW` to the `operation_e` enum, which behaves the same as the `ADD` operation except that `src_fmt_i` is used for the addend instead of `dst_fmt_i`. This would avoid changes of the top module.\n@davideschiavone @pascalgouedo @stmach @lucabertaccini Please let me know if you would support such a change and your preferred way of implementing it. If favorable, I would then prepare a PR."
+    },
+    {
+        "role": "user",
+        "content": "Here are the skeletons of the files:\n### Skeleton 0:\n\n\n### Skeleton 1:\n\n\n### Skeleton 2:\n\n\n### Skeleton 3:\n\n\n### Skeleton 4:\n\n\n### Skeleton 5:\n\n\n### Skeleton 6:\n\n\n### Skeleton 7:\n\n\n### Skeleton 8:\n\n\n### Skeleton 9:"
+    },
+    {
+        "role": "user",
+        "content": "Please review the issue description and thoroughly analyze the issue to uncover all possible causes.\nThen, review the skeletons of potentially relevant files and identify up to FOUR files that are most likely to require edits to resolve the issue.\n\nIMPORTANT:\n1. Select files ONLY FROM THE PROVIDED FILE LIST and specify their FULL PATHS.\n2. The returned files should be separated by new lines ordered by most to least important. Wrap the file list in triple backticks (```).\n\nExplain your reasoning, then provide your answer in the following format:\n```\nfull_path1/file1.py\nfull_path2/file2.py\n```"
+    },
+    {
+        "role": "assistant",
+        "content": "The root of the proposal is to give the FMA\u2019s addend its own format, which means touching\n\n  1. The FMA multi\u2010precision implementation itself,\n  2. The FMA single\u2010precision implementation (they share very similar unpack logic),\n  3. The top\u2010level wrapper that strings all of the opgroups together,\n  4. And the package that defines the floating\u2010point operation enum (where you\u2019d add `ADDW` if you go that route).\n\n```  \nsrc/fpnew_fma_multi.sv  \nsrc/fpnew_fma_single.sv  \nsrc/fpnew_top.sv  \nsrc/fpnew_pkg.sv  \n```"
+    }
+]

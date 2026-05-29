@@ -1,0 +1,18 @@
+diff --git a/src/fpnew_cast_multi.sv b/src/fpnew_cast_multi.sv
+index 25e5bf5..d3cd59e 100644
+--- a/src/fpnew_cast_multi.sv
++++ b/src/fpnew_cast_multi.sv
+@@ -247,9 +247,10 @@ module fpnew_cast_multi #(
+   end
+ 
+   // Construct input mantissa from integer
+-  assign int_value    = ifmt_input_val[int_fmt_q];
+-  assign int_sign     = int_value[INT_MAN_WIDTH-1] & ~op_mod_q; // only signed ints are negative
+-  assign int_mantissa = int_sign ? unsigned'(-int_value) : int_value; // get magnitude of negative
++   assign int_value    = ifmt_input_val[int_fmt_q];
++   assign int_sign     = int_value[INT_MAN_WIDTH-1] & ~op_mod_q; // only signed ints are negative
++   // Preserve signed interpretation for negative integer results so sign-extension is correct.
++   assign int_mantissa = int_sign ? logic signed'(-$signed(int_value)) : int_value; // get magnitude of negative
+ 
+   // select mantissa with source format
+   assign encoded_mant = src_is_int ? int_mantissa : fmt_mantissa[src_fmt_q];

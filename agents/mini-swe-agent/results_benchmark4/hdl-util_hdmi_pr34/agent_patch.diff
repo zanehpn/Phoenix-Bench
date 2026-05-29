@@ -1,0 +1,45 @@
+diff --git a/src/serializer.sv b/src/serializer.sv
+index b303c5d..32709e3 100644
+--- a/src/serializer.sv
++++ b/src/serializer.sv
+@@ -15,6 +15,32 @@ module serializer
+ `ifndef VERILATOR
+     `ifdef SYNTHESIS
+         `ifndef ALTERA_RESERVED_QIS
++            `ifdef GW_IDE
++                // Gowin serializer primitive, used when GW_IDE is defined by the build.
++                // The TMDS data is shifted out MSB-first using ODDR/OSER10-style behavior.
++                logic [9:0] tmds_reversed [NUM_CHANNELS-1:0];
++                genvar i, j;
++                generate
++                    for (i = 0; i < NUM_CHANNELS; i++) begin: gowin_tmds_rev
++                        for (j = 0; j < 10; j++) begin: gowin_tmds_rev_bit
++                            assign tmds_reversed[i][j] = tmds_internal[i][9-j];
++                        end
++                    end
++                endgenerate
++
++                for (i = 0; i < NUM_CHANNELS; i++) begin: gowin_serialize
++                    logic [9:0] shift;
++                    always_ff @(posedge clk_pixel_x5)
++                        shift <= reset ? 10'b0000011111 : {shift[7:0], tmds_reversed[i][9:8]};
++                    always_ff @(negedge clk_pixel_x5)
++                        shift <= reset ? 10'b0000011111 : {shift[7:0], tmds_reversed[i][9:8]};
++                    assign tmds[i] = shift[0];
++                end
++                logic tmds_clock_shift = 1'b0;
++                always_ff @(posedge clk_pixel_x5)
++                    tmds_clock_shift <= reset ? 1'b0 : ~tmds_clock_shift;
++                assign tmds_clock = tmds_clock_shift;
++            `else
+             // https://www.xilinx.com/support/documentation/user_guides/ug471_7Series_SelectIO.pdf
+             logic tmds_plus_clock [NUM_CHANNELS:0];
+             assign tmds_plus_clock = '{tmds_clock, tmds[2], tmds[1], tmds[0]};
+@@ -108,6 +134,7 @@ module serializer
+                     );
+                 end
+             endgenerate
++            `endif
+         `endif
+     `else
+         logic [9:0] tmds_reversed [NUM_CHANNELS-1:0];

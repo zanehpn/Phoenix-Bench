@@ -1,0 +1,79 @@
+diff --git a/rtl/core/core_top.sv b/rtl/core/core_top.sv
+index 26309ec..b7e89dd 100644
+--- a/rtl/core/core_top.sv
++++ b/rtl/core/core_top.sv
+@@ -25,6 +25,9 @@ module core_top (
+     input logic          rstn_i,
+     output logic         rst_reqn_o,
+     input logic          halt_core_i,
++    input logic          dbg_halt_i,
++    input logic [4:0]    dbg_reg_addr_i,
++    output logic [31:0]  dbg_reg_data_o,
+ // IF-Memory
+     wb_master_bus_t      IF_wb_bus,
+ // MEM-Memory
+@@ -34,6 +37,9 @@ module core_top (
+ 
+ assign rst_reqn_o = rstn_i;
+ 
++logic core_halt;
++assign core_halt = halt_core_i | dbg_halt_i;
++
+ //IF-ID
+ logic                ID_IF_ack;
+ logic                IF_ID_valid;
+@@ -98,7 +104,7 @@ IF_stage IF_i (
+     .clk         ( clk           ),
+     .rstn_i      ( rstn_i        ),
+     .flush_i     ( flush         ),
+-    .halt_i      ( halt_core_i   ),
++    .halt_i      ( core_halt     ),
+     .ack_i       ( ID_IF_ack     ),
+     .valid_o     ( IF_ID_valid   ),
+     .instr_o     ( IF_ID_instr   ),
+@@ -113,7 +119,7 @@ ID_stage ID_i (
+     .clk      ( clk          ),
+     .rstn_i   ( rstn_i       ),
+     .flush_i  ( flush        ),
+-    .halt_i   ( halt_core_i  ),
++    .halt_i   ( core_halt     ),
+     .valid_i  ( IF_ID_valid  ),
+     .ack_o    ( ID_IF_ack    ),
+     .instr_i  ( IF_ID_instr  ),
+@@ -129,14 +135,16 @@ ID_stage ID_i (
+     .rs2a_o   ( ID_REG_rs2   ),
+     .rs1d_i   ( REG_ID_rs1_d ),
+     .rs2d_i   ( REG_ID_rs2_d ),
+-    .rd_i     ( WB_REG_rd    )
++    .rd_i     ( WB_REG_rd    ),
++    .dbg_reg_addr_i ( dbg_reg_addr_i ),
++    .dbg_reg_data_o ( dbg_reg_data_o )
+ );
+ 
+ EX_stage EX_i (
+     .clk      ( clk           ),
+     .rstn_i   ( rstn_i        ),
+     .flush_i  ( flush         ),
+-    .halt_i   ( halt_core_i   ),
++    .halt_i   ( core_halt     ),
+     .valid_i  ( ID_EX_valid   ),
+     .ack_o    ( EX_ID_ack     ),
+     .instr_i  ( ID_EX_instr   ),
+@@ -156,7 +164,7 @@ EX_stage EX_i (
+ MEM_stage MEM_i (
+     .clk         ( clk           ),
+     .rstn_i      ( rstn_i        ),
+-    .halt_i      ( halt_core_i   ),
++    .halt_i      ( core_halt     ),
+     .valid_i     ( EX_MEM_valid  ),
+     .ack_o       ( MEM_EX_ack    ),
+     .pc_i        ( EX_MEM_pc     ),
+@@ -173,7 +181,7 @@ MEM_stage MEM_i (
+ WB_stage WB_i (
+     .clk     ( clk          ),
+     .rstn_i  ( rstn_i       ),
+-    .halt_i  ( halt_core_i   ),
++    .halt_i  ( core_halt     ),
+     .ack_o   ( WB_MEM_ack   ),
+     .valid_i ( MEM_WB_valid ),
+     .instr_i ( MEM_WB_instr ),

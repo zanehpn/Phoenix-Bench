@@ -1,0 +1,27 @@
+The bug is localized in `src/fpnew_opgroup_multifmt_slice.sv`, inside the `prepare_input` block that slices `operands_i` into lane-local operands.
+
+### Root cause
+The code uses `fpnew_pkg::fp_width(src_fmt_i)` for **all** operands:
+- this is correct for operands 0 and 1 in `ADDMUL` (multiplicands)
+- but incorrect for operand 2, which should use `fpnew_pkg::fp_width(dst_fmt_i)` because it is the addend/result format
+
+This causes the third operand to be sliced with the wrong stride whenever `src_fmt_i` and `dst_fmt_i` differ.
+
+## Fix
+Update the slicing logic so operand 2 uses `dst_fmt_i` width, while operands 0 and 1 continue using `src_fmt_i` width.
+
+```systemverilog
+### src/fpnew_opgroup_multifmt_slice.sv
+<<<<<<< SEARCH
+        for (int unsigned i = 0; i < NUM_OPERANDS; i++) begin
+          local_operands[i] = operands_i[i] >> LANE*fpnew_pkg::fp_width(src_fmt_i);
+        end
+=======
+        for (int unsigned i = 0; i < NUM_OPERANDS; i++) begin
+          local_operands[i] = operands_i[i] >> LANE*(
+              (i == 2) ? fpnew_pkg::fp_width(dst_fmt_i) : fpnew_pkg::fp_width(src_fmt_i)
+          );
+        end
+>>>>>>> REPLACE
+```
+

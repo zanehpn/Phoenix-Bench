@@ -1,0 +1,561 @@
+From aaaf99da67563b018b7f42b3379bc7603a140e4c Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Fri, 5 Dec 2025 16:21:29 +0100
+Subject: [PATCH 01/13] Simulation with -pocket
+
+---
+ modules/jtframe/hdl/ver/psram128.v             | 2 +-
+ modules/jtframe/hdl/video/jtframe_lfbuf_ctrl.v | 6 ++++--
+ 2 files changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/modules/jtframe/hdl/ver/psram128.v b/modules/jtframe/hdl/ver/psram128.v
+index 119560640..9b8bf09aa 100644
+--- a/modules/jtframe/hdl/ver/psram128.v
++++ b/modules/jtframe/hdl/ver/psram128.v
+@@ -117,7 +117,7 @@ initial begin
+     latency   = 3;
+     wrap      = 1;
+     wt_cfg    = 1;
+-    wt_pol    = 1;
++    wt_pol    = 0;
+     // clear the memory
+     for(k=0;k<2**22-1;k++) mem[k] = 0;
+ end
+diff --git a/modules/jtframe/hdl/video/jtframe_lfbuf_ctrl.v b/modules/jtframe/hdl/video/jtframe_lfbuf_ctrl.v
+index bcc11b5e0..0a3b645e1 100644
+--- a/modules/jtframe/hdl/video/jtframe_lfbuf_ctrl.v
++++ b/modules/jtframe/hdl/video/jtframe_lfbuf_ctrl.v
+@@ -74,7 +74,7 @@ localparam [21:0] BUS_CFG = {
+     1'b0, // synchronous burst access
+     1'b0, // variable latency
+     3'd3, // default latency counter
+-    1'b0, // wait is active high
++    1'b0, // wait is active low
+     1'b0, // reserved
+     1'b0, // 1=wait set 1 clock ahead of data
+     2'd0, // reserved
+@@ -125,12 +125,14 @@ always @( posedge clk ) begin
+         lhbl_l <= 0;
+         vsl    <= 0;
+         cntup  <= 0;
+-        startup<= 0;
++        startup<= `ifdef SIMULATION 1 `else 0 `endif ;
+     end else if(pxl_cen) begin
+         lhbl_l  <= lhbl;
+         vsl     <= vs;
+         hcnt    <= hcnt+1'd1;
++`ifndef SIMULATION
+         startup <= &cntup;
++`endif
+         if( ~lhbl & lhbl_l ) begin // enters blanking
+             hcnt   <= 0;
+             hlim   <= hcnt - hblen; // H limit below which we allow do_wr events
+
+From 849a322ad05d7e2fe0c4e3a5ad0c2bc0bcfe3df9 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Fri, 5 Dec 2025 17:18:33 +0100
+Subject: [PATCH 02/13] Compiles in pocket without strong timing issues. Works
+ in scene simulation
+
+---
+ modules/jtframe/hdl/ver/game_test.v           |  1 +
+ .../jtframe/hdl/video/jtframe_lfbuf_cram.v    | 15 +++++++++---
+ .../jtframe/hdl/video/jtframe_lfbuf_line.v    | 23 +++++++++++--------
+ 3 files changed, 27 insertions(+), 12 deletions(-)
+
+diff --git a/modules/jtframe/hdl/ver/game_test.v b/modules/jtframe/hdl/ver/game_test.v
+index 56b6cb589..77095837c 100644
+--- a/modules/jtframe/hdl/ver/game_test.v
++++ b/modules/jtframe/hdl/ver/game_test.v
+@@ -418,6 +418,7 @@ jtframe_sdram_stats_sim #(.AW(SDRAMW)) u_stats(
+         jtframe_lfbuf_cram u_lf_buf(
+             .rst        ( rst           ),
+             .clk        ( clk_rom       ),
++            .clk48      ( clk48         ),
+             .pxl_cen    ( pxl_cen       ),
+ 
+             .hs         ( HS            ),
+diff --git a/modules/jtframe/hdl/video/jtframe_lfbuf_cram.v b/modules/jtframe/hdl/video/jtframe_lfbuf_cram.v
+index dbd50ff65..c1363cd0d 100644
+--- a/modules/jtframe/hdl/video/jtframe_lfbuf_cram.v
++++ b/modules/jtframe/hdl/video/jtframe_lfbuf_cram.v
+@@ -27,6 +27,7 @@ module jtframe_lfbuf_cram #(parameter
+ )(
+     input               rst,     // hold in reset for >150 us
+     input               clk,
++    input               clk48,
+     input               pxl_cen,
+ 
+     // video status
+@@ -59,14 +60,21 @@ module jtframe_lfbuf_cram #(parameter
+     output              cr_wen
+ );
+ 
+-wire          frame, fb_clr, fb_done, line, scr_we, fb_blank;
++wire          frame, fb_clr, fb_done, line, scr_we, fb_blank, pxl48_cen;
+ wire [HW-1:0] fb_addr, rd_addr;
+ wire [  15:0] fb_din, fb_dout;
+ 
++jtframe_crossclk_cen u_crosscen(
++    .clk_in     ( clk       ),    // fast clock
++    .cen_in     ( pxl_cen   ),
++    .clk_out    ( clk48     ),    // slow clock
++    .cen_out    ( pxl48_cen )
++);
++
+ jtframe_lfbuf_ctrl #(.HW(HW),.VW(VW)) u_ctrl (
+     .rst        ( rst       ),
+-    .clk        ( clk       ),
+-    .pxl_cen    ( pxl_cen   ),
++    .clk        ( clk48     ),
++    .pxl_cen    ( pxl48_cen ),
+ 
+     .lhbl       ( lhbl      ),
+     .vs         ( vs        ),
+@@ -104,6 +112,7 @@ jtframe_lfbuf_ctrl #(.HW(HW),.VW(VW)) u_ctrl (
+ jtframe_lfbuf_line #(.DW(DW),.HW(HW),.VW(VW)) u_line(
+     .rst        ( rst       ),
+     .clk        ( clk       ),
++    .clk_ctrl   ( clk48     ),
+     .pxl_cen    ( pxl_cen   ),
+     // video status
+     .vrender    ( vrender   ),
+diff --git a/modules/jtframe/hdl/video/jtframe_lfbuf_line.v b/modules/jtframe/hdl/video/jtframe_lfbuf_line.v
+index 9dc11b789..aef18e330 100644
+--- a/modules/jtframe/hdl/video/jtframe_lfbuf_line.v
++++ b/modules/jtframe/hdl/video/jtframe_lfbuf_line.v
+@@ -33,6 +33,7 @@ module jtframe_lfbuf_line #(parameter
+ )(
+     input               rst,
+     input               clk,
++    input               clk_ctrl,
+     input               pxl_cen,
+     // video status
+     input      [VW-1:0] vrender,
+@@ -172,7 +173,7 @@ always @(posedge clk) begin
+                 st      <= VBTOSY;
+             `endif
+         end
+-        if( fb_done && !done )
++        if( fb_done && !done && clk_ctrl )
+     `ifdef JTFRAME_LF_FULLV
+             if({vsa,vsy,vbs}!=0) begin
+                 porch <= porch - 1'd1;
+@@ -206,7 +207,7 @@ localparam [15:0] LFBUF_CLR = `ifndef JTFRAME_LFBUF_CLR 0 `else `JTFRAME_LFBUF_C
+ // collect input data
+ jtframe_dual_ram #(.DW(16),.AW(HW+1)) u_linein(
+     // Write to big RAM and delete
+-    .clk0   ( clk           ),
++    .clk0   ( clk_ctrl      ),
+     .data0  ( LFBUF_CLR     ),
+     .addr0  ( { line^fb_clr, fb_addr } ),
+     .we0    ( fb_clr        ),
+@@ -219,15 +220,19 @@ jtframe_dual_ram #(.DW(16),.AW(HW+1)) u_linein(
+     .q1     (               )
+ );
+ 
+-jtframe_rpwp_ram #(.DW(16),.AW(HW)) u_lineout(
+-    .clk    ( clk           ),
++jtframe_dual_ram #(.DW(16),.AW(HW)) u_lineout(
+     // Read from big RAM, write to line buffer
+-    .din    ( fb_dout       ),
+-    .wr_addr( rd_addr       ),
+-    .we     ( scr_we        ),
++    .clk0   ( clk_ctrl      ),
++    .data0  ( fb_dout       ),
++    .addr0  ( rd_addr       ),
++    .we0    ( scr_we        ),
++    .q0     (               ),
+     // Read from line buffer to screen
+-    .rd_addr( hdump         ),
+-    .dout   ( scr_pxl       )
++    .clk1   ( clk           ),
++    .data1  ( 16'b0         ),
++    .addr1  ( hdump         ),
++    .we1    ( 1'b0          ), // the core should not send transparent pixels
++    .q1     ( scr_pxl       )
+ );
+ 
+ endmodule
+\ No newline at end of file
+
+From 255027373a7c7a42b6de29a8e9bdda3ccd663155 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Tue, 9 Dec 2025 10:20:29 +0100
+Subject: [PATCH 03/13] clk_ctrl port
+
+---
+ modules/jtframe/hdl/video/jtframe_lfbuf_bram.v | 1 +
+ modules/jtframe/hdl/video/jtframe_lfbuf_ddr.v  | 1 +
+ modules/jtframe/hdl/video/jtframe_lfbuf_sdr.v  | 1 +
+ modules/jtframe/hdl/video/jtframe_lfbuf_sram.v | 1 +
+ 4 files changed, 4 insertions(+)
+
+diff --git a/modules/jtframe/hdl/video/jtframe_lfbuf_bram.v b/modules/jtframe/hdl/video/jtframe_lfbuf_bram.v
+index 79dafd223..39d9769e6 100644
+--- a/modules/jtframe/hdl/video/jtframe_lfbuf_bram.v
++++ b/modules/jtframe/hdl/video/jtframe_lfbuf_bram.v
+@@ -89,6 +89,7 @@ jtframe_lfbuf_bram_ctrl #(.HW(HW),.VW(VW)) u_ctrl (
+ jtframe_lfbuf_line #(.DW(DW),.HW(HW),.VW(VW)) u_line(
+     .rst        ( rst       ),
+     .clk        ( clk       ),
++    .clk_ctrl   ( clk       ),
+     .pxl_cen    ( pxl_cen   ),
+ 
+     // video status
+diff --git a/modules/jtframe/hdl/video/jtframe_lfbuf_ddr.v b/modules/jtframe/hdl/video/jtframe_lfbuf_ddr.v
+index 13378a2d1..b51e9f908 100644
+--- a/modules/jtframe/hdl/video/jtframe_lfbuf_ddr.v
++++ b/modules/jtframe/hdl/video/jtframe_lfbuf_ddr.v
+@@ -106,6 +106,7 @@ jtframe_lfbuf_ddr_ctrl #(.HW(HW),.VW(VW)) u_ctrl (
+ jtframe_lfbuf_line #(.DW(DW),.HW(HW),.VW(VW)) u_line(
+     .rst        ( rst       ),
+     .clk        ( clk       ),
++    .clk_ctrl   ( clk       ),
+     .pxl_cen    ( pxl_cen   ),
+ 
+     // video status
+diff --git a/modules/jtframe/hdl/video/jtframe_lfbuf_sdr.v b/modules/jtframe/hdl/video/jtframe_lfbuf_sdr.v
+index 08a578181..ec5028349 100644
+--- a/modules/jtframe/hdl/video/jtframe_lfbuf_sdr.v
++++ b/modules/jtframe/hdl/video/jtframe_lfbuf_sdr.v
+@@ -112,6 +112,7 @@ jtframe_lfbuf_sdr_ctrl #(.HW(HW),.VW(VW)) u_ctrl (
+ jtframe_lfbuf_line #(.DW(DW),.HW(HW),.VW(VW)) u_line(
+     .rst        ( rst       ),
+     .clk        ( clk       ),
++    .clk_ctrl   ( clk       ),
+     .pxl_cen    ( pxl_cen   ),
+ 
+     // video status
+diff --git a/modules/jtframe/hdl/video/jtframe_lfbuf_sram.v b/modules/jtframe/hdl/video/jtframe_lfbuf_sram.v
+index 86fb42c4b..c2838a1ec 100644
+--- a/modules/jtframe/hdl/video/jtframe_lfbuf_sram.v
++++ b/modules/jtframe/hdl/video/jtframe_lfbuf_sram.v
+@@ -98,6 +98,7 @@ jtframe_lfbuf_sram_ctrl #(.HW(HW),.VW(VW)) u_ctrl (
+ jtframe_lfbuf_line #(.DW(DW),.HW(HW),.VW(VW)) u_line(
+     .rst        ( rst       ),
+     .clk        ( clk       ),
++    .clk_ctrl   ( clk       ),
+     .pxl_cen    ( pxl_cen   ),
+ 
+     // video status
+
+From d6a8ab3c5a12bfb8478bbc90600d1ebac14a561b Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Tue, 9 Dec 2025 10:22:33 +0100
+Subject: [PATCH 04/13] do not skip lines between between clocks
+
+---
+ modules/jtframe/hdl/video/jtframe_lfbuf_line.v | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/modules/jtframe/hdl/video/jtframe_lfbuf_line.v b/modules/jtframe/hdl/video/jtframe_lfbuf_line.v
+index aef18e330..c031d2185 100644
+--- a/modules/jtframe/hdl/video/jtframe_lfbuf_line.v
++++ b/modules/jtframe/hdl/video/jtframe_lfbuf_line.v
+@@ -131,6 +131,7 @@ wire      active, // active video portion
+           vsy,    // sync start to end
+           vsa;    // sync end to active start
+ reg [3:0] st;
++reg [VW-1:0] ln_v_l;
+ 
+ localparam [3:0] ACTIVE=4'b1_000,
+                  VBTOSY=4'b0_001;
+@@ -153,6 +154,7 @@ always @(posedge clk) begin
+         frame    <= 0;
+         ln_hs    <= 0;
+         ln_v     <= 0;
++        ln_v_l   <= 0;
+         done     <= 0;
+     `ifdef JTFRAME_LF_FULLV
+         ln_vs    <= 0;
+@@ -162,6 +164,7 @@ always @(posedge clk) begin
+     `endif
+     end else if(info_rdy) begin
+         ln_hs <= 0;
++        ln_v_l<= ln_v;
+         if( vs && !vsl ) begin // object parsing starts during VB
+             frame <= ~frame;
+             ln_v  <= vstart;
+@@ -173,7 +176,7 @@ always @(posedge clk) begin
+                 st      <= VBTOSY;
+             `endif
+         end
+-        if( fb_done && !done && clk_ctrl )
++        if( fb_done && !done && ln_v==ln_v_l )
+     `ifdef JTFRAME_LF_FULLV
+             if({vsa,vsy,vbs}!=0) begin
+                 porch <= porch - 1'd1;
+
+From 438f9b08a5d8df8dfcad6571dec7d28c43ffbe82 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Wed, 10 Dec 2025 15:27:49 +0100
+Subject: [PATCH 05/13] long simulations work again
+
+---
+ modules/jtframe/hdl/video/jtframe_lfbuf_ctrl.v | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/modules/jtframe/hdl/video/jtframe_lfbuf_ctrl.v b/modules/jtframe/hdl/video/jtframe_lfbuf_ctrl.v
+index 0a3b645e1..8e9f911bf 100644
+--- a/modules/jtframe/hdl/video/jtframe_lfbuf_ctrl.v
++++ b/modules/jtframe/hdl/video/jtframe_lfbuf_ctrl.v
+@@ -125,12 +125,12 @@ always @( posedge clk ) begin
+         lhbl_l <= 0;
+         vsl    <= 0;
+         cntup  <= 0;
+-        startup<= `ifdef SIMULATION 1 `else 0 `endif ;
++        startup<= `ifdef NOMAIN 1 `else 0 `endif ;
+     end else if(pxl_cen) begin
+         lhbl_l  <= lhbl;
+         vsl     <= vs;
+         hcnt    <= hcnt+1'd1;
+-`ifndef SIMULATION
++`ifndef NOMAIN
+         startup <= &cntup;
+ `endif
+         if( ~lhbl & lhbl_l ) begin // enters blanking
+
+From bdf1147b60968909aac1d9f34765e80229e982fc Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Wed, 10 Dec 2025 15:28:22 +0100
+Subject: [PATCH 06/13] right pocket submodule commit for simulation
+
+---
+ modules/jtframe/target/pocket | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/modules/jtframe/target/pocket b/modules/jtframe/target/pocket
+index 5bb8842c8..6d3d264b3 160000
+--- a/modules/jtframe/target/pocket
++++ b/modules/jtframe/target/pocket
+@@ -1 +1 @@
+-Subproject commit 5bb8842c8729ed34e3b6cc0f18661479e3db78b9
++Subproject commit 6d3d264b3cd7c290e2ca785410f9091636bbd44e
+
+From 5b4c918f213836bfa8065095be7e11cd5be2e78c Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Wed, 10 Dec 2025 17:11:34 +0100
+Subject: [PATCH 07/13] remove compilation warning
+
+---
+ cores/rungun/hdl/jtrungun_main.v | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/cores/rungun/hdl/jtrungun_main.v b/cores/rungun/hdl/jtrungun_main.v
+index b74ca06e8..f554061ec 100644
+--- a/cores/rungun/hdl/jtrungun_main.v
++++ b/cores/rungun/hdl/jtrungun_main.v
+@@ -181,10 +181,11 @@ always @* begin
+              + {3'd0,objrm_cs}+ {3'd0,objch_cs}+ {3'd0,pair_cs} + {3'd0,sdon_cs}
+              + {3'd0,ccu_cs}                   + {3'd0,psch_cs} + {3'd0,sys2_cs}
+              + {3'd0,sys1_cs} + {3'd0,io2_cs}  + {3'd0,io1_cs};
++    `ifdef SIMULATION
+     if(cs_count>1) begin
+         $display("cs_count over 1!");
+         $finish;
+-    end
++    end `endif
+ end
+ 
+ always @* begin
+
+From e657fa9742024e7e4aa90f819183726adad4de03 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Wed, 10 Dec 2025 17:11:47 +0100
+Subject: [PATCH 08/13] minor
+
+---
+ modules/jtframe/target/pocket | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/modules/jtframe/target/pocket b/modules/jtframe/target/pocket
+index 6d3d264b3..8faf2e624 160000
+--- a/modules/jtframe/target/pocket
++++ b/modules/jtframe/target/pocket
+@@ -1 +1 @@
+-Subproject commit 6d3d264b3cd7c290e2ca785410f9091636bbd44e
++Subproject commit 8faf2e624e4fdd4be2130ba62394d0607ab5ce0f
+
+From 10a231b862156ea5af159c1bc524cf5b50eb775a Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Thu, 11 Dec 2025 11:02:25 +0100
+Subject: [PATCH 09/13] pocket cram clock at 48 MHz
+
+---
+ modules/jtframe/target/pocket | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/modules/jtframe/target/pocket b/modules/jtframe/target/pocket
+index 8faf2e624..e5c3a9ba3 160000
+--- a/modules/jtframe/target/pocket
++++ b/modules/jtframe/target/pocket
+@@ -1 +1 @@
+-Subproject commit 8faf2e624e4fdd4be2130ba62394d0607ab5ce0f
++Subproject commit e5c3a9ba3bb24e412ddf9540fada4c9ec2daf13e
+
+From e37168f40b6462f5f5913f4bc0d8c5e7c0790302 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Thu, 11 Dec 2025 13:14:31 +0100
+Subject: [PATCH 10/13] minor
+
+---
+ cores/rungun/hdl/jtrungun_main.v               | 3 ++-
+ modules/jtframe/hdl/video/jtframe_lfbuf_line.v | 8 ++++----
+ 2 files changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/cores/rungun/hdl/jtrungun_main.v b/cores/rungun/hdl/jtrungun_main.v
+index f554061ec..ee283608d 100644
+--- a/cores/rungun/hdl/jtrungun_main.v
++++ b/cores/rungun/hdl/jtrungun_main.v
+@@ -185,7 +185,8 @@ always @* begin
+     if(cs_count>1) begin
+         $display("cs_count over 1!");
+         $finish;
+-    end `endif
++    end
++    `endif
+ end
+ 
+ always @* begin
+diff --git a/modules/jtframe/hdl/video/jtframe_lfbuf_line.v b/modules/jtframe/hdl/video/jtframe_lfbuf_line.v
+index c031d2185..ddcd8e380 100644
+--- a/modules/jtframe/hdl/video/jtframe_lfbuf_line.v
++++ b/modules/jtframe/hdl/video/jtframe_lfbuf_line.v
+@@ -131,7 +131,7 @@ wire      active, // active video portion
+           vsy,    // sync start to end
+           vsa;    // sync end to active start
+ reg [3:0] st;
+-reg [VW-1:0] ln_v_l;
++reg [VW-1:0] lnv_l;
+ 
+ localparam [3:0] ACTIVE=4'b1_000,
+                  VBTOSY=4'b0_001;
+@@ -154,7 +154,7 @@ always @(posedge clk) begin
+         frame    <= 0;
+         ln_hs    <= 0;
+         ln_v     <= 0;
+-        ln_v_l   <= 0;
++        lnv_l    <= 0;
+         done     <= 0;
+     `ifdef JTFRAME_LF_FULLV
+         ln_vs    <= 0;
+@@ -164,7 +164,7 @@ always @(posedge clk) begin
+     `endif
+     end else if(info_rdy) begin
+         ln_hs <= 0;
+-        ln_v_l<= ln_v;
++        lnv_l <= ln_v;
+         if( vs && !vsl ) begin // object parsing starts during VB
+             frame <= ~frame;
+             ln_v  <= vstart;
+@@ -176,7 +176,7 @@ always @(posedge clk) begin
+                 st      <= VBTOSY;
+             `endif
+         end
+-        if( fb_done && !done && ln_v==ln_v_l )
++        if( fb_done && !done && ln_v==lnv_l )
+     `ifdef JTFRAME_LF_FULLV
+             if({vsa,vsy,vbs}!=0) begin
+                 porch <= porch - 1'd1;
+
+From aff32ea7bcd31d5c3a8c57cf113cb5716c301570 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Thu, 11 Dec 2025 15:32:08 +0100
+Subject: [PATCH 11/13] simplified logic in lbuf_line and stop ignoring STA in
+ rungun
+
+---
+ cores/rungun/cfg/macros.def                    | 3 ---
+ modules/jtframe/hdl/video/jtframe_lfbuf_line.v | 8 ++++----
+ 2 files changed, 4 insertions(+), 7 deletions(-)
+
+diff --git a/cores/rungun/cfg/macros.def b/cores/rungun/cfg/macros.def
+index 3ccbdc55c..7108c717f 100644
+--- a/cores/rungun/cfg/macros.def
++++ b/cores/rungun/cfg/macros.def
+@@ -37,9 +37,6 @@ JTFRAME_IOCTL_RD+=32
+ 
+ JTFRAME_CREDITS_HSTART=64
+ 
+-[pocket]
+-JTFRAME_NOSTA
+-
+ [sidi128]
+ JTFRAME_LF_SDRAM_BUFFER
+ 
+diff --git a/modules/jtframe/hdl/video/jtframe_lfbuf_line.v b/modules/jtframe/hdl/video/jtframe_lfbuf_line.v
+index ddcd8e380..bb5398b74 100644
+--- a/modules/jtframe/hdl/video/jtframe_lfbuf_line.v
++++ b/modules/jtframe/hdl/video/jtframe_lfbuf_line.v
+@@ -131,7 +131,7 @@ wire      active, // active video portion
+           vsy,    // sync start to end
+           vsa;    // sync end to active start
+ reg [3:0] st;
+-reg [VW-1:0] lnv_l;
++reg fbd_l;
+ 
+ localparam [3:0] ACTIVE=4'b1_000,
+                  VBTOSY=4'b0_001;
+@@ -154,8 +154,8 @@ always @(posedge clk) begin
+         frame    <= 0;
+         ln_hs    <= 0;
+         ln_v     <= 0;
+-        lnv_l    <= 0;
+         done     <= 0;
++        fbd_l    <= 0;
+     `ifdef JTFRAME_LF_FULLV
+         ln_vs    <= 0;
+         ln_lvbl  <= 0;
+@@ -164,7 +164,7 @@ always @(posedge clk) begin
+     `endif
+     end else if(info_rdy) begin
+         ln_hs <= 0;
+-        lnv_l <= ln_v;
++        fbd_l <= fb_done;
+         if( vs && !vsl ) begin // object parsing starts during VB
+             frame <= ~frame;
+             ln_v  <= vstart;
+@@ -176,7 +176,7 @@ always @(posedge clk) begin
+                 st      <= VBTOSY;
+             `endif
+         end
+-        if( fb_done && !done && ln_v==lnv_l )
++        if( fb_done && !fbd_l && !done )
+     `ifdef JTFRAME_LF_FULLV
+             if({vsa,vsy,vbs}!=0) begin
+                 porch <= porch - 1'd1;
+
+From a42c30cfc8288dda11aa3137af6fe052b9cda88d Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Thu, 11 Dec 2025 15:32:40 +0100
+Subject: [PATCH 12/13] Fix pocket compilation for outrun
+
+---
+ modules/jtframe/target/pocket | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/modules/jtframe/target/pocket b/modules/jtframe/target/pocket
+index e5c3a9ba3..a00114017 160000
+--- a/modules/jtframe/target/pocket
++++ b/modules/jtframe/target/pocket
+@@ -1 +1 @@
+-Subproject commit e5c3a9ba3bb24e412ddf9540fada4c9ec2daf13e
++Subproject commit a00114017b5dd5ad9a594b91c727d6be58446431
+
+From adfa789e6023086e10517a688cf1e7bd8a314f17 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Thu, 11 Dec 2025 16:18:58 +0100
+Subject: [PATCH 13/13] update pocket submodule
+
+---
+ modules/jtframe/target/pocket | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/modules/jtframe/target/pocket b/modules/jtframe/target/pocket
+index a00114017..84b9bcafb 160000
+--- a/modules/jtframe/target/pocket
++++ b/modules/jtframe/target/pocket
+@@ -1 +1 @@
+-Subproject commit a00114017b5dd5ad9a594b91c727d6be58446431
++Subproject commit 84b9bcafb46f1060e8fa1bdde0b72f8e43db53a7

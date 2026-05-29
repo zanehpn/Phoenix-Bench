@@ -1,0 +1,234 @@
+From 93c86439c45c62b18453abf977c096d65adecfa5 Mon Sep 17 00:00:00 2001
+From: Srinivasan Venkataramanan <svenka3@gmail.com>
+Date: Wed, 29 Nov 2023 19:53:23 +0000
+Subject: [PATCH 1/2] Added rule for COMPAT s_until_with usage
+
+---
+ py_src/pyslint.py | 27 +++++++++++++++++++++++++++
+ 1 file changed, 27 insertions(+)
+
+diff --git a/py_src/pyslint.py b/py_src/pyslint.py
+index aaee976..e935f84 100644
+--- a/py_src/pyslint.py
++++ b/py_src/pyslint.py
+@@ -390,6 +390,7 @@ def NAME_COV_PREFIX(lv_m):
+         lv_rule_id = 'NAME_COV_PREFIX'
+         pyslint_msg(lv_rule_id, msg)
+ 
++
+ def COMPAT_SVA_NO_DEGEN_AST (lv_m):
+   if (lv_m.kind.name == 'ConcurrentAssertionMember'):
+ 
+@@ -457,6 +458,31 @@ def COMPAT_SVA_NO_DEGEN_AST (lv_m):
+       lu_rule_id = 'COMPAT_SVA_NO_DEGEN_AST'
+       pyslint_msg (lu_rule_id, msg)
+ 
++def COMPAT_SVA_NO_S_UNTIL_WITH (lv_m):
++  if (lv_m.kind.name == 'ConcurrentAssertionMember'):
++
++    lv_found_rep_val = False
++
++    lv_p_expr = lv_m.statement.propertySpec
++    lv_p_str = lv_p_expr.__str__()
++
++    if (hasattr(lv_p_expr, 'expr')):
++      lv_p_expr_r = lv_p_expr.expr
++
++      if (hasattr(lv_p_expr_r, 'right') and
++          hasattr(lv_p_expr_r.right, 'op')):
++        lv_p_expr_r_1 = lv_p_expr_r.right.op
++
++        if (lv_p_expr_r_1.kind.name == 'SUntilWithKeyword'):
++
++          msg = 'Found usage of s_util_with on consequent of a concurrent assertion. \n'
++          msg += '\tThough LRM supports this, some compilers do NOT support this.'
++          msg += ' So for maximum compatibility across EDA \n'
++          msg += '\ttools consider remodeling this SVA. \n'
++          msg += lv_p_str
++          lu_rule_id = 'COMPAT_SVA_NO_S_UNTIL_WITH'
++          pyslint_msg (lu_rule_id, msg)
++
+ def COMPAT_SVA_NO_DEGEN_CONSEQ(lv_m):
+   if (lv_m.kind.name == 'PropertyDeclaration' or
+       lv_m.kind.name == 'ConcurrentAssertionMember'):
+@@ -790,6 +816,7 @@ def chk_naming(lv_cu_scope):
+       NAME_PROP_PREFIX(m_i)
+       COMPAT_SVA_NO_DEGEN_CONSEQ(m_i)
+       COMPAT_SVA_NO_DEGEN_AST(m_i)
++      COMPAT_SVA_NO_S_UNTIL_WITH(m_i)
+       SVA_MISSING_ENDLABEL(m_i)
+       NAME_CG_PREFIX(m_i)
+   
+
+From edc38a276960c7ff477b298c16361323f568d864 Mon Sep 17 00:00:00 2001
+From: Srinivasan Venkataramanan <svenka3@gmail.com>
+Date: Wed, 29 Nov 2023 20:35:32 +0000
+Subject: [PATCH 2/2] Added new rules for SVA
+
+---
+ exec_dir/Makefile            |  3 +++
+ exec_dir/pyslint.log         | 11 +++++++++++
+ py_src/pyslint.py            | 35 +++++++++++++++++++++++++++++++++++
+ sv_tests/test_issue_136_f.sv | 28 ++++++++++++++++++++++++++++
+ sv_tests/test_issue_137_f.sv | 25 +++++++++++++++++++++++++
+ 5 files changed, 102 insertions(+)
+ create mode 100644 sv_tests/test_issue_136_f.sv
+ create mode 100644 sv_tests/test_issue_137_f.sv
+
+diff --git a/exec_dir/Makefile b/exec_dir/Makefile
+index 06d5a78..1cabed2 100644
+--- a/exec_dir/Makefile
++++ b/exec_dir/Makefile
+@@ -87,5 +87,8 @@ naming:
+ 	python3 ../py_src/pyslint.py -t ../sv_tests/test_sv_issue_41.sv >> pyslint.log
+ 	python3 ../py_src/pyslint.py -t ../sv_tests/test_sv_issue_42.sv >> pyslint.log
+ 	python3 ../py_src/pyslint.py -t ../sv_tests/test_sv_issue_49_f.sv >> pyslint.log
++	python3 ../py_src/pyslint.py -t ../sv_tests/test_issue_136_f.sv >> pyslint.log
++	python3 ../py_src/pyslint.py -t ../sv_tests/test_issue_137_f.sv >> pyslint.log
++
+ 	cat pyslint.log
+ 
+diff --git a/exec_dir/pyslint.log b/exec_dir/pyslint.log
+index 224e12b..ae2fc03 100644
+--- a/exec_dir/pyslint.log
++++ b/exec_dir/pyslint.log
+@@ -846,3 +846,14 @@ PySlint: Violation: [FUNC_NO_2STATE_IN_INTF]: Potential DUT bug hiding construct
+   bit [3:0] bad_2st_2d [10];
+ PySlint: Violation: [FUNC_NO_2STATE_IN_INTF]: Potential DUT bug hiding construct in use:  Inside SystemVerilog interface, it is recommended to use only 4-state signals/nets. Found a 2-state declaration as: 
+   bit [9:0] bad_2st_3d [10][5];
++PySlint: Violation: [COMPAT_SVA_NO_EXPECT_EXPR_IN_INIT]: A procedural 'expect' construct with temporal expression was found inside an initial block; IEEE 1800 LRM does  allow such usage though some tools do NOT support To avoid compatibility issues, please remodel the code:
++    expect (@(posedge clk) req1 ##1 1);
++PySlint: Violation: [COMPAT_SVA_NO_EXPECT_EXPR_IN_INIT]: A procedural 'expect' construct with temporal expression was found inside an initial block; IEEE 1800 LRM does  allow such usage though some tools do NOT support To avoid compatibility issues, please remodel the code:
++    expect(@(posedge clk) req1 ##2 req2) else $error ("expect failure");
++PySlint: Violation: [NAME_AST_PREFIX]: Improper naming of assert directive: ap_ReqAckBusy: expected prefix: a_
++PySlint: Violation: [SVA_MISSING_FAIL_AB]: Missing FAIL Action block - use $error/`uvm_error: 
++    ap_ReqAckBusy: assert property($rose(req) |=>  busy s_until_with ack );
++PySlint: Violation: [COMPAT_SVA_NO_S_UNTIL_WITH]: Found usage of s_util_with on consequent of a concurrent assertion. 
++	Though LRM supports this, some compilers do NOT support this. So for maximum compatibility across EDA 
++	tools consider remodeling this SVA. 
++$rose(req) |=>  busy s_until_with ack
+diff --git a/py_src/pyslint.py b/py_src/pyslint.py
+index e935f84..d53ed43 100644
+--- a/py_src/pyslint.py
++++ b/py_src/pyslint.py
+@@ -39,6 +39,7 @@ def pyslint_update_rule_ids():
+   lv_sv_ruleid_l.append('SVA_MISSING_ENDLABEL')
+   lv_sv_ruleid_l.append('SVA_NO_PASS_AB')
+   lv_sv_ruleid_l.append('COMPAT_SVA_NO_CONC_IN_FE')
++  lv_sv_ruleid_l.append('COMPAT_SVA_NO_EXPECT_EXPR_IN_INIT')
+   lv_sv_ruleid_l.append('COMPAT_DPI_OLD_SPECSTR')
+   lv_sv_ruleid_l.append('CL_METHOD_NOT_EXTERN')
+   lv_sv_ruleid_l.append('CL_MISSING_ENDLABEL')
+@@ -708,6 +709,39 @@ def COMPAT_SVA_NO_CONC_IN_FE(lv_cu_scope):
+                 lv_rule_id = 'COMPAT_SVA_NO_CONC_IN_FE'
+                 pyslint_msg(lv_rule_id, msg)
+ 
++def COMPAT_SVA_NO_EXPECT_EXPR_IN_INIT(lv_cu_scope):
++  if (lv_cu_scope.kind.name == 'ModuleDeclaration'):
++    for lv_mod_mem_i in lv_cu_scope.members:
++      if (lv_mod_mem_i.kind.name == 'InitialBlock'):
++        if (not hasattr(lv_mod_mem_i.statement, 'items')):
++          continue
++        for lv_init_items_i in lv_mod_mem_i.statement.items:
++          if (lv_init_items_i.kind.name == 'ExpectPropertyStatement'):
++            if (
++                hasattr(lv_init_items_i, 'propertySpec') and
++                hasattr(lv_init_items_i.propertySpec, 'expr') and
++                hasattr(lv_init_items_i.propertySpec.expr, 'expr') and
++                hasattr(lv_init_items_i.propertySpec.expr.expr, 'elements')
++              ):
++              lv_code_s = lv_init_items_i.__str__()
++              msg = 'A procedural \'expect\' construct with temporal'
++              msg += ' expression was found'
++              msg += ' inside an initial block; IEEE 1800 LRM does '
++              msg += ' allow such usage though some tools do NOT support'
++              msg += ' To avoid compatibility issues,'
++              msg += ' please remodel the code:'
++              msg += str(lv_code_s)
++              lv_rule_id = 'COMPAT_SVA_NO_EXPECT_EXPR_IN_INIT'
++              pyslint_msg(lv_rule_id, msg)
++
++            '''
++            if (not hasattr(lv_init_items_i.statement.statement, 'items')):
++              continue
++            for lv_fe_i in lv_init_items_i.statement.statement.items:
++              lv_code_s = lv_fe_i.__str__()
++              if (lv_fe_i.kind.name == 'AssertPropertyStatement'):
++            '''
++
+ def REUSE_NO_TDEF_IN_MOD(lv_cu_scope):
+   if (lv_cu_scope.kind.name == 'ModuleDeclaration'):
+     for lv_mod_mem_i in lv_cu_scope.members:
+@@ -797,6 +831,7 @@ def chk_naming(lv_cu_scope):
+   CL_MISSING_ENDLABEL(scope_i)
+   REUSE_NO_TDEF_IN_MOD(scope_i)
+   COMPAT_SVA_NO_CONC_IN_FE(scope_i)
++  COMPAT_SVA_NO_EXPECT_EXPR_IN_INIT(scope_i)
+   COMPAT_CG_OPT_PI_CL(scope_i)
+   REUSE_CG_NO_ILBINS_CL(scope_i)
+   PERF_CG_NO_ABIN_W_DEF_CL(scope_i)
+diff --git a/sv_tests/test_issue_136_f.sv b/sv_tests/test_issue_136_f.sv
+new file mode 100644
+index 0000000..8a14823
+--- /dev/null
++++ b/sv_tests/test_issue_136_f.sv
+@@ -0,0 +1,28 @@
++module test;
++ 
++  bit req1,req2;
++  bit clk;
++ 
++  always #5 clk=~clk;
++ 
++ 
++  initial begin
++  #100;
++    expect (@(posedge clk) 1);
++    expect (@(posedge clk) req1);
++    expect (@(posedge clk) req1 ##1 1);
++    expect(@(posedge clk) req1 ##2 req2) else $error ("expect failure");
++    $display("DONE");
++end
++ 
++  initial
++    begin
++      repeat(10)
++        begin
++            req1=$urandom;
++            req2=$urandom;
++            #12;
++        end
++      $finish;
++    end
++endmodule
+diff --git a/sv_tests/test_issue_137_f.sv b/sv_tests/test_issue_137_f.sv
+new file mode 100644
+index 0000000..2ee26c5
+--- /dev/null
++++ b/sv_tests/test_issue_137_f.sv
+@@ -0,0 +1,25 @@
++
++module m10_7;
++    bit clk, req, ack, busy;
++    bit[2:1] id=3'b000; 
++    initial forever #10 clk=!clk; 
++    default clocking cb_clk @ (posedge clk);  endclocking 
++  
++    initial begin
++      ##10;
++      req = 1;
++      ##2;
++      ack = 1;
++      ##10;
++      $finish (2);
++    end
++    ap_ReqAckBusy: assert property($rose(req) |=>  busy s_until_with ack ); // ch9/ m9_6
++    /*
++Error-[SVA-SONS] Strong operator not supported
++../m10_7.sv, 7
++m10_7, "(busy s_until_with ack)"
++  Strong operator used in assertion 'ap_ReqAckBusy' is not supported in this 
++  context.
++
++  */    
++endmodule

@@ -1,0 +1,768 @@
+From b72c0710ddc9719d9c7177d3779d000316eba78d Mon Sep 17 00:00:00 2001
+From: amichai-bd <amichaibd@gmail.com>
+Date: Fri, 19 Jan 2024 14:05:19 +0200
+Subject: [PATCH 1/2] Move the verif files around to have less DUT and use the
+ -top flag to run it correctly the subIP issue #442
+
+---
+ .github/workflows/mafia_sanity.yml            |   6 +-
+ verif/cache/tb/README.md                      |   7 --
+ verif/cache/tb/cache_list.f                   |   4 -
+ verif/cache/tb/cache_ref_model.sv             |  77 ------------------
+ verif/cache/tb/cache_verif_list.f             |   6 --
+ .../level0 => fabric/regress/router_level0}   |   0
+ .../regress/router_level_fail}                |   0
+ .../rerun => fabric/regress/router_rerun}     |   0
+ verif/{router => fabric}/tb/README.md         |   0
+ verif/fabric/tb/fabric_verif_list.f           |   3 +-
+ verif/{router => fabric}/tb/fifo_arb_dut.vh   |   0
+ verif/{router => fabric}/tb/fifo_arb_tasks.vh |   0
+ verif/{router => fabric}/tb/fifo_arb_trk.vh   |   6 +-
+ verif/{router => fabric}/tb/router_dut.vh     |   0
+ verif/{router => fabric}/tb/router_tasks.vh   |   0
+ verif/{router => fabric}/tb/router_tb.sv      |   1 +
+ verif/{router => fabric}/tb/router_trk.vh     |   4 +-
+ .../tests/fifo_arb_Assertion_test.sv          |   0
+ .../tests/fifo_arb_all_fifo_full_BW.sv        |   0
+ .../tests/fifo_arb_back_pressure.sv           |   0
+ .../tests/fifo_arb_simple.sv                  |   0
+ .../tests/fifo_arb_single_fifo_full_BW.sv     |   0
+ .../{router => fabric}/tests/router_alive.sv  |   0
+ .../tests/router_send_to_north.sv             |   0
+ .../__pycache__/ref_orderer.cpython-310.pyc   | Bin 0 -> 1155 bytes
+ .../cache_pp.py => mem_ss/mem_ss_pp.py}       |   2 +-
+ verif/{cache => mem_ss}/ref_orderer.py        |   4 +-
+ .../alive => mem_ss/regress/cache_alive}      |   0
+ .../regress/cache_level_fail}                 |   0
+ .../rand => mem_ss/regress/cache_rand}        |   0
+ .../rerun => mem_ss/regress/cache_rerun}      |   0
+ .../{cache => mem_ss}/regress/level0_I_cache  |   0
+ .../level0 => mem_ss/regress/level0_d_cache}  |   0
+ verif/{cache => mem_ss}/tb/cache_tasks.vh     |   0
+ verif/{cache => mem_ss}/tb/cache_tb.sv        |   0
+ verif/{cache => mem_ss}/tb/d_cache_trk.vh     |  14 ++--
+ verif/{cache => mem_ss}/tb/i_cache_trk.vh     |  14 ++--
+ verif/mem_ss/tb/mem_ss_verif_list.f           |   1 +
+ verif/{cache => mem_ss}/tests/abd_test.sv     |   0
+ .../tests/b2b_rd_miss_reissue.sv              |   0
+ verif/{cache => mem_ss}/tests/cache_alive.sv  |   0
+ .../{cache => mem_ss}/tests/cache_alive_2.sv  |   0
+ .../tests/fill_8_tq_entries.sv                |   0
+ .../tests/many_tag_one_set.sv                 |   0
+ verif/{cache => mem_ss}/tests/rand.sv         |   0
+ .../tests/rand_set_stress.sv                  |   0
+ verif/{cache => mem_ss}/tests/rand_simple.sv  |   0
+ verif/{cache => mem_ss}/tests/rand_wr.sv      |   0
+ .../{cache => mem_ss}/tests/rd_b2b_diff_cl.sv |   0
+ verif/{cache => mem_ss}/tests/rd_b2b_hit.sv   |   0
+ .../{cache => mem_ss}/tests/rd_b2b_same_cl.sv |   0
+ verif/{cache => mem_ss}/tests/rd_modify_rd.sv |   0
+ .../tests/read_miss_stall_handle.sv           |   0
+ .../{cache => mem_ss}/tests/single_fm_req.sv  |   0
+ .../{cache => mem_ss}/tests/wr_after_wr_cl.sv |   0
+ verif/{cache => mem_ss}/tests/wr_b2b_hit.sv   |   0
+ .../{cache => mem_ss}/tests/wr_b2b_same_cl.sv |   0
+ .../{cache => mem_ss}/tests/wr_miss_rd_hit.sv |   0
+ .../tests/wr_miss_rd_hit_mb.sv                |   0
+ .../{cache => mem_ss}/tests/wr_miss_wr_hit.sv |   0
+ verif/router/README.md                        |   1 -
+ verif/router/regress/level0_router            |   2 -
+ verif/router/tb/router_list.f                 |   3 -
+ verif/router/tb/router_verif_list.f           |   3 -
+ 64 files changed, 29 insertions(+), 129 deletions(-)
+ delete mode 100644 verif/cache/tb/README.md
+ delete mode 100644 verif/cache/tb/cache_list.f
+ delete mode 100644 verif/cache/tb/cache_ref_model.sv
+ delete mode 100644 verif/cache/tb/cache_verif_list.f
+ rename verif/{router/regress/level0 => fabric/regress/router_level0} (100%)
+ rename verif/{router/regress/level_fail => fabric/regress/router_level_fail} (100%)
+ rename verif/{router/regress/rerun => fabric/regress/router_rerun} (100%)
+ rename verif/{router => fabric}/tb/README.md (100%)
+ rename verif/{router => fabric}/tb/fifo_arb_dut.vh (100%)
+ rename verif/{router => fabric}/tb/fifo_arb_tasks.vh (100%)
+ rename verif/{router => fabric}/tb/fifo_arb_trk.vh (95%)
+ rename verif/{router => fabric}/tb/router_dut.vh (100%)
+ rename verif/{router => fabric}/tb/router_tasks.vh (100%)
+ rename verif/{router => fabric}/tb/router_tb.sv (99%)
+ rename verif/{router => fabric}/tb/router_trk.vh (97%)
+ rename verif/{router => fabric}/tests/fifo_arb_Assertion_test.sv (100%)
+ rename verif/{router => fabric}/tests/fifo_arb_all_fifo_full_BW.sv (100%)
+ rename verif/{router => fabric}/tests/fifo_arb_back_pressure.sv (100%)
+ rename verif/{router => fabric}/tests/fifo_arb_simple.sv (100%)
+ rename verif/{router => fabric}/tests/fifo_arb_single_fifo_full_BW.sv (100%)
+ rename verif/{router => fabric}/tests/router_alive.sv (100%)
+ rename verif/{router => fabric}/tests/router_send_to_north.sv (100%)
+ create mode 100644 verif/mem_ss/__pycache__/ref_orderer.cpython-310.pyc
+ rename verif/{cache/cache_pp.py => mem_ss/mem_ss_pp.py} (99%)
+ rename verif/{cache => mem_ss}/ref_orderer.py (95%)
+ rename verif/{cache/regress/alive => mem_ss/regress/cache_alive} (100%)
+ rename verif/{cache/regress/level_fail => mem_ss/regress/cache_level_fail} (100%)
+ rename verif/{cache/regress/rand => mem_ss/regress/cache_rand} (100%)
+ rename verif/{cache/regress/rerun => mem_ss/regress/cache_rerun} (100%)
+ rename verif/{cache => mem_ss}/regress/level0_I_cache (100%)
+ rename verif/{cache/regress/level0 => mem_ss/regress/level0_d_cache} (100%)
+ rename verif/{cache => mem_ss}/tb/cache_tasks.vh (100%)
+ rename verif/{cache => mem_ss}/tb/cache_tb.sv (100%)
+ rename verif/{cache => mem_ss}/tb/d_cache_trk.vh (95%)
+ rename verif/{cache => mem_ss}/tb/i_cache_trk.vh (95%)
+ rename verif/{cache => mem_ss}/tests/abd_test.sv (100%)
+ rename verif/{cache => mem_ss}/tests/b2b_rd_miss_reissue.sv (100%)
+ rename verif/{cache => mem_ss}/tests/cache_alive.sv (100%)
+ rename verif/{cache => mem_ss}/tests/cache_alive_2.sv (100%)
+ rename verif/{cache => mem_ss}/tests/fill_8_tq_entries.sv (100%)
+ rename verif/{cache => mem_ss}/tests/many_tag_one_set.sv (100%)
+ rename verif/{cache => mem_ss}/tests/rand.sv (100%)
+ rename verif/{cache => mem_ss}/tests/rand_set_stress.sv (100%)
+ rename verif/{cache => mem_ss}/tests/rand_simple.sv (100%)
+ rename verif/{cache => mem_ss}/tests/rand_wr.sv (100%)
+ rename verif/{cache => mem_ss}/tests/rd_b2b_diff_cl.sv (100%)
+ rename verif/{cache => mem_ss}/tests/rd_b2b_hit.sv (100%)
+ rename verif/{cache => mem_ss}/tests/rd_b2b_same_cl.sv (100%)
+ rename verif/{cache => mem_ss}/tests/rd_modify_rd.sv (100%)
+ rename verif/{cache => mem_ss}/tests/read_miss_stall_handle.sv (100%)
+ rename verif/{cache => mem_ss}/tests/single_fm_req.sv (100%)
+ rename verif/{cache => mem_ss}/tests/wr_after_wr_cl.sv (100%)
+ rename verif/{cache => mem_ss}/tests/wr_b2b_hit.sv (100%)
+ rename verif/{cache => mem_ss}/tests/wr_b2b_same_cl.sv (100%)
+ rename verif/{cache => mem_ss}/tests/wr_miss_rd_hit.sv (100%)
+ rename verif/{cache => mem_ss}/tests/wr_miss_rd_hit_mb.sv (100%)
+ rename verif/{cache => mem_ss}/tests/wr_miss_wr_hit.sv (100%)
+ delete mode 100644 verif/router/README.md
+ delete mode 100644 verif/router/regress/level0_router
+ delete mode 100644 verif/router/tb/router_list.f
+ delete mode 100644 verif/router/tb/router_verif_list.f
+
+diff --git a/.github/workflows/mafia_sanity.yml b/.github/workflows/mafia_sanity.yml
+index 2e6f27fa..00a1aef0 100644
+--- a/.github/workflows/mafia_sanity.yml
++++ b/.github/workflows/mafia_sanity.yml
+@@ -33,13 +33,13 @@ jobs:
+         run:  python build.py -dut sc_core -regress rv32i_level0 -app -hw -sim -keep_going
+ 
+       - name: CACHE level0 
+-        run:  python build.py -dut 'cache' -regress level0 -hw -sim -pp -keep_going
++        run: python build.py -dut 'mem_ss' -top cache_tb -regress cache_alive -hw -sim -pp -keep_going
+ 
+       - name: I_CACHE -regress level0_i_cache
+-        run:  python build.py -dut 'cache' -regress level0_i_cache -hw -sim -pp -keep_going
++        run:  python build.py -dut 'mem_ss' -top cache_tb -regress level0_i_cache -hw -sim -pp -keep_going
+ 
+       - name: ROUTER -regress level0
+-        run:  python build.py -dut 'router' -regress level0 -hw -sim -keep_going
++        run:  python build.py -dut 'fabric' -top router_tb -regress router_level0 -hw -sim -keep_going
+ 
+       - name: FABRIC -regress level0
+         run:  python build.py -dut 'fabric' -regress level0 -hw -sim -keep_going
+diff --git a/verif/cache/tb/README.md b/verif/cache/tb/README.md
+deleted file mode 100644
+index cac10798..00000000
+--- a/verif/cache/tb/README.md
++++ /dev/null
+@@ -1,7 +0,0 @@
+-python build.py -dut 'cache' -tests 'cache_alive' -hw  -sim              -> compiling the hw for 'alive' test only 
+-python build.py -dut 'cache' -tests 'cache_alive' -sim -gui 
+-
+-python build.py -dut 'cache'  -all -sim
+-
+-
+-python build.py -dut 'd_cache' -regress alive -hw  -sim 
+\ No newline at end of file
+diff --git a/verif/cache/tb/cache_list.f b/verif/cache/tb/cache_list.f
+deleted file mode 100644
+index d37bdbee..00000000
+--- a/verif/cache/tb/cache_list.f
++++ /dev/null
+@@ -1,4 +0,0 @@
+-+define+SIM_ONLY
+--f ../../../source/mem_ss/d_cache/d_cache_rtl_list.f
+--f ../../../source/mem_ss/i_cache/i_cache_rtl_list.f
+--f ../../../verif/cache/tb/cache_verif_list.f
+\ No newline at end of file
+diff --git a/verif/cache/tb/cache_ref_model.sv b/verif/cache/tb/cache_ref_model.sv
+deleted file mode 100644
+index 91f040bf..00000000
+--- a/verif/cache/tb/cache_ref_model.sv
++++ /dev/null
+@@ -1,77 +0,0 @@
+-//-----------------------------------------------------------------------------
+-// Title            : Cache
+-// Project          : fpga_mafia 
+-//-----------------------------------------------------------------------------
+-// File             : <TODO>
+-// Original Author  : 
+-// Code Owner       : 
+-// Created          : 
+-//-----------------------------------------------------------------------------
+-// Description : 
+-//
+-//
+-//-----------------------------------------------------------------------------
+-`include "macros.sv"
+-
+-module cache_ref_model 
+-    import d_cache_param_pkg::*;  //FIXME: what about i_cache_param_pkg
+-(
+-    input   logic           clk,
+-    input   logic           rst,
+-    //Core Interface
+-    input   var t_req       core2cache_req,
+-    output  t_rd_rsp        cache2core_rsp  //RD Response
+-);
+-
+-
+-localparam NUM_FM_CL = 2**(CL_ADRS_WIDTH);
+-t_cl    mem       [NUM_FM_CL-1:0];
+-t_cl    next_mem  [NUM_FM_CL-1:0];
+-//=======================================
+-//          Writing to memory
+-//=======================================
+-logic [1:0]               req_word_offset;
+-logic [CL_ADRS_WIDTH-1:0] req_cl_address;
+-assign req_cl_address  = core2cache_req.address[MSB_TAG:LSB_SET];                //[19:4]
+-assign req_word_offset = core2cache_req.address[MSB_WORD_OFFSET:LSB_WORD_OFFSET];//[3:2]
+-always_comb begin
+-    next_mem = mem;
+-    if(core2cache_req.valid && (core2cache_req.opcode == WR_OP)) 
+-        if(req_word_offset == 2'b00)  next_mem[req_cl_address][31:0]   = core2cache_req.data; //32'b
+-        if(req_word_offset == 2'b01)  next_mem[req_cl_address][63:32]  = core2cache_req.data; //32'b
+-        if(req_word_offset == 2'b10)  next_mem[req_cl_address][95:64]  = core2cache_req.data; //32'b
+-        if(req_word_offset == 2'b11)  next_mem[req_cl_address][127:96] = core2cache_req.data; //32'b
+-end 
+-
+-//=======================================
+-//          the memory Array
+-//=======================================
+-
+-logic mem_write_enable;
+-assign mem_write_enable = core2cache_req.valid && (core2cache_req.opcode == WR_OP);
+-genvar MEM_ENTRY;
+-generate for(MEM_ENTRY=0; MEM_ENTRY<NUM_FM_CL; MEM_ENTRY++) begin
+-    `MAFIA_EN_RST_DFF(mem[MEM_ENTRY], next_mem[MEM_ENTRY], clk, mem_write_enable, rst)
+-end endgenerate
+-
+-//=======================================
+-//          reading the memory
+-//=======================================
+-t_rd_rsp        pre_cache2core_rsp;
+-t_cl            rd_rsp_data;
+-
+-assign pre_cache2core_rsp.valid     = core2cache_req.valid && (core2cache_req.opcode == RD_OP);
+-assign pre_cache2core_rsp.address   = core2cache_req.address;
+-assign pre_cache2core_rsp.reg_id    = core2cache_req.reg_id;
+-
+-//The data:
+-assign rd_rsp_data = (req_word_offset == 2'b00) ? mem[req_cl_address][31:0]   :
+-                     (req_word_offset == 2'b01) ? mem[req_cl_address][63:32]  :
+-                     (req_word_offset == 2'b10) ? mem[req_cl_address][95:64]  :
+-                     (req_word_offset == 2'b11) ? mem[req_cl_address][127:96] : 32'hDEAD_BEAF;
+-assign pre_cache2core_rsp.data = rd_rsp_data;
+-
+-`MAFIA_DFF(cache2core_rsp, pre_cache2core_rsp, clk)
+-
+-
+-endmodule
+\ No newline at end of file
+diff --git a/verif/cache/tb/cache_verif_list.f b/verif/cache/tb/cache_verif_list.f
+deleted file mode 100644
+index 2d1317c8..00000000
+--- a/verif/cache/tb/cache_verif_list.f
++++ /dev/null
+@@ -1,6 +0,0 @@
+-+incdir+../../../source/common/
+-+incdir+../../../verif/cache/tb/
+-+incdir+../../../verif/cache/tests/
+-
+-../../../verif/cache/tb/cache_tb.sv
+-../../../verif/cache/tb/cache_ref_model.sv
+diff --git a/verif/router/regress/level0 b/verif/fabric/regress/router_level0
+similarity index 100%
+rename from verif/router/regress/level0
+rename to verif/fabric/regress/router_level0
+diff --git a/verif/router/regress/level_fail b/verif/fabric/regress/router_level_fail
+similarity index 100%
+rename from verif/router/regress/level_fail
+rename to verif/fabric/regress/router_level_fail
+diff --git a/verif/router/regress/rerun b/verif/fabric/regress/router_rerun
+similarity index 100%
+rename from verif/router/regress/rerun
+rename to verif/fabric/regress/router_rerun
+diff --git a/verif/router/tb/README.md b/verif/fabric/tb/README.md
+similarity index 100%
+rename from verif/router/tb/README.md
+rename to verif/fabric/tb/README.md
+diff --git a/verif/fabric/tb/fabric_verif_list.f b/verif/fabric/tb/fabric_verif_list.f
+index b68a45e6..de87871e 100644
+--- a/verif/fabric/tb/fabric_verif_list.f
++++ b/verif/fabric/tb/fabric_verif_list.f
+@@ -1,4 +1,5 @@
+ +incdir+../../../source/common/
+ +incdir+../../../verif/fabric/tests/
+ ../../../verif/fabric/tb/fabric_tb.sv
+-../../../verif/fabric/tb/fabric_mini_cores_tb.sv
+\ No newline at end of file
++../../../verif/fabric/tb/fabric_mini_cores_tb.sv
++../../../verif/fabric/tb/router_tb.sv
+\ No newline at end of file
+diff --git a/verif/router/tb/fifo_arb_dut.vh b/verif/fabric/tb/fifo_arb_dut.vh
+similarity index 100%
+rename from verif/router/tb/fifo_arb_dut.vh
+rename to verif/fabric/tb/fifo_arb_dut.vh
+diff --git a/verif/router/tb/fifo_arb_tasks.vh b/verif/fabric/tb/fifo_arb_tasks.vh
+similarity index 100%
+rename from verif/router/tb/fifo_arb_tasks.vh
+rename to verif/fabric/tb/fifo_arb_tasks.vh
+diff --git a/verif/router/tb/fifo_arb_trk.vh b/verif/fabric/tb/fifo_arb_trk.vh
+similarity index 95%
+rename from verif/router/tb/fifo_arb_trk.vh
+rename to verif/fabric/tb/fifo_arb_trk.vh
+index b4d70d15..556c7b23 100644
+--- a/verif/router/tb/fifo_arb_trk.vh
++++ b/verif/fabric/tb/fifo_arb_trk.vh
+@@ -26,11 +26,11 @@ initial begin
+     delay(1); // wait for the test to start
+     if(fifo_arb_test_true) begin
+         if ($value$plusargs ("STRING=%s", test_name))
+-            $display("creating tracker in test directory: target/router/tests/%s", test_name);
++            $display("creating tracker in test directory: target/fabric/tests/%s", test_name);
+         $timeformat(-12, 0, "", 6);
+ 
+-        fifo_arb_top_trk    = $fopen({"../../../target/router/tests/",test_name,"/fifo_arb_top_trk.log"},"w");
+-        full_empty_trk      = $fopen({"../../../target/router/tests/",test_name,"/full_empty_trk.log"},"w");
++        fifo_arb_top_trk    = $fopen({"../../../target/fabric/tests/",test_name,"/fifo_arb_top_trk.log"},"w");
++        full_empty_trk      = $fopen({"../../../target/fabric/tests/",test_name,"/full_empty_trk.log"},"w");
+         $fwrite(fifo_arb_top_trk, "==================================================================================\n");
+         $fwrite(fifo_arb_top_trk, "                      FIFO_ARB TOP TRACKER  -  Test: ",test_name,"\n");
+         $fwrite(fifo_arb_top_trk, "==================================================================================\n");
+diff --git a/verif/router/tb/router_dut.vh b/verif/fabric/tb/router_dut.vh
+similarity index 100%
+rename from verif/router/tb/router_dut.vh
+rename to verif/fabric/tb/router_dut.vh
+diff --git a/verif/router/tb/router_tasks.vh b/verif/fabric/tb/router_tasks.vh
+similarity index 100%
+rename from verif/router/tb/router_tasks.vh
+rename to verif/fabric/tb/router_tasks.vh
+diff --git a/verif/router/tb/router_tb.sv b/verif/fabric/tb/router_tb.sv
+similarity index 99%
+rename from verif/router/tb/router_tb.sv
+rename to verif/fabric/tb/router_tb.sv
+index 021cfeef..f343c0f4 100644
+--- a/verif/router/tb/router_tb.sv
++++ b/verif/fabric/tb/router_tb.sv
+@@ -178,6 +178,7 @@ initial begin
+ //======================
+   end else begin
+     $error("[ERROR] : this is not a valid test name");
++   $finish();
+   end
+ end
+ 
+diff --git a/verif/router/tb/router_trk.vh b/verif/fabric/tb/router_trk.vh
+similarity index 97%
+rename from verif/router/tb/router_trk.vh
+rename to verif/fabric/tb/router_trk.vh
+index 7f31908b..de57b063 100644
+--- a/verif/router/tb/router_trk.vh
++++ b/verif/fabric/tb/router_trk.vh
+@@ -21,10 +21,10 @@ initial begin
+     delay(1); // wait for the test to start
+     if(router_test_true) begin
+         if ($value$plusargs ("STRING=%s", test_name))
+-            $display("creating tracker in test directory: target/router/tests/%s", test_name);
++            $display("creating tracker in test directory: target/fabric/tests/%s", test_name);
+         $timeformat(-12, 0, "", 6);
+     
+-        router_top_trk    = $fopen({"../../../target/router/tests/",test_name,"/router_top_trk.log"},"w");
++        router_top_trk    = $fopen({"../../../target/fabric/tests/",test_name,"/router_top_trk.log"},"w");
+         $fwrite(router_top_trk, "==================================================================================\n");
+         $fwrite(router_top_trk, "                      ROUTER [%h,%h] TOP TRACKER  -  Test: ", local_tile_id[7:4] , local_tile_id[3:0] , test_name,"\n");
+         $fwrite(router_top_trk, "==================================================================================\n");
+diff --git a/verif/router/tests/fifo_arb_Assertion_test.sv b/verif/fabric/tests/fifo_arb_Assertion_test.sv
+similarity index 100%
+rename from verif/router/tests/fifo_arb_Assertion_test.sv
+rename to verif/fabric/tests/fifo_arb_Assertion_test.sv
+diff --git a/verif/router/tests/fifo_arb_all_fifo_full_BW.sv b/verif/fabric/tests/fifo_arb_all_fifo_full_BW.sv
+similarity index 100%
+rename from verif/router/tests/fifo_arb_all_fifo_full_BW.sv
+rename to verif/fabric/tests/fifo_arb_all_fifo_full_BW.sv
+diff --git a/verif/router/tests/fifo_arb_back_pressure.sv b/verif/fabric/tests/fifo_arb_back_pressure.sv
+similarity index 100%
+rename from verif/router/tests/fifo_arb_back_pressure.sv
+rename to verif/fabric/tests/fifo_arb_back_pressure.sv
+diff --git a/verif/router/tests/fifo_arb_simple.sv b/verif/fabric/tests/fifo_arb_simple.sv
+similarity index 100%
+rename from verif/router/tests/fifo_arb_simple.sv
+rename to verif/fabric/tests/fifo_arb_simple.sv
+diff --git a/verif/router/tests/fifo_arb_single_fifo_full_BW.sv b/verif/fabric/tests/fifo_arb_single_fifo_full_BW.sv
+similarity index 100%
+rename from verif/router/tests/fifo_arb_single_fifo_full_BW.sv
+rename to verif/fabric/tests/fifo_arb_single_fifo_full_BW.sv
+diff --git a/verif/router/tests/router_alive.sv b/verif/fabric/tests/router_alive.sv
+similarity index 100%
+rename from verif/router/tests/router_alive.sv
+rename to verif/fabric/tests/router_alive.sv
+diff --git a/verif/router/tests/router_send_to_north.sv b/verif/fabric/tests/router_send_to_north.sv
+similarity index 100%
+rename from verif/router/tests/router_send_to_north.sv
+rename to verif/fabric/tests/router_send_to_north.sv
+diff --git a/verif/mem_ss/__pycache__/ref_orderer.cpython-310.pyc b/verif/mem_ss/__pycache__/ref_orderer.cpython-310.pyc
+new file mode 100644
+index 0000000000000000000000000000000000000000..b693747c59f9f5884d8b7af6870111bacf9db8ef
+GIT binary patch
+literal 1155
+zcmZWpO>fgM7`C0HNz;z8A)yNGumhJ$Ff@r1LWt51F$ryKV|+wGQC7QMSQ@u>+G$fF
+zRT_5=TtRF%#xLNv<c2uy#tmsFUZ>sKX}0Y5<9R=x`i;tGW^4p&$N$N`SqS}6#`Gd!
+zJcT3g!bK6qA#z3%J2<zALnxuzC*)`pZ=tGw29ap3iIo_yGDy{@4o7|kgyIw@D22>a
+zqgtxRC?QloBA<Vx2Iv|!K>v~!65|-3pwvvv2Kq3YS_!6wJxx?WniT{!3dba|PB2Ej
+zJBca2L$03ZzD$ddtI>kOE~-!~wc(WVY7bM3787fL#71JvjY%bHr*>2tV{T##Hz{6p
+zp`|<{OiD5YB)pPU>ea@0f0EIwy@mJEVIOH2Mb<Ks!+qeS_Io(MO+Nt{8^?u&<ZO$V
+z9y8IwM*tnaPiiElymzhQ>2$?w=&xz?dOzrFCfcYEMKHng+F1bxby$gg(Pr_34(oVQ
+zKH&Yh+mDw*-afp26^U7=tNa-j8QvFa@@MLL?v(25n=9UC!`ochc<q$ywfc*Zx%H}Q
+zWjgP&C@Tu)(=dpb%#3{z#4OV#V|$s=47p?(;W8@-*5L!DWaM{Pwe09XZ8^hh&W#`f
+zR$eOzbI6$;(VRGD6uXIOPvV`@RBUF9DCkN!#mgjTuE_=S1oZ^#c`e?Ls59U6o4X^Q
+zgwo1)io_iJ;&V}d<ZeqQr0egni28$oy6X{Zh+x1L?=P;sS#7M=7VBJex$xtFM{a}3
+zy_k31b`bCOcid;I+g?}jkE|KHt!~@*I({qg-2oFp%N<R^6|CiPL78A;se6!>$GX?*
+zM@<u0$aiq*c(f~;MPOqK+n5Y>QpPq|3bU}%3%E>dd{a}J1sWNWzYFJ9#Rf|u`foB^
+z_y-4BRfxml78I}Qq68w-<blkJFf$Qz9?BfcA7bj7SAo{!4yXN)JyG9<gnt@jA;qbz
+F{|6|SDQN%z
+
+literal 0
+HcmV?d00001
+
+diff --git a/verif/cache/cache_pp.py b/verif/mem_ss/mem_ss_pp.py
+similarity index 99%
+rename from verif/cache/cache_pp.py
+rename to verif/mem_ss/mem_ss_pp.py
+index b52a6281..992e0f03 100644
+--- a/verif/cache/cache_pp.py
++++ b/verif/mem_ss/mem_ss_pp.py
+@@ -31,7 +31,7 @@ def print_message(msg):
+ print_message("     Cache Post-Process  : "+args.test_name )
+ print_message('--------------------------------------------------------')
+ # Path to the directory containing the tests
+-base_path = "target/cache/tests"
++base_path = "target/mem_ss/tests"
+ # Construct the path to the transcript file
+ transcript = args.test_name+"_transcript"
+ file_transcript = os.path.join(base_path, args.test_name, transcript).replace("\\", "/")
+diff --git a/verif/cache/ref_orderer.py b/verif/mem_ss/ref_orderer.py
+similarity index 95%
+rename from verif/cache/ref_orderer.py
+rename to verif/mem_ss/ref_orderer.py
+index 505fe7f7..2fc9ee1a 100644
+--- a/verif/cache/ref_orderer.py
++++ b/verif/mem_ss/ref_orderer.py
+@@ -7,8 +7,8 @@
+ def orderer_func(arg1):
+     N = 6
+     input_filename = arg1
+-    output_filename = "target/cache/output.log"
+-    temp_filename  = "target/cache/temp.log"
++    output_filename = "target/mem_ss/output.log"
++    temp_filename  = "target/mem_ss/temp.log"
+ 
+     # Open input and output files
+     with open(input_filename, 'r') as input_file, open(output_filename, 'w') as output_file:      
+diff --git a/verif/cache/regress/alive b/verif/mem_ss/regress/cache_alive
+similarity index 100%
+rename from verif/cache/regress/alive
+rename to verif/mem_ss/regress/cache_alive
+diff --git a/verif/cache/regress/level_fail b/verif/mem_ss/regress/cache_level_fail
+similarity index 100%
+rename from verif/cache/regress/level_fail
+rename to verif/mem_ss/regress/cache_level_fail
+diff --git a/verif/cache/regress/rand b/verif/mem_ss/regress/cache_rand
+similarity index 100%
+rename from verif/cache/regress/rand
+rename to verif/mem_ss/regress/cache_rand
+diff --git a/verif/cache/regress/rerun b/verif/mem_ss/regress/cache_rerun
+similarity index 100%
+rename from verif/cache/regress/rerun
+rename to verif/mem_ss/regress/cache_rerun
+diff --git a/verif/cache/regress/level0_I_cache b/verif/mem_ss/regress/level0_I_cache
+similarity index 100%
+rename from verif/cache/regress/level0_I_cache
+rename to verif/mem_ss/regress/level0_I_cache
+diff --git a/verif/cache/regress/level0 b/verif/mem_ss/regress/level0_d_cache
+similarity index 100%
+rename from verif/cache/regress/level0
+rename to verif/mem_ss/regress/level0_d_cache
+diff --git a/verif/cache/tb/cache_tasks.vh b/verif/mem_ss/tb/cache_tasks.vh
+similarity index 100%
+rename from verif/cache/tb/cache_tasks.vh
+rename to verif/mem_ss/tb/cache_tasks.vh
+diff --git a/verif/cache/tb/cache_tb.sv b/verif/mem_ss/tb/cache_tb.sv
+similarity index 100%
+rename from verif/cache/tb/cache_tb.sv
+rename to verif/mem_ss/tb/cache_tb.sv
+diff --git a/verif/cache/tb/d_cache_trk.vh b/verif/mem_ss/tb/d_cache_trk.vh
+similarity index 95%
+rename from verif/cache/tb/d_cache_trk.vh
+rename to verif/mem_ss/tb/d_cache_trk.vh
+index b4512d4d..5e4916f5 100644
+--- a/verif/cache/tb/d_cache_trk.vh
++++ b/verif/mem_ss/tb/d_cache_trk.vh
+@@ -24,10 +24,10 @@ integer d_cache_pipe_stages_trk;
+ 
+ initial begin
+     if ($value$plusargs ("STRING=%s", test_name))
+-        $display("creating tracker in test directory: target/cache/tests/%s", test_name);
++        $display("creating tracker in test directory: target/mem_ss/tests/%s", test_name);
+     $timeformat(-12, 0, "", 6);
+     
+-    d_cache_top_trk      = $fopen({"../../../target/cache/tests/",test_name,"/d_cache_top_trk.log"},"w");
++    d_cache_top_trk      = $fopen({"../../../target/mem_ss/tests/",test_name,"/d_cache_top_trk.log"},"w");
+     $fwrite(d_cache_top_trk, "==================================================================================\n");
+     $fwrite(d_cache_top_trk, "                      D_CACHE TOP TRACKER  -  Test: ",test_name,"\n");
+     $fwrite(d_cache_top_trk, "==================================================================================\n");
+@@ -35,7 +35,7 @@ initial begin
+     $fwrite(d_cache_top_trk," Time  ||  OPCODE        || address ||REG/TQ_ID|| tag  || Set ||    Data \n");
+     $fwrite(d_cache_top_trk,"-----------------------------------------------------------------------------------\n");
+ 
+-    d_cache_pipe_io_trk = $fopen({"../../../target/cache/tests/",test_name,"/d_cache_pipe_io_trk.log"},"w");
++    d_cache_pipe_io_trk = $fopen({"../../../target/mem_ss/tests/",test_name,"/d_cache_pipe_io_trk.log"},"w");
+     $fwrite(d_cache_pipe_io_trk,"==========================================================================================\n");
+     $fwrite(d_cache_pipe_io_trk,"                      D_CACHE PIPE I/O TRACKER  -  Test: ",test_name,"\n"); 
+     $fwrite(d_cache_pipe_io_trk,"==========================================================================================\n");
+@@ -43,7 +43,7 @@ initial begin
+     $fwrite(d_cache_pipe_io_trk,"  Time  ||REQ/RSP||  OPCODE  || TQ ID ||  address  || rd ind || wr ind || Data/Result ||   CL־Data \n");
+     $fwrite(d_cache_pipe_io_trk,"------------------------------------------------------------------------------------------\n");
+ 
+-    d_cache_pipe_stages_trk = $fopen({"../../../target/cache/tests/",test_name,"/d_cache_pipe_stages_trk.log"},"w");
++    d_cache_pipe_stages_trk = $fopen({"../../../target/mem_ss/tests/",test_name,"/d_cache_pipe_stages_trk.log"},"w");
+     $fwrite(d_cache_pipe_stages_trk,"==========================================================================================================================================================================================================================================================================\n");
+     $fwrite(d_cache_pipe_stages_trk,"                                                               D_CACHE PIPE STAGES TRACKER  -  Test: ",test_name,"\n"); 
+ 
+@@ -53,7 +53,7 @@ initial begin
+     $fwrite(d_cache_pipe_stages_trk,"                  ID                           cancel                                                                                                             modified    rd     evict                                            address                                                                \n");
+     $fwrite(d_cache_pipe_stages_trk,"-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------\n");  
+ 
+-    d_cache_tq_trk      = $fopen({"../../../target/cache/tests/",test_name,"/d_cache_tq_trk.log"},"w");
++    d_cache_tq_trk      = $fopen({"../../../target/mem_ss/tests/",test_name,"/d_cache_tq_trk.log"},"w");
+     $fwrite(d_cache_tq_trk,"====================================================================================================================\n");
+     $fwrite(d_cache_tq_trk,"                      D_CACHE TQ TRACKER  -  Test: ",test_name,"\n");
+     $fwrite(d_cache_tq_trk,"====================================================================================================================\n");
+@@ -61,8 +61,8 @@ initial begin
+     $fwrite(d_cache_tq_trk," Time ||ENTRY||    State      ||  RD  ||  WR  || cl address ||             MB DATA            || REG ID  || cl word offset   rd /wr hit\n");
+     $fwrite(d_cache_tq_trk,"---------------------------------------------------------------------------------------------------------------------\n ");
+ 
+-    cache_ref_gold_trk = $fopen({"../../../target/cache/tests/",test_name,"/cache_ref_gold_trk.log"},"w");
+-    cache_ref_trk      = $fopen({"../../../target/cache/tests/",test_name,"/cache_ref_trk.log"},"w");
++    cache_ref_gold_trk = $fopen({"../../../target/mem_ss/tests/",test_name,"/cache_ref_gold_trk.log"},"w");
++    cache_ref_trk      = $fopen({"../../../target/mem_sS/tests/",test_name,"/cache_ref_trk.log"},"w");
+     $fwrite(cache_ref_gold_trk,"====================================================================================================================\n");
+     $fwrite(cache_ref_gold_trk,"                      Core<->Cache  -  Test: ",test_name,"\n");
+     $fwrite(cache_ref_gold_trk,"====================================================================================================================\n");
+diff --git a/verif/cache/tb/i_cache_trk.vh b/verif/mem_ss/tb/i_cache_trk.vh
+similarity index 95%
+rename from verif/cache/tb/i_cache_trk.vh
+rename to verif/mem_ss/tb/i_cache_trk.vh
+index 69b61cf7..fd5e8541 100644
+--- a/verif/cache/tb/i_cache_trk.vh
++++ b/verif/mem_ss/tb/i_cache_trk.vh
+@@ -24,10 +24,10 @@ integer i_cache_pipe_stages_trk;
+ 
+ initial begin
+     if ($value$plusargs ("STRING=%s", test_name))
+-        $display("creating tracker in test directory: target/cache/tests/%s", test_name);
++        $display("creating tracker in test directory: target/mem_ss/tests/%s", test_name);
+     $timeformat(-12, 0, "", 6);
+     
+-    i_cache_top_trk      = $fopen({"../../../target/cache/tests/",test_name,"/i_cache_top_trk.log"},"w");
++    i_cache_top_trk      = $fopen({"../../../target/mem_ss/tests/",test_name,"/i_cache_top_trk.log"},"w");
+     $fwrite(i_cache_top_trk, "==================================================================================\n");
+     $fwrite(i_cache_top_trk, "                      I_CACHE TOP TRACKER  -  Test: ",test_name,"\n");
+     $fwrite(i_cache_top_trk, "==================================================================================\n");
+@@ -35,7 +35,7 @@ initial begin
+     $fwrite(i_cache_top_trk," Time  ||  OPCODE        || address ||REG/TQ_ID|| tag  || Set ||    Data \n");
+     $fwrite(i_cache_top_trk,"-----------------------------------------------------------------------------------\n");
+ 
+-    i_cache_pipe_io_trk = $fopen({"../../../target/cache/tests/",test_name,"/i_cache_pipe_io_trk.log"},"w");
++    i_cache_pipe_io_trk = $fopen({"../../../target/mem_ss/tests/",test_name,"/i_cache_pipe_io_trk.log"},"w");
+     $fwrite(i_cache_pipe_io_trk,"==========================================================================================\n");
+     $fwrite(i_cache_pipe_io_trk,"                      I_CACHE PIPE I/O TRACKER  -  Test: ",test_name,"\n"); 
+     $fwrite(i_cache_pipe_io_trk,"==========================================================================================\n");
+@@ -43,7 +43,7 @@ initial begin
+     $fwrite(i_cache_pipe_io_trk,"  Time  ||REQ/RSP||  OPCODE  || TQ ID ||  address  || rd ind || Data/Result ||   CL־Data \n");
+     $fwrite(i_cache_pipe_io_trk,"------------------------------------------------------------------------------------------\n");
+ 
+-    i_cache_pipe_stages_trk = $fopen({"../../../target/cache/tests/",test_name,"/i_cache_pipe_stages_trk.log"},"w");
++    i_cache_pipe_stages_trk = $fopen({"../../../target/mem_ss/tests/",test_name,"/i_cache_pipe_stages_trk.log"},"w");
+     $fwrite(i_cache_pipe_stages_trk,"==========================================================================================================================================================================================================================================================================\n");
+     $fwrite(i_cache_pipe_stages_trk,"                                                               I_CACHE PIPE STAGES TRACKER  -  Test: ",test_name,"\n"); 
+     $fwrite(i_cache_pipe_stages_trk,"==========================================================================================================================================================================================================================================================================\n");
+@@ -52,7 +52,7 @@ initial begin
+     $fwrite(i_cache_pipe_stages_trk,"                  ID                           cancel                                                                                              rd                                             address                                                                \n");
+     $fwrite(i_cache_pipe_stages_trk,"-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------\n");  
+ 
+-    i_cache_tq_trk      = $fopen({"../../../target/cache/tests/",test_name,"/i_cache_tq_trk.log"},"w");
++    i_cache_tq_trk      = $fopen({"../../../target/mem_ss/tests/",test_name,"/i_cache_tq_trk.log"},"w");
+     $fwrite(i_cache_tq_trk,"====================================================================================================================\n");
+     $fwrite(i_cache_tq_trk,"                      I_CACHE TQ TRACKER  -  Test: ",test_name,"\n");
+     $fwrite(i_cache_tq_trk,"====================================================================================================================\n");
+@@ -60,8 +60,8 @@ initial begin
+     $fwrite(i_cache_tq_trk," Time ||ENTRY||    State      ||  RD  || cl adress ||             MB DATA            || REG ID  || cl word offset   rd hit\n");
+     $fwrite(i_cache_tq_trk,"---------------------------------------------------------------------------------------------------------------------\n ");
+ 
+-    cache_ref_gold_trk = $fopen({"../../../target/cache/tests/",test_name,"/cache_ref_gold_trk.log"},"w");
+-    cache_ref_trk      = $fopen({"../../../target/cache/tests/",test_name,"/cache_ref_trk.log"},"w");
++    cache_ref_gold_trk = $fopen({"../../../target/mem_ss/tests/",test_name,"/cache_ref_gold_trk.log"},"w");
++    cache_ref_trk      = $fopen({"../../../target/mem_ss/tests/",test_name,"/cache_ref_trk.log"},"w");
+     $fwrite(cache_ref_gold_trk,"====================================================================================================================\n");
+     $fwrite(cache_ref_gold_trk,"                      Core<->Cache  -  Test: ",test_name,"\n");
+     $fwrite(cache_ref_gold_trk,"====================================================================================================================\n");
+diff --git a/verif/mem_ss/tb/mem_ss_verif_list.f b/verif/mem_ss/tb/mem_ss_verif_list.f
+index 8405d41a..714d9408 100644
+--- a/verif/mem_ss/tb/mem_ss_verif_list.f
++++ b/verif/mem_ss/tb/mem_ss_verif_list.f
+@@ -4,3 +4,4 @@
+ 
+ ../../../verif/mem_ss/tb/mem_ss_tb.sv
+ ../../../verif/mem_ss/tb/cache_ref_model.sv
++../../../verif/mem_ss/tb/cache_tb.sv
+diff --git a/verif/cache/tests/abd_test.sv b/verif/mem_ss/tests/abd_test.sv
+similarity index 100%
+rename from verif/cache/tests/abd_test.sv
+rename to verif/mem_ss/tests/abd_test.sv
+diff --git a/verif/cache/tests/b2b_rd_miss_reissue.sv b/verif/mem_ss/tests/b2b_rd_miss_reissue.sv
+similarity index 100%
+rename from verif/cache/tests/b2b_rd_miss_reissue.sv
+rename to verif/mem_ss/tests/b2b_rd_miss_reissue.sv
+diff --git a/verif/cache/tests/cache_alive.sv b/verif/mem_ss/tests/cache_alive.sv
+similarity index 100%
+rename from verif/cache/tests/cache_alive.sv
+rename to verif/mem_ss/tests/cache_alive.sv
+diff --git a/verif/cache/tests/cache_alive_2.sv b/verif/mem_ss/tests/cache_alive_2.sv
+similarity index 100%
+rename from verif/cache/tests/cache_alive_2.sv
+rename to verif/mem_ss/tests/cache_alive_2.sv
+diff --git a/verif/cache/tests/fill_8_tq_entries.sv b/verif/mem_ss/tests/fill_8_tq_entries.sv
+similarity index 100%
+rename from verif/cache/tests/fill_8_tq_entries.sv
+rename to verif/mem_ss/tests/fill_8_tq_entries.sv
+diff --git a/verif/cache/tests/many_tag_one_set.sv b/verif/mem_ss/tests/many_tag_one_set.sv
+similarity index 100%
+rename from verif/cache/tests/many_tag_one_set.sv
+rename to verif/mem_ss/tests/many_tag_one_set.sv
+diff --git a/verif/cache/tests/rand.sv b/verif/mem_ss/tests/rand.sv
+similarity index 100%
+rename from verif/cache/tests/rand.sv
+rename to verif/mem_ss/tests/rand.sv
+diff --git a/verif/cache/tests/rand_set_stress.sv b/verif/mem_ss/tests/rand_set_stress.sv
+similarity index 100%
+rename from verif/cache/tests/rand_set_stress.sv
+rename to verif/mem_ss/tests/rand_set_stress.sv
+diff --git a/verif/cache/tests/rand_simple.sv b/verif/mem_ss/tests/rand_simple.sv
+similarity index 100%
+rename from verif/cache/tests/rand_simple.sv
+rename to verif/mem_ss/tests/rand_simple.sv
+diff --git a/verif/cache/tests/rand_wr.sv b/verif/mem_ss/tests/rand_wr.sv
+similarity index 100%
+rename from verif/cache/tests/rand_wr.sv
+rename to verif/mem_ss/tests/rand_wr.sv
+diff --git a/verif/cache/tests/rd_b2b_diff_cl.sv b/verif/mem_ss/tests/rd_b2b_diff_cl.sv
+similarity index 100%
+rename from verif/cache/tests/rd_b2b_diff_cl.sv
+rename to verif/mem_ss/tests/rd_b2b_diff_cl.sv
+diff --git a/verif/cache/tests/rd_b2b_hit.sv b/verif/mem_ss/tests/rd_b2b_hit.sv
+similarity index 100%
+rename from verif/cache/tests/rd_b2b_hit.sv
+rename to verif/mem_ss/tests/rd_b2b_hit.sv
+diff --git a/verif/cache/tests/rd_b2b_same_cl.sv b/verif/mem_ss/tests/rd_b2b_same_cl.sv
+similarity index 100%
+rename from verif/cache/tests/rd_b2b_same_cl.sv
+rename to verif/mem_ss/tests/rd_b2b_same_cl.sv
+diff --git a/verif/cache/tests/rd_modify_rd.sv b/verif/mem_ss/tests/rd_modify_rd.sv
+similarity index 100%
+rename from verif/cache/tests/rd_modify_rd.sv
+rename to verif/mem_ss/tests/rd_modify_rd.sv
+diff --git a/verif/cache/tests/read_miss_stall_handle.sv b/verif/mem_ss/tests/read_miss_stall_handle.sv
+similarity index 100%
+rename from verif/cache/tests/read_miss_stall_handle.sv
+rename to verif/mem_ss/tests/read_miss_stall_handle.sv
+diff --git a/verif/cache/tests/single_fm_req.sv b/verif/mem_ss/tests/single_fm_req.sv
+similarity index 100%
+rename from verif/cache/tests/single_fm_req.sv
+rename to verif/mem_ss/tests/single_fm_req.sv
+diff --git a/verif/cache/tests/wr_after_wr_cl.sv b/verif/mem_ss/tests/wr_after_wr_cl.sv
+similarity index 100%
+rename from verif/cache/tests/wr_after_wr_cl.sv
+rename to verif/mem_ss/tests/wr_after_wr_cl.sv
+diff --git a/verif/cache/tests/wr_b2b_hit.sv b/verif/mem_ss/tests/wr_b2b_hit.sv
+similarity index 100%
+rename from verif/cache/tests/wr_b2b_hit.sv
+rename to verif/mem_ss/tests/wr_b2b_hit.sv
+diff --git a/verif/cache/tests/wr_b2b_same_cl.sv b/verif/mem_ss/tests/wr_b2b_same_cl.sv
+similarity index 100%
+rename from verif/cache/tests/wr_b2b_same_cl.sv
+rename to verif/mem_ss/tests/wr_b2b_same_cl.sv
+diff --git a/verif/cache/tests/wr_miss_rd_hit.sv b/verif/mem_ss/tests/wr_miss_rd_hit.sv
+similarity index 100%
+rename from verif/cache/tests/wr_miss_rd_hit.sv
+rename to verif/mem_ss/tests/wr_miss_rd_hit.sv
+diff --git a/verif/cache/tests/wr_miss_rd_hit_mb.sv b/verif/mem_ss/tests/wr_miss_rd_hit_mb.sv
+similarity index 100%
+rename from verif/cache/tests/wr_miss_rd_hit_mb.sv
+rename to verif/mem_ss/tests/wr_miss_rd_hit_mb.sv
+diff --git a/verif/cache/tests/wr_miss_wr_hit.sv b/verif/mem_ss/tests/wr_miss_wr_hit.sv
+similarity index 100%
+rename from verif/cache/tests/wr_miss_wr_hit.sv
+rename to verif/mem_ss/tests/wr_miss_wr_hit.sv
+diff --git a/verif/router/README.md b/verif/router/README.md
+deleted file mode 100644
+index 039be790..00000000
+--- a/verif/router/README.md
++++ /dev/null
+@@ -1 +0,0 @@
+-this directory will contain the mini core verification content in our project.
+\ No newline at end of file
+diff --git a/verif/router/regress/level0_router b/verif/router/regress/level0_router
+deleted file mode 100644
+index ecac7399..00000000
+--- a/verif/router/regress/level0_router
++++ /dev/null
+@@ -1,2 +0,0 @@
+-router_alive   -gV_REQUESTS=30 -gV_MAX_DELAY=10
+-router_alive   -gV_REQUESTS=300 -gV_MAX_DELAY=1
+\ No newline at end of file
+diff --git a/verif/router/tb/router_list.f b/verif/router/tb/router_list.f
+deleted file mode 100644
+index 2783a488..00000000
+--- a/verif/router/tb/router_list.f
++++ /dev/null
+@@ -1,3 +0,0 @@
+-+define+SIM_ONLY
+--f ../../../source/fabric/router/router_rtl_list.f
+--f ../../../verif/router/tb/router_verif_list.f
+diff --git a/verif/router/tb/router_verif_list.f b/verif/router/tb/router_verif_list.f
+deleted file mode 100644
+index 065a770e..00000000
+--- a/verif/router/tb/router_verif_list.f
++++ /dev/null
+@@ -1,3 +0,0 @@
+-+incdir+../../../source/common/
+-+incdir+../../../verif/router/tests/
+-../../../verif/router/tb/router_tb.sv
+\ No newline at end of file
+
+From d940f1e2ac01901ec8036af2cd052476f74fc502 Mon Sep 17 00:00:00 2001
+From: amichai-bd <amichaibd@gmail.com>
+Date: Fri, 19 Jan 2024 14:16:28 +0200
+Subject: [PATCH 2/2] flow name fix
+
+---
+ .github/workflows/mafia_sanity.yml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/.github/workflows/mafia_sanity.yml b/.github/workflows/mafia_sanity.yml
+index 00a1aef0..03ce4a13 100644
+--- a/.github/workflows/mafia_sanity.yml
++++ b/.github/workflows/mafia_sanity.yml
+@@ -32,7 +32,7 @@ jobs:
+       - name: SC_CORE - rv32i_level0 
+         run:  python build.py -dut sc_core -regress rv32i_level0 -app -hw -sim -keep_going
+ 
+-      - name: CACHE level0 
++      - name: D_CACHE level0_d_cache
+         run: python build.py -dut 'mem_ss' -top cache_tb -regress cache_alive -hw -sim -pp -keep_going
+ 
+       - name: I_CACHE -regress level0_i_cache

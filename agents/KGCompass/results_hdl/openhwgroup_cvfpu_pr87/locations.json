@@ -1,0 +1,22 @@
+[
+  {
+    "file_path": "src/fpnew_opgroup_multifmt_slice.sv",
+    "reason": "The bug report explicitly points to this module: it slices and assigns operands for multi-format opgroups, and the third operand is being indexed with the source format width instead of the destination format width."
+  },
+  {
+    "file_path": "src/fpnew_fma_multi.sv",
+    "reason": "This module defines the multi-lane FMA interface and operand format expectations for ADDMUL, so it is the most likely consumer of the incorrectly sliced third operand and may contain related width assumptions or interface definitions."
+  },
+  {
+    "file_path": "src/fpnew_opgroup_block.sv",
+    "reason": "This higher-level opgroup dispatch module likely instantiates the multi-format slice and routes operand buses; if the slicing bug is not isolated, related operand packing/unpacking logic may be here."
+  },
+  {
+    "file_path": "src/fpnew_top.sv",
+    "reason": "Top-level wiring may propagate operand vectors into the opgroup slice; while less likely to be the root cause, it is a plausible place for format/width parameter plumbing issues."
+  },
+  {
+    "file_path": "src/fpnew_pkg.sv",
+    "reason": "Package definitions often hold FP format width constants and helper functions used by slicing logic; if the width selection is derived from shared utilities, a mismatch here could contribute to the bug."
+  }
+]

@@ -1,0 +1,545 @@
+From aaa82b4d49c5a763d36fa3c7b58b5ce06cb57346 Mon Sep 17 00:00:00 2001
+From: Luke Wren <wren6991@gmail.com>
+Date: Mon, 17 Nov 2025 00:36:14 +0000
+Subject: [PATCH 1/8] Update mimpid: 1.2 prerelease
+
+---
+ hdl/hazard3_csr.v | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/hdl/hazard3_csr.v b/hdl/hazard3_csr.v
+index 3f955574..0f172247 100644
+--- a/hdl/hazard3_csr.v
++++ b/hdl/hazard3_csr.v
+@@ -381,12 +381,12 @@ end
+ // each release.
+ 
+ // Set to 1 if this RTL has not been released to the stable branch:
+-localparam [0:0] MIMPID_PRERELEASE = 1'b0;
++localparam [0:0] MIMPID_PRERELEASE = 1'b1;
+ 
+ // Major version, e.g the 1 in v1.2.3:
+ localparam [3:0] MIMPID_MAJOR      = 4'd1;
+ // Minor version, e.g. the 2 in v1.2.3:
+-localparam [7:0] MIMPID_MINOR      = 8'd1;
++localparam [7:0] MIMPID_MINOR      = 8'd2;
+ // Patch version, e.g. the 3 in v1.2.3:
+ localparam [7:0] MIMPID_PATCH      = 8'd0;
+ 
+
+From c15bffd3e5e80d7b6eb1f98a735f63c8a68da149 Mon Sep 17 00:00:00 2001
+From: Luke Wren <wren6991@gmail.com>
+Date: Fri, 21 Nov 2025 23:37:03 +0000
+Subject: [PATCH 2/8] Fix repeated transfer on APB async bridge when
+ instantiated separately to the JTAG-DTM
+
+---
+ hdl/debug/cdc/hazard3_apb_async_bridge.v | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hdl/debug/cdc/hazard3_apb_async_bridge.v b/hdl/debug/cdc/hazard3_apb_async_bridge.v
+index a0236f90..e98ba0e1 100644
+--- a/hdl/debug/cdc/hazard3_apb_async_bridge.v
++++ b/hdl/debug/cdc/hazard3_apb_async_bridge.v
+@@ -131,7 +131,7 @@ always @ (posedge clk_src or negedge rst_n_src) begin
+         // paddr, pwdata and pwrite are all valid during the setup phase, and
+         // APB defines the setup phase to always last one cycle and proceed
+         // to access phase. So, we can ignore penable, and pready is ignored.
+-        if (src_psel) begin
++        if (src_psel && !src_penable) begin
+             src_pready_r <= 1'b0;
+             src_req <= 1'b1;
+             src_waiting_for_downstream <= 1'b1;
+
+From 10b6ccb39b4d29fefc497e5e4bec9a5789d65288 Mon Sep 17 00:00:00 2001
+From: Luke Wren <wren6991@gmail.com>
+Date: Tue, 10 Mar 2026 17:39:28 +0000
+Subject: [PATCH 3/8] Don't report failed exclusive writes as faults in
+ rvfi_bus_observer.
+
+Latch rvfi_intr signal through lspair instructions in hazard3_rvfi_monitor.
+
+Fix exclusives hookup in riscv-formal tb.
+---
+ hdl/hazard3_rvfi_monitor.vh                   | 29 +++++++++++++++----
+ .../riscv-formal/tb/hazard3_rvfi_wrapper.v    |  2 +-
+ .../riscv-formal/tb/rvfi_bus_observer_ahb5.v  | 11 +++++--
+ 3 files changed, 33 insertions(+), 9 deletions(-)
+
+diff --git a/hdl/hazard3_rvfi_monitor.vh b/hdl/hazard3_rvfi_monitor.vh
+index 15cbe029..976789b7 100644
+--- a/hdl/hazard3_rvfi_monitor.vh
++++ b/hdl/hazard3_rvfi_monitor.vh
+@@ -24,7 +24,17 @@ wire rvfm_x_valid = fd_cir_vld >= 2 || (fd_cir_vld >= 1 && fd_cir_raw[1:0] != 2'
+ reg rvfm_m_valid;
+ reg [31:0] rvfm_m_instr;
+ 
+-wire rvfm_m_trap = xm_except != EXCEPT_NONE && xm_except != EXCEPT_MRET && m_trap_enter_rdy;
++// Exclude "traps" which are microarchitectural rather than architectural
++wire rvfm_m_take_exception =
++	xm_except != EXCEPT_NONE    &&
++	xm_except != EXCEPT_REFETCH &&
++	xm_except != EXCEPT_MRET    &&
++	m_trap_enter_rdy;
++
++wire rvfm_m_take_irq =
++	m_trap_enter_vld &&
++	m_trap_enter_rdy &&
++	m_trap_is_irq;
+ 
+ reg        rvfi_valid_r;
+ reg [31:0] rvfi_insn_r;
+@@ -44,7 +54,7 @@ always @ (posedge clk or negedge rst_n) begin
+ 		if (!x_stall) begin
+ 			// X instruction squashed by any trap, as it's in the branch
+ 			// shadow.
+-			rvfm_m_valid <= |df_cir_use && !m_trap_enter_vld;
++			rvfm_m_valid <= |df_cir_use && !(m_trap_enter_vld && m_trap_enter_rdy);
+ 			rvfm_m_instr <= {fd_cir_raw[31:16] & {16{df_cir_use[1]}}, fd_cir_raw[15:0]};
+ 		end else if (!m_stall) begin
+ 			rvfm_m_valid <= 1'b0;
+@@ -56,7 +66,7 @@ always @ (posedge clk or negedge rst_n) begin
+ 			xm_except != EXCEPT_INSTR_FAULT &&
+ 			xm_except != EXCEPT_INSTR_MISALIGN
+ 		}};
+-		rvfi_trap_r <= rvfm_m_trap;
++		rvfi_trap_r <= rvfm_m_take_exception;
+ 	end
+ end
+ 
+@@ -76,14 +86,23 @@ end
+ reg rvfm_x_intr;
+ reg rvfm_m_intr;
+ reg rvfi_intr_r;
++
++wire rvfm_x_intr_retained =
++	x_stall ||
++	d_starved ||
++	fd_cir_uop_nonfinal ||
++	df_lspair_phase_next;
++
+ always @ (posedge clk) begin
+ 	if (!rst_n) begin
+ 		rvfm_x_intr <= 1'b0;
+ 		rvfm_m_intr <= 1'b0;
+ 		rvfi_intr_r <= 1'b0;
+ 	end else begin
+-		rvfm_x_intr <= (rvfm_x_intr && (x_stall || d_starved || fd_cir_uop_nonfinal || df_lspair_phase_next)) ||
+-			(m_trap_enter_vld && m_trap_enter_rdy);
++		rvfm_x_intr <=
++			(rvfm_x_intr && rvfm_x_intr_retained) ||
++			rvfm_m_take_exception ||
++			rvfm_m_take_irq;
+ 		if (!x_stall) begin
+ 			rvfm_m_intr <= rvfm_x_intr;
+ 		end
+diff --git a/test/formal/riscv-formal/tb/hazard3_rvfi_wrapper.v b/test/formal/riscv-formal/tb/hazard3_rvfi_wrapper.v
+index a60351f9..874fcc88 100644
+--- a/test/formal/riscv-formal/tb/hazard3_rvfi_wrapper.v
++++ b/test/formal/riscv-formal/tb/hazard3_rvfi_wrapper.v
+@@ -328,7 +328,7 @@ hazard3_cpu_2port #(
+ 	.d_hmastlock                (d_hmastlock),
+ 	.d_hready                   (d_hready),
+ 	.d_hresp                    (d_hresp),
+-	.d_hexokay                  (d_hexcl),
++	.d_hexokay                  (d_hexokay),
+ 	.d_hwdata                   (d_hwdata),
+ 	.d_hrdata                   (d_hrdata),
+ `endif
+diff --git a/test/formal/riscv-formal/tb/rvfi_bus_observer_ahb5.v b/test/formal/riscv-formal/tb/rvfi_bus_observer_ahb5.v
+index 87781255..e5a35d7b 100644
+--- a/test/formal/riscv-formal/tb/rvfi_bus_observer_ahb5.v
++++ b/test/formal/riscv-formal/tb/rvfi_bus_observer_ahb5.v
+@@ -63,6 +63,7 @@ end
+ reg                bus_valid_dph;
+ reg                bus_insn_dph;
+ reg                bus_data_dph;
++reg                bus_excl_dph;
+ reg [XLEN-1:0]     bus_addr_dph;
+ reg [BUSLEN/8-1:0] bus_rmask_dph;
+ reg [BUSLEN/8-1:0] bus_wmask_dph;
+@@ -72,6 +73,7 @@ always @ (posedge clock) begin
+ 		bus_valid_dph <= 1'b0;
+ 		bus_insn_dph  <= 1'b0;
+ 		bus_data_dph  <= 1'b0;
++		bus_excl_dph  <= 1'b0;
+ 		bus_addr_dph  <= {XLEN{1'b0}};
+ 		bus_rmask_dph <= {BUSLEN/8{1'b0}};
+ 		bus_wmask_dph <= {BUSLEN/8{1'b0}};
+@@ -79,6 +81,7 @@ always @ (posedge clock) begin
+ 		bus_valid_dph <= ahb_htrans[1];
+ 		bus_insn_dph  <= !ahb_hprot[0];
+ 		bus_data_dph  <= ahb_hprot[0];
++		bus_excl_dph  <= ahb_hexcl;
+ 		bus_addr_dph  <= ahb_haddr & ({XLEN{1'b1}} << $clog2(BUSLEN / 8));
+ 		bus_rmask_dph <= byte_mask_aph & {BUSLEN/8{!ahb_hwrite}};
+ 		bus_wmask_dph <= byte_mask_aph & {BUSLEN/8{ ahb_hwrite}};
+@@ -88,13 +91,15 @@ end
+ // ----------------------------------------------------------------------------
+ // Emit RVFI bus record at end of data phase
+ 
+-assign rvfi_bus_valid = bus_valid_dph && ahb_hready;
++wire failed_excl_write_dph = bus_excl_dph && |bus_wmask_dph && !ahb_hexokay;
++
++assign rvfi_bus_valid = bus_valid_dph && ahb_hready && !failed_excl_write_dph;
+ assign rvfi_bus_insn  = bus_insn_dph;
+ assign rvfi_bus_data  = bus_data_dph;
+-assign rvfi_bus_fault = ahb_hresp;
++assign rvfi_bus_fault = ahb_hresp && !failed_excl_write_dph;
+ assign rvfi_bus_addr  = bus_addr_dph;
+ assign rvfi_bus_rmask = bus_rmask_dph;
+-assign rvfi_bus_wmask = bus_wmask_dph;
++assign rvfi_bus_wmask = bus_wmask_dph & {BUSLEN/8{!failed_excl_write_dph}};
+ assign rvfi_bus_rdata = ahb_hrdata;
+ assign rvfi_bus_wdata = ahb_hwdata;
+ 
+
+From 4d78ce586a310ee40a4d5f81e58b6c0c5ae378ce Mon Sep 17 00:00:00 2001
+From: Luke Wren <wren6991@gmail.com>
+Date: Wed, 11 Mar 2026 22:35:33 +0000
+Subject: [PATCH 4/8] Fix uninitialised variable in wfi_loop tests
+
+---
+ Readme.md                                            | 6 ++++++
+ test/sim/sw_testcases/wfi_loop.c                     | 2 +-
+ test/sim/sw_testcases/wfi_loop_deepsleep_powerdown.c | 2 +-
+ 3 files changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/Readme.md b/Readme.md
+index be20888f..785447b3 100644
+--- a/Readme.md
++++ b/Readme.md
+@@ -80,6 +80,12 @@ make -j$(nproc)
+ sudo make install
+ ```
+ 
++On MacOS the dependencies can be installed with:
++
++```bash
++brew install graphviz python3 boost zlib bison flex xdot pkg-config gawk lld
++```
++
+ ## RISC-V Toolchain
+ 
+ I recommend _building_ a toolchain to get libraries with the correct ISA support. Follow the below instructions to build a 32-bit version of the [RISC-V GNU toolchain](https://github.com/riscv/riscv-gnu-toolchain) with a multilib setup suitable for Hazard3 development.
+diff --git a/test/sim/sw_testcases/wfi_loop.c b/test/sim/sw_testcases/wfi_loop.c
+index 1d698398..c0688d52 100644
+--- a/test/sim/sw_testcases/wfi_loop.c
++++ b/test/sim/sw_testcases/wfi_loop.c
+@@ -49,7 +49,7 @@ int main() {
+ 	asm ("csrsi mstatus, 0x8");
+ 
+ 	// Count the number of sleep loop iterations to make sure the wfi waits
+-	int wait_spin_count;
++	int wait_spin_count = 0;
+ 	while (irq_count < MAX_IRQ_COUNT) {
+ 		++wait_spin_count;
+ 		__wfi();
+diff --git a/test/sim/sw_testcases/wfi_loop_deepsleep_powerdown.c b/test/sim/sw_testcases/wfi_loop_deepsleep_powerdown.c
+index 6d6adc99..f6d81f90 100644
+--- a/test/sim/sw_testcases/wfi_loop_deepsleep_powerdown.c
++++ b/test/sim/sw_testcases/wfi_loop_deepsleep_powerdown.c
+@@ -53,7 +53,7 @@ int main() {
+ 	asm ("csrsi mstatus, 0x8");
+ 
+ 	// Count the number of sleep loop iterations to make sure the wfi waits
+-	int wait_spin_count;
++	int wait_spin_count = 0;
+ 	while (irq_count < MAX_IRQ_COUNT) {
+ 		++wait_spin_count;
+ 		__wfi();
+
+From c1c2a7a7992adfddce04e8add8f03ef2e59a17e9 Mon Sep 17 00:00:00 2001
+From: Luke Wren <wren6991@gmail.com>
+Date: Thu, 12 Mar 2026 15:21:38 +0000
+Subject: [PATCH 5/8] Fix non-synthesisable statement in hazard3_rvfi_monitor
+ when HAZARD3_RVFI_STANDALONE is defined
+
+---
+ hdl/hazard3_rvfi_monitor.vh | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/hdl/hazard3_rvfi_monitor.vh b/hdl/hazard3_rvfi_monitor.vh
+index 976789b7..0db4545e 100644
+--- a/hdl/hazard3_rvfi_monitor.vh
++++ b/hdl/hazard3_rvfi_monitor.vh
+@@ -322,9 +322,12 @@ always @ (posedge clk) begin
+ 	rvfm_mem_hold <= (rvfm_mem_hold || (rvfm_htrans_dph && bus_dph_ready_d)) && m_stall;
+ 	if (xm_memop == MEMOP_AMO) begin
+ 		// AMO has completed in stage X. Progressing to stage M without MEMOP
+-		// going to NONE then there has been no trap, therefore no stall,
++		// going to NONE means there has been no trap, therefore no stall,
+ 		// therefore no time for another address to have issued:
++`ifndef HAZARD3_RVFI_STANDALONE
++		// ifdef as this is non-synthesisable
+ 		assert(!m_stall);
++`endif
+ 		rvfi_mem_addr_r <= rvfm_haddr_dph;
+ 		// Always 32-bit, always both read and write:
+ 		rvfi_mem_rmask_r <= 4'hf;
+
+From bdc734f1ff6d760e8d6ca4c3a95de5544bc6c52f Mon Sep 17 00:00:00 2001
+From: Luke Wren <wren6991@gmail.com>
+Date: Thu, 12 Mar 2026 15:22:33 +0000
+Subject: [PATCH 6/8] Fix RVFI monitor reporting memory write for an exclusive
+ store that fails in data phase
+
+---
+ hdl/hazard3_rvfi_monitor.vh           | 7 ++++++-
+ test/formal/riscv-formal/riscv-formal | 2 +-
+ 2 files changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/hdl/hazard3_rvfi_monitor.vh b/hdl/hazard3_rvfi_monitor.vh
+index 0db4545e..586bae0a 100644
+--- a/hdl/hazard3_rvfi_monitor.vh
++++ b/hdl/hazard3_rvfi_monitor.vh
+@@ -281,6 +281,7 @@ reg [31:0] rvfm_haddr_dph;
+ reg        rvfm_hwrite_dph;
+ reg [1:0]  rvfm_htrans_dph;
+ reg [2:0]  rvfm_hsize_dph;
++reg        rvfm_hexcl_dph;
+ 
+ always @ (posedge clk) begin
+ 	if (bus_aph_ready_d) begin
+@@ -288,6 +289,7 @@ always @ (posedge clk) begin
+ 		rvfm_haddr_dph <= bus_haddr_d;
+ 		rvfm_hwrite_dph <= bus_hwrite_d;
+ 		rvfm_hsize_dph <= bus_hsize_d;
++		rvfm_hexcl_dph <= bus_aph_excl_d;
+ 	end
+ end
+ 
+@@ -340,7 +342,10 @@ always @ (posedge clk) begin
+ 		// RVFI has an AXI-like concept of byte strobes, rather than AHB-like
+ 		rvfi_mem_addr_r <= rvfm_haddr_dph & 32'hffff_fffc;
+ 		{rvfi_mem_rmask_r, rvfi_mem_wmask_r} <= 0;
+-		if (rvfm_htrans_dph[1] && rvfm_hwrite_dph) begin
++		if (rvfm_htrans_dph[1] && rvfm_hwrite_dph && rvfm_hexcl_dph && !bus_dph_exokay_d) begin
++			// data-phase failure of exclusive write (declined by global monitor)
++			rvfi_mem_wmask_r <= 4'h0;
++		end else if (rvfm_htrans_dph[1] && rvfm_hwrite_dph) begin
+ 			rvfi_mem_wmask_r <= rvfm_mem_bytemask_dph;
+ 			rvfi_mem_wdata_r <= bus_wdata_d;
+ 		end else if (rvfm_htrans_dph[1] && !rvfm_hwrite_dph) begin
+diff --git a/test/formal/riscv-formal/riscv-formal b/test/formal/riscv-formal/riscv-formal
+index f5306b74..9612d35e 160000
+--- a/test/formal/riscv-formal/riscv-formal
++++ b/test/formal/riscv-formal/riscv-formal
+@@ -1 +1 @@
+-Subproject commit f5306b74fce042efcc8ce979c700582d3441be10
++Subproject commit 9612d35e001baa5d32f03ed142a4cc39c11a14b0
+
+From 0d59d3065dd39552ad59e3c314a2cf6b800cc9d0 Mon Sep 17 00:00:00 2001
+From: Luke Wren <wren6991@gmail.com>
+Date: Thu, 12 Mar 2026 16:36:15 +0000
+Subject: [PATCH 7/8] Fix: hardware breakpoint on CSR-writing instruction does
+ not inhibit CSR write.
+
+---
+ hdl/hazard3_core.v                            | 13 +++--
+ .../sw_testcases/trigger_break_csr_write.c    | 52 +++++++++++++++++++
+ 2 files changed, 61 insertions(+), 4 deletions(-)
+ create mode 100644 test/sim/sw_testcases/trigger_break_csr_write.c
+
+diff --git a/hdl/hazard3_core.v b/hdl/hazard3_core.v
+index 1809b6c5..84b748b9 100644
+--- a/hdl/hazard3_core.v
++++ b/hdl/hazard3_core.v
+@@ -1140,6 +1140,11 @@ assign m_dphase_in_flight = xm_memop != MEMOP_NONE && xm_memop != MEMOP_AMO;
+ wire m_delay_irq_entry = xm_delay_irq_entry_on_ls_stagex ||
+ 	((xm_sleep_wfi || xm_sleep_block) && !m_sleep_stall_release);
+ 
++// Inhibit CSR read/write side effects; note most stage-X exception sources
++// are excluded as these only apply to CSR instructions.
++wire m_csr_access_mask_early = m_trap_enter_soon || fd_cir_break_any;
++wire m_csr_access_mask = m_csr_access_mask_early || x_stall;
++
+ wire m_pwr_allow_clkgate;
+ wire m_pwr_allow_power_down;
+ wire m_pwr_allow_sleep_on_block;
+@@ -1177,12 +1182,12 @@ hazard3_csr #(
+ 	.addr                       (fd_cir[31:20]), // Always I-type immediate
+ 	.wdata                      (x_csr_wdata),
+ 	.wen_raw                    (d_csr_wen),
+-	.wen_soon                   (d_csr_wen && !m_trap_enter_soon),
+-	.wen                        (d_csr_wen && !m_trap_enter_soon && !x_stall),
++	.wen_soon                   (d_csr_wen && !m_csr_access_mask_early),
++	.wen                        (d_csr_wen && !m_csr_access_mask),
+ 	.wtype                      (d_csr_wtype),
+ 	.rdata                      (x_csr_rdata),
+-	.ren_soon                   (d_csr_ren && !m_trap_enter_soon),
+-	.ren                        (d_csr_ren && !m_trap_enter_soon && !x_stall),
++	.ren_soon                   (d_csr_ren && !m_csr_access_mask_early),
++	.ren                        (d_csr_ren && !m_csr_access_mask),
+ 	.illegal                    (x_csr_illegal_access),
+ 	.write_is_fetch_ordered     (x_csr_write_is_fetch_ordered),
+ 
+diff --git a/test/sim/sw_testcases/trigger_break_csr_write.c b/test/sim/sw_testcases/trigger_break_csr_write.c
+new file mode 100644
+index 00000000..1ffb40a9
+--- /dev/null
++++ b/test/sim/sw_testcases/trigger_break_csr_write.c
+@@ -0,0 +1,52 @@
++#include "tb_cxxrtl_io.h"
++#include "hazard3_csr.h"
++
++#define TCONTROL_MPTE 0x80
++#define TCONTROL_MTE 0x08
++
++#define MCONTROL_ACTION_LSB 12
++#define MCONTROL_M 0x40
++#define MCONTROL_U 0x08
++#define MCONTROL_EXECUTE 0x04
++
++// Test intent: check that a hardware breakpoint on a CSR-writing instruction
++// does not write to the CSR register file.
++
++/*EXPECTED-OUTPUT***************************************************************
++
++Enabling breakpoints
++In breakpoint: mscratch = 0
++After breakpoint: mscratch = 1
++
++*******************************************************************************/
++
++void __attribute__((interrupt)) handle_exception() {
++	// Ensure triggers remain disabled when we return
++	clear_csr(tcontrol, TCONTROL_MPTE);
++	tb_printf("In breakpoint: mscratch = %d\n", read_csr(mscratch));
++	// Return directly to excepting instruction -- it should not except the
++	// second time because triggers are now disabled (assuming a trigger was
++	// the cause for the exception!)
++}
++
++int main() {
++	int trignum = 0;
++	extern char csr_write_instr;
++	uintptr_t addr = (uintptr_t)&csr_write_instr;
++	write_csr(mscratch, 0);
++	write_csr(mcause, 0);
++	write_csr(mepc, 0);
++	write_csr(tselect, trignum);
++	write_csr(tdata1, MCONTROL_M | MCONTROL_EXECUTE);
++	write_csr(tdata2, addr);
++	tb_printf("Enabling breakpoints\n");
++	set_csr(tcontrol, TCONTROL_MTE);
++	asm volatile (
++	".global csr_write_instr\n"
++	"csr_write_instr:\n"
++		"csrwi mscratch, 1\n"
++	);
++	tb_printf("After breakpoint: mscratch = %d\n", read_csr(mscratch));
++	tb_assert(read_csr(mepc) == addr, "bad mepc\n");
++	tb_assert(read_csr(mcause) == 3, "bad mcause\n");
++}
+
+From 74d7717a4da3e527028392a46f2d110c2fc33f0c Mon Sep 17 00:00:00 2001
+From: Luke Wren <wren6991@gmail.com>
+Date: Thu, 12 Mar 2026 18:10:38 +0000
+Subject: [PATCH 8/8] Set mimpid version to 1.1.1.
+
+Update release notes in asciidoc.
+---
+ Readme.md                       |  2 +-
+ doc/sections/introduction.adoc  |  2 +-
+ doc/sections/release_notes.adoc | 17 ++++++++++++++++-
+ hdl/hazard3_csr.v               |  6 +++---
+ test/sim/sw_testcases/csr_id.c  |  2 +-
+ 5 files changed, 22 insertions(+), 7 deletions(-)
+
+diff --git a/Readme.md b/Readme.md
+index 785447b3..0bd86bfc 100644
+--- a/Readme.md
++++ b/Readme.md
+@@ -234,7 +234,7 @@ sudo make install
+ On MacOS:
+ 
+ ```bash
+-brew install autoconf automake libusb
++brew install autoconf automake libusb jimtcl
+ cd /tmp
+ git clone https://github.com/riscv/riscv-openocd.git
+ cd riscv-openocd
+diff --git a/doc/sections/introduction.adoc b/doc/sections/introduction.adoc
+index 09da0c21..7a2d08d8 100644
+--- a/doc/sections/introduction.adoc
++++ b/doc/sections/introduction.adoc
+@@ -23,7 +23,7 @@ Hazard3 is a configurable 3-stage RISC-V processor, implementing:
+ * External debug support
+ * Instruction address trigger unit (hardware breakpoints)
+ 
+-This document describes Hazard3 version https://github.com/Wren6991/Hazard3/releases/tag/v1.1[v1.1]. See <<section-release-notes>> for changes introduced in this and earlier versions.
++This document describes Hazard3 version https://github.com/Wren6991/Hazard3/releases/tag/v1.1.1[v1.1.1]. See <<section-release-notes>> for changes introduced in this and earlier versions.
+ 
+ <<<
+ 
+diff --git a/doc/sections/release_notes.adoc b/doc/sections/release_notes.adoc
+index 925c1b20..682ef20c 100644
+--- a/doc/sections/release_notes.adoc
++++ b/doc/sections/release_notes.adoc
+@@ -2,6 +2,21 @@
+ == Release Notes
+ :sectnums!:
+ 
++=== Version 1.1.1
++
++Fixed errata:
++
++* Fix repeated transfer when `hazard3_apb_async_bridge` is connected to a standard APB Requester.
++** This behaviour did not affect instantiation inside of `hazard3_jtag_dtm`.
++* Fix breakpoint trigger on a CSR write not inhibiting the write to the CSR register file.
++* Fix non-synthesisable statement included in RVFI monitor when `HAZARD3_RVFI_STANDALONE` is defined.
++
++Other changes:
++
++* Improve riscv-formal coverage for AHB5 exclusives and the A extension.
++
++See the Github release notes https://github.com/Wren6991/Hazard3/releases/tag/v1.1[here].
++
+ === Version 1.1
+ 
+ Incompatible changes:
+@@ -28,7 +43,7 @@ New features:
+ * Implement the RV32E base extension, enabled by <<param-EXTENSION_E>>.
+ * Implement new custom extension: <<extension-xh3misa-section>>, for detecting processor ISA support at finer granularity than the standard `misa` register. Enabled by `CSR_M_MANDATORY`, so it is reliably present.
+ * Add `hazard3_xilinx7_jtag_dtm` for tunneling RISC-V debug through Xilinx 7-series FPGA TAPs.
+-*
++
+ Fixed errata:
+ 
+ * Fix `fence.i` only ordering against the address phase of a preceding store (a multi-manager AHB fabric may reorder address phases, so order against the data phase instead).
+diff --git a/hdl/hazard3_csr.v b/hdl/hazard3_csr.v
+index 0f172247..cbc889fe 100644
+--- a/hdl/hazard3_csr.v
++++ b/hdl/hazard3_csr.v
+@@ -381,14 +381,14 @@ end
+ // each release.
+ 
+ // Set to 1 if this RTL has not been released to the stable branch:
+-localparam [0:0] MIMPID_PRERELEASE = 1'b1;
++localparam [0:0] MIMPID_PRERELEASE = 1'b0;
+ 
+ // Major version, e.g the 1 in v1.2.3:
+ localparam [3:0] MIMPID_MAJOR      = 4'd1;
+ // Minor version, e.g. the 2 in v1.2.3:
+-localparam [7:0] MIMPID_MINOR      = 8'd2;
++localparam [7:0] MIMPID_MINOR      = 8'd1;
+ // Patch version, e.g. the 3 in v1.2.3:
+-localparam [7:0] MIMPID_PATCH      = 8'd0;
++localparam [7:0] MIMPID_PATCH      = 8'd1;
+ 
+ // Note the eco_version field is connected externally -- on ASIC this may be
+ // connected to tie cells so it can be incremented following a metal ECO.
+diff --git a/test/sim/sw_testcases/csr_id.c b/test/sim/sw_testcases/csr_id.c
+index 0fb3bb74..355edb60 100644
+--- a/test/sim/sw_testcases/csr_id.c
++++ b/test/sim/sw_testcases/csr_id.c
+@@ -8,7 +8,7 @@
+ 
+ mvendorid:  deadbeef
+ marchid:    0000001b
+-mimpid:     010100a0
++mimpid:     010101a0
+ mhartid:    00000000
+ mconfigptr: 9abcdef0
+ misa:       40901107 // RV32IMABCX + U

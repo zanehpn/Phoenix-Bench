@@ -1,0 +1,30 @@
+# insn_trigger_exception coverpoint does not work
+
+- Source URL: https://github.com/lowRISC/ibex/pull/1872
+
+The test riscv_debug_triggers_test added in #1801 generates stimulus to hit [this coverpoint](https://github.com/lowRISC/ibex/blob/ce536ae47677e952de02b7421e1b78efb5761ab2/dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv#L502), but it does not trigger.
+
+REPRO
+- Checkout https://github.com/lowRISC/ibex/pull/1801
+- Run: make TEST=riscv_debug_triggers_test ITERATIONS=1 SEED=14664 COV=1 -j12 -ik
+- The instruction/event that should trigger this coverpoint can be seen retiring at t = 1010124 ns
+
+## Fetched Issue/PR Details
+
+Title: Misc fixes (PR #1872)
+
+Description: PR contains three commits and fixes issue #1863:
+1. [rtl] Fix ebreak debug cause - "We should only indicate an ebreak debug cause if an ebreak leads to a debug entry (otherwise when single stepping over an ebreak that traps to an exception we incorrectly enter debug mode with an ebreak cause)."
+2. [dv] Remove cp_insn_trigger_exception coverpoint - "This coverpoint does not make sense. The hardware breakpoint is triggered as the instruction moves into the ID/EX stage so it never has a chance to take an exception (it effectively never begins executing)."
+3. [dv] Add single step over exception coverpoint.
+
+Status: Merged (Oct 26, 2022)
+Author: GregAC
+Branch: GregAC:misc_fixes -> lowRISC:master
+
+Review Activity:
+- hcallahan-lowrisc approved the changes on Oct 26, 2022
+- ctopal was requested for review
+- PR merged by GregAC on Oct 26, 2022; branch deleted after merge
+
+Linked Issues: Closes issue #1863 ("insn_trigger_exception coverpoint does not work").

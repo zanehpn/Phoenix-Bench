@@ -1,0 +1,10 @@
+{
+    "task_info": {
+        "base_commit": "17f9e18da71188f80c61b6663cbcb84299fdb3b3",
+        "problem_statement": "# Verilator compile issues\n\nI am working on simulating the AXI4 code in Verilator and are running into a problem with the parameter types of the modules. The issue is the `parameter type resp_t = logic` definition in al modules. However renaming the definitions to `parameter type rsp_t = logic` seems to not trigger the issue. I think the issue could be that in `axi_pkg` the parameter `resp_t` is already defined and part of the response struct which is the parameter which has this problem. \nShould I do a fix for all modules, this will however break all other projects which are using the new AXI4 infrastructure currently. \n\nRelated to Verilator: In #43 there is in file `src/axi_dw_upsizer.sv` line 321 a struct definition for `r_req_d` and `r_req_q` inside a generate. Verilator complains about multiple type definitions.\nI was able to fix this by declaring a separate typedef outside the generate and defining the signals separate in the generate:\n\n```systemverilog\ntypedef struct packed {\n      ar_chan_t ar         ;\n      logic ar_valid       ;\n      logic ar_throw_error ;\n      slv_r_chan_t r       ;\n      logic r_valid        ;\n      burst_len_t burst_len;\n      size_t orig_ar_size  ;\n} r_req_t;\n\n// code\n\nfor (genvar ...\n  r_req_t r_req_d, r_req_q;\nend\n```\n",
+        "instance_id": "pulp-platform_axi_pr74"
+    },
+    "setup_info": {
+        "repo_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_axi_pr74"
+    }
+}

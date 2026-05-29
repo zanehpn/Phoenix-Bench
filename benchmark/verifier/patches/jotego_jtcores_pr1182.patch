@@ -1,0 +1,259 @@
+From 2765281ac7653a2e2112f27e0354ff06c057c04b Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Wed, 10 Sep 2025 17:31:35 +0200
+Subject: [PATCH 1/3] Repares psac alignment
+
+---
+ cores/riders/hdl/jtglfgreat_encoder.v         | 12 ++++++----
+ cores/riders/hdl/jtriders_psac.v              | 24 +++++++++++++++++--
+ cores/riders/ver/game/rest2bin.sh             |  1 +
+ cores/riders/ver/glfgreat/sprite.cab          | 18 ++++++++++++++
+ .../jtframe/hdl/video/jtframe_linebuf_gate.v  | 11 +++++----
+ 5 files changed, 54 insertions(+), 12 deletions(-)
+ create mode 100644 cores/riders/ver/glfgreat/sprite.cab
+
+diff --git a/cores/riders/hdl/jtglfgreat_encoder.v b/cores/riders/hdl/jtglfgreat_encoder.v
+index 4a05c2727..6ed972157 100644
+--- a/cores/riders/hdl/jtglfgreat_encoder.v
++++ b/cores/riders/hdl/jtglfgreat_encoder.v
+@@ -30,8 +30,8 @@ module jtglfgreat_encoder(
+     input             pschi_ok,
+     output            pschi_cs,
+     // Compressed tilemap in VRAM
+-    output     [17:1] t2x2_addr,
+-    output     [15:0] t2x2_din,
++    output reg [17:1] t2x2_addr,
++    output reg [15:0] t2x2_din,
+     output reg        t2x2_we,
+     // Decoder
+     output reg [12:0] dec_addr,
+@@ -61,8 +61,6 @@ reg         deleted, found, full;
+ 
+ assign psclo_addr = {bank,y,x};
+ assign pschi_addr = {bank,y,x[8:2]};
+-assign t2x2_addr  = {bank,y[8:1],x[8:1]};
+-assign t2x2_din   = {3'd0,dec_addr};
+ assign dec_din    = tile2x2;
+ assign tile2x2    = {tile3,tile2,tile1,tile0};
+ assign pschi_cs   = psclo_cs;
+@@ -91,6 +89,8 @@ always @(posedge clk) begin
+         done     <= 0;
+         search   <= 0;
+         psclo_cs <= 0;
++        t2x2_addr<= 0;
++        t2x2_din <= 0;
+         tile0    <= 18'h3FFFF; tile1 <= 18'h3FFFF; tile2 <= 18'h3FFFF; tile3 <= 18'h3FFFF;
+     end else if(!done && deleted) begin
+         t2x2_we <= 0;
+@@ -102,7 +102,9 @@ always @(posedge clk) begin
+             3: if( hilo_ok ) begin tile2 <= combined; {y[0],x[0]} <= 2'b11; st <= 4; end
+             4: if( hilo_ok ) begin tile3 <= combined; {y[0],x[0]} <= 2'b00; psclo_cs <= 0; search <= 1; st <= 5; end
+             5: if( found ) begin
+-                t2x2_we <= 1;
++                t2x2_we   <= 1;
++                t2x2_addr <= {bank,y[8:1],x[8:1]};
++                t2x2_din  <= {3'd0,dec_addr};
+                 x[8:1] <= x[8:1]+1'd1;
+                 if(&x[8:1]) begin
+                     {bank,y[8:1]} <= {bank,y[8:1]}+1'd1;
+diff --git a/cores/riders/hdl/jtriders_psac.v b/cores/riders/hdl/jtriders_psac.v
+index 9b6b70367..cc558c81d 100644
+--- a/cores/riders/hdl/jtriders_psac.v
++++ b/cores/riders/hdl/jtriders_psac.v
+@@ -57,7 +57,6 @@ module jtriders_psac(
+     output      [17:1] tmap_addr,
+     input       [15:0] encoded,
+ 
+-
+     // IOCTL dump
+     input       [ 4:0] ioctl_addr,
+     output      [ 7:0] ioctl_din
+@@ -169,7 +168,7 @@ jtglfgreat_encoder u_encoder(
+     .dec_din    ( dec_din   ),
+     .dec_we     ( dec_we    )
+ );
+-/* verilator tracing_off */
++/* verilator tracing_on */
+ jtframe_dual_ram #(.AW(13),.DW(72),.SIMHEXFILE("decoder.hex")) u_decoder (
+     // Port 0 - programming during power up
+     .clk0       ( clk       ),
+@@ -205,4 +204,25 @@ jtframe_linebuf_gate #(.RD_DLY(15), .RST_CT(9'h041)) u_linebuf(
+     .pxl_dump ( pxl       )
+ );
+ 
++`ifdef SIMULATION
++reg [8:0] ln_cnt, pxl_cnt;
++reg       cnt_check, hs_l;
++initial {ln_cnt,pxl_cnt, cnt_check} = 0;
++
++always @(posedge clk) hs_l <= hs;
++
++always @(posedge clk) begin
++    if( hs & ~hs_l ) begin
++        ln_cnt    <= 0;
++        pxl_cnt   <= 0;
++        cnt_check <= ln_cnt==pxl_cnt;
++    end else begin
++        if(cen)
++            ln_cnt  <= ln_cnt +1'd1;
++        if(pxl_cen)
++            pxl_cnt <= pxl_cnt+1'd1;
++    end
++end
++`endif
++
+ endmodule
+diff --git a/cores/riders/ver/game/rest2bin.sh b/cores/riders/ver/game/rest2bin.sh
+index 784000ca5..51f90d873 100755
+--- a/cores/riders/ver/game/rest2bin.sh
++++ b/cores/riders/ver/game/rest2bin.sh
+@@ -6,6 +6,7 @@ FSIZE=$(wc -c <"rest.bin")
+ if [[ $FSIZE -gt 0x8821 ]]; then
+ 	PSAC="--psac_mmr"
+ 
++	jtutil sdram
+ 	dd if=sdram_bank3.bin of=AB.bin skip=3584 count=1024 bs=1024
+ 	dd if=sdram_bank3.bin of=CC.bin skip=4608 count=256  bs=1024
+ 
+diff --git a/cores/riders/ver/glfgreat/sprite.cab b/cores/riders/ver/glfgreat/sprite.cab
+new file mode 100644
+index 000000000..a83d220ba
+--- /dev/null
++++ b/cores/riders/ver/glfgreat/sprite.cab
+@@ -0,0 +1,18 @@
++220
++2 coin
++20
++5 b1 1p
++20
++5 b1 b2 1p
++30
++15 b1 b2
++10
++15 b1 b2
++10
++15 b1 b2
++100
++5 b1 b2
++20
++5 b1 b2
++20
++5 b1 b2
+\ No newline at end of file
+diff --git a/modules/jtframe/hdl/video/jtframe_linebuf_gate.v b/modules/jtframe/hdl/video/jtframe_linebuf_gate.v
+index d7d7d8f68..eee40fd8b 100644
+--- a/modules/jtframe/hdl/video/jtframe_linebuf_gate.v
++++ b/modules/jtframe/hdl/video/jtframe_linebuf_gate.v
+@@ -25,9 +25,10 @@ parameter [HW-1:0]  B_VIS   = 9'd37, A_VIS=9'd35, VIS=9'd304, // number of count
+                     RST_CT  = 9'h058,         // starting value for wr_addr
+                     RD_DLY  = 9'h00B,         // number of times to delay hdump
+                     WR_STRT = RST_CT + B_VIS, // wr_addr to start checking rom_ok & rom_cs
+-                    WR_END  = WR_STRT+ VIS,   // wr_addr where
+-                    RD_END  = WR_END + A_VIS, // 9'h19F // Value of rd_addr when LHBL goes low
+-                    HSTART  = 9'h04F,         //
++                    WR_END  = WR_STRT+ VIS,   // wr_addr where stops checking rom_ok & rom_cs
++                    RD_END  = WR_END + A_VIS, //
++                    TOT_PLS = 9'd384,         // number of pxl_cen pulses in a line
++                    PLS_END = RST_CT+TOT_PLS, // value of wr_addr to stop cnt_cen
+                     VB_END  = 9'h10F          // Must be same as in vtimer
+ ) (
+     input               rst,
+@@ -61,10 +62,10 @@ always @(*) begin
+     done    = wr_addr>=RD_END;
+     cnt_cen = 0;
+     hs_cen  = 0;
+-    fastwr  = wr_addr<WR_STRT || wr_addr>WR_END && wr_addr<RD_END || hdump==HSTART;
++    fastwr  = wr_addr<WR_STRT || wr_addr>WR_END && wr_addr<RD_END || hs && wr_addr < PLS_END; // It is needed for psac to have some pulse during hs
+     if(cen) begin
+         cnt_cen = rom_cs & rom_ok & !done;
+-        if( lvbl | pre_lvbl ) hs_cen  = ~hs & /*~*/hs_l;  // starts drawing in buffer one line before lvbl is high
++        if( lvbl | pre_lvbl ) hs_cen  = ~hs & hs_l;  // starts drawing in buffer one line before lvbl is high
+     end
+     if( fastwr ) cnt_cen = cen;
+ end
+
+From 1daff01da8d1873c2f57db5d1af61899c8555d92 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Thu, 11 Sep 2025 10:01:31 +0200
+Subject: [PATCH 2/3] Changed paremeter names for consistency
+
+---
+ modules/jtframe/hdl/video/jtframe_linebuf_gate.v | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/modules/jtframe/hdl/video/jtframe_linebuf_gate.v b/modules/jtframe/hdl/video/jtframe_linebuf_gate.v
+index eee40fd8b..61347b023 100644
+--- a/modules/jtframe/hdl/video/jtframe_linebuf_gate.v
++++ b/modules/jtframe/hdl/video/jtframe_linebuf_gate.v
+@@ -27,8 +27,8 @@ parameter [HW-1:0]  B_VIS   = 9'd37, A_VIS=9'd35, VIS=9'd304, // number of count
+                     WR_STRT = RST_CT + B_VIS, // wr_addr to start checking rom_ok & rom_cs
+                     WR_END  = WR_STRT+ VIS,   // wr_addr where stops checking rom_ok & rom_cs
+                     RD_END  = WR_END + A_VIS, //
+-                    TOT_PLS = 9'd384,         // number of pxl_cen pulses in a line
+-                    PLS_END = RST_CT+TOT_PLS, // value of wr_addr to stop cnt_cen
++                    HTOT    = 9'd384,         // number of pxl_cen pulses in a line
++                    HEND    = RST_CT + HTOT,  // value of wr_addr to stop cnt_cen
+                     VB_END  = 9'h10F          // Must be same as in vtimer
+ ) (
+     input               rst,
+@@ -62,7 +62,7 @@ always @(*) begin
+     done    = wr_addr>=RD_END;
+     cnt_cen = 0;
+     hs_cen  = 0;
+-    fastwr  = wr_addr<WR_STRT || wr_addr>WR_END && wr_addr<RD_END || hs && wr_addr < PLS_END; // It is needed for psac to have some pulse during hs
++    fastwr  = wr_addr<WR_STRT || wr_addr>WR_END && wr_addr<RD_END || hs && wr_addr < HEND; // It is needed for psac to have some pulse during hs
+     if(cen) begin
+         cnt_cen = rom_cs & rom_ok & !done;
+         if( lvbl | pre_lvbl ) hs_cen  = ~hs & hs_l;  // starts drawing in buffer one line before lvbl is high
+
+From b187600d560bb1fce0ef043dd9d8d983322f2692 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Thu, 11 Sep 2025 11:15:19 +0200
+Subject: [PATCH 3/3]  when test fails
+
+---
+ cores/riders/hdl/jtriders_psac.v | 27 +++++++++++++++++++--------
+ 1 file changed, 19 insertions(+), 8 deletions(-)
+
+diff --git a/cores/riders/hdl/jtriders_psac.v b/cores/riders/hdl/jtriders_psac.v
+index cc558c81d..a22c4166d 100644
+--- a/cores/riders/hdl/jtriders_psac.v
++++ b/cores/riders/hdl/jtriders_psac.v
+@@ -205,18 +205,29 @@ jtframe_linebuf_gate #(.RD_DLY(15), .RST_CT(9'h041)) u_linebuf(
+ );
+ 
+ `ifdef SIMULATION
+-reg [8:0] ln_cnt, pxl_cnt;
+-reg       cnt_check, hs_l;
+-initial {ln_cnt,pxl_cnt, cnt_check} = 0;
++reg [8:0] ln_cnt, pxl_cnt, ln_tot, pxl_tot;
++reg       hs_l, start;
++wire      cnt_check;
+ 
+ always @(posedge clk) hs_l <= hs;
++assign cnt_check = ln_tot==pxl_tot;
+ 
+ always @(posedge clk) begin
+-    if( hs & ~hs_l ) begin
+-        ln_cnt    <= 0;
+-        pxl_cnt   <= 0;
+-        cnt_check <= ln_cnt==pxl_cnt;
+-    end else begin
++    if(rst) begin
++        {ln_cnt,pxl_cnt, ln_tot, pxl_tot} <= 0;
++        start  <= 0;
++    end else if( ~hs & hs_l ) begin
++        start <= 1;
++        if(start) begin
++            ln_cnt    <= 0;      pxl_cnt   <= 0;
++            ln_tot    <= ln_cnt; pxl_tot   <= pxl_cnt;
++            if( enc_done && !cnt_check) begin
++                $display("ERROR: not enough cen pulses provided to psac");
++                $display("Received=%d. Needed=%d", ln_tot, pxl_tot);
++                $finish;
++            end
++        end
++    end else if(start) begin
+         if(cen)
+             ln_cnt  <= ln_cnt +1'd1;
+         if(pxl_cen)

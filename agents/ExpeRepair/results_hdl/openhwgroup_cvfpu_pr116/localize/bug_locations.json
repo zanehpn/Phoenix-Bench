@@ -1,0 +1,47 @@
+{
+  "instance_id": "openhwgroup_cvfpu_pr116",
+  "bug_locs": [
+    [
+      {
+        "rel_file_path": "src/fpnew_pkg.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/openhwgroup_cvfpu_pr116/src/fpnew_pkg.sv",
+        "start": 131,
+        "end": 168,
+        "class_name": null,
+        "method_name": null,
+        "code": "131     RNE = 3'b000,\n132     RTZ = 3'b001,\n133     RDN = 3'b010,\n134     RUP = 3'b011,\n135     RMM = 3'b100,\n136     ROD = 3'b101,  // This mode is not defined in RISC-V FP-SPEC\n137     DYN = 3'b111\n138   } roundmode_e;\n139 \n140   // Status flags\n141   typedef struct packed {\n142     logic NV; // Invalid\n143     logic DZ; // Divide by zero\n144     logic OF; // Overflow\n145     logic UF; // Underflow\n146     logic NX; // Inexact\n147   } status_t;\n148 \n149   // Information about a floating point value\n150   typedef struct packed {\n151     logic is_normal;     // is the value normal\n152     logic is_subnormal;  // is the value subnormal\n153     logic is_zero;       // is the value zero\n154     logic is_inf;        // is the value infinity\n155     logic is_nan;        // is the value NaN\n156     logic is_signalling; // is the value a signalling NaN\n157     logic is_quiet;      // is the value a quiet NaN\n158     logic is_boxed;      // is the value properly NaN-boxed (RISC-V specific)\n159   } fp_info_t;\n160 \n161   // Classification mask\n162   typedef enum logic [9:0] {\n163     NEGINF     = 10'b00_0000_0001,\n164     NEGNORM    = 10'b00_0000_0010,\n165     NEGSUBNORM = 10'b00_0000_0100,\n166     NEGZERO    = 10'b00_0000_1000,\n167     POSZERO    = 10'b00_0001_0000,\n168     POSSUBNORM = 10'b00_0010_0000,\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "src/fpnew_pkg.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/openhwgroup_cvfpu_pr116/src/fpnew_pkg.sv",
+        "start": 151,
+        "end": 182,
+        "class_name": null,
+        "method_name": null,
+        "code": "151     logic is_normal;     // is the value normal\n152     logic is_subnormal;  // is the value subnormal\n153     logic is_zero;       // is the value zero\n154     logic is_inf;        // is the value infinity\n155     logic is_nan;        // is the value NaN\n156     logic is_signalling; // is the value a signalling NaN\n157     logic is_quiet;      // is the value a quiet NaN\n158     logic is_boxed;      // is the value properly NaN-boxed (RISC-V specific)\n159   } fp_info_t;\n160 \n161   // Classification mask\n162   typedef enum logic [9:0] {\n163     NEGINF     = 10'b00_0000_0001,\n164     NEGNORM    = 10'b00_0000_0010,\n165     NEGSUBNORM = 10'b00_0000_0100,\n166     NEGZERO    = 10'b00_0000_1000,\n167     POSZERO    = 10'b00_0001_0000,\n168     POSSUBNORM = 10'b00_0010_0000,\n169     POSNORM    = 10'b00_0100_0000,\n170     POSINF     = 10'b00_1000_0000,\n171     SNAN       = 10'b01_0000_0000,\n172     QNAN       = 10'b10_0000_0000\n173   } classmask_e;\n174 \n175   // ------------------\n176   // FPU configuration\n177   // ------------------\n178   // Pipelining registers can be inserted (at elaboration time) into operational units\n179   typedef enum logic [1:0] {\n180     BEFORE,     // registers are inserted at the inputs of the unit\n181     AFTER,      // registers are inserted at the outputs of the unit\n182     INSIDE,     // registers are inserted at predetermined (suboptimal) locations in the unit\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "src/fpnew_noncomp.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/openhwgroup_cvfpu_pr116/src/fpnew_noncomp.sv",
+        "start": 148,
+        "end": 185,
+        "class_name": null,
+        "method_name": null,
+        "code": "148     .operands_i ( inp_pipe_operands_q[NUM_INP_REGS] ),\n149     .is_boxed_i ( inp_pipe_is_boxed_q[NUM_INP_REGS] ),\n150     .info_o     ( info_q                            )\n151   );\n152 \n153   fp_t                 operand_a, operand_b;\n154   fpnew_pkg::fp_info_t info_a,    info_b;\n155 \n156   // Packing-order-agnostic assignments\n157   assign operand_a = inp_pipe_operands_q[NUM_INP_REGS][0];\n158   assign operand_b = inp_pipe_operands_q[NUM_INP_REGS][1];\n159   assign info_a    = info_q[0];\n160   assign info_b    = info_q[1];\n161 \n162   logic any_operand_inf;\n163   logic any_operand_nan;\n164   logic signalling_nan;\n165 \n166   // Reduction for special case handling\n167   assign any_operand_inf = (| {info_a.is_inf,        info_b.is_inf});\n168   assign any_operand_nan = (| {info_a.is_nan,        info_b.is_nan});\n169   assign signalling_nan  = (| {info_a.is_signalling, info_b.is_signalling});\n170 \n171   logic operands_equal, operand_a_smaller;\n172 \n173   // Equality checks for zeroes too\n174   assign operands_equal    = (operand_a == operand_b) || (info_a.is_zero && info_b.is_zero);\n175   // Invert result if non-zero signs involved (unsigned comparison)\n176   assign operand_a_smaller = (operand_a < operand_b) ^ (operand_a.sign || operand_b.sign);\n177 \n178   // ---------------\n179   // Sign Injection\n180   // ---------------\n181   fp_t                sgnj_result;\n182   fpnew_pkg::status_t sgnj_status;\n183   logic               sgnj_extension_bit;\n184 \n185   // Sign Injection - operation is encoded in rnd_mode_q:\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "src/fpnew_noncomp.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/openhwgroup_cvfpu_pr116/src/fpnew_noncomp.sv",
+        "start": 241,
+        "end": 294,
+        "class_name": null,
+        "method_name": null,
+        "code": "241         default: minmax_result = '{default: fpnew_pkg::DONT_CARE}; // don't care\n242       endcase\n243     end\n244   end\n245 \n246   assign minmax_extension_bit = 1'b1; // NaN-box as result is always a float value\n247 \n248   // ------------\n249   // Comparisons\n250   // ------------\n251   fp_t                cmp_result;\n252   fpnew_pkg::status_t cmp_status;\n253   logic               cmp_extension_bit;\n254 \n255   // Comparisons - operation is encoded in rnd_mode_q:\n256   // RNE = LE, RTZ = LT, RDN = EQ\n257   // op_mod_q inverts boolean outputs\n258   always_comb begin : comparisons\n259     // Default assignment\n260     cmp_result = '0; // false\n261     cmp_status = '0; // no flags\n262 \n263     // Signalling NaNs always compare as false and are illegal\n264     if (signalling_nan) cmp_status.NV = 1'b1; // invalid operation\n265     // Otherwise do comparisons\n266     else begin\n267       unique case (inp_pipe_rnd_mode_q[NUM_INP_REGS])\n268         fpnew_pkg::RNE: begin // Less than or equal\n269           if (any_operand_nan) cmp_status.NV = 1'b1; // Signalling comparison: NaNs are invalid\n270           else cmp_result = (operand_a_smaller | operands_equal) ^ inp_pipe_op_mod_q[NUM_INP_REGS];\n271         end\n272         fpnew_pkg::RTZ: begin // Less than\n273           if (any_operand_nan) cmp_status.NV = 1'b1; // Signalling comparison: NaNs are invalid\n274           else cmp_result = (operand_a_smaller & ~operands_equal) ^ inp_pipe_op_mod_q[NUM_INP_REGS];\n275         end\n276         fpnew_pkg::RDN: begin // Equal\n277           if (any_operand_nan) cmp_result = inp_pipe_op_mod_q[NUM_INP_REGS]; // NaN always not equal\n278           else cmp_result = operands_equal ^ inp_pipe_op_mod_q[NUM_INP_REGS];\n279         end\n280         default: cmp_result = '{default: fpnew_pkg::DONT_CARE}; // don't care\n281       endcase\n282     end\n283   end\n284 \n285   assign cmp_extension_bit = 1'b0; // Comparisons always produce booleans in integer registers\n286 \n287   // ---------------\n288   // Classification\n289   // ---------------\n290   fpnew_pkg::status_t    class_status;\n291   logic                  class_extension_bit;\n292   fpnew_pkg::classmask_e class_mask_d; // the result is actually here\n293 \n294   // Classification - always return the classification mask on the dedicated port\n",
+        "intended_behavior": ""
+      }
+    ]
+  ]
+}

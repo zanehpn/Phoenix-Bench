@@ -1,0 +1,54 @@
+diff --git a/hw/carfield.sv b/hw/carfield.sv
+index d6ac6ab..9d32922 100755
+--- a/hw/carfield.sv
++++ b/hw/carfield.sv
+@@ -1017,38 +1017,24 @@ hyperbus_wrap      #(
+ // Host Clock Domain
+ logic l2_ecc_err;
+ 
+-l2_wrap #(
+-  .NumPort      ( NumL2Ports             ),
++// Atomics support for L2 SPM access
++axi_riscv_atomics_structs #(
+   .AxiAddrWidth ( Cfg.AddrWidth          ),
+   .AxiDataWidth ( Cfg.AxiDataWidth       ),
+   .AxiIdWidth   ( AxiSlvIdWidth          ),
+   .AxiUserWidth ( Cfg.AxiUserWidth       ),
+-  .AxiMaxTrans  ( Cfg.AxiMaxSlvTrans     ),
+-  .LogDepth     ( LogDepth               ),
+-  .NumRules     ( L2NumRules             ),
+-  .L2MemSize    ( L2MemSize              )
+-) i_reconfigurable_l2 (
+-  .clk_i               ( l2_clk                               ),
+-  .rst_ni              ( l2_rst_n                             ),
+-  .pwr_on_rst_ni       ( l2_pwr_on_rst_n                      ),
+-  .slvport_ar_data_i   ( axi_slv_ext_ar_data [NumL2Ports-1:0] ),
+-  .slvport_ar_wptr_i   ( axi_slv_ext_ar_wptr [NumL2Ports-1:0] ),
+-  .slvport_ar_rptr_o   ( axi_slv_ext_ar_rptr [NumL2Ports-1:0] ),
+-  .slvport_aw_data_i   ( axi_slv_ext_aw_data [NumL2Ports-1:0] ),
+-  .slvport_aw_wptr_i   ( axi_slv_ext_aw_wptr [NumL2Ports-1:0] ),
+-  .slvport_aw_rptr_o   ( axi_slv_ext_aw_rptr [NumL2Ports-1:0] ),
+-  .slvport_b_data_o    ( axi_slv_ext_b_data  [NumL2Ports-1:0] ),
+-  .slvport_b_wptr_o    ( axi_slv_ext_b_wptr  [NumL2Ports-1:0] ),
+-  .slvport_b_rptr_i    ( axi_slv_ext_b_rptr  [NumL2Ports-1:0] ),
+-  .slvport_r_data_o    ( axi_slv_ext_r_data  [NumL2Ports-1:0] ),
+-  .slvport_r_wptr_o    ( axi_slv_ext_r_wptr  [NumL2Ports-1:0] ),
+-  .slvport_r_rptr_i    ( axi_slv_ext_r_rptr  [NumL2Ports-1:0] ),
+-  .slvport_w_data_i    ( axi_slv_ext_w_data  [NumL2Ports-1:0] ),
+-  .slvport_w_wptr_i    ( axi_slv_ext_w_wptr  [NumL2Ports-1:0] ),
+-  .slvport_w_rptr_o    ( axi_slv_ext_w_rptr  [NumL2Ports-1:0] ),
+-  .ecc_error_o         ( l2_ecc_err                           )
++  .axi_req_t    ( carfield_axi_slv_req_t ),
++  .axi_rsp_t    ( carfield_axi_slv_rsp_t )
++) i_l2_atomics_structs (
++  .clk_i      ( host_clk_i         ),
++  .rst_ni     ( host_pwr_on_rst_n  ),
++  .axi_req_i  ( axi_slv_ext_req    ),
++  .axi_rsp_i  ( axi_slv_ext_rsp    ),
++  .axi_req_o  ( axi_slv_ext_req_atomics ),
++  .axi_rsp_o  ( axi_slv_ext_rsp_atomics )
+ );
+ 
++
+ // Safety Island
+ logic [SafetyIslandCfg.NumInterrupts-1:0] safed_intrs;

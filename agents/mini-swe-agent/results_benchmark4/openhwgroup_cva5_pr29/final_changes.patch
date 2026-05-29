@@ -1,0 +1,61 @@
+diff --git a/core/cva5.sv b/core/cva5.sv
+index 0eb090e..19d77fa 100755
+--- a/core/cva5.sv
++++ b/core/cva5.sv
+@@ -140,6 +140,7 @@ module cva5
+     logic [4:0] fflag_wmask;
+          //Exception
+     logic [31:0] oldest_pc;
++    logic oldest_pc_valid;
+ 
+     renamer_interface #(.NUM_WB_GROUPS(CONFIG.NUM_WB_GROUPS), .READ_PORTS(REGFILE_READ_PORTS)) decode_rename_interface ();
+     renamer_interface #(.NUM_WB_GROUPS(2), .READ_PORTS(3)) fp_decode_rename_interface ();
+@@ -236,6 +237,7 @@ module cva5
+         .retire_count (retire_count),
+         .post_issue_count(post_issue_count),
+         .oldest_pc (oldest_pc),
++        .oldest_pc_valid (oldest_pc_valid),
+         .current_exception_unit (current_exception_unit)
+     );
+ 
+@@ -558,6 +560,7 @@ module cva5
+         .current_exception_unit (current_exception_unit),
+         .gc (gc),
+         .oldest_pc (oldest_pc),
++        .oldest_pc_valid (oldest_pc_valid),
+         .mret(mret),
+         .sret(sret),
+         .epc(epc),
+diff --git a/core/execution_units/gc_unit.sv b/core/execution_units/gc_unit.sv
+index 359eaf6..2edefc7 100644
+--- a/core/execution_units/gc_unit.sv
++++ b/core/execution_units/gc_unit.sv
+@@ -305,7 +305,7 @@ module gc_unit
+ 
+     assign exception_ack = gc.exception.valid;
+ 
+-    assign interrupt_taken = interrupt_pending & (next_state == PRE_ISSUE_FLUSH) & ~(ifence_in_progress | ret_in_progress | gc.exception.valid);
++    assign interrupt_taken = interrupt_pending & (next_state == PRE_ISSUE_FLUSH) & ~(ifence_in_progress | ret_in_progress | gc.exception.valid | ~oldest_pc_valid);
+ 
+     assign mret = gc_inputs_r.is_mret & ret_in_progress & (next_state == PRE_ISSUE_FLUSH);
+     assign sret = gc_inputs_r.is_sret & ret_in_progress & (next_state == PRE_ISSUE_FLUSH);
+diff --git a/core/instruction_metadata_and_id_management.sv b/core/instruction_metadata_and_id_management.sv
+index 183920f..611606c 100644
+--- a/core/instruction_metadata_and_id_management.sv
++++ b/core/instruction_metadata_and_id_management.sv
+@@ -354,6 +354,7 @@ module instruction_metadata_and_id_management
+     ////////////////////////////////////////////////////
+     //Retirer
+     logic contiguous_retire;
++    logic oldest_pc_valid;
+     logic id_is_post_issue [RETIRE_PORTS];
+     logic id_ready_to_retire [RETIRE_PORTS];
+     logic [LOG2_RETIRE_PORTS-1:0] retire_with_rd_sel;
+@@ -431,6 +432,7 @@ module instruction_metadata_and_id_management
+     ////////////////////////////////////////////////////
+     //Outputs
+     assign pc_id_available = ~inflight_count[LOG2_MAX_IDS];
++    assign oldest_pc_valid = id_is_post_issue[0] & retire_port_valid_next[0];
+ 
+     //Decode
+     localparam fetch_metadata_t ADDR_OK = '{ok : 1, error_code : INST_ADDR_MISSALIGNED};

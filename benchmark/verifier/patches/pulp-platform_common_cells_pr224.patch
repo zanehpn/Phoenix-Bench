@@ -1,0 +1,177 @@
+From f8c739be0b88bb065a75715eb60dc1daf36bbb98 Mon Sep 17 00:00:00 2001
+From: Michael Rogenmoser <michael@rogenmoser.us>
+Date: Thu, 11 Jul 2024 11:54:42 +0200
+Subject: [PATCH 1/4] `mem_to_banks_detailed`: Ensure no spurious response
+ after full dead write
+
+---
+ CHANGELOG.md                 |  3 +++
+ src/mem_to_banks_detailed.sv | 16 ++++++++++++----
+ 2 files changed, 15 insertions(+), 4 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index f0df2aa7..63e0cd2c 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
+ ### Added
+ - `credit_counter`: Add up/down counter for credit.
+ 
++### Fixed
++- `mem_to_banks_detailed`: Ensure no spurious response after full dead write.
++
+ ## 1.36.0 - 2024-07-08
+ ### Fixed
+ - `registers`: Fix else statement in FFARNC macro.
+diff --git a/src/mem_to_banks_detailed.sv b/src/mem_to_banks_detailed.sv
+index 1dac044b..29e928cd 100644
+--- a/src/mem_to_banks_detailed.sv
++++ b/src/mem_to_banks_detailed.sv
+@@ -109,8 +109,13 @@ module mem_to_banks_detailed #(
+                         resp_valid, resp_ready;
+   req_t [NumBanks-1:0]  bank_req,
+                         bank_oup;
+-  logic [NumBanks-1:0]  bank_req_internal, bank_gnt_internal, zero_strobe, dead_response;
+-  logic                 dead_write_fifo_full;
++  logic [NumBanks-1:0]  bank_req_internal,
++                        bank_gnt_internal,
++                        zero_strobe,
++                        dead_response,
++                        dead_response_unmasked;
++  logic                 dead_write_fifo_full,
++                        dead_write_fifo_empty;
+ 
+   function automatic addr_t align_addr(input addr_t addr);
+     return (addr >> $clog2(DataBytes)) << $clog2(DataBytes);
+@@ -173,16 +178,19 @@ module mem_to_banks_detailed #(
+       .flush_i    ( 1'b0                    ),
+       .testmode_i ( 1'b0                    ),
+       .full_o     ( dead_write_fifo_full    ),
+-      .empty_o    (),
++      .empty_o    ( dead_write_fifo_empty   ),
+       .usage_o    (),
+       .data_i     ( bank_we_o & zero_strobe ),
+       .push_i     ( req_i & gnt_o           ),
+-      .data_o     ( dead_response           ),
++      .data_o     ( dead_response_unmasked  ),
+       .pop_i      ( rvalid_o                )
+     );
++    assign dead_response = dead_response_unmasked & {NumBanks{~dead_write_fifo_empty}};
+   end else begin : gen_no_dead_write_fifo
++    assign dead_response_unmasked = '0;
+     assign dead_response = '0;
+     assign dead_write_fifo_full = 1'b0;
++    assign dead_write_fifo_empty = 1'b1;
+   end
+ 
+   // Handle responses.
+
+From 7d57dfcba63c1e122b34ebbd6b59ef559bfa60c1 Mon Sep 17 00:00:00 2001
+From: Michael Rogenmoser <michael@rogenmoser.us>
+Date: Thu, 11 Jul 2024 16:54:21 +0200
+Subject: [PATCH 2/4] `mem_to_banks_detailed`: Fix HideStrb alignment
+
+---
+ src/mem_to_banks_detailed.sv | 22 +++++++++++-----------
+ 1 file changed, 11 insertions(+), 11 deletions(-)
+
+diff --git a/src/mem_to_banks_detailed.sv b/src/mem_to_banks_detailed.sv
+index 29e928cd..d296af0c 100644
+--- a/src/mem_to_banks_detailed.sv
++++ b/src/mem_to_banks_detailed.sv
+@@ -153,11 +153,11 @@ module mem_to_banks_detailed #(
+     assign bank_wuser_o[i] = bank_oup[i].wuser;
+     assign bank_we_o[i]    = bank_oup[i].we;
+ 
+-    assign zero_strobe[i] = (bank_oup[i].strb == '0);
++    assign zero_strobe[i] = (|bank_req[i].strb == '0);
+ 
+     if (HideStrb) begin : gen_hide_strb
+-      assign bank_req_o[i] = (bank_oup[i].we && zero_strobe[i]) ? 1'b0 : bank_req_internal[i];
+-      assign bank_gnt_internal[i] = (bank_oup[i].we && zero_strobe[i]) ? 1'b1 : bank_gnt_i[i];
++      assign bank_req_o[i] = (bank_oup[i].we && (|bank_oup[i].strb == '0)) ? 1'b0 : bank_req_internal[i];
++      assign bank_gnt_internal[i] = (bank_oup[i].we && (|bank_oup[i].strb == '0)) ? 1'b1 : bank_gnt_i[i];
+     end else begin : gen_legacy_strb
+       assign bank_req_o[i] = bank_req_internal[i];
+       assign bank_gnt_internal[i] = bank_gnt_i[i];
+@@ -175,15 +175,15 @@ module mem_to_banks_detailed #(
+     ) i_dead_write_fifo (
+       .clk_i,
+       .rst_ni,
+-      .flush_i    ( 1'b0                    ),
+-      .testmode_i ( 1'b0                    ),
+-      .full_o     ( dead_write_fifo_full    ),
+-      .empty_o    ( dead_write_fifo_empty   ),
++      .flush_i    ( 1'b0                           ),
++      .testmode_i ( 1'b0                           ),
++      .full_o     ( dead_write_fifo_full           ),
++      .empty_o    ( dead_write_fifo_empty          ),
+       .usage_o    (),
+-      .data_i     ( bank_we_o & zero_strobe ),
+-      .push_i     ( req_i & gnt_o           ),
+-      .data_o     ( dead_response_unmasked  ),
+-      .pop_i      ( rvalid_o                )
++      .data_i     ( {NumBanks{we_i}} & zero_strobe ),
++      .push_i     ( req_i & gnt_o                  ),
++      .data_o     ( dead_response_unmasked         ),
++      .pop_i      ( rvalid_o                       )
+     );
+     assign dead_response = dead_response_unmasked & {NumBanks{~dead_write_fifo_empty}};
+   end else begin : gen_no_dead_write_fifo
+
+From e5f5b8f1762a8a2028277ed27ffbe54a80bcacd0 Mon Sep 17 00:00:00 2001
+From: Michael Rogenmoser <michael@rogenmoser.us>
+Date: Thu, 11 Jul 2024 17:02:00 +0200
+Subject: [PATCH 3/4] Fix lint
+
+---
+ src/mem_to_banks_detailed.sv | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/src/mem_to_banks_detailed.sv b/src/mem_to_banks_detailed.sv
+index d296af0c..ff16fd69 100644
+--- a/src/mem_to_banks_detailed.sv
++++ b/src/mem_to_banks_detailed.sv
+@@ -156,8 +156,10 @@ module mem_to_banks_detailed #(
+     assign zero_strobe[i] = (|bank_req[i].strb == '0);
+ 
+     if (HideStrb) begin : gen_hide_strb
+-      assign bank_req_o[i] = (bank_oup[i].we && (|bank_oup[i].strb == '0)) ? 1'b0 : bank_req_internal[i];
+-      assign bank_gnt_internal[i] = (bank_oup[i].we && (|bank_oup[i].strb == '0)) ? 1'b1 : bank_gnt_i[i];
++      assign bank_req_o[i] = (bank_oup[i].we && (|bank_oup[i].strb == '0)) ?
++                               1'b0 : bank_req_internal[i];
++      assign bank_gnt_internal[i] = (bank_oup[i].we && (|bank_oup[i].strb == '0)) ?
++                                      1'b1 : bank_gnt_i[i];
+     end else begin : gen_legacy_strb
+       assign bank_req_o[i] = bank_req_internal[i];
+       assign bank_gnt_internal[i] = bank_gnt_i[i];
+
+From d2138084816a70276bc026738b139002be2fad9c Mon Sep 17 00:00:00 2001
+From: Michael Rogenmoser <michael@rogenmoser.us>
+Date: Thu, 18 Jul 2024 14:02:27 +0200
+Subject: [PATCH 4/4] mem_to_banks_detailed: Remove unneeded strb reduction
+
+---
+ src/mem_to_banks_detailed.sv | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/src/mem_to_banks_detailed.sv b/src/mem_to_banks_detailed.sv
+index ff16fd69..24160031 100644
+--- a/src/mem_to_banks_detailed.sv
++++ b/src/mem_to_banks_detailed.sv
+@@ -153,12 +153,12 @@ module mem_to_banks_detailed #(
+     assign bank_wuser_o[i] = bank_oup[i].wuser;
+     assign bank_we_o[i]    = bank_oup[i].we;
+ 
+-    assign zero_strobe[i] = (|bank_req[i].strb == '0);
++    assign zero_strobe[i] = (bank_req[i].strb == '0);
+ 
+     if (HideStrb) begin : gen_hide_strb
+-      assign bank_req_o[i] = (bank_oup[i].we && (|bank_oup[i].strb == '0)) ?
++      assign bank_req_o[i] = (bank_oup[i].we && (bank_oup[i].strb == '0)) ?
+                                1'b0 : bank_req_internal[i];
+-      assign bank_gnt_internal[i] = (bank_oup[i].we && (|bank_oup[i].strb == '0)) ?
++      assign bank_gnt_internal[i] = (bank_oup[i].we && (bank_oup[i].strb == '0)) ?
+                                       1'b1 : bank_gnt_i[i];
+     end else begin : gen_legacy_strb
+       assign bank_req_o[i] = bank_req_internal[i];

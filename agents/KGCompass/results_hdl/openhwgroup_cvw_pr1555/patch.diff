@@ -1,0 +1,20 @@
+diff --git a/testbench/common/wallyTracer.sv b/testbench/common/wallyTracer.sv
+index ef84d94..1a3f1c6 100644
+--- a/testbench/common/wallyTracer.sv
++++ b/testbench/common/wallyTracer.sv
+@@ -32,10 +32,12 @@
+ // stalled.  If it is stalled we want to hold the old value.
+ `define CONNECT_CSR(name, addr, val) \
+   logic [P.XLEN-1:0] prev_csr_``name; \
+-  always_ff @(posedge clk) \
+-    prev_csr_``name <= rvvi.csr[0][0][addr]; \
+-  assign rvvi.csr_wb[0][0][addr] = (rvvi.csr[0][0][addr] != prev_csr_``name); \
+-  assign rvvi.csr[0][0][addr] = valid ? val : prev_csr_``name;
++  always_ff @(posedge clk or posedge reset) begin \
++    if (reset) prev_csr_``name <= '0; \
++    else       prev_csr_``name <= valid ? val : prev_csr_``name; \
++  end \
++  assign rvvi.csr[0][0][addr] = valid ? val : prev_csr_``name; \
++  assign rvvi.csr_wb[0][0][addr] = valid && (val != prev_csr_``name);
+ 
+ module wallyTracer import cvw::*; #(parameter cvw_t P) (rvviTrace rvvi);

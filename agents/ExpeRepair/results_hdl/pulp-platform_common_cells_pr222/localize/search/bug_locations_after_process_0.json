@@ -1,0 +1,72 @@
+[
+    {
+        "rel_file_path": "src/stream_arbiter_flushable.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_common_cells_pr222/src/stream_arbiter_flushable.sv",
+        "start": 6,
+        "end": 41,
+        "class_name": null,
+        "method_name": null,
+        "code": "6 // or agreed to in writing, software, hardware and materials distributed under\n7 // this License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR\n8 // CONDITIONS OF ANY KIND, either express or implied. See the License for the\n9 // specific language governing permissions and limitations under the License.\n10 \n11 // Stream arbiter: Arbitrates a parametrizable number of input streams (i.e., valid-ready\n12 // handshaking with dependency rules as in AXI4) to a single output stream.  Once `oup_valid_o` is\n13 // asserted, `oup_data_o` remains invariant until the output handshake has occurred.  The\n14 // arbitration scheme is fair round-robin tree, see `rr_arb_tree` for details.\n15 \n16 module stream_arbiter_flushable #(\n17     parameter type      DATA_T = logic,   // Vivado requires a default value for type parameters.\n18     parameter integer   N_INP = -1,       // Synopsys DC requires a default value for parameters.\n19     parameter           ARBITER = \"rr\"    // \"rr\" or \"prio\"\n20 ) (\n21     input  logic              clk_i,\n22     input  logic              rst_ni,\n23     input  logic              flush_i,\n24 \n25     input  DATA_T [N_INP-1:0] inp_data_i,\n26     input  logic  [N_INP-1:0] inp_valid_i,\n27     output logic  [N_INP-1:0] inp_ready_o,\n28 \n29     output DATA_T             oup_data_o,\n30     output logic              oup_valid_o,\n31     input  logic              oup_ready_i\n32 );\n33 \n34   if (ARBITER == \"rr\") begin : gen_rr_arb\n35     rr_arb_tree #(\n36       .NumIn      (N_INP),\n37       .DataType   (DATA_T),\n38       .ExtPrio    (1'b0),\n39       .AxiVldRdy  (1'b1),\n40       .LockIn     (1'b1)\n41     ) i_arbiter (\n",
+        "intended_behavior": ""
+    },
+    {
+        "rel_file_path": "src/stream_arbiter_flushable.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_common_cells_pr222/src/stream_arbiter_flushable.sv",
+        "start": 23,
+        "end": 62,
+        "class_name": null,
+        "method_name": null,
+        "code": "23     input  logic              flush_i,\n24 \n25     input  DATA_T [N_INP-1:0] inp_data_i,\n26     input  logic  [N_INP-1:0] inp_valid_i,\n27     output logic  [N_INP-1:0] inp_ready_o,\n28 \n29     output DATA_T             oup_data_o,\n30     output logic              oup_valid_o,\n31     input  logic              oup_ready_i\n32 );\n33 \n34   if (ARBITER == \"rr\") begin : gen_rr_arb\n35     rr_arb_tree #(\n36       .NumIn      (N_INP),\n37       .DataType   (DATA_T),\n38       .ExtPrio    (1'b0),\n39       .AxiVldRdy  (1'b1),\n40       .LockIn     (1'b1)\n41     ) i_arbiter (\n42       .clk_i,\n43       .rst_ni,\n44       .flush_i,\n45       .rr_i   ('0),\n46       .req_i  (inp_valid_i),\n47       .gnt_o  (inp_ready_o),\n48       .data_i (inp_data_i),\n49       .gnt_i  (oup_ready_i),\n50       .req_o  (oup_valid_o),\n51       .data_o (oup_data_o),\n52       .idx_o  ()\n53     );\n54 \n55   end else if (ARBITER == \"prio\") begin : gen_prio_arb\n56     rr_arb_tree #(\n57       .NumIn      (N_INP),\n58       .DataType   (DATA_T),\n59       .ExtPrio    (1'b1),\n60       .AxiVldRdy  (1'b1),\n61       .LockIn     (1'b1)\n62     ) i_arbiter (\n",
+        "intended_behavior": ""
+    },
+    {
+        "rel_file_path": "src/stream_arbiter_flushable.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_common_cells_pr222/src/stream_arbiter_flushable.sv",
+        "start": 44,
+        "end": 79,
+        "class_name": null,
+        "method_name": null,
+        "code": "44       .flush_i,\n45       .rr_i   ('0),\n46       .req_i  (inp_valid_i),\n47       .gnt_o  (inp_ready_o),\n48       .data_i (inp_data_i),\n49       .gnt_i  (oup_ready_i),\n50       .req_o  (oup_valid_o),\n51       .data_o (oup_data_o),\n52       .idx_o  ()\n53     );\n54 \n55   end else if (ARBITER == \"prio\") begin : gen_prio_arb\n56     rr_arb_tree #(\n57       .NumIn      (N_INP),\n58       .DataType   (DATA_T),\n59       .ExtPrio    (1'b1),\n60       .AxiVldRdy  (1'b1),\n61       .LockIn     (1'b1)\n62     ) i_arbiter (\n63       .clk_i,\n64       .rst_ni,\n65       .flush_i,\n66       .rr_i   ('0),\n67       .req_i  (inp_valid_i),\n68       .gnt_o  (inp_ready_o),\n69       .data_i (inp_data_i),\n70       .gnt_i  (oup_ready_i),\n71       .req_o  (oup_valid_o),\n72       .data_o (oup_data_o),\n73       .idx_o  ()\n74     );\n75 \n76   end else begin : gen_arb_error\n77     `ifndef SYNTHESIS\n78     $fatal(1, \"Invalid value for parameter 'ARBITER'!\");\n79     `endif\n",
+        "intended_behavior": ""
+    },
+    {
+        "rel_file_path": "src/rr_arb_tree.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_common_cells_pr222/src/rr_arb_tree.sv",
+        "start": 44,
+        "end": 83,
+        "class_name": null,
+        "method_name": null,
+        "code": "44 /// If it is `1'b1` two `lzc`, a masking logic stage and a two input multiplexer are instantiated.\n45 /// However these are small in respect of the data multiplexers needed, as the width of the `req_i`\n46 /// signal is usually less as than `DataWidth`.\n47 module rr_arb_tree #(\n48   /// Number of inputs to be arbitrated.\n49   parameter int unsigned NumIn      = 64,\n50   /// Data width of the payload in bits. Not needed if `DataType` is overwritten.\n51   parameter int unsigned DataWidth  = 32,\n52   /// Data type of the payload, can be overwritten with custom type. Only use of `DataWidth`.\n53   parameter type         DataType   = logic [DataWidth-1:0],\n54   /// The `ExtPrio` option allows to override the internal round robin counter via the\n55   /// `rr_i` signal. This can be useful in case multiple arbiters need to have\n56   /// rotating priorities that are operating in lock-step. If static priority arbitration\n57   /// is needed, just connect `rr_i` to '0.\n58   ///\n59   /// Set to 1'b1 to enable.\n60   parameter bit          ExtPrio    = 1'b0,\n61   /// If `AxiVldRdy` is set, the req/gnt signals are compliant with the AXI style vld/rdy\n62   /// handshake. Namely, upstream vld (req) must not depend on rdy (gnt), as it can be deasserted\n63   /// again even though vld is asserted. Enabling `AxiVldRdy` leads to a reduction of arbiter\n64   /// delay and area.\n65   ///\n66   /// Set to `1'b1` to treat req/gnt as vld/rdy.\n67   parameter bit          AxiVldRdy  = 1'b0,\n68   /// The `LockIn` option prevents the arbiter from changing the arbitration\n69   /// decision when the arbiter is disabled. I.e., the index of the first request\n70   /// that wins the arbitration will be locked in case the destination is not\n71   /// able to grant the request in the same cycle.\n72   ///\n73   /// Set to `1'b1` to enable.\n74   parameter bit          LockIn     = 1'b0,\n75   /// When set, ensures that throughput gets distributed evenly between all inputs.\n76   ///\n77   /// Set to `1'b0` to disable.\n78   parameter bit          FairArb    = 1'b1,\n79   /// Dependent parameter, do **not** overwrite.\n80   /// Width of the arbitration priority signal and the arbitrated index.\n81   parameter int unsigned IdxWidth   = (NumIn > 32'd1) ? unsigned'($clog2(NumIn)) : 32'd1,\n82   /// Dependent parameter, do **not** overwrite.\n83   /// Type for defining the arbitration priority and arbitrated index signal.\n",
+        "intended_behavior": ""
+    },
+    {
+        "rel_file_path": "src/rr_arb_tree.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_common_cells_pr222/src/rr_arb_tree.sv",
+        "start": 137,
+        "end": 214,
+        "class_name": null,
+        "method_name": null,
+        "code": "137     logic    [2**NumLevels-2:0] req_nodes;   // used to propagate the requests to slave\n138     /* lint_off */\n139     idx_t                       rr_q;\n140     logic [NumIn-1:0]           req_d;\n141 \n142     // the final arbitration decision can be taken from the root of the tree\n143     assign req_o        = req_nodes[0];\n144     assign data_o       = data_nodes[0];\n145     assign idx_o        = index_nodes[0];\n146 \n147     if (ExtPrio) begin : gen_ext_rr\n148       assign rr_q       = rr_i;\n149       assign req_d      = req_i;\n150     end else begin : gen_int_rr\n151       idx_t rr_d;\n152 \n153       // lock arbiter decision in case we got at least one req and no acknowledge\n154       if (LockIn) begin : gen_lock\n155         logic  lock_d, lock_q;\n156         logic [NumIn-1:0] req_q;\n157 \n158         assign lock_d     = req_o & ~gnt_i;\n159         assign req_d      = (lock_q) ? req_q : req_i;\n160 \n161         always_ff @(posedge clk_i or negedge rst_ni) begin : p_lock_reg\n162           if (!rst_ni) begin\n163             lock_q <= '0;\n164           end else begin\n165             if (flush_i) begin\n166               lock_q <= '0;\n167             end else begin\n168               lock_q <= lock_d;\n169             end\n170           end\n171         end\n172 \n173         `ifndef SYNTHESIS\n174         `ifndef COMMON_CELLS_ASSERTS_OFF\n175           lock: assert property(\n176             @(posedge clk_i) disable iff (!rst_ni || flush_i)\n177                 LockIn |-> req_o && (!gnt_i && !flush_i) |=> idx_o == $past(idx_o)) else\n178                 $fatal (1, \"Lock implies same arbiter decision in next cycle if output is not \\\n179                             ready.\");\n180 \n181           logic [NumIn-1:0] req_tmp;\n182           assign req_tmp = req_q & req_i;\n183           lock_req: assume property(\n184             @(posedge clk_i) disable iff (!rst_ni || flush_i)\n185                 LockIn |-> lock_d |=> req_tmp == req_q) else\n186                 $fatal (1, \"It is disallowed to deassert unserved request signals when LockIn is \\\n187                             enabled.\");\n188         `endif\n189         `endif\n190 \n191         always_ff @(posedge clk_i or negedge rst_ni) begin : p_req_regs\n192           if (!rst_ni) begin\n193             req_q  <= '0;\n194           end else begin\n195             if (flush_i) begin\n196               req_q  <= '0;\n197             end else begin\n198               req_q  <= req_d;\n199             end\n200           end\n201         end\n202       end else begin : gen_no_lock\n203         assign req_d = req_i;\n204       end\n205 \n206       if (FairArb) begin : gen_fair_arb\n207         logic [NumIn-1:0] upper_mask,  lower_mask;\n208         idx_t             upper_idx,   lower_idx,   next_idx;\n209         logic             upper_empty, lower_empty;\n210 \n211         for (genvar i = 0; i < NumIn; i++) begin : gen_mask\n212           assign upper_mask[i] = (i >  rr_q) ? req_d[i] : 1'b0;\n213           assign lower_mask[i] = (i <= rr_q) ? req_d[i] : 1'b0;\n214         end\n",
+        "intended_behavior": ""
+    },
+    {
+        "rel_file_path": "src/rr_arb_tree.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_common_cells_pr222/src/rr_arb_tree.sv",
+        "start": 306,
+        "end": 329,
+        "class_name": null,
+        "method_name": null,
+        "code": "306           assign gnt_nodes[Idx1]   = gnt_nodes[Idx0] & ~sel;\n307           assign gnt_nodes[Idx1+1] = gnt_nodes[Idx0] & sel;\n308         end\n309         //////////////////////////////////////////////////////////////\n310       end\n311     end\n312 \n313     `ifndef SYNTHESIS\n314     `ifndef COMMON_CELLS_ASSERTS_OFF\n315     `ifndef XSIM\n316     initial begin : p_assert\n317       assert(NumIn)\n318         else $fatal(1, \"Input must be at least one element wide.\");\n319       assert(!(LockIn && ExtPrio))\n320         else $fatal(1,\"Cannot use LockIn feature together with external ExtPrio.\");\n321     end\n322 \n323     hot_one : assert property(\n324       @(posedge clk_i) disable iff (!rst_ni || flush_i) $onehot0(gnt_o))\n325         else $fatal (1, \"Grant signal must be hot1 or zero.\");\n326 \n327     gnt0 : assert property(\n328       @(posedge clk_i) disable iff (!rst_ni || flush_i) |gnt_o |-> gnt_i)\n329         else $fatal (1, \"Grant out implies grant in.\");\n",
+        "intended_behavior": ""
+    },
+    {
+        "rel_file_path": "src/stream_arbiter.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_common_cells_pr222/src/stream_arbiter.sv",
+        "start": 6,
+        "end": 39,
+        "class_name": null,
+        "method_name": null,
+        "code": "6 // or agreed to in writing, software, hardware and materials distributed under\n7 // this License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR\n8 // CONDITIONS OF ANY KIND, either express or implied. See the License for the\n9 // specific language governing permissions and limitations under the License.\n10 \n11 // Stream arbiter: Arbitrates a parametrizable number of input streams (i.e., valid-ready\n12 // handshaking with dependency rules as in AXI4) to a single output stream.  Once `oup_valid_o` is\n13 // asserted, `oup_data_o` remains invariant until the output handshake has occurred.  The\n14 // arbitration scheme is round-robin with \"look ahead\", see the `rrarbiter` for details.\n15 \n16 module stream_arbiter #(\n17     parameter type      DATA_T = logic,   // Vivado requires a default value for type parameters.\n18     parameter integer   N_INP = -1,       // Synopsys DC requires a default value for parameters.\n19     parameter           ARBITER = \"rr\"    // \"rr\" or \"prio\"\n20 ) (\n21     input  logic              clk_i,\n22     input  logic              rst_ni,\n23 \n24     input  DATA_T [N_INP-1:0] inp_data_i,\n25     input  logic  [N_INP-1:0] inp_valid_i,\n26     output logic  [N_INP-1:0] inp_ready_o,\n27 \n28     output DATA_T             oup_data_o,\n29     output logic              oup_valid_o,\n30     input  logic              oup_ready_i\n31 );\n32 \n33   stream_arbiter_flushable #(\n34     .DATA_T   (DATA_T),\n35     .N_INP    (N_INP),\n36     .ARBITER  (ARBITER)\n37   ) i_arb (\n38     .clk_i        (clk_i),\n39     .rst_ni       (rst_ni),\n",
+        "intended_behavior": ""
+    }
+]

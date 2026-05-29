@@ -1,0 +1,722 @@
+From 32c1bf8887e80d34e3b2e44a338a5a42e81e2e5e Mon Sep 17 00:00:00 2001
+From: DanielTaoHuang123 <danielthuang@outlook.com>
+Date: Sun, 26 Oct 2025 05:49:58 -0400
+Subject: [PATCH 1/8] change MA to have 4 bit WE; fix sb/sh
+
+---
+ src/ControlFSM.sv                      |  7 ++-
+ src/Instruction_Decode/MemoryLoader.sv | 78 +++++++++++++++++++++-----
+ src/top.v                              | 21 ++++---
+ src/utils/MA.v                         |  9 +--
+ 4 files changed, 86 insertions(+), 29 deletions(-)
+
+diff --git a/src/ControlFSM.sv b/src/ControlFSM.sv
+index 31bf453..a9692c4 100644
+--- a/src/ControlFSM.sv
++++ b/src/ControlFSM.sv
+@@ -9,12 +9,13 @@ module ControlFSM(
+ 	input wire clk,
+ 	input wire reset,
+   input wire zero_flag,
++  input wire [3:0] MemWriteByteAddress,
+ 	output adr_src_t AdrSrc,
+ 	output reg IRWrite,
+ 	output reg RegWrite,
+ 	output reg PCUpdate,
+   output pc_src_t pc_src,
+-	output reg MemWrite,
++	output reg [3:0] MemWrite,
+ 	output reg Branch,
+ 	output alu_src_a_t ALUSrcA,
+ 	output alu_src_b_t ALUSrcB,
+@@ -115,7 +116,7 @@ module ControlFSM(
+     pc_src <= 1'b0;
+     PCUpdate <= 1'b0;
+     IRWrite <= 1'b0;
+-    MemWrite <= 1'b0;
++    MemWrite <= 4'b0;
+ 	RegWrite <= 1'b0;
+ 
+ 		FSMState <= current_state;
+@@ -211,7 +212,7 @@ module ControlFSM(
+ 
+ 				ResultSrc <= RESULT_SRC__ALU_OUT;
+ 				AdrSrc <= ADR_SRC__RESULT;
+-				MemWrite <= 1'b1;
++				MemWrite <= MemWriteByteAddress;
+ 
+ 			end
+ 
+diff --git a/src/Instruction_Decode/MemoryLoader.sv b/src/Instruction_Decode/MemoryLoader.sv
+index 45499ca..1fa66e1 100644
+--- a/src/Instruction_Decode/MemoryLoader.sv
++++ b/src/Instruction_Decode/MemoryLoader.sv
+@@ -1,8 +1,13 @@
++`include "src/types.svh"
++
+ module MemoryLoader (
+     input  data_t memory_data,
+     input  addr_t memory_address,
+     input  logic [2:0]  funct3,
+-    output data_t mem_load_result
++    input  logic [31:0] dataB,
++    output data_t mem_load_result,
++    output logic [3:0] MemWriteByteAddress,
++    output logic [31:0] __tmp_MemData
+ );
+ 
+     integer byteindex;
+@@ -10,27 +15,66 @@ module MemoryLoader (
+ 
+     always_comb begin
+         case (funct3)
+-            3'b000: begin // lb
++            3'b000: begin // lb & sb
+                 case (byteindex)
+-                    2'd0: mem_load_result = {{24{memory_data[7]}},  memory_data[7:0]};
+-                    2'd1: mem_load_result = {{24{memory_data[15]}}, memory_data[15:8]};
+-                    2'd2: mem_load_result = {{24{memory_data[23]}}, memory_data[23:16]};
+-                    2'd3: mem_load_result = {{24{memory_data[31]}}, memory_data[31:24]};
+-                    default: mem_load_result = 32'hX;
++                    2'd0: begin
++                        mem_load_result = {{24{memory_data[7]}},  memory_data[7:0]};
++                        MemWriteByteAddress = 4'b0001;
++                        __tmp_MemData = {24'b0, dataB[7:0]};
++                    end
++                    2'd1: begin
++                        mem_load_result = {{24{memory_data[15]}}, memory_data[15:8]};
++                        MemWriteByteAddress = 4'b0010;
++                        __tmp_MemData = {16'b0, dataB[7:0], 8'b0};
++                    end
++                    2'd2: begin
++                        mem_load_result = {{24{memory_data[23]}}, memory_data[23:16]};
++                        MemWriteByteAddress = 4'b0100;
++                        __tmp_MemData = {8'b0, dataB[7:0], 16'b0};
++                    end
++                    2'd3: begin
++                        mem_load_result = {{24{memory_data[31]}}, memory_data[31:24]};
++                        MemWriteByteAddress = 4'b1000;
++                        __tmp_MemData = {dataB[7:0], 24'b0};
++                    end
++                    default: begin
++                        mem_load_result = 32'hX;
++                        MemWriteByteAddress = 4'bx;
++                        __tmp_MemData = 32'bx;
++                    end
+                 endcase
+             end
+ 
+-            3'b001: begin // lh
++            3'b001: begin // lh & sh
+                 case (byteindex)
+-                    2'd0: mem_load_result = {{16{memory_data[15]}}, memory_data[15:0]};
+-                    2'd1: mem_load_result = {{16{memory_data[23]}}, memory_data[23:8]};
+-                    2'd2: mem_load_result = {{16{memory_data[31]}}, memory_data[31:16]};
+-                    default: mem_load_result = 32'hX;
++                    2'd0: begin
++                        mem_load_result = {{16{memory_data[15]}}, memory_data[15:0]};
++                        MemWriteByteAddress = 4'b0011;
++                        __tmp_MemData = {16'b0, dataB[15:0]};
++                    end
++                    2'd1: begin
++                        mem_load_result = {{16{memory_data[23]}}, memory_data[23:8]};
++                        MemWriteByteAddress = 4'b0110;
++                        __tmp_MemData = {8'b0, dataB[15:0], 8'b0};
++                    end
++                    2'd2: begin
++                        mem_load_result = {{16{memory_data[31]}}, memory_data[31:16]};
++                        MemWriteByteAddress = 4'b1100;
++                        __tmp_MemData = {dataB[15:0], 16'b0};
++                    end
++                    default: begin
++                        mem_load_result = 32'hX;
++                        MemWriteByteAddress = 4'bX;
++                        __tmp_MemData = 32'bX;
++                    end
+                 endcase
+             end
+ 
+-            3'b010: mem_load_result = memory_data; // lw
+-
++            3'b010: begin
++                mem_load_result = memory_data; // lw
++                MemWriteByteAddress = 4'b1111; //sw
++                __tmp_MemData = dataB;
++              end
+             3'b100: begin // lbu
+                 case (byteindex)
+                     2'd0: mem_load_result = {24'b0, memory_data[7:0]};
+@@ -50,7 +94,11 @@ module MemoryLoader (
+                 endcase
+             end
+ 
+-            default: mem_load_result = 32'hX;
++            default: begin
++                mem_load_result = 32'hX;
++                MemWriteByteAddress = 4'b0000;
++                __tmp_MemData = 31'bx;
++            end
+         endcase
+     end
+ 
+diff --git a/src/top.v b/src/top.v
+index ee7f810..0d69b60 100644
+--- a/src/top.v
++++ b/src/top.v
+@@ -38,8 +38,8 @@ module top #( parameter MEM_SIZE = 1024 )
+   wire alu__zero_flag;
+ 
+   adr_src_t cfsm__adr_src;
+-  wire __tmp_MemWrite
+-     , __tmp_Branch;
++  wire [3:0] __tmp_MemWrite;
++  wire __tmp_Branch;
+   wire [1:0] __tmp_ALUSrcA
+            , __tmp_ALUSrcB;
+   wire [2:0] __tmp_ALUOp;
+@@ -49,11 +49,15 @@ module top #( parameter MEM_SIZE = 1024 )
+   logic [31:0] dataA
+ 			 ,dataB;
+ 
++  logic [3:0] MemWriteByteAddress;
++  logic [31:0] __tmp_MemData;
++
+   ControlFSM control_fsm
+     ( .opcode    ( opcode           )
+     , .clk       ( clk              )
+     , .reset     ( reset            )
+     , .zero_flag ( alu__zero_flag   )
++    , .MemWriteByteAddress ( MemWriteByteAddress )
+     , .AdrSrc    ( cfsm__adr_src    )
+     , .IRWrite   ( cfsm__ir_write   )
+     , .RegWrite  ( cfsm__reg_write  )
+@@ -91,7 +95,7 @@ module top #( parameter MEM_SIZE = 1024 )
+   MA #( .SIZE ( MEM_SIZE ) )
+     memory // instructions and data
+       ( .A   ( memory_address )
+-      , .WD  ( dataB          )
++      , .WD  ( __tmp_MemData  )
+       , .WE  ( __tmp_MemWrite )
+       , .CLK ( clk            )
+ 
+@@ -106,10 +110,13 @@ module top #( parameter MEM_SIZE = 1024 )
+   end
+ 
+   MemoryLoader MemLoad
+-  ( .memory_data       ( memory_data     )
+-  , .memory_address    ( memory_address  )
+-  , .mem_load_result   ( mem_load_result )
+-  , .funct3            ( funct3          )
++  ( .memory_data          ( memory_data       )
++  , .memory_address       ( memory_address    )
++  , .mem_load_result      ( mem_load_result   )
++  , .funct3               ( funct3            )
++  , .dataB                ( dataB             )
++  , .MemWriteByteAddress  ( MemWriteByteAddress)
++  , .__tmp_MemData        ( __tmp_MemData     )
+   );
+ 
+   always @(posedge clk) begin
+diff --git a/src/utils/MA.v b/src/utils/MA.v
+index a47036c..dafb7e1 100644
+--- a/src/utils/MA.v
++++ b/src/utils/MA.v
+@@ -1,7 +1,7 @@
+ module MA #( parameter SIZE = 1024 )
+            ( input  [31:0] A
+            , input  [31:0] WD
+-           , input         WE
++           , input  [3:0]  WE //changed from 1 bit WE to 4 bit to address byteindex
+            , input         CLK
+            , output [31:0] RD
+            );
+@@ -21,9 +21,10 @@ module MA #( parameter SIZE = 1024 )
+     assign RD = M[A[31:2]]; // 2 LSBs used for byte addressing
+ 
+     always @(posedge CLK) begin
+-        if (WE) begin
+-            M[A[31:2]] <= WD;
+-        end
++      if (WE[0]) M[A[31:2]][7:0]   <= WD[7:0];
++      if (WE[1]) M[A[31:2]][15:8]  <= WD[15:8];
++      if (WE[2]) M[A[31:2]][23:16] <= WD[23:16];
++      if (WE[3]) M[A[31:2]][31:24] <= WD[31:24];
+     end
+ 
+ endmodule
+
+From 3c8e055cd03a2987f81c1d514f0166cdd3516d4b Mon Sep 17 00:00:00 2001
+From: DanielTaoHuang123 <danielthuang@outlook.com>
+Date: Tue, 28 Oct 2025 22:42:53 -0400
+Subject: [PATCH 2/8] skip unaligned halfword store/load specify the datatype
+ of pc_src when assigning values in FSM
+
+---
+ src/ControlFSM.sv                      | 4 ++--
+ src/Instruction_Decode/MemoryLoader.sv | 4 ++--
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/src/ControlFSM.sv b/src/ControlFSM.sv
+index a9692c4..7c4011e 100644
+--- a/src/ControlFSM.sv
++++ b/src/ControlFSM.sv
+@@ -113,7 +113,7 @@ module ControlFSM(
+ 	//output logic
+ 	always@(*) begin
+     Branch <= 1'b0;
+-    pc_src <= 1'b0;
++    pc_src <= pc_src_t'(1'b0);
+     PCUpdate <= 1'b0;
+     IRWrite <= 1'b0;
+     MemWrite <= 4'b0;
+@@ -196,7 +196,7 @@ module ControlFSM(
+ 				ALUOp <= 2'b01;
+ 				ResultSrc <= RESULT_SRC__ALU_OUT;
+ 				Branch <= 1'b1;
+-        		pc_src <= zero_flag ? PC_SRC__JUMP : PC_SRC__INCREMENT;
++        		pc_src <= pc_src_t'(zero_flag ? PC_SRC__JUMP : PC_SRC__INCREMENT);
+         		PCUpdate <= 1'b1;
+ 
+ 			end
+diff --git a/src/Instruction_Decode/MemoryLoader.sv b/src/Instruction_Decode/MemoryLoader.sv
+index 1fa66e1..a3aab7a 100644
+--- a/src/Instruction_Decode/MemoryLoader.sv
++++ b/src/Instruction_Decode/MemoryLoader.sv
+@@ -52,11 +52,11 @@ module MemoryLoader (
+                         MemWriteByteAddress = 4'b0011;
+                         __tmp_MemData = {16'b0, dataB[15:0]};
+                     end
+-                    2'd1: begin
++/*                    2'd1: begin
+                         mem_load_result = {{16{memory_data[23]}}, memory_data[23:8]};
+                         MemWriteByteAddress = 4'b0110;
+                         __tmp_MemData = {8'b0, dataB[15:0], 8'b0};
+-                    end
++                    end*/
+                     2'd2: begin
+                         mem_load_result = {{16{memory_data[31]}}, memory_data[31:16]};
+                         MemWriteByteAddress = 4'b1100;
+
+From 9b7b2dd957e5d0355da95953093b741b4936bf65 Mon Sep 17 00:00:00 2001
+From: DanielTaoHuang123 <danielthuang@outlook.com>
+Date: Sun, 2 Nov 2025 11:51:25 -0500
+Subject: [PATCH 3/8] fix some svlint error
+
+---
+ src/ControlFSM.sv | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/src/ControlFSM.sv b/src/ControlFSM.sv
+index cede0f6..e7c13ca 100644
+--- a/src/ControlFSM.sv
++++ b/src/ControlFSM.sv
+@@ -235,9 +235,9 @@ module ControlFSM
+ 
+       MEMWRITE: begin
+ 
+-				ResultSrc <= RESULT_SRC__ALU_OUT;
+-				AdrSrc <= ADR_SRC__RESULT;
+-				MemWrite <= MemWriteByteAddress;
++        ResultSrc <= RESULT_SRC__ALU_OUT;
++        AdrSrc <= ADR_SRC__RESULT;
++        MemWrite <= MemWriteByteAddress;
+ 
+       end
+ 
+
+From 0d04594dafac1698d7df9344aeb96dcb3abc1508 Mon Sep 17 00:00:00 2001
+From: DanielTaoHuang123 <danielthuang@outlook.com>
+Date: Sun, 2 Nov 2025 12:16:14 -0500
+Subject: [PATCH 4/8] fix svlint error;
+
+---
+ src/Instruction_Decode/MemoryLoader.sv | 19 ++++++++++---------
+ 1 file changed, 10 insertions(+), 9 deletions(-)
+
+diff --git a/src/Instruction_Decode/MemoryLoader.sv b/src/Instruction_Decode/MemoryLoader.sv
+index a3aab7a..ac59979 100644
+--- a/src/Instruction_Decode/MemoryLoader.sv
++++ b/src/Instruction_Decode/MemoryLoader.sv
+@@ -1,20 +1,20 @@
+ `include "src/types.svh"
+ 
+ module MemoryLoader (
+-    input  data_t memory_data,
+-    input  addr_t memory_address,
+-    input  logic [2:0]  funct3,
+-    input  logic [31:0] dataB,
+-    output data_t mem_load_result,
+-    output logic [3:0] MemWriteByteAddress,
++    input  data_t memory_data, 
++    input  addr_t memory_address, 
++    input  logic [2:0]  funct3, 
++    input  logic [31:0] dataB, 
++    output data_t mem_load_result, 
++    output logic [3:0] MemWriteByteAddress, 
+     output logic [31:0] __tmp_MemData
+ );
+ 
+     integer byteindex;
+     assign byteindex = memory_address[1:0];
+ 
+-    always_comb begin
+-        case (funct3)
++    always_comb 
++        case (funct3) 
+             3'b000: begin // lb & sb
+                 case (byteindex)
+                     2'd0: begin
+@@ -57,6 +57,7 @@ module MemoryLoader (
+                         MemWriteByteAddress = 4'b0110;
+                         __tmp_MemData = {8'b0, dataB[15:0], 8'b0};
+                     end*/
++                    // skip unaligned halfword access
+                     2'd2: begin
+                         mem_load_result = {{16{memory_data[31]}}, memory_data[31:16]};
+                         MemWriteByteAddress = 4'b1100;
+@@ -100,6 +101,6 @@ module MemoryLoader (
+                 __tmp_MemData = 31'bx;
+             end
+         endcase
+-    end
++    
+ 
+ endmodule
+
+From 070822bb487f7533a7624c785c21fb6a5bf39dc1 Mon Sep 17 00:00:00 2001
+From: DanielTaoHuang123 <danielthuang@outlook.com>
+Date: Sun, 2 Nov 2025 12:27:23 -0500
+Subject: [PATCH 5/8] try to change increment to fix svlint error
+
+---
+ src/Instruction_Decode/MemoryLoader.sv | 18 ++---
+ src/Instruction_Decode/RegisterFile.v  | 92 +++++++++++++-------------
+ 2 files changed, 55 insertions(+), 55 deletions(-)
+
+diff --git a/src/Instruction_Decode/MemoryLoader.sv b/src/Instruction_Decode/MemoryLoader.sv
+index ac59979..70d34fe 100644
+--- a/src/Instruction_Decode/MemoryLoader.sv
++++ b/src/Instruction_Decode/MemoryLoader.sv
+@@ -1,20 +1,20 @@
+ `include "src/types.svh"
+ 
+ module MemoryLoader (
+-    input  data_t memory_data, 
+-    input  addr_t memory_address, 
+-    input  logic [2:0]  funct3, 
+-    input  logic [31:0] dataB, 
+-    output data_t mem_load_result, 
+-    output logic [3:0] MemWriteByteAddress, 
++    input  data_t memory_data,
++    input  addr_t memory_address,
++    input  logic [2:0]  funct3,
++    input  logic [31:0] dataB,
++    output data_t mem_load_result,
++    output logic [3:0] MemWriteByteAddress,
+     output logic [31:0] __tmp_MemData
+ );
+ 
+     integer byteindex;
+     assign byteindex = memory_address[1:0];
+ 
+-    always_comb 
+-        case (funct3) 
++    always_comb
++        case (funct3)
+             3'b000: begin // lb & sb
+                 case (byteindex)
+                     2'd0: begin
+@@ -101,6 +101,6 @@ module MemoryLoader (
+                 __tmp_MemData = 31'bx;
+             end
+         endcase
+-    
++
+ 
+ endmodule
+diff --git a/src/Instruction_Decode/RegisterFile.v b/src/Instruction_Decode/RegisterFile.v
+index f8fabcb..15c7854 100644
+--- a/src/Instruction_Decode/RegisterFile.v
++++ b/src/Instruction_Decode/RegisterFile.v
+@@ -1,46 +1,46 @@
+-//Created by Joonseo Park
+-//The register file holds the source and destination registers specified by instruction fields
+-
+-//REGISTERS:
+-//baseAddr --> holds data read line #1; the output of rs1
+-//writeData --> holds data read line #2; the output of rs2
+-//rs1 --> a register inside RF memory, holding base address
+-//rs2 --> a register inside RF memory, holding data to be written into destination register
+-//rd --> a register inside RF memory, holding address of register to be written into
+-
+-module registerFile
+-  ( input [4:0] Addr1 //rs1 field (holds addr of one of 32 registers) - first source register
+-  , input [4:0] Addr2 //rs2 field - second source register (holds data to be stored)
+-  , input [4:0] Addr3 //rd field - desination register
+-  , input clk
+-  , input regWrite
+-  , input [31:0] dataIn
+-  , input reset
+-  , output wire [31:0] baseAddr //data read line #1 - from first source register
+-  , output wire [31:0] writeData //data read line #2 - from second source register
+-  );
+-
+-  //declare 32 registers in Register File, with 32 bits each 32 bits deep (32 addresses) and 32 bits
+-  //wide (32 bits at each register) note that RFMem[0:31] means there are 32 elements (with addr for
+-  //each element), each of which are 32-bit regs
+-  reg [31:0] RFMem [0:31] /* synthesis ramstyle = M10K*/;
+-
+-  // x0 always 0, read out 32-bit contents of rs1 register
+-  assign baseAddr  = (Addr1 == 5'd0) ? 32'd0 : RFMem[Addr1];
+-
+-  // x0 always 0 on read, read out 32-bit contents of rs2 register
+-  assign writeData = (Addr2 == 5'd0) ? 32'd0 : RFMem[Addr2];
+-
+-  always @(posedge clk) begin
+-
+-    if (reset) RFMem[0] <= 0; //register r0 should always remain at 0
+-
+-    if (regWrite && Addr3 != 0) begin
+-
+-      RFMem[Addr3] <= dataIn; //write into destination register if RegWrite = 1
+-
+-    end
+-
+-  end
+-
+-endmodule
++//Created by Joonseo Park
++//The register file holds the source and destination registers specified by instruction fields
++
++//REGISTERS:
++//baseAddr --> holds data read line #1; the output of rs1
++//writeData --> holds data read line #2; the output of rs2
++//rs1 --> a register inside RF memory, holding base address
++//rs2 --> a register inside RF memory, holding data to be written into destination register
++//rd --> a register inside RF memory, holding address of register to be written into
++
++module registerFile
++  ( input [4:0] Addr1 //rs1 field (holds addr of one of 32 registers) - first source register
++  , input [4:0] Addr2 //rs2 field - second source register (holds data to be stored)
++  , input [4:0] Addr3 //rd field - desination register
++  , input clk
++  , input regWrite
++  , input [31:0] dataIn
++  , input reset
++  , output wire [31:0] baseAddr //data read line #1 - from first source register
++  , output wire [31:0] writeData //data read line #2 - from second source register
++  );
++
++  //declare 32 registers in Register File, with 32 bits each 32 bits deep (32 addresses) and 32 bits
++  //wide (32 bits at each register) note that RFMem[0:31] means there are 32 elements (with addr for
++  //each element), each of which are 32-bit regs
++  reg [31:0] RFMem [0:31] /* synthesis ramstyle = M10K*/;
++
++  // x0 always 0, read out 32-bit contents of rs1 register
++  assign baseAddr  = (Addr1 == 5'd0) ? 32'd0 : RFMem[Addr1];
++
++  // x0 always 0 on read, read out 32-bit contents of rs2 register
++  assign writeData = (Addr2 == 5'd0) ? 32'd0 : RFMem[Addr2];
++
++  always @(posedge clk) begin
++
++    if (reset) RFMem[0] <= 0; //register r0 should always remain at 0
++
++    if (regWrite && Addr3 != 0) begin
++
++      RFMem[Addr3] <= dataIn; //write into destination register if RegWrite = 1
++
++    end
++
++  end
++
++endmodule
+
+From bba571da6d6417bd082710e0fa1831da93624174 Mon Sep 17 00:00:00 2001
+From: DanielTaoHuang123 <danielthuang@outlook.com>
+Date: Sun, 2 Nov 2025 12:33:37 -0500
+Subject: [PATCH 6/8] fix svlint errors
+
+---
+ src/Instruction_Decode/MemoryLoader.sv | 17 +++++++++--------
+ 1 file changed, 9 insertions(+), 8 deletions(-)
+
+diff --git a/src/Instruction_Decode/MemoryLoader.sv b/src/Instruction_Decode/MemoryLoader.sv
+index 70d34fe..4ebb286 100644
+--- a/src/Instruction_Decode/MemoryLoader.sv
++++ b/src/Instruction_Decode/MemoryLoader.sv
+@@ -1,24 +1,24 @@
+ `include "src/types.svh"
+ 
+ module MemoryLoader (
+-    input  data_t memory_data,
+-    input  addr_t memory_address,
+-    input  logic [2:0]  funct3,
+-    input  logic [31:0] dataB,
+-    output data_t mem_load_result,
+-    output logic [3:0] MemWriteByteAddress,
++    input  data_t memory_data, 
++    input  addr_t memory_address, 
++    input  logic [2:0]  funct3, 
++    input  logic [31:0] dataB, 
++    output data_t mem_load_result, 
++    output logic [3:0] MemWriteByteAddress, 
+     output logic [31:0] __tmp_MemData
+ );
+ 
+     integer byteindex;
+     assign byteindex = memory_address[1:0];
+ 
+-    always_comb
++    always@(*) begin
+         case (funct3)
+             3'b000: begin // lb & sb
+                 case (byteindex)
+                     2'd0: begin
+-                        mem_load_result = {{24{memory_data[7]}},  memory_data[7:0]};
++                        mem_load_result = {{24{memory_data[7]}}, memory_data[7:0]};
+                         MemWriteByteAddress = 4'b0001;
+                         __tmp_MemData = {24'b0, dataB[7:0]};
+                     end
+@@ -101,6 +101,7 @@ module MemoryLoader (
+                 __tmp_MemData = 31'bx;
+             end
+         endcase
++    end
+ 
+ 
+ endmodule
+
+From dd595584cc60a39154113fd3c68940c626d1dd83 Mon Sep 17 00:00:00 2001
+From: DanielTaoHuang123 <danielthuang@outlook.com>
+Date: Sun, 2 Nov 2025 12:43:53 -0500
+Subject: [PATCH 7/8] fixing indentation
+
+---
+ src/Instruction_Decode/MemoryLoader.sv | 18 +++++++++---------
+ src/utils/MA.v                         | 24 +++++++++++++-----------
+ 2 files changed, 22 insertions(+), 20 deletions(-)
+
+diff --git a/src/Instruction_Decode/MemoryLoader.sv b/src/Instruction_Decode/MemoryLoader.sv
+index 4ebb286..9489e03 100644
+--- a/src/Instruction_Decode/MemoryLoader.sv
++++ b/src/Instruction_Decode/MemoryLoader.sv
+@@ -1,19 +1,19 @@
+ `include "src/types.svh"
+ 
+-module MemoryLoader (
+-    input  data_t memory_data, 
+-    input  addr_t memory_address, 
+-    input  logic [2:0]  funct3, 
+-    input  logic [31:0] dataB, 
+-    output data_t mem_load_result, 
+-    output logic [3:0] MemWriteByteAddress, 
+-    output logic [31:0] __tmp_MemData
++module MemoryLoader 
++( input  data_t memory_data
++, input  addr_t memory_address
++, input  logic [2:0]  funct3
++, input  logic [31:0] dataB
++, output data_t mem_load_result
++, output logic [3:0] MemWriteByteAddress
++, output logic [31:0] __tmp_MemData
+ );
+ 
+     integer byteindex;
+     assign byteindex = memory_address[1:0];
+ 
+-    always@(*) begin
++    always @(*) begin
+         case (funct3)
+             3'b000: begin // lb & sb
+                 case (byteindex)
+diff --git a/src/utils/MA.v b/src/utils/MA.v
+index a3c988f..13ab49e 100644
+--- a/src/utils/MA.v
++++ b/src/utils/MA.v
+@@ -1,16 +1,18 @@
+-module MA #( parameter SIZE = 1024 )
+-           ( input  [31:0] A
+-           , input  [31:0] WD
+-           , input  [3:0]  WE //changed from 1 bit WE to 4 bit to address byteindex
+-           , input  wire   CLK
+-           , output [31:0] RD
+-           );
++module MA #( 
++  parameter SIZE = 1024 
++)
++( 
++  input  [31:0] A
++, input  [31:0] WD
++, input  [3:0]  WE   //changed from 1 bit WE to 4 bit to address byteindex
++, input  wire   CLK
++, output [31:0] RD
++);
+ 
+-    reg [31:0] M[0:SIZE -1];
+-
+-    initial begin
+-      string mem_file;
++  reg [31:0] M[0:SIZE -1];
+ 
++  initial begin
++    string mem_file;
+ 
+       if ($value$plusargs("MEM=%s", mem_file)) begin
+         $display("loading memory from <%s>", mem_file);
+
+From 73805f922ab826a660093f4b7f20229649db8330 Mon Sep 17 00:00:00 2001
+From: DanielTaoHuang123 <danielthuang@outlook.com>
+Date: Sun, 2 Nov 2025 12:51:43 -0500
+Subject: [PATCH 8/8] fix trailing white spaces
+
+---
+ src/ControlFSM.sv                      |  2 +-
+ src/Instruction_Decode/MemoryLoader.sv |  2 +-
+ src/utils/MA.v                         | 10 ++++------
+ 3 files changed, 6 insertions(+), 8 deletions(-)
+
+diff --git a/src/ControlFSM.sv b/src/ControlFSM.sv
+index e7c13ca..d41cced 100644
+--- a/src/ControlFSM.sv
++++ b/src/ControlFSM.sv
+@@ -15,7 +15,7 @@ module ControlFSM
+   , output reg RegWrite
+   , output reg PCUpdate
+   , output pc_src_t pc_src
+-   , output reg [3:0] MemWrite
++  , output reg [3:0] MemWrite
+   , output reg Branch
+   , output alu_src_a_t ALUSrcA
+   , output alu_src_b_t ALUSrcB
+diff --git a/src/Instruction_Decode/MemoryLoader.sv b/src/Instruction_Decode/MemoryLoader.sv
+index 9489e03..170e5f9 100644
+--- a/src/Instruction_Decode/MemoryLoader.sv
++++ b/src/Instruction_Decode/MemoryLoader.sv
+@@ -1,6 +1,6 @@
+ `include "src/types.svh"
+ 
+-module MemoryLoader 
++module MemoryLoader
+ ( input  data_t memory_data
+ , input  addr_t memory_address
+ , input  logic [2:0]  funct3
+diff --git a/src/utils/MA.v b/src/utils/MA.v
+index 13ab49e..d6282dd 100644
+--- a/src/utils/MA.v
++++ b/src/utils/MA.v
+@@ -1,10 +1,8 @@
+-module MA #( 
+-  parameter SIZE = 1024 
+-)
+-( 
+-  input  [31:0] A
++module MA #(parameter SIZE = 1024)
++( input  [31:0] A
+ , input  [31:0] WD
+-, input  [3:0]  WE   //changed from 1 bit WE to 4 bit to address byteindex
++, input  [3:0]  WE
++//changed from 1 bit WE to 4 bit to address byteindex
+ , input  wire   CLK
+ , output [31:0] RD
+ );

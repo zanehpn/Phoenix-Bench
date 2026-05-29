@@ -1,0 +1,39 @@
+diff --git a/py_src/pyslint.py b/py_src/pyslint.py
+index bbb76d3..42d58a5 100644
+--- a/py_src/pyslint.py
++++ b/py_src/pyslint.py
+@@ -66,6 +66,7 @@ def pyslint_update_rule_ids():
+   lv_sv_ruleid_l.append('COMPAT_SVA_NO_S_UNTIL_WITH')
+   lv_sv_ruleid_l.append('REUSE_ONE_CL_PER_FILE')
+   lv_sv_ruleid_l.append('REUSE_ONE_MOD_PER_FILE')
++  lv_sv_ruleid_l.append('COMPAT_CLASS_PARAM_DEFAULT_VALUE')
+   lv_sv_ruleid_l.append ('DBG_SVA_AST_MISSING_LABEL')
+   lv_sv_ruleid_l.append ('DBG_SVA_ASM_MISSING_LABEL')
+   lv_sv_ruleid_l.append ('DBG_SVA_COV_MISSING_LABEL')
+@@ -701,6 +702,18 @@ def FUNC_SVA_MISSING_FAIL_AB(lv_m):
+       lv_rule_id = 'FUNC_SVA_MISSING_FAIL_AB'
+       pyslint_msg(lv_rule_id, msg)
+ 
++
++def COMPAT_CLASS_PARAM_DEFAULT_VALUE(lv_cu_scope):
++  if (lv_cu_scope.kind.name == 'ClassDeclaration'):
++    if (hasattr(lv_cu_scope, 'parameters') and lv_cu_scope.parameters is not None):
++      for lv_param_i in lv_cu_scope.parameters:
++        lv_param_s = str(lv_param_i)
++        if ('=' not in lv_param_s):
++          msg = 'Class parameter default value missing in parameter declaration: '
++          msg += lv_param_s
++          lv_rule_id = 'COMPAT_CLASS_PARAM_DEFAULT_VALUE'
++          pyslint_msg(lv_rule_id, msg)
++
+ def pyslint_argparse():
+   # Create the parser
+   parser = argparse.ArgumentParser()
+@@ -1225,6 +1238,7 @@ for scope_i in (tree.root.members):
+   CL_METHOD_NOT_EXTERN(scope_i)
+   COMPAT_PRE_RAND_NON_VOID(scope_i)
+   COMPAT_POST_RAND_NON_VOID(scope_i)
++  COMPAT_CLASS_PARAM_DEFAULT_VALUE(scope_i)
+   FUNC_CNST_MISSING_CAST(scope_i)
+   FUNC_CNST_WRONG_OPER_PRI(scope_i)
+   DBG_CL_MISSING_ENDLABEL(scope_i)

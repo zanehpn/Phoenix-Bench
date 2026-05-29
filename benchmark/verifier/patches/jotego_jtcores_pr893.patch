@@ -1,0 +1,86 @@
+From 30f54b7f5386b081e155010f2b49f099778b7c49 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Fri, 13 Dec 2024 16:55:46 +0100
+Subject: [PATCH] Added DIP switch for selecting type of controller. Fixes #887
+ and fixes movement in Analogue Pocket using analogical joysticks (jtwc)
+
+---
+ cores/wc/cfg/mame2mra.toml    |  3 +++
+ cores/wc/hdl/jtwc_game.v      |  2 +-
+ cores/wc/hdl/jtwc_main.v      | 14 ++++++++++----
+ modules/jtframe/target/pocket |  2 +-
+ 4 files changed, 15 insertions(+), 6 deletions(-)
+
+diff --git a/cores/wc/cfg/mame2mra.toml b/cores/wc/cfg/mame2mra.toml
+index 73dd207a8..3687da2ba 100644
+--- a/cores/wc/cfg/mame2mra.toml
++++ b/cores/wc/cfg/mame2mra.toml
+@@ -24,6 +24,9 @@ rename=[
+ delete=[
+ 	{ names=["Start*","2P Game Time","Unused"] },
+ ]
++extra=[
++    { name="Controls", options="D-pad,Analog stick,Auto", bits="20,21"},
++]
+ 
+ [header]
+ info="bit 0 -> enable non-symmetric speed in Tehkan WC bootleg"
+diff --git a/cores/wc/hdl/jtwc_game.v b/cores/wc/hdl/jtwc_game.v
+index 06978d3e1..16b2f12bb 100644
+--- a/cores/wc/hdl/jtwc_game.v
++++ b/cores/wc/hdl/jtwc_game.v
+@@ -80,7 +80,7 @@ jtwc_main u_main(
+     .rom_data   ( main_data     ),
+     .rom_ok     ( main_ok       ),
+     //
+-    .dipsw      ( dipsw[19:0]   ),
++    .dipsw      ( dipsw[21:0]   ),
+     .debug_bus  ( debug_bus     ),
+     .st_dout    ( st_main       )
+ );
+diff --git a/cores/wc/hdl/jtwc_main.v b/cores/wc/hdl/jtwc_main.v
+index 446026588..0dab0db41 100644
+--- a/cores/wc/hdl/jtwc_main.v
++++ b/cores/wc/hdl/jtwc_main.v
+@@ -58,7 +58,7 @@ module jtwc_main(
+     input     [ 7:0] rom_data,
+     input            rom_ok,
+     //
+-    input     [19:0] dipsw,
++    input     [21:0] dipsw,
+     input     [ 7:0] debug_bus,
+     output reg[ 7:0] st_dout
+ );
+@@ -95,7 +95,7 @@ begin
+     joy2track={mux[2],2'd0,mux[1],1'b0,mux[0],2'b01};
+     if(!bootleg)
+         joy2track = df==3 ? 8'h80 : !df[0] ? {2'b10,SPEED} : {2'b01,~SPEED};
+-    if(use_ana) joy2track = !ana[7] ? {2'b10,ana[6:1]} : {2'b01,ana[6:1]};
++    if(use_ana) joy2track = (!ana[7] ? {2'b10,ana[6:1]} : {2'b01,ana[6:1]})^{8{flip}};
+ end
+ endfunction
+ 
+@@ -110,8 +110,14 @@ always @(posedge clk) begin
+     if( rst ) begin
+         ana_sel <= 0;
+     end else begin
+-        if( detect_joy(joyana_l1) ) ana_sel[0] <= 1;
+-        if( detect_joy(joyana_l2) ) ana_sel[1] <= 1;
++        case (dipsw[21:20])
++            1: ana_sel <= 2'b11;
++            default: ana_sel <= 0;
++            2: begin
++               if( detect_joy(joyana_l1) ) ana_sel[0] <= 1;
++               if( detect_joy(joyana_l2) ) ana_sel[1] <= 1;
++            end
++        endcase
+     end
+ end
+ 
+diff --git a/modules/jtframe/target/pocket b/modules/jtframe/target/pocket
+index 0d45c05fa..944f097db 160000
+--- a/modules/jtframe/target/pocket
++++ b/modules/jtframe/target/pocket
+@@ -1 +1 @@
+-Subproject commit 0d45c05fa95095be319319d7c1552e35911e565f
++Subproject commit 944f097db9d3c1492675ca22499585c1eabb579f

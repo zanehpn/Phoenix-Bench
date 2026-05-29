@@ -1,0 +1,27 @@
+The bug is in the Mega Drive pad-to-port mapping for the SMS mode, specifically in `rtl/pad_io.sv`.
+
+For Master System games, the issue is that the modern MiSTer controller mapping is being passed through as:
+- SMS button 1 <- Mega Drive **A**
+- SMS button 2 <- Mega Drive **B**
+
+But the expected mapping for SMS games is:
+- SMS button 1 <- Mega Drive **B**
+- SMS button 2 <- Mega Drive **C**
+
+The relevant place is the `pdata` assignment in `pad_io.sv`, where the SMS path selects button bits for the 2-button SMS protocol.
+
+### Fix
+Change the SMS mapping so that the 2-button SMS output uses `B` and `C` instead of `A` and `B`.
+
+```systemverilog
+### rtl/pad_io.sv
+<<<<<<< SEARCH
+	priority casex({SMS,JCNT,TH})
+		4'b1XXX: pdata <= { ~P_B,     ~P_A, ~P_RIGHT, ~P_LEFT, ~P_DOWN, ~P_UP}; 
+=======
+	priority casex({SMS,JCNT,TH})
+		4'b1XXX: pdata <= { ~P_C,     ~P_B, ~P_RIGHT, ~P_LEFT, ~P_DOWN, ~P_UP}; 
+>>>>>>> REPLACE
+```
+
+This keeps the Master System button ordering aligned with the classic Mega Drive controller mapping used by the hardware and SNAC path.

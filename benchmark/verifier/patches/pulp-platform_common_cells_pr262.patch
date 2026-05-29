@@ -1,0 +1,87 @@
+From 64b1582ab0e2ecc887e84a67d363c9abb1344d4d Mon Sep 17 00:00:00 2001
+From: moritz <moritz@moore.mosaic-soc.ch>
+Date: Thu, 17 Jul 2025 14:33:10 +0200
+Subject: [PATCH 1/3] Refactor Source side CDC for lint compliance
+
+---
+ src/cdc_fifo_gray.sv | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/src/cdc_fifo_gray.sv b/src/cdc_fifo_gray.sv
+index a4e3d839..bba54d47 100644
+--- a/src/cdc_fifo_gray.sv
++++ b/src/cdc_fifo_gray.sv
+@@ -192,10 +192,12 @@ module cdc_fifo_gray_src #(
+ 
+   // Data FIFO.
+   assign async_data_o = data_q;
+-  for (genvar i = 0; i < 2**LOG_DEPTH; i++) begin : gen_word
+-    `FFLNR(data_q[i], src_data_i,
+-          src_valid_i & src_ready_o & (wptr_bin[LOG_DEPTH-1:0] == i), src_clk_i)
++
++  always_comb begin
++    data_d                          = data_q;
++    data_d[wptr_bin[LOG_DEPTH-1:0]] = src_data_i;
+   end
++  `FFLARN(data_q, data_d, src_valid_i & src_ready_o, '0, src_clk_i, src_rst_ni)
+ 
+   // Read pointer.
+   for (genvar i = 0; i < PtrWidth; i++) begin : gen_sync
+
+From 158671d56ef9fc558d59ba192f8588856d490127 Mon Sep 17 00:00:00 2001
+From: moritz <moritz@moore.mosaic-soc.ch>
+Date: Fri, 18 Jul 2025 09:46:22 +0200
+Subject: [PATCH 2/3] Port fix to cdc_fifo_gray_clearable
+
+---
+ src/cdc_fifo_gray_clearable.sv | 9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/src/cdc_fifo_gray_clearable.sv b/src/cdc_fifo_gray_clearable.sv
+index 69f8015c..673a4bb2 100644
+--- a/src/cdc_fifo_gray_clearable.sv
++++ b/src/cdc_fifo_gray_clearable.sv
+@@ -285,15 +285,16 @@ module cdc_fifo_gray_src_clearable #(
+   localparam int PtrWidth = LOG_DEPTH+1;
+   localparam logic [PtrWidth-1:0] PtrFull = (1 << LOG_DEPTH);
+ 
+-  T [2**LOG_DEPTH-1:0] data_q;
++  T [2**LOG_DEPTH-1:0] data_q, data_d;
+   logic [PtrWidth-1:0] wptr_q, wptr_d, wptr_bin, wptr_next, rptr, rptr_bin;
+ 
+   // Data FIFO.
+   assign async_data_o = data_q;
+-  for (genvar i = 0; i < 2**LOG_DEPTH; i++) begin : gen_word
+-    `FFLNR(data_q[i], src_data_i,
+-          src_valid_i & src_ready_o & (wptr_bin[LOG_DEPTH-1:0] == i), src_clk_i)
++  always_comb begin
++    data_d                          = data_q;
++    data_d[wptr_bin[LOG_DEPTH-1:0]] = src_data_i;
+   end
++  `FFLARN(data_q, data_d, src_valid_i & src_ready_o, '0, src_clk_i, src_rst_ni)
+ 
+   // Read pointer.
+   for (genvar i = 0; i < PtrWidth; i++) begin : gen_sync
+
+From 5f3bc83bc1d700aeb3dae1800abd2d3e8ffc18a6 Mon Sep 17 00:00:00 2001
+From: moritz <moritz@moore.mosaic-soc.ch>
+Date: Fri, 18 Jul 2025 10:56:27 +0200
+Subject: [PATCH 3/3] Fixup
+
+---
+ src/cdc_fifo_gray.sv | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/cdc_fifo_gray.sv b/src/cdc_fifo_gray.sv
+index bba54d47..b24a3a49 100644
+--- a/src/cdc_fifo_gray.sv
++++ b/src/cdc_fifo_gray.sv
+@@ -187,7 +187,7 @@ module cdc_fifo_gray_src #(
+   localparam int PtrWidth = LOG_DEPTH+1;
+   localparam logic [PtrWidth-1:0] PtrFull = (1 << LOG_DEPTH);
+ 
+-  T [2**LOG_DEPTH-1:0] data_q;
++  T [2**LOG_DEPTH-1:0] data_q, data_d;
+   logic [PtrWidth-1:0] wptr_q, wptr_d, wptr_bin, wptr_next, rptr, rptr_bin;
+ 
+   // Data FIFO.

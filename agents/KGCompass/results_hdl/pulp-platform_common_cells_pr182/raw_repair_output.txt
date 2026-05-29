@@ -1,0 +1,41 @@
+The bug is in `src/clk_int_div.sv`, inside the `WAIT_END_PERIOD` state.  
+When `div_q == 0`, the condition
+
+```systemverilog
+if (cycle_cntr_q == div_q - 1)
+```
+
+becomes effectively impossible to satisfy because `div_q - 1` underflows for an unsigned value. That leaves the FSM stuck in `WAIT_END_PERIOD`, preventing further reconfiguration.
+
+A safe fix is to treat divider values `0` and `1` as bypass mode in the transition logic as well, so the FSM can always exit `WAIT_END_PERIOD`.
+
+```systemverilog
+### src/clk_int_div.sv
+<<<<<<< SEARCH
+      WAIT_END_PERIOD: begin
+        gate_en_d     = 1'b0;
+        // Keep the toggle flip-flops disabled until we reach idle state.
+        // Otherwise, the start state of the t-ffs depends on the number of wait
+        // cycles which would yield different output clock phase depending on
+        // the number of wait cycles.
+        toggle_ffs_en = 1'b0;
+        if (cycle_cntr_q == div_q - 1) begin
+          clk_gate_state_d = IDLE;
+        end
+      end
+=======
+      WAIT_END_PERIOD: begin
+        gate_en_d     = 1'b0;
+        // Keep the toggle flip-flops disabled until we reach idle state.
+        // Otherwise, the start state of the t-ffs depends on the number of wait
+        // cycles which would yield different output clock phase depending on
+        // the number of wait cycles.
+        toggle_ffs_en = 1'b0;
+        // Divider values 0 and 1 are bypass mode, so don't wait for a counter
+        // terminal count that would underflow or never be reached.
+        if (clk_div_bypass_en_q || (cycle_cntr_q == div_q - 1)) begin
+          clk_gate_state_d = IDLE;
+        end
+      end
+>>>>>>> REPLACE
+```

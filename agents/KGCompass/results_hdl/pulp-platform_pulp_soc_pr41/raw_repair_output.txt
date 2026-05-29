@@ -1,0 +1,56 @@
+The bug is localized in `rtl/pulp_soc/l2_ram_multi_bank.sv`.
+
+### Why this is the problem
+In the interleaved bank loop, the address presented to each SRAM bank is derived as:
+
+```systemverilog
+interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+1:2]
+```
+
+This only strips the 2 byte-to-word conversion bits. For interleaved memory, it also must strip the bank-select bits used by the interleaving scheme (`$clog2(NB_BANKS)` bits). Because those bits are not removed, addresses alias once the addressed range exceeds what a single bank can uniquely represent.
+
+---
+
+### Fix
+Use the interleaved address bits after removing both:
+- the 2 LSBs for byte addressing
+- the bank index bits for interleaving
+
+Here is the SEARCH/REPLACE edit:
+
+```systemverilog
+### rtl/pulp_soc/l2_ram_multi_bank.sv
+<<<<<<< SEARCH
+        generic_memory #(
+                         .ADDR_WIDTH ( INTL_MEM_ADDR_WIDTH ),
+                         .DATA_WIDTH ( 32                  )
+                         ) bank_i (
+                                             .CLK   ( clk_i                                             ),
+                                             .INITN ( 1'b1                                              ),
+                                             .CEN   ( ~mem_slave[i].req                                 ),
+                                             .BEN   ( ~mem_slave[i].be                                  ),
+                                             .WEN   ( mem_slave[i].wen                                  ),
+                                             .A     ( interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+1:2] ), //Convert from
+                                                                                                           //byte to word addressing
+                                             .D     ( mem_slave[i].wdata                                ),
+                                             .Q     ( mem_slave[i].r_rdata                              )
+                                             );
+=======
+        generic_memory #(
+                         .ADDR_WIDTH ( INTL_MEM_ADDR_WIDTH ),
+                         .DATA_WIDTH ( 32                  )
+                         ) bank_i (
+                                             .CLK   ( clk_i                                             ),
+                                             .INITN ( 1'b1                                              ),
+                                             .CEN   ( ~mem_slave[i].req                                 ),
+                                             .BEN   ( ~mem_slave[i].be                                  ),
+                                             .WEN   ( mem_slave[i].wen                                  ),
+                                             .A     ( interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+$clog2(NB_BANKS)+1:$clog2(NB_BANKS)+2] ), //Convert from
+                                                                                                                                    //byte to word addressing and remove bank select bits
+                                             .D     ( mem_slave[i].wdata                                ),
+                                             .Q     ( mem_slave[i].r_rdata                              )
+                                             );
+>>>>>>> REPLACE
+```
+
+If you want, I can also provide the matching fix for the FPGA-emulation branch in the same file.

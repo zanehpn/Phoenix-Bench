@@ -1,0 +1,377 @@
+From f03d0f6137b2abd8d6af049efdfeb9dccbe61b7c Mon Sep 17 00:00:00 2001
+From: Dan <dan@wadoku.de>
+Date: Thu, 15 Sep 2022 14:54:48 +0200
+Subject: [PATCH] SH: update to latest from https://github.com/srg320/SH
+
+This includes the following commits
+https://github.com/srg320/SH/commit/79fbc3ef4952399f086dbdd3db98ca7baba9b78f
+https://github.com/srg320/SH/commit/8189424f943d38f48f317a8c86da2eb0418ee371
+---
+ rtl/SH/SH7604/DMAC.sv     | 79 ++++++++++++++++++++++----------------
+ rtl/SH/SH7604/SH7604.sv   | 81 +++++++++++++++++++++------------------
+ rtl/SH/core/SH_core.sv    | 13 ++++++-
+ rtl/SH/core/SH_regfile.sv | 12 ++++--
+ 4 files changed, 110 insertions(+), 75 deletions(-)
+
+diff --git a/rtl/SH/SH7604/DMAC.sv b/rtl/SH/SH7604/DMAC.sv
+index 2d3465c..d5c1276 100644
+--- a/rtl/SH/SH7604/DMAC.sv
++++ b/rtl/SH/SH7604/DMAC.sv
+@@ -141,8 +141,41 @@ module SH7604_DMAC (
+ 		end
+ 	end
+ 	
+-
++	
++	bit         DMA_REQ;
++	bit         DMA_REQ_CLR;
+ 	bit         DMA_CH;
++	bit         RB_PRIO;
++	always @(posedge CLK or negedge RST_N) begin
++		if (!RST_N) begin
++			DMA_REQ <= 0;
++			DMA_CH <= 0;
++			RB_PRIO <= 0;
++		end
++		else if (CE_R) begin
++			if (!DMA_REQ) begin
++				if ((CH_REQ[0] && CH_EN[0] && CH_AVAIL[0]) && 
++				    (CH_REQ[1] && CH_EN[1] && CH_AVAIL[1])) begin
++					DMA_REQ <= 1;
++					DMA_CH <= /*DMAOR.PR &*/ RB_PRIO;
++				end
++				else if (CH_REQ[0] && CH_EN[0] && CH_AVAIL[0]) begin
++					DMA_REQ <= 1;
++					DMA_CH <= 0;
++				end
++				else if (CH_REQ[1] && CH_EN[1] && CH_AVAIL[1]) begin
++					DMA_REQ <= 1;
++					DMA_CH <= 1;
++				end
++			end
++			else if (DMA_REQ_CLR) begin
++				DMA_REQ <= 0;
++				RB_PRIO <= ~RB_PRIO;
++			end
++		end
++	end
++	
++
+ 	bit         DMA_WR;
+ 	bit         DMA_RD;
+ 	bit         DMA_BURST;
+@@ -151,26 +184,26 @@ module SH7604_DMAC (
+ 	bit   [1:0] LW_CNT;
+ 	bit   [1:0] SA_BA;
+ 	always @(posedge CLK or negedge RST_N) begin
+-		bit         DMA_REQ;
+-		bit         PRIO;
+ 		bit  [31:0] AR_INC;
+ 		bit  [23:0] TCR_NEXT;
+ 		bit         RD_BUF_LATCH;
+ 		
+ 		if (!RST_N) begin
+-			SAR <= '{2{SARx_INIT}};
+-			DAR <= '{2{DARx_INIT}};
+-			TCR <= '{2{TCRx_INIT}};
+-			CHCR <= '{2{CHCRx_INIT}};
++			SAR[0] <= SARx_INIT;
++			SAR[1] <= SARx_INIT;
++			DAR[0] <= DARx_INIT;
++			DAR[1] <= DARx_INIT;
++			TCR[0] <= TCRx_INIT;
++			TCR[1] <= TCRx_INIT;
++			CHCR[0] <= CHCRx_INIT;
++			CHCR[1] <= CHCRx_INIT;
+ 			
+-			DMA_REQ <= 0;
+-			DMA_CH <= 0;
+-			PRIO <= 0;
+ 			DMA_WR <= 0;
+ 			DMA_RD <= 0;
+ 			DMA_BURST <= 0;
+ 			DMA_LOCK <= 0;
+-			CH_REQ_CLR <= '{2{0}};
++			CH_REQ_CLR <= '{0,0};
++			DMA_REQ_CLR <= 0;
+ 			LW_CNT <= '0;
+ 			RD_BUF_LATCH <= 0;
+ 		end
+@@ -180,25 +213,7 @@ module SH7604_DMAC (
+ 			
+ 			CH_REQ_CLR[0] <= 0;
+ 			CH_REQ_CLR[1] <= 0;
+-			if (CE_R) begin
+-				if (!DMA_REQ) begin
+-					if ((CH_REQ[0] && CH_EN[0] && CH_AVAIL[0]) && 
+-						 (CH_REQ[1] && CH_EN[1] && CH_AVAIL[1])) begin
+-						DMA_REQ <= 1;
+-						DMA_CH <= /*DMAOR.PR &*/ PRIO;
+-						PRIO <= ~PRIO;
+-					end
+-					else if (CH_REQ[0] && CH_EN[0] && CH_AVAIL[0]) begin
+-						DMA_REQ <= 1;
+-						DMA_CH <= 0;
+-					end
+-					else if (CH_REQ[1] && CH_EN[1] && CH_AVAIL[1]) begin
+-						DMA_REQ <= 1;
+-						DMA_CH <= 1;
+-					end
+-				end
+-			end
+-			
++			DMA_REQ_CLR <= 0;
+ 			if (DMA_REQ && !DMA_RD && !DMA_WR && !DBUS_WAIT && !IBUS_LOCK && CE_F) begin
+ 				if (!CHCR[DMA_CH].TA || (CHCR[DMA_CH].TA && !CHCR[DMA_CH].AM)) begin
+ 					DMA_RD <= 1;
+@@ -230,7 +245,7 @@ module SH7604_DMAC (
+ 					end
+ 					else if (CHCR[DMA_CH].TA && !CHCR[DMA_CH].AM && !LW_CNT) begin
+ 						CH_REQ_CLR[DMA_CH] <= 1;
+-						DMA_REQ <= 0;
++						DMA_REQ_CLR <= 1;
+ 						LW_CNT <= &CHCR[DMA_CH].TS ? 2'd3 : 2'd0;
+ 						
+ 						if (!CHCR[DMA_CH].TB) DMA_RD <= 0;
+@@ -264,7 +279,7 @@ module SH7604_DMAC (
+ 						
+ 						if (!CHCR[DMA_CH].TB) DMA_WR <= 0;
+ 					end
+-					if (!LW_CNT) DMA_REQ <= 0;
++					if (!LW_CNT) DMA_REQ_CLR <= 1;
+ 					
+ 					TCR[DMA_CH] <= TCR_NEXT;
+ 					if (!TCR_NEXT) begin
+diff --git a/rtl/SH/SH7604/SH7604.sv b/rtl/SH/SH7604/SH7604.sv
+index 7d9e55b..4551415 100644
+--- a/rtl/SH/SH7604/SH7604.sv
++++ b/rtl/SH/SH7604/SH7604.sv
+@@ -61,8 +61,10 @@ module SH7604 (
+ 	
+ 	output            WDTOVF_N,
+ 	
+-	input       [5:0] MD,
++	input       [5:0] MD
+ 	
++`ifdef DEBUG
++	                  ,
+ 	input       [4:0] DBG_REGN,
+ 	output     [31:0] DBG_REGQ,
+ 	input             DBG_RUN,
+@@ -71,7 +73,8 @@ module SH7604 (
+ 	output reg        UNUSED_REQ,
+ 	output      [7:0] DBG_CNT,
+ 	output reg        HOOK,
+-	output reg  [3:0] HOOK2
++	output reg  [7:0] HOOK2
++`endif
+ );
+ 	import SH7604_PKG::*;
+ 	
+@@ -230,12 +233,14 @@ module SH7604 (
+ 		.VECT_REQ(VECT_REQ),
+ 		.VECT_WAIT(VECT_WAIT),
+ 		
+-		.SLEEP(SLEEP),
+-		
++		.SLEEP(SLEEP)
++`ifdef DEBUG
++		,
+ 		.DBG_REGN(DBG_REGN),
+ 		.DBG_REGQ(DBG_REGQ),
+ 		.DBG_RUN(DBG_RUN),
+ 		.DBG_BREAK(DBG_BREAK)
++`endif
+ 	);
+ 	
+ 	assign CBUS_DI = |MAC_SEL && MAC_OP == 4'b1100 && !MAC_WE ? MULT_DO : CACHE_DO;
+@@ -265,40 +270,41 @@ module SH7604 (
+ 		.MAC_WE(MAC_WE)
+ 	);
+ 	
+-//	wire USED_ADDR = (CBUS_A >= 32'h00000000 && CBUS_A < 32'h00080000) || (CBUS_A >= 32'h20000000 && CBUS_A < 32'h20080000) ||
+-//	                 (CBUS_A >= 32'h00100000 && CBUS_A < 32'h00100080) || (CBUS_A >= 32'h20100000 && CBUS_A < 32'h20100080) ||
+-//						  (CBUS_A >= 32'h00180000 && CBUS_A < 32'h00190000) || (CBUS_A >= 32'h20180000 && CBUS_A < 32'h20190000) || 
+-//						  (CBUS_A >= 32'h00200000 && CBUS_A < 32'h00300000) || (CBUS_A >= 32'h20200000 && CBUS_A < 32'h20300000) || 
+-//						  (CBUS_A >= 32'h01000000 && CBUS_A < 32'h01000004) || (CBUS_A >= 32'h21000000 && CBUS_A < 32'h21000004) || 
+-//						  (CBUS_A >= 32'h01800000 && CBUS_A < 32'h01800004) || (CBUS_A >= 32'h21800000 && CBUS_A < 32'h21800004) || 
+-//						  (CBUS_A >= 32'h02000000 && CBUS_A < 32'h04000000) || (CBUS_A >= 32'h22000000 && CBUS_A < 32'h24000000) || 
+-////						  (CBUS_A >= 32'h04000000 && CBUS_A < 32'h04000000) || (CBUS_A >= 32'h24000000 && CBUS_A < 32'h24000000) || 
+-////						  (CBUS_A >= 32'h02000000 && CBUS_A < 32'h05000000) || (CBUS_A >= 32'h22000000 && CBUS_A < 32'h25000000) || 
+-////						  (CBUS_A >= 32'h05000000 && CBUS_A < 32'h05800000) || (CBUS_A >= 32'h25000000 && CBUS_A < 32'h25800000) || 
+-//						  (CBUS_A >= 32'h05800000 && CBUS_A < 32'h05900000) || (CBUS_A >= 32'h25800000 && CBUS_A < 32'h25900000) || 
+-//						  (CBUS_A >= 32'h05A00000 && CBUS_A < 32'h05B00EE4) || (CBUS_A >= 32'h25A00000 && CBUS_A < 32'h25B00EE4) || 
+-//						  (CBUS_A >= 32'h05C00000 && CBUS_A < 32'h05CC0000) || (CBUS_A >= 32'h25C00000 && CBUS_A < 32'h25CC0000) || 
+-//						  (CBUS_A >= 32'h05D00000 && CBUS_A < 32'h05D00018) || (CBUS_A >= 32'h25D00000 && CBUS_A < 32'h25D00018) || 
+-//						  (CBUS_A >= 32'h05E00000 && CBUS_A < 32'h05E80000) || (CBUS_A >= 32'h25E00000 && CBUS_A < 32'h25E80000) || 
+-//						  (CBUS_A >= 32'h05F00000 && CBUS_A < 32'h05F01000) || (CBUS_A >= 32'h25F00000 && CBUS_A < 32'h25F01000) || 
+-//						  (CBUS_A >= 32'h05F80000 && CBUS_A < 32'h05F80120) || (CBUS_A >= 32'h25F80000 && CBUS_A < 32'h25F80120) || 
+-//						  (CBUS_A >= 32'h05FE0000 && CBUS_A < 32'h05FE00D0) || (CBUS_A >= 32'h25FE0000 && CBUS_A < 32'h25FE00D0) || 
+-//						  (CBUS_A >= 32'h06000000 && CBUS_A < 32'h06100000) || (CBUS_A >= 32'h26000000 && CBUS_A < 32'h26100000) || 
+-//						  (CBUS_A >= 32'h40000000 && CBUS_A < 32'h48000000) || 
+-//						  (CBUS_A >= 32'h60000000 && CBUS_A < 32'h80000000) || 
+-////						  (CBUS_A >= 32'hC0000000 && CBUS_A < 32'hC0001000) || 
+-//						  (CBUS_A >= 32'hFFFF8000 && CBUS_A < 32'hFFFFC000) || 
+-//						  (CBUS_A >= 32'hFFFFFE00);
+-	
+-	wire USED_ADDR = (CBUS_A >= 32'h00000000 && CBUS_A < 32'h00004400) || (CBUS_A >= 32'h20000000 && CBUS_A < 32'h20004400) ||
+-	                 (CBUS_A >= 32'h02000000 && CBUS_A < 32'h02400000) || (CBUS_A >= 32'h22000000 && CBUS_A < 32'h22400000) ||
+-						  (CBUS_A >= 32'h04000000 && CBUS_A < 32'h04040000) || (CBUS_A >= 32'h24000000 && CBUS_A < 32'h24040000) || 
+-						  (CBUS_A >= 32'h06000000 && CBUS_A < 32'h06040000) || (CBUS_A >= 32'h26000000 && CBUS_A < 32'h26040000) || 
++`ifdef DEBUG
++	wire USED_ADDR = (CBUS_A >= 32'h00000000 && CBUS_A < 32'h00080000) || (CBUS_A >= 32'h20000000 && CBUS_A < 32'h20080000) ||
++	                 (CBUS_A >= 32'h00100000 && CBUS_A < 32'h00100080) || (CBUS_A >= 32'h20100000 && CBUS_A < 32'h20100080) ||
++						  (CBUS_A >= 32'h00180000 && CBUS_A < 32'h00190000) || (CBUS_A >= 32'h20180000 && CBUS_A < 32'h20190000) || 
++						  (CBUS_A >= 32'h00200000 && CBUS_A < 32'h00300000) || (CBUS_A >= 32'h20200000 && CBUS_A < 32'h20300000) || 
++						  (CBUS_A >= 32'h01000000 && CBUS_A < 32'h01000004) || (CBUS_A >= 32'h21000000 && CBUS_A < 32'h21000004) || 
++						  (CBUS_A >= 32'h01800000 && CBUS_A < 32'h01800004) || (CBUS_A >= 32'h21800000 && CBUS_A < 32'h21800004) || 
++						  (CBUS_A >= 32'h02000000 && CBUS_A < 32'h04000000) || (CBUS_A >= 32'h22000000 && CBUS_A < 32'h24000000) || 
++//						  (CBUS_A >= 32'h04000000 && CBUS_A < 32'h04000000) || (CBUS_A >= 32'h24000000 && CBUS_A < 32'h24000000) || 
++//						  (CBUS_A >= 32'h02000000 && CBUS_A < 32'h05000000) || (CBUS_A >= 32'h22000000 && CBUS_A < 32'h25000000) || 
++//						  (CBUS_A >= 32'h05000000 && CBUS_A < 32'h05800000) || (CBUS_A >= 32'h25000000 && CBUS_A < 32'h25800000) || 
++						  (CBUS_A >= 32'h05800000 && CBUS_A < 32'h05900000) || (CBUS_A >= 32'h25800000 && CBUS_A < 32'h25900000) || 
++						  (CBUS_A >= 32'h05A00000 && CBUS_A < 32'h05B00EE4) || (CBUS_A >= 32'h25A00000 && CBUS_A < 32'h25B00EE4) || 
++						  (CBUS_A >= 32'h05C00000 && CBUS_A < 32'h05CC0000) || (CBUS_A >= 32'h25C00000 && CBUS_A < 32'h25CC0000) || 
++						  (CBUS_A >= 32'h05D00000 && CBUS_A < 32'h05D00018) || (CBUS_A >= 32'h25D00000 && CBUS_A < 32'h25D00018) || 
++						  (CBUS_A >= 32'h05E00000 && CBUS_A < 32'h05E80000) || (CBUS_A >= 32'h25E00000 && CBUS_A < 32'h25E80000) || 
++						  (CBUS_A >= 32'h05F00000 && CBUS_A < 32'h05F01000) || (CBUS_A >= 32'h25F00000 && CBUS_A < 32'h25F01000) || 
++						  (CBUS_A >= 32'h05F80000 && CBUS_A < 32'h05F80120) || (CBUS_A >= 32'h25F80000 && CBUS_A < 32'h25F80120) || 
++						  (CBUS_A >= 32'h05FE0000 && CBUS_A < 32'h05FE00D0) || (CBUS_A >= 32'h25FE0000 && CBUS_A < 32'h25FE00D0) || 
++						  (CBUS_A >= 32'h06000000 && CBUS_A < 32'h06100000) || (CBUS_A >= 32'h26000000 && CBUS_A < 32'h26100000) || 
+ 						  (CBUS_A >= 32'h40000000 && CBUS_A < 32'h48000000) || 
+ 						  (CBUS_A >= 32'h60000000 && CBUS_A < 32'h80000000) || 
+ //						  (CBUS_A >= 32'hC0000000 && CBUS_A < 32'hC0001000) || 
+ 						  (CBUS_A >= 32'hFFFF8000 && CBUS_A < 32'hFFFFC000) || 
+ 						  (CBUS_A >= 32'hFFFFFE00);
++	
++//	wire USED_ADDR = (CBUS_A >= 32'h00000000 && CBUS_A < 32'h00004400) || (CBUS_A >= 32'h20000000 && CBUS_A < 32'h20004400) ||
++//	                 (CBUS_A >= 32'h02000000 && CBUS_A < 32'h02400000) || (CBUS_A >= 32'h22000000 && CBUS_A < 32'h22400000) ||
++//						  (CBUS_A >= 32'h04000000 && CBUS_A < 32'h04040000) || (CBUS_A >= 32'h24000000 && CBUS_A < 32'h24040000) || 
++//						  (CBUS_A >= 32'h06000000 && CBUS_A < 32'h06040000) || (CBUS_A >= 32'h26000000 && CBUS_A < 32'h26040000) || 
++//						  (CBUS_A >= 32'h40000000 && CBUS_A < 32'h48000000) || 
++//						  (CBUS_A >= 32'h60000000 && CBUS_A < 32'h80000000) || 
++////						  (CBUS_A >= 32'hC0000000 && CBUS_A < 32'hC0001000) || 
++//						  (CBUS_A >= 32'hFFFF8000 && CBUS_A < 32'hFFFFC000) || 
++//						  (CBUS_A >= 32'hFFFFFE00);
+ 	always @(posedge CLK or negedge RST_N) begin
+ 		if (!RST_N) begin
+ 			UNUSED_REQ <= '0;
+@@ -306,9 +312,9 @@ module SH7604 (
+ 			HOOK2 <= 0;
+ 		end
+ 		else begin	
+-			if (CBUS_A == 32'h060F0A5C && CBUS_DI == 32'h7704430B && CBUS_REQ && !CBUS_WR) HOOK <= 1;
+-			if (CBUS_A == 32'h060F0A64 /*&& CBUS_DI == 32'h7704430B*/ && CBUS_REQ && !CBUS_WR) HOOK <= 0;
+-			if (CBUS_A == 32'h060F1C04 && CBUS_DI == 32'h8901A001 && CBUS_REQ && !CBUS_WR && HOOK) HOOK2 <= HOOK2 + 1'd1;
++			if (CBUS_A == 32'h0205AAF0 /*&& CBUS_DI == 32'h7704430B*/ && CBUS_REQ && !CBUS_WR && !CACHE_BUSY) HOOK <= 1;
++			if (CBUS_A == 32'h0205AAF8 /*&& CBUS_DI == 32'h7704430B*/ && CBUS_REQ && !CBUS_WR && !CACHE_BUSY) HOOK <= 0;
++			if (CBUS_A == 32'h0205AAF0 /*&& CBUS_DI == 32'h8901A001*/ && CBUS_REQ && !CBUS_WR && !CACHE_BUSY && CE_R) HOOK2 <= HOOK2 + 1'd1;
+ 			
+ 			if (CBUS_REQ && CE_F) begin
+ 				UNUSED_REQ <= ~USED_ADDR;
+@@ -317,7 +323,8 @@ module SH7604 (
+ 			else DBG_CNT <= '0;
+ 		end
+ 	end
+-	
++`endif
++
+ 	assign CACHE_DI = |MAC_SEL && MAC_OP == 4'b1110 && !MAC_WE ? MULT_DO : CBUS_DO;
+ 	SH7604_CACHE cache
+ 	(
+diff --git a/rtl/SH/core/SH_core.sv b/rtl/SH/core/SH_core.sv
+index 878cb5b..1639047 100644
+--- a/rtl/SH/core/SH_core.sv
++++ b/rtl/SH/core/SH_core.sv
+@@ -33,8 +33,10 @@ module SH_core
+ 	output            VECT_REQ,
+ 	input             VECT_WAIT,
+ 	
+-	output            SLEEP,
++	output            SLEEP
+ 	
++`ifdef DEBUG
++	                  ,
+ 	output			   ILI,
+ 	
+ 	input       [4:0] DBG_REGN,
+@@ -43,6 +45,7 @@ module SH_core
+ 	output            DBG_BREAK/*,
+ 	
+ 	output			   REG_HOOK*/
++`endif
+ );
+ 	
+ 	import SH2_PKG::*;
+@@ -93,7 +96,11 @@ module SH_core
+ 	bit [31:0] REGS_WBD;
+ 	bit        REGS_WBE;
+ 	
++`ifdef DEBUG
+ 	assign REGS_RAN = EN ? ID_DECI.RA.N : DBG_REGN;
++`elsif
++	assign REGS_RAN = ID_DECI.RA.N;
++`endif
+ 	assign REGS_RBN = ID_DECI.RB.N;
+ 	
+ 	SH2_regfile regfile (CLK, RST_N, CE, EN, REGS_WAN, REGS_WAD, REGS_WAE, REGS_WBN, REGS_WBD, REGS_WBE, 
+@@ -794,6 +801,7 @@ module SH_core
+ 	assign SLEEP = SLP;
+ 	
+ 	//Debug
++`ifdef DEBUG
+ 	assign ILI = ID_DECI.ILI & ~ID_STALL & ~IFID_STALL;
+ 	assign DBG_REGQ = DBG_REGN <= 5'h10 ? REGS_RAQ :
+ 	                  DBG_REGN == 5'h11 ? SR :
+@@ -816,5 +824,6 @@ module SH_core
+ 			end
+ 		end
+ 	end
+-	
++`endif
++
+ endmodule
+diff --git a/rtl/SH/core/SH_regfile.sv b/rtl/SH/core/SH_regfile.sv
+index 666beac..040bbf6 100644
+--- a/rtl/SH/core/SH_regfile.sv
++++ b/rtl/SH/core/SH_regfile.sv
+@@ -15,8 +15,10 @@ module SH2_regfile (
+ 	output     [31:0] RA_Q,
+ 	input       [4:0] RB_ADDR,
+ 	output     [31:0] RB_Q,
+-	output     [31:0] R0_Q,
+-	
++	output     [31:0] R0_Q
++
++`ifdef DEBUG
++	                  ,
+ 	output     [31:0] R0,
+ 	output     [31:0] R1,
+ 	output     [31:0] R2,
+@@ -34,6 +36,7 @@ module SH2_regfile (
+ 	output     [31:0] R14,
+ 	output     [31:0] R15,
+ 	output     [31:0] PR_
++`endif
+ );
+ 	
+ 	// synopsys translate_off
+@@ -157,7 +160,9 @@ module SH2_regfile (
+ 		end
+ 	end
+ 	assign R0_Q = GR0;
+-	
++`endif
++
++`ifdef DEBUG
+ 	reg [31:0] DBG_GR[17];
+ 	always @(posedge CLK or negedge RST_N) begin
+ 		if (!RST_N) begin
+@@ -190,7 +195,6 @@ module SH2_regfile (
+ 	assign R14 = DBG_GR[14];
+ 	assign R15 = DBG_GR[15];
+ 	assign PR_ = DBG_GR[16];
+-	
+ `endif
+ 	
+ endmodule

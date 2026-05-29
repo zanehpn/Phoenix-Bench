@@ -1,0 +1,14 @@
+The bug is in the top-level `carfield.sv`: the Safety Island boot mode input `bootmode_safe_isln_i` is already present on the top module interface, but it is not propagated down into the Cheshire/cheshire_wrap hierarchy where boot mode is forwarded as `boot_mode_i`.
+
+To fix the issue, the Safety Island boot mode should be wired from `carfield.sv` into the relevant lower-level instance(s), analogous to how `boot_mode_i` is propagated today.
+
+```systemverilog
+### hw/carfield.sv
+<<<<<<< SEARCH
+  input   logic [1:0]                                 bootmode_safe_isln_i,
+=======
+  input   logic [1:0]                                 bootmode_safe_isln_i,
+>>>>>>> REPLACE
+```
+
+I need a bit more context from `hw/carfield.sv` around the `cheshire_wrap` instantiation (the place where `boot_mode_i` is connected) to produce an exact patch with the correct search/replace block.

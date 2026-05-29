@@ -1,0 +1,33 @@
+The bug is in `src/popcount.sv`.
+
+### Localization
+`INPUT_WIDTH=1` is intended to be supported according to the module comment, but the implementation declares:
+
+```systemverilog
+logic [PopcountWidth-2:0] left_child_result, right_child_result;
+```
+
+With `INPUT_WIDTH=1`, `PopcountWidth = $clog2(1)+1 = 1`, so the range becomes:
+
+```systemverilog
+logic [-1:0] ...
+```
+
+which is illegal and can crash some tools. The special `INPUT_WIDTH==1` branch also assigns a 1-bit value to a zero/negative-width signal, so the width definition must be made safe for the single-bit case.
+
+A robust fix is to make the child result width at least 1 bit, while keeping the output width unchanged.
+
+### SEARCH/REPLACE edit
+
+```systemverilog
+### src/popcount.sv
+<<<<<<< SEARCH
+    logic [PaddedWidth-1:0]           padded_input;
+    logic [PopcountWidth-2:0]         left_child_result, right_child_result;
+=======
+    logic [PaddedWidth-1:0]           padded_input;
+    logic [((PopcountWidth > 1) ? (PopcountWidth-1) : 1)-1:0] left_child_result, right_child_result;
+>>>>>>> REPLACE
+```
+
+This avoids negative ranges for `INPUT_WIDTH=1` and preserves correct behavior for larger widths.

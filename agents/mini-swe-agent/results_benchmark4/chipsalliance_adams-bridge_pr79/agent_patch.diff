@@ -1,0 +1,22 @@
+diff --git a/src/mldsa_top/rtl/mldsa_ctrl.sv b/src/mldsa_top/rtl/mldsa_ctrl.sv
+index 5b925c3..5a7d558 100644
+--- a/src/mldsa_top/rtl/mldsa_ctrl.sv
++++ b/src/mldsa_top/rtl/mldsa_ctrl.sv
+@@ -1391,9 +1391,14 @@ always_comb begin : primary_ctrl_fsm_out_combo
+         msg_valid = 1;
+         sampler_src = prim_instr.operand1;
+         sampler_imm = prim_instr.imm;
+-        if (msg_done & ~msg_hold) begin
+-          if (prim_instr.opcode.sampler_en) ctrl_fsm_ns = MLDSA_CTRL_FUNC_START;
+-          else ctrl_fsm_ns = MLDSA_CTRL_MSG_WAIT;
++        if (msg_done) begin
++          if (msg_hold) begin
++            ctrl_fsm_ns = MLDSA_CTRL_MSG_WAIT;
++          end else if (prim_instr.opcode.sampler_en) begin
++            ctrl_fsm_ns = MLDSA_CTRL_FUNC_START;
++          end else begin
++            ctrl_fsm_ns = MLDSA_CTRL_MSG_WAIT;
++          end
+         end
+       end
+       MLDSA_CTRL_MSG_WAIT: begin

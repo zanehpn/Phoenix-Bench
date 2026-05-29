@@ -1,0 +1,95 @@
+diff --git a/src/ControlFSM.sv b/src/ControlFSM.sv
+index 31bf453..175ff92 100644
+--- a/src/ControlFSM.sv
++++ b/src/ControlFSM.sv
+@@ -30,17 +30,18 @@ module ControlFSM(
+ 	parameter DECODE = 4'b0001;
+ 	parameter EXECUTER = 4'b0010;
+ 	parameter UNCONDJUMP = 4'b0011;
+-	parameter EXECUTEI = 4'b0100;
+-	parameter MEMADR = 4'b0101;
+-	parameter ALUWB = 4'b0110;
+-	parameter MEMWRITE = 4'b0111;
+-	parameter MEMREAD = 4'b1000;
+-	parameter MEMWB = 4'b1001;
+-	parameter BRANCHIFEQ = 4'b1010;
++	parameter JALR_CALC = 4'b0100;
++	parameter EXECUTEI = 4'b0101;
++	parameter MEMADR = 4'b0110;
++	parameter ALUWB = 4'b0111;
++	parameter MEMWRITE = 4'b1000;
++	parameter MEMREAD = 4'b1001;
++	parameter MEMWB = 4'b1010;
++	parameter BRANCHIFEQ = 4'b1100;
+ 
+ 	//new states for lui and auipc
+ 	parameter LUI = 4'b1011;
+-	parameter AUIPC = 4'b1100;
++	parameter AUIPC = 4'b1101;
+ 
+ 
+ 	//declare state registers
+@@ -57,6 +58,8 @@ module ControlFSM(
+ 
+ 				if (opcode == JType) next_state = UNCONDJUMP;
+ 
++			else if (opcode == IType_jalr) next_state = JALR_CALC;
++
+ 				else if (opcode == RType) next_state = EXECUTER;
+ 
+ 				else if (opcode == IType_logic) next_state = EXECUTEI;
+@@ -79,6 +82,8 @@ module ControlFSM(
+ 
+ 			UNCONDJUMP: next_state = ALUWB;
+ 
++			JALR_CALC: next_state = ALUWB;
++
+ 			EXECUTER: next_state = ALUWB;
+ 
+ 			EXECUTEI: next_state = ALUWB;
+diff --git a/src/Instruction_Decode/Instruction_Decode.v b/src/Instruction_Decode/Instruction_Decode.v
+index ac3156a..2b00851 100644
+--- a/src/Instruction_Decode/Instruction_Decode.v
++++ b/src/Instruction_Decode/Instruction_Decode.v
+@@ -78,7 +78,7 @@ module Instruction_Decode(
+ 
+ 		end
+ 
+-		else if (opcode == IType_logic || opcode == IType_load) begin //I-Type (where lw is I type)
++		else if (opcode == IType_logic || opcode == IType_load || opcode == IType_jalr) begin //I-Type (where lw/jalr are I type)
+ 
+ 			rd = instr[11:7];
+ 			rs1 = instr[19:15];
+@@ -124,6 +124,7 @@ module Instruction_Decode(
+ 		case(opcode)
+ 			IType_logic : imm_ext = {{20{instr[31]}}, instr[31:20]};
+ 			IType_load  : imm_ext = {{20{instr[31]}}, instr[31:20]};
++			IType_jalr  : imm_ext = {{20{instr[31]}}, instr[31:20]};
+ 			SType       : imm_ext = {{20{instr[31]}}, instr[31:25], instr[11:7]};
+ 			BType       : imm_ext = {{20{instr[31]}}, instr[7], instr[30:25], instr[11:8], 1'b0};
+ 			JType       : imm_ext = {{12{instr[31]}}, instr[19:12], instr[20], instr[30:21], 1'b0};
+diff --git a/src/fetch.sv b/src/fetch.sv
+index e9ab07c..1dace68 100644
+--- a/src/fetch.sv
++++ b/src/fetch.sv
+@@ -23,7 +23,7 @@ module fetch ( input  wire     clk
+     if (cfsm__pc_update) begin
+       case (cfsm__pc_src)
+         PC_SRC__INCREMENT: pc_next <= pc_cur + 32'h4;
+-        PC_SRC__JUMP:       pc_next <= pc_cur + imm_ext;
++        PC_SRC__JUMP:       pc_next <= (pc_cur + imm_ext) & 32'hfffffffe;
+       endcase
+     end else begin
+       pc_next <= pc_cur;
+diff --git a/src/params.vh b/src/params.vh
+index c7b4b92..4a34b28 100644
+--- a/src/params.vh
++++ b/src/params.vh
+@@ -8,6 +8,7 @@ parameter IType_load = 7'b0000011;
+ parameter SType = 7'b0100011;
+ parameter BType = 7'b1100011;
+ parameter JType = 7'b1101111;
++parameter IType_jalr = 7'b1100111;
+ parameter UType_auipc = 7'b0010111;
+ parameter UType_lui = 7'b0110111;
+ 

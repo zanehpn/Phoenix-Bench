@@ -1,0 +1,20 @@
+# Support write to virtual interface in `if`
+
+- Source URL: https://github.com/verilator/verilator/issues/6558
+
+The sv-tests easyUVM test is currently failing with this message:
+
+```
+%Error-UNSUPPORTED: sv-tests/third_party/tests/easyUVM/driver.sv:14:64: Unsupported: Write to virtual interface in if condition
+                                                                                             : ... note: In instance '$unit::driver'
+```
+
+This can be recreated by running in a sv-test checkout:
+
+```
+$VERILATOR_ROOT/bin/verilator --binary -Wno-fatal third_party/tests/uvm/src/uvm_pkg.sv third_party/tests/easyUVM/top.sv -Ithird_party/tests/uvm/src -Ithird_party/tests/easyUVM
+```
+
+Looking at the code, if I simply comment out [the warning call in V3SchedVirtIface.cpp](https://github.com/verilator/verilator/blob/9dfc050fb508f350ebaa9db055ab7c33df73ec82/src/V3SchedVirtIface.cpp#L177) the test passes, but I don't know if the test is even testing the needed interface if.
+
+@kbieganski it looks like you gave a good amount of thought to the AstNodeIf visitor there, perhaps you could make a pull to support this?

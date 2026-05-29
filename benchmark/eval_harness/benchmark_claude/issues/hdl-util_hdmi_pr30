@@ -1,0 +1,21 @@
+# Change vsync timing to match CEA-861-D
+
+Instance: hdl-util_hdmi_pr30
+Source: https://github.com/hdl-util/hdmi/pull/30
+Fetched: 2026-04-26
+Repository: hdl-util/hdmi
+Pull request: #30
+Author: bkoropoff
+State: closed
+Base branch: master
+Head branch: vsync-timing
+Created: 2022-02-05T07:00:01Z
+Updated: 2022-02-06T01:02:31Z
+Closed: 2022-02-06T00:46:18Z
+Merged: 2022-02-06T00:46:18Z
+
+While looking for possible causes of reported display compatibility problems with gbaHD, I noticed that the CEA-861-D timing diagrams show that the edges of vsync should coincide with the leading edges of hsync.  The logic in the core only considers the current vertical position.  Since sync is only transmitted during control periods, the effect is that vsync starts earlier than the spec shows by the duration of the front porch (a handful of pixel clock cycles).  I don't know if this would really cause compatibility problems, but it seems like a theoretical deviation from the spec.
+
+I also changed some signal names to conform to standard nomenclature.  "Porch" refers to the regions during the blanking period before and after the sync pulses.
+
+EDIT: I have confirmation from at least one person that this change fixed compatibility with their finicky display/capture devices.

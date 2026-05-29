@@ -1,0 +1,33 @@
+# `stream_arbiter` with priority arbitration inherently violates assertion
+
+When configuring a `stream_arbiter` or `stream_arbiter_flushable` with `ARBITER = "prio"`, it instantiates an `rr_arb_tree` with both the `ExtPrio` and `LockIn` parameters set:
+
+https://github.com/pulp-platform/common_cells/blob/0d67563b6b592549542544f1abc0f43e5d4ee8b4/src/stream_arbiter_flushable.sv#L55-L61
+
+However, this directly violates an assertion in `rr_arb_tree`:
+
+https://github.com/pulp-platform/common_cells/blob/0d67563b6b592549542544f1abc0f43e5d4ee8b4/src/rr_arb_tree.sv#L319
+
+As a result, any priority stream arbiters instantiated inherently cause a fatal assertion violation.
+
+PR Title: stream_arbiter_flushable: Do not lock prio arbiter
+
+PR #222 (Merged)
+
+Description:
+The PR addresses a technical issue with the priority arbiter implementation. According to the submitter, setting `LockIn` while `ExtPrio = 1'b1` violates the constraints of the `rr_arb_tree` and produces no effect. Additionally, locking a decision that may have lower priority contradicts the purpose of using a priority arbiter. The fix clears the `LockIn` parameter for the priority arbiter component.
+
+Comments:
+
+@niwis (May 15, 2024):
+"Setting `LockIn` while `ExtPrio = 1'b1` is disallowed by the `rr_arb_tree` and has no effect."
+
+@micprog (Jun 17, 2024):
+"LGTM"
+
+Linked Issue:
+#221: stream_arbiter with priority arbitration inherently violates assertion
+
+Reviewers:
+- paulsc96 (approved May 15, 2024)
+- micprog (approved Jun 17, 2024)

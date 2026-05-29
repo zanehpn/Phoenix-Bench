@@ -1,0 +1,34 @@
+diff --git a/svunit_base/uvm-mock/svunit_uvm_report_mock_types.svh b/svunit_base/uvm-mock/svunit_uvm_report_mock_types.svh
+index 055196e..a65e4d2 100644
+--- a/svunit_base/uvm-mock/svunit_uvm_report_mock_types.svh
++++ b/svunit_base/uvm-mock/svunit_uvm_report_mock_types.svh
+@@ -51,23 +51,23 @@ class svunit_uvm_report_mock_expected_actual_container extends uvm_report_catche
+ 
+   local function bit match_at_idx(int i);
+     bit match = 0;
+-    if (expected[i].id  == "") match = 1;
+-    else                       match =  (expected[i].id  == actual[i].id);
+-    if (expected[i].msg == "") match &= 1;
+-    else                       match &= (expected[i].msg == actual[i].msg);
+-    match &= (expected[i].sev == actual[i].sev);
+-    return match;
++    if (expected[i].id  != "" && expected[i].id  != actual[i].id) return 0;
++    if (expected[i].msg != "" && expected[i].msg != actual[i].msg) return 0;
++    if (expected[i].sev != actual[i].sev) return 0;
++    return 1;
+   endfunction
+ 
+   function bit verify_complete();
+     if (expected.size() != actual.size()) begin
+       $display("%s", dump());
++      $error("uvm_report_mock expectation mismatch");
+       return 0;
+     end
+ 
+     foreach (expected[i]) begin
+       if (!match_at_idx(i)) begin
+         $display("%s", dump());
++        $error("uvm_report_mock expectation mismatch");
+         return 0;
+       end
+     end

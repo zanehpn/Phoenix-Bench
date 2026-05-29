@@ -1,0 +1,43 @@
+diff --git a/src/dv/hvl_top/test/pulpino_spi_master_ip_base_test.sv b/src/dv/hvl_top/test/pulpino_spi_master_ip_base_test.sv
+index 456ccec..feba3ac 100644
+--- a/src/dv/hvl_top/test/pulpino_spi_master_ip_base_test.sv
++++ b/src/dv/hvl_top/test/pulpino_spi_master_ip_base_test.sv
+@@ -28,6 +28,7 @@ class pulpino_spi_master_ip_base_test extends uvm_test;
+   extern virtual function void setup_spi_slave_agent_config();
+   extern virtual function void end_of_elaboration_phase(uvm_phase phase);
+   extern virtual task run_phase(uvm_phase phase);
++  extern virtual task main_phase(uvm_phase phase);
+ 
+ endclass : pulpino_spi_master_ip_base_test
+ 
+@@ -174,13 +175,25 @@ endfunction  : end_of_elaboration_phase
+ //--------------------------------------------------------------------------------------------
+ task pulpino_spi_master_ip_base_test::run_phase(uvm_phase phase);
+ 
+-  phase.raise_objection(this);
+-
+   super.run_phase(phase);
+ 
+-  #100;
+-  phase.drop_objection(this);
+-
+ endtask : run_phase
+ 
++//--------------------------------------------------------------------------------------------
++// Task: main_phase
++// Kick off the first directed testcase by raising an objection, starting the
++// base virtual sequence, and then dropping the objection after the sequence completes.
++//--------------------------------------------------------------------------------------------
++task pulpino_spi_master_ip_base_test::main_phase(uvm_phase phase);
++  pulpino_spi_master_ip_virtual_base_seq virtual_seq_h;
++
++  phase.raise_objection(this);
++  virtual_seq_h = pulpino_spi_master_ip_virtual_base_seq::type_id::create("virtual_seq_h");
++  if (virtual_seq_h == null) begin
++    `uvm_fatal(get_type_name(), "Failed to create first testcase virtual sequence")
++  end
++  virtual_seq_h.start(pulpino_spi_master_ip_env_h.pulpino_spi_master_ip_virtual_seqr_h);
++  phase.drop_objection(this);
++endtask : main_phase
++
+ `endif

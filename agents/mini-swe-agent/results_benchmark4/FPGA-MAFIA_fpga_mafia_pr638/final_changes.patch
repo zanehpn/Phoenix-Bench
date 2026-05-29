@@ -1,0 +1,37 @@
+diff --git a/source/mem_ss/sdram_ctrl.sv b/source/mem_ss/sdram_ctrl.sv
+index 0b33ded..b199723 100644
+--- a/source/mem_ss/sdram_ctrl.sv
++++ b/source/mem_ss/sdram_ctrl.sv
+@@ -63,7 +63,7 @@ import sdram_ctrl_pkg::*;
+     assign StartAutoRefresh     = (RefreshCounter == RefreshRate);
+     `MAFIA_RST_DFF(RefreshCounter, NextRefreshCounter, Clock, Rst)
+ 
+-    assign Busy = (State == IDLE) ? 1'b0: 1'b1; // TODO add logic 
++    assign Busy = (State == IDLE) ? 1'b0 : 1'b1; // TODO add logic 
+ 
+    
+     assign DataOut = (State == READ)  ? DRAM_DQ : 16'hzzzz;
+@@ -134,7 +134,7 @@ import sdram_ctrl_pkg::*;
+             INIT_MODE_REG: begin
+                 if(SdramCounters.ModeRegisterSetCounter == 0) begin
+                     Command = MRS_CMD;
+-                    DRAM_ADDR = {3'b0,SetSingleAccess};
++                    DRAM_ADDR = {3'b0,SetBurst8};
+                     NextSdramCounters.ModeRegisterSetCounter = SdramCounters.ModeRegisterSetCounter + 1;
+                 end
+                 else if(SdramCounters.ModeRegisterSetCounter < tMRD-1) begin
+diff --git a/source/mem_ss/sdram_ctrl_pkg.sv b/source/mem_ss/sdram_ctrl_pkg.sv
+index 9edbc59..5b05f70 100644
+--- a/source/mem_ss/sdram_ctrl_pkg.sv
++++ b/source/mem_ss/sdram_ctrl_pkg.sv
+@@ -17,8 +17,8 @@ parameter  RefreshRate = 1560;  // Refresh time. tref = 64ms -> 64ms/8192 rows
+ parameter NopMaxDuration           = 13334;         // when power up no operation should be taken during that period (100us/7.5ns)
+ //parameter NopMaxDuration           = 20;
+ parameter TimesToRefreshWhenInit   = 8;    
+-parameter Set2Burst       = 10'b0_00_010_0_011;   // set sequential burst of lenght 8. set CAS latency to 2 cycles(for 133Mhz op). 
+-parameter SetSingleAccess = 10'b1_00_010_0_000;
++parameter SetBurst8       = 10'b0_00_010_0_011;   // sequential burst length 8, CAS latency 2
++parameter SetSingleAccess  = 10'b1_00_010_0_000;
+ typedef struct packed {
+     logic  [13:0] NopInitCounter;
+     logic  [1:0]  PrechargeCounter;

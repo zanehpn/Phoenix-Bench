@@ -1,0 +1,293 @@
+From 2c8f7e5b1c86e44ea96c382a8db236c606d56654 Mon Sep 17 00:00:00 2001
+From: DOTTORM5 <manuelmaddaluno5@gmail.com>
+Date: Wed, 9 Apr 2025 14:12:05 +0200
+Subject: [PATCH 1/4] [CDC] Add inerrupts synchronizers in pbus [bugfix] add
+ ifdef IS_EMBEDDED in sw/SoC/examples/interrupts/src/xlnx_gpio.c preventing to
+ compile it if the profile is hpc
+
+---
+ hw/xilinx/rtl/peripheral_bus.sv            | 90 +++++++++++++++-------
+ sw/SoC/examples/interrupts/src/xlnx_gpio.c |  6 +-
+ 2 files changed, 67 insertions(+), 29 deletions(-)
+
+diff --git a/hw/xilinx/rtl/peripheral_bus.sv b/hw/xilinx/rtl/peripheral_bus.sv
+index 74704d97..e3a901b0 100644
+--- a/hw/xilinx/rtl/peripheral_bus.sv
++++ b/hw/xilinx/rtl/peripheral_bus.sv
+@@ -10,23 +10,24 @@
+ //     |_________________|          |_______________|                | Pheripheral |           |_______|
+ //                                                                   |    XBAR     |
+ //                                                                   |  (axilite)  |            ___________
+-//                                                                   |             |           |           |
+-//                                                                   |             |---------->| GPIO_out  |
+-//                                                                   |             |           |___________|
+-//                                                                   |             |            ___________
+-//                                                                   |             |           |           |
+-//                                                                   |             |---------->| GPIO_in   |
+-//                                                                   |             |           |___________|
+-//                                                                   |             |            ________
+-//                                                                   |             |           |        |
+-//                                                                   |             |---------->| TIM0   |
+-//                                                                   |             |           |________|
+-//                                                                   |             |            ________
+-//                                                                   |             |           |        |
+-//                                                                   |             |---------->| TIM1   |
+-//                                                                   |_____________|           |________|
+-//
+-//
++//                                                                   |             |           |           |  Interrupts
++//                                                                   |             |---------->| GPIO_out  |------|
++//                                                                   |             |           |___________|      |
++//                                                                   |             |            ___________       |
++//                                                                   |             |           |           |      |
++//                                                                   |             |---------->| GPIO_in   |----| |
++//                                                                   |             |           |___________|    | |
++//                                                                   |             |            ________        | |
++//                                                                   |             |           |        |       | |
++//                                                                   |             |---------->| TIM0   |-----| | |
++//                                                                   |             |           |________|     | | |
++//                                                                   |             |            ________      | | |
++//                                                                   |             |           |        |     | | |
++//                                                                   |             |---------->| TIM1   |---| | | |
++//         __________________                                        |_____________|           |________|   | | | |
++//        |                  |       NUM_IRQ interrupts                                                     | | | |
++// <------| CDC Synchronizer |<-----------------------------------------------------------------------------|-|-|-|
++//        |__________________|
+ //
+ 
+ // Import packages
+@@ -65,7 +66,7 @@ module peripheral_bus #(
+     /////////////////////////////////////////
+     `include "pbus_buses.svinc"
+     `DECLARE_AXI_BUS(to_prot_conv, AXI_DATA_WIDTH)
+-    
++
+     ///////////////////////
+     // Interrupt Signals //
+     ///////////////////////
+@@ -76,19 +77,15 @@ module peripheral_bus #(
+     // EMBEDDED ONLY
+     logic gpio_in_int;
+ 
+-    // Assign interrupt pins
+-    assign int_o[PBUS_GPIOIN_INTERRUPT] = gpio_in_int;
+-    assign int_o[PBUS_TIM0_INTERRUPT]   = tim0_int;
+-    assign int_o[PBUS_TIM1_INTERRUPT]   = tim1_int;
+-    assign int_o[PBUS_UART_INTERRUPT]   = uart_int;
+-
+-
+-    /////////////////////
+-    // Clock Converter //
+-    /////////////////////
++    //////////////////////
++    // Clock Converters //
++    //////////////////////
+ 
+     // If the PBUS has a clock domain (the pbus has a clock different than main clock)
+     `ifdef PBUS_HAS_CLOCK_DOMAIN
++
++        // Input clock converter - convert from MAIN_DOMAIN to PBUS_DOMAIN
++
+         xlnx_axi_clock_converter xlnx_axi_clock_converter_u (
+             .s_axi_aclk     ( main_clock_i   ),
+             .s_axi_aresetn  ( main_reset_ni  ),
+@@ -179,8 +176,45 @@ module peripheral_bus #(
+             .m_axi_rvalid   ( to_prot_conv_axi_rvalid    ),
+             .m_axi_rready   ( to_prot_conv_axi_rready    )
+         );
++
++        // Assign interrupt pins (input to the cdc)
++        logic [NUM_IRQ-1:0] cdc_src_in;
++        always_comb begin
++            cdc_src_in = '0;
++            cdc_src_in[PBUS_GPIOIN_INTERRUPT] = gpio_in_int;
++            cdc_src_in[PBUS_TIM0_INTERRUPT]   = tim0_int;
++            cdc_src_in[PBUS_TIM1_INTERRUPT]   = tim1_int;
++            cdc_src_in[PBUS_UART_INTERRUPT]   = uart_int;
++        end
++
++
++        // Output clock converter - convert from PBUS_DOMAIN to MAIN_DOMAIN (mainly used for interrupts)
++        xpm_cdc_array_single #(
++            .DEST_SYNC_FF   ( 4             ),     // Number of sync flip-flops
++            .SRC_INPUT_REG  ( 1             ),     // Input register enable
++            .WIDTH          ( NUM_IRQ       )      // Width of data to sync
++        )
++        xpm_cdc_array_single_inst (
++            .dest_out       ( int_o         ),
++            .dest_clk       ( main_clock_i  ),     // Destination clock domain (MAIN_DOMAIN)
++            .src_clk        ( PBUS_clock_i  ),     // Source clock domain (PBUS_DOMAIN)
++            .src_in         ( cdc_src_in    )
++        );
++
++
+     `else // The PBUS has the same clock of main clock
++
++        // Passthrough slave interface
+         `ASSIGN_AXI_BUS (to_prot_conv, s)
++
++        // Assign interrupt pins
++        always_comb begin
++            int_o = '0;
++            int_o[PBUS_GPIOIN_INTERRUPT] = gpio_in_int;
++            int_o[PBUS_TIM0_INTERRUPT]   = tim0_int;
++            int_o[PBUS_TIM1_INTERRUPT]   = tim1_int;
++            int_o[PBUS_UART_INTERRUPT]   = uart_int;
++        end
+     `endif
+ 
+     /////////////////////
+diff --git a/sw/SoC/examples/interrupts/src/xlnx_gpio.c b/sw/SoC/examples/interrupts/src/xlnx_gpio.c
+index 0bb10ecf..0d2cca88 100644
+--- a/sw/SoC/examples/interrupts/src/xlnx_gpio.c
++++ b/sw/SoC/examples/interrupts/src/xlnx_gpio.c
+@@ -1,3 +1,5 @@
++#ifdef IS_EMBEDDED // TODO: placeholder to HAL
++
+ #include "xlnx_gpio.h"
+ 
+ void gpio_in_configure(){
+@@ -33,4 +35,6 @@ void gpio_handler() {
+     // To do so, go to the Interrupt Status Register (0x120)
+     *(gpio_in_addr + 0x120/sizeof(uint32_t)) = 0x1;
+ 
+-}
+\ No newline at end of file
++}
++
++#endif // IS_EMBEDDED
+\ No newline at end of file
+
+From a839cd4ff3c608c26598a45c0b48462a68a54ff8 Mon Sep 17 00:00:00 2001
+From: Manuel <manuelmaddaluno5@gmail.com>
+Date: Sat, 10 May 2025 18:02:45 +0200
+Subject: [PATCH 2/4] [bugfix] fix program_bitstream bug
+
+---
+ hw/xilinx/make/utils.mk         | 4 ++--
+ hw/xilinx/rtl/peripheral_bus.sv | 2 +-
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/hw/xilinx/make/utils.mk b/hw/xilinx/make/utils.mk
+index 2c49414b..10839d03 100644
+--- a/hw/xilinx/make/utils.mk
++++ b/hw/xilinx/make/utils.mk
+@@ -53,14 +53,14 @@ program_bitstream: program_bitstream_${SOC_CONFIG}
+ program_bitstream_embedded:
+ 	${XILINX_VIVADO} \
+ 		-source ${XILINX_SCRIPTS_UTILS_ROOT}/open_hw_manager.tcl \
+-		-source ${XILINX_SCRIPTS_UTILS_ROOT}/$@.tcl
++		-source ${XILINX_SCRIPTS_UTILS_ROOT}/program_bitstream.tcl
+ 
+ # Program bitstream for HPC profile
+ PCIE_DEV ?= 01:00.0 # TODO: remove this and find the dev automatically in the script
+ program_bitstream_hpc:
+ 	${XILINX_VIVADO} \
+ 		-source ${XILINX_SCRIPTS_UTILS_ROOT}/open_hw_manager.tcl \
+-		-source ${XILINX_SCRIPTS_UTILS_ROOT}/$@.tcl
++		-source ${XILINX_SCRIPTS_UTILS_ROOT}/program_bitstream.tcl
+ 	sudo ${XILINX_SCRIPTS_UTILS_ROOT}/pcie_hot_reset.sh ${PCIE_DEV}
+ 
+ # PHONIES
+diff --git a/hw/xilinx/rtl/peripheral_bus.sv b/hw/xilinx/rtl/peripheral_bus.sv
+index e3a901b0..4e3c4641 100644
+--- a/hw/xilinx/rtl/peripheral_bus.sv
++++ b/hw/xilinx/rtl/peripheral_bus.sv
+@@ -7,7 +7,7 @@
+ //      _________________            _______________                  _____________             _______
+ //     |                 |  AXI4    |   AXI Prot    |   AXI Lite     |             |           |       |
+ // --->| Clock Converter |--------->|   Converter   |--------------->|             |---------->| UART  |
+-//     |_________________|          |_______________|                | Pheripheral |           |_______|
++//     |_________________|          |_______________|                | Peripheral  |           |_______|
+ //                                                                   |    XBAR     |
+ //                                                                   |  (axilite)  |            ___________
+ //                                                                   |             |           |           |  Interrupts
+
+From 68922d3df2f71833bb992d1a784455dd013ea794 Mon Sep 17 00:00:00 2001
+From: Manuel <manuelmaddaluno5@gmail.com>
+Date: Mon, 12 May 2025 17:53:01 +0200
+Subject: [PATCH 3/4] [bugfix] add MACRO_LIST in sw/SoC/common/Makefile
+
+---
+ sw/SoC/common/Makefile              | 11 ++++++++++-
+ sw/SoC/examples/interrupts/Makefile |  9 ---------
+ 2 files changed, 10 insertions(+), 10 deletions(-)
+
+diff --git a/sw/SoC/common/Makefile b/sw/SoC/common/Makefile
+index b57b1294..daea26e4 100644
+--- a/sw/SoC/common/Makefile
++++ b/sw/SoC/common/Makefile
+@@ -16,6 +16,15 @@ OBJS	 = $(addprefix $(OBJ_DIR)/, $(notdir $(SRCS:.c=.o)))
+ RM	  = rm -rf					 # Remove recursively command
+ MKDIR   = @mkdir -p $(@D)			 # Creates folders if not present
+ 
++##########
++# MACROS #
++##########
++
++MACRO_LIST =
++ifeq ($(SOC_CONFIG), embedded)
++MACRO_LIST += -DIS_EMBEDDED
++endif
++
+ ###############################################################################
+ 
+ ###########
+@@ -27,7 +36,7 @@ all: bin/$(PROGRAM_NAME).bin
+ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
+ 	@echo "\n[OBJ] Creating OBJs from src"
+ 	$(MKDIR)
+-	$(CC) -o $@ $^ -I$(INC_DIR) $(LIB_INC_LIST) $(CFLAGS)
++	$(CC) -o $@ $^ -I$(INC_DIR) $(LIB_INC_LIST) $(CFLAGS) $(MACRO_LIST)
+ 
+ obj/startup.o:
+ 	@echo "\n[OBJ] Creating OBJs from $(STARTUP_DIR)/startup.s"
+diff --git a/sw/SoC/examples/interrupts/Makefile b/sw/SoC/examples/interrupts/Makefile
+index 56a2dd3d..39242960 100755
+--- a/sw/SoC/examples/interrupts/Makefile
++++ b/sw/SoC/examples/interrupts/Makefile
+@@ -37,15 +37,6 @@ LIB_INC_TINYIO    = -I$(LIB_DIR)/tinyio/inc
+ LIB_OBJ_LIST     = $(LIB_OBJ_TINYIO)
+ LIB_INC_LIST     = $(LIB_INC_TINYIO)
+ 
+-##########
+-# MACROS #
+-##########
+-
+-MACRO_LIST =
+-ifeq ($(SOC_CONFIG), embedded)
+-MACRO_LIST += -DIS_EMBEDDED
+-endif
+-
+ 
+ #############
+ # Toolchain #
+
+From f9e7092bf3735a749c1622d6e8957e3637ec5e5d Mon Sep 17 00:00:00 2001
+From: Vincenzo Maisto <vincenzo.maisto2@unina.it>
+Date: Tue, 13 May 2025 19:11:56 +0200
+Subject: [PATCH 4/4] Add killall virtual_uart
+
+---
+ hw/xilinx/make/utils.mk | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/hw/xilinx/make/utils.mk b/hw/xilinx/make/utils.mk
+index 10839d03..e68e80ab 100644
+--- a/hw/xilinx/make/utils.mk
++++ b/hw/xilinx/make/utils.mk
+@@ -58,9 +58,14 @@ program_bitstream_embedded:
+ # Program bitstream for HPC profile
+ PCIE_DEV ?= 01:00.0 # TODO: remove this and find the dev automatically in the script
+ program_bitstream_hpc:
++#	Kill pending virtual_uart instances (if any)
++#	TODO: This might be overkill, as only that one instance should cause problems 
++	killall virtual_uart 
++#	Program
+ 	${XILINX_VIVADO} \
+ 		-source ${XILINX_SCRIPTS_UTILS_ROOT}/open_hw_manager.tcl \
+ 		-source ${XILINX_SCRIPTS_UTILS_ROOT}/program_bitstream.tcl
++#	Rescan PCIe device
+ 	sudo ${XILINX_SCRIPTS_UTILS_ROOT}/pcie_hot_reset.sh ${PCIE_DEV}
+ 
+ # PHONIES

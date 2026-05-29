@@ -1,0 +1,30 @@
+diff --git a/src/gpio/hdl/gpio.v b/src/gpio/hdl/gpio.v
+index cd34b63..5ca66db 100644
+--- a/src/gpio/hdl/gpio.v
++++ b/src/gpio/hdl/gpio.v
+@@ -119,8 +119,6 @@ module gpio #(
+ 	  .nreset (nreset), 
+           .din	(gpio_in[N-1:0]));
+ 
+-   always @ (posedge clk)
+-       gpio_in_old[N-1:0] <= gpio_in_sync[N-1:0];
+    
+    //################################
+    //# GPIO_OUT
+@@ -168,12 +166,13 @@ module gpio #(
+    //# INTERRUPT LOGIC (DEFAULT EDGE)
+    //################################ 
+    
+-   assign rising_edge[N-1:0]  =  gpio_in_sync[N-1:0] & ~gpio_in_old[N-1:0];
++   oh_rise2pulse #(.DW(N))
++   gpio_rise2pulse (.clk(clk), .nreset(nreset), .in(gpio_in_sync[N-1:0]), .out(rising_edge[N-1:0]));
+ 
+-   assign falling_edge[N-1:0] = ~gpio_in_sync[N-1:0] & gpio_in_old[N-1:0];
++   oh_fall2pulse #(.DW(N))
++   gpio_fall2pulse (.clk(clk), .nreset(nreset), .in(gpio_in_sync[N-1:0]), .out(falling_edge[N-1:0]));
+ 
+-   assign irq_event[N-1:0] = (rising_edge[N-1:0]   & ~gpio_itype[N-1:0] & gpio_ipol[N-1:0]) |
+-			     (falling_edge[N-1:0]  & ~gpio_itype[N-1:0] & ~gpio_ipol[N-1:0]) |
++   assign irq_event[N-1:0] = (rising_edge[N-1:0]   & ~gpio_itype[N-1:0] & gpio_ipol[N-1:0]) |			     (falling_edge[N-1:0]  & ~gpio_itype[N-1:0] & ~gpio_ipol[N-1:0]) |
+ 			     (gpio_in_sync[N-1:0]  & gpio_itype[N-1:0]  & gpio_ipol[N-1:0]) |
+ 			     (~gpio_in_sync[N-1:0] & gpio_itype[N-1:0]  & ~gpio_ipol[N-1:0]);

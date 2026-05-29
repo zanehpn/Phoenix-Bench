@@ -1,0 +1,64 @@
+diff --git a/vlog/chip_src/calib_pfd_offset/adc_unfolding.sv b/vlog/chip_src/calib_pfd_offset/adc_unfolding.sv
+index df02554..964252f 100644
+--- a/vlog/chip_src/calib_pfd_offset/adc_unfolding.sv
++++ b/vlog/chip_src/calib_pfd_offset/adc_unfolding.sv
+@@ -44,13 +44,7 @@ wire signed [Nadc-1:0] dout_pre;
+ wire signed [Nadc-1:0] pfd_offset_add_hist_comp_out;
+ wire update;
+ 
+-reg [1:0] clk_avg_d;
+-
+-// detect posedge of clk_avg
+-always @(posedge clk_retimer) clk_avg_d <= clk_avg;
+-
+-
+-assign update = ({clk_avg_d,clk_avg} == 2'b01) ; 
++assign update = clk_avg;
+ 
+ 
+ // instances
+diff --git a/vlog/chip_src/digital_core/digital_core.sv b/vlog/chip_src/digital_core/digital_core.sv
+index 9aaa537..2cb98d1 100644
+--- a/vlog/chip_src/digital_core/digital_core.sv
++++ b/vlog/chip_src/digital_core/digital_core.sv
+@@ -121,24 +121,22 @@ module digital_core import const_pack::*; (
+ 
+     // PFD Offset Calibration
+ 
+-    // This generates a JTAG-controlled clock divider - divisible by 1 to 2^5
+-
+-    // TODO: Rather than generating a clock signal here (clk_avg), we should generate a
+-    // clock enable signal that is passed into adc_unfolding, because that block
+-    // converts clk_avg back into a clock enable signal anyway.  Since the current setup
+-    // leads to hold violations when implementing the design for an FPGA, freq_divider
+-    // is ifdef'd out for emulation.
+-
+-    `ifndef VIVADO
+-        freq_divider #(.N(4)) average_clk_gen (
+-            .cki(clk_adc),
+-            .cko(clk_avg),
+-            .ndiv(ddbg_intf_i.Ndiv_clk_avg),
+-            .rstb(rstb)
+-        );
+-    `else
+-        assign clk_avg = 1'b0;
+-    `endif
++    // Generate the adc_unfolding update pulse directly from clk_adc, rather than
++    // creating a divided clock. This keeps clk_adc as the only clock in digital_core.
++    logic [3:0] clk_avg_div;
++    logic clk_avg;
++
++    always_ff @(posedge clk_adc or negedge rstb) begin
++        if (!rstb) begin
++            clk_avg_div <= '0;
++        end else if (clk_avg_div == ddbg_intf_i.Ndiv_clk_avg) begin
++            clk_avg_div <= '0;
++        end else begin
++            clk_avg_div <= clk_avg_div + 1'b1;
++        end
++    end
++
++    assign clk_avg = (clk_avg_div == ddbg_intf_i.Ndiv_clk_avg);
+ 
+     genvar k;
+     generate

@@ -1,0 +1,61 @@
+diff --git a/design/dmi/dmi_mux.v b/design/dmi/dmi_mux.v
+index b428d64..a6bef9a 100644
+--- a/design/dmi/dmi_mux.v
++++ b/design/dmi/dmi_mux.v
+@@ -3,8 +3,10 @@
+ 
+ module dmi_mux (
+ 
+-    // Uncore access enable
++    // Core/Uncore access enables
++    input wire core_enable,
+     input wire uncore_enable,
++    output wire dmi_active,
+ 
+     // DMI upstream
+     input  wire        dmi_en,
+@@ -33,8 +35,8 @@ module dmi_mux (
+   assign is_uncore_aperture = (dmi_addr[6] & (dmi_addr[5] | dmi_addr[4]));
+ 
+   // Core signals
+-  assign dmi_core_en        = dmi_en & ~is_uncore_aperture;
+-  assign dmi_core_wr_en     = dmi_wr_en & ~is_uncore_aperture;
++  assign dmi_core_en        = dmi_en & ~is_uncore_aperture & core_enable;
++  assign dmi_core_wr_en     = dmi_wr_en & ~is_uncore_aperture & core_enable;
+   assign dmi_core_addr      = dmi_addr;
+   assign dmi_core_wdata     = dmi_wdata;
+ 
+@@ -44,6 +46,9 @@ module dmi_mux (
+   assign dmi_uncore_addr    = dmi_addr;
+   assign dmi_uncore_wdata   = dmi_wdata;
+ 
++  // Active when the debug module is driving either aperture
++  assign dmi_active         = dmi_en;
++
+   // Read mux
+   assign dmi_rdata          = is_uncore_aperture ? dmi_uncore_rdata : dmi_core_rdata;
+ 
+diff --git a/design/el2_veer_wrapper.sv b/design/el2_veer_wrapper.sv
+index d331503..2e3d911 100644
+--- a/design/el2_veer_wrapper.sv
++++ b/design/el2_veer_wrapper.sv
+@@ -434,8 +434,10 @@ import el2_pkg::*;
+    input logic                             scan_mode,     // To enable scan mode
+    input logic                             mbist_mode,    // to enable mbist
+ 
+-   // DMI port for uncore
++   // DMI port for core/uncore
++   input logic                             dmi_core_enable,
+    input logic                             dmi_uncore_enable,
++   output logic                            dmi_active,
+    output logic                            dmi_uncore_en,
+    output logic                            dmi_uncore_wr_en,
+    output logic                     [ 6:0] dmi_uncore_addr,
+@@ -907,6 +909,7 @@ import el2_pkg::*;
+ 
+    // DMI core/uncore mux
+    dmi_mux dmi_mux (
++    .core_enable        (dmi_core_enable),
+     .uncore_enable      (dmi_uncore_enable),
+ 
+     .dmi_en             (dmi_en),

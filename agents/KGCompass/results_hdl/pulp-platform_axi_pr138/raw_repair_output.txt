@@ -1,0 +1,66 @@
+The bug is localized in `src/axi_xbar.sv` at the instance of `axi_err_slv`.
+
+### Root cause
+`axi_err_slv` declares:
+
+- `input req_t slv_req_i`
+- `output resp_t slv_resp_o`
+
+But in `axi_xbar.sv`, the error slave is instantiated with a **part-select of an unpacked array element**:
+
+```systemverilog
+.slv_resp_o ( slv_resps[i][Cfg.NoMstPorts] )
+```
+
+Older ModelSim/Questa versions (like 10.6c) can reject this as an illegal output/inout connection, even though the RTL is otherwise valid. The safe workaround is to connect the error slave to a temporary signal, then assign that signal into the array element.
+
+---
+
+## SEARCH/REPLACE edits
+
+```systemverilog
+### src/axi_xbar.sv
+<<<<<<< SEARCH
+    axi_err_slv #(
+      .AxiIdWidth  ( Cfg.AxiIdWidthSlvPorts ),
+      .req_t       ( slv_req_t              ),
+      .resp_t      ( slv_resp_t             ),
+      .Resp        ( axi_pkg::RESP_DECERR   ),
+      .ATOPs       ( 1'b1                   ),
+      .MaxTrans    ( 4                      )   // Transactions terminate at this slave, so minimize
+                                                // resource consumption by accepting only a few
+                                                // transactions at a time.
+    ) i_axi_err_slv (
+      .clk_i,   // Clock
+      .rst_ni,  // Asynchronous reset active low
+      .test_i,  // Testmode enable
+      // slave port
+      .slv_req_i  ( slv_reqs[i][Cfg.NoMstPorts]   ),
+      .slv_resp_o ( slv_resps[i][Cfg.NoMstPorts]  )
+    );
+=======
+    slv_resp_t err_slv_resp;
+
+    axi_err_slv #(
+      .AxiIdWidth  ( Cfg.AxiIdWidthSlvPorts ),
+      .req_t       ( slv_req_t              ),
+      .resp_t      ( slv_resp_t             ),
+      .Resp        ( axi_pkg::RESP_DECERR   ),
+      .ATOPs       ( 1'b1                   ),
+      .MaxTrans    ( 4                      )   // Transactions terminate at this slave, so minimize
+                                                // resource consumption by accepting only a few
+                                                // transactions at a time.
+    ) i_axi_err_slv (
+      .clk_i,   // Clock
+      .rst_ni,  // Asynchronous reset active low
+      .test_i,  // Testmode enable
+      // slave port
+      .slv_req_i  ( slv_reqs[i][Cfg.NoMstPorts] ),
+      .slv_resp_o ( err_slv_resp                )
+    );
+
+    assign slv_resps[i][Cfg.NoMstPorts] = err_slv_resp;
+>>>>>>> REPLACE
+```
+
+If you want, I can also provide a follow-up patch to make this compatible with even stricter simulators by avoiding any declaration directly inside the loop body.

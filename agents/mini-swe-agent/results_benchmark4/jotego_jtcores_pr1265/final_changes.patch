@@ -1,0 +1,31 @@
+diff --git a/cores/rungun/hdl/jtrungun_video.v b/cores/rungun/hdl/jtrungun_video.v
+index 787a8fb..0e9e2c1 100644
+--- a/cores/rungun/hdl/jtrungun_video.v
++++ b/cores/rungun/hdl/jtrungun_video.v
+@@ -97,6 +97,7 @@ wire [31:0] fix_sort;
+ wire [11:0] fix_code;
+ wire [ 8:0] virt_hdumpf, obj_pxl, virt_hdump;
+ wire [ 7:0] virt_vdumpf, psc_pxl, virt_vdump;
++wire        ln_blankn, virt_blankn;
+ wire [ 7:0] fix_raw, fix_pxl, dump_obj, obj_mmr, ccu_mmr, psac_mmr;
+ wire [ 5:0] hbs_len, hsy_len, hsa_len;
+ wire [ 4:0] obj_prio;
+@@ -237,7 +238,8 @@ assign disp = 0;
+ // jtframe_toggle #(.W(1)) u_disp(rst,clk,vs,disp);
+ jtframe_8x8x4_packed_msb u_packed(fix_data,fix_sort);
+ 
+-wire blankn = ln_lvbl & virt_lhbl;
++assign ln_blankn   = ln_lvbl & virt_lhbl;
++assign virt_blankn = virt_lhbl;
+ 
+ jtframe_tilemap #(
+     .VA(11),
+@@ -252,7 +254,7 @@ jtframe_tilemap #(
+ 
+     .vdump      ( virt_vdumpf   ),
+     .hdump      ( virt_hdumpf   ),
+-    .blankn     ( blankn        ),
++    .blankn     ( virt_blankn   ),
+     .flip       ( 1'b0          ),    // Screen flip
+ 
+     .vram_addr  (vram_addr[11:1]),

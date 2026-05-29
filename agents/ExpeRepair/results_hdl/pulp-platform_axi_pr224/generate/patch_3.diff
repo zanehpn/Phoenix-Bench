@@ -1,0 +1,32 @@
+diff --git a/src/axi_lite_mux.sv b/src/axi_lite_mux.sv
+index 5735f57..2f1e82f 100755
+--- a/src/axi_lite_mux.sv
++++ b/src/axi_lite_mux.sv
+@@ -27,8 +27,25 @@ module axi_lite_mux #(
+   parameter type           b_chan_t  = logic, //  B LITE Channel Type
+   parameter type          ar_chan_t  = logic, // AR LITE Channel Type
+   parameter type           r_chan_t  = logic, //  R LITE Channel Type
+-  parameter type          axi_req_t  = logic, // AXI4-Lite request type
+-  parameter type         axi_resp_t  = logic, // AXI4-Lite response type
++  parameter type          axi_req_t  = struct packed { // AXI4-Lite request type
++    aw_chan_t aw;
++    logic     aw_valid;
++    w_chan_t  w;
++    logic     w_valid;
++    logic     b_ready;
++    ar_chan_t ar;
++    logic     ar_valid;
++    logic     r_ready;
++  },
++  parameter type         axi_resp_t  = struct packed { // AXI4-Lite response type
++    logic    aw_ready;
++    logic    w_ready;
++    b_chan_t b;
++    logic    b_valid;
++    logic    ar_ready;
++    r_chan_t r;
++    logic    r_valid;
++  },
+   parameter int unsigned NoSlvPorts  = 32'd0, // Number of slave ports
+   // Maximum number of outstanding transactions per write or read
+   parameter int unsigned MaxTrans    = 32'd0,

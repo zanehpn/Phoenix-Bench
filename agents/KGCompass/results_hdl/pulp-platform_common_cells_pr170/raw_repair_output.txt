@@ -1,0 +1,99 @@
+The likely issue is in `src/shift_reg.sv`: it currently only supports a plain shift register with no `valid` control, so it cannot be power-gated/clock-gated selectively for the internal datapath. The new requested version should be backward compatible while adding an optional `valid_i`/`valid_o` path so tools can infer ICG on the internal flops when data is valid.
+
+A minimal, backward-compatible fix is to extend `shift_reg` with an optional valid flag and use it to gate the register update. Since the existing file has no valid-related ports, the fix should preserve old behavior when valid is not used.
+
+```systemverilog
+### src/shift_reg.sv
+<<<<<<< SEARCH
+module shift_reg #(
+    parameter type dtype         = logic,
+    parameter int unsigned Depth = 1
+)(
+    input  logic clk_i,    // Clock
+    input  logic rst_ni,   // Asynchronous reset active low
+    input  dtype d_i,
+    output dtype d_o
+);
+=======
+module shift_reg #(
+    parameter type dtype         = logic,
+    parameter int unsigned Depth = 1
+)(
+    input  logic clk_i,    // Clock
+    input  logic rst_ni,   // Asynchronous reset active low
+    input  logic valid_i,   // Data valid, used to enable clock gating of the datapath
+    input  dtype d_i,
+    output logic valid_o,
+    output dtype d_o
+);
+>>>>>>> REPLACE
+```
+
+```systemverilog
+### src/shift_reg.sv
+<<<<<<< SEARCH
+    // register of depth 0 is a wire
+    if (Depth == 0) begin : gen_pass_through
+        assign d_o = d_i;
+    // register of depth 1 is a simple register
+    end else if (Depth == 1) begin : gen_register
+        always_ff @(posedge clk_i or negedge rst_ni) begin
+            if (~rst_ni) begin
+                d_o <= '0;
+            end else begin
+                d_o <= d_i;
+            end
+        end
+    // if depth is greater than 1 it becomes a shift register
+    end else if (Depth > 1) begin : gen_shift_reg
+        dtype [Depth-1:0] reg_d, reg_q;
+        assign d_o = reg_q[Depth-1];
+        assign reg_d = {reg_q[Depth-2:0], d_i};
+
+        always_ff @(posedge clk_i or negedge rst_ni) begin
+            if (~rst_ni) begin
+                reg_q <= '0;
+            end else begin
+                reg_q <= reg_d;
+            end
+        end
+    end
+=======
+    assign valid_o = valid_i;
+
+    // register of depth 0 is a wire
+    if (Depth == 0) begin : gen_pass_through
+        assign d_o = d_i;
+    // register of depth 1 is a simple register
+    end else if (Depth == 1) begin : gen_register
+        always_ff @(posedge clk_i or negedge rst_ni) begin
+            if (~rst_ni) begin
+                d_o <= '0;
+            end else if (valid_i) begin
+                d_o <= d_i;
+            end
+        end
+    // if depth is greater than 1 it becomes a shift register
+    end else if (Depth > 1) begin : gen_shift_reg
+        dtype [Depth-1:0] reg_d, reg_q;
+        logic [Depth-1:0] valid_d, valid_q;
+
+        assign d_o = reg_q[Depth-1];
+        assign reg_d = {reg_q[Depth-2:0], d_i};
+
+        assign valid_d = {valid_q[Depth-2:0], valid_i};
+
+        always_ff @(posedge clk_i or negedge rst_ni) begin
+            if (~rst_ni) begin
+                reg_q   <= '0;
+                valid_q <= '0;
+            end else if (valid_i) begin
+                reg_q   <= reg_d;
+                valid_q <= valid_d;
+            end
+        end
+    end
+>>>>>>> REPLACE
+```
+
+If you want, I can also propose a cleaner API-compatible version that keeps the old port list untouched and adds a separate `valid_i`/`valid_o` through parameterized generate logic or defaulted behavior.

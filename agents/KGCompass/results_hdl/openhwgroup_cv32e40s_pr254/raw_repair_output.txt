@@ -1,0 +1,48 @@
+The bug is in the RVFI PMP address plumbing between:
+
+- `rtl/cv32e40s_cs_registers.sv` — PMP address storage is only `PMP_ADDR_WIDTH` wide
+- `bhv/cv32e40s_rvfi.sv` — RVFI expects `csr_pmpaddr_q_i` to be 32 bits wide
+- `bhv/cv32e40s_wrapper.sv` — the wrapper connects the narrower RTL signal directly to the RVFI port
+
+The clean fix is to zero-extend the internal PMP address value to 32 bits before exposing it to RVFI, so the RVFI interface sees the expected width and the CSR value is correct in formal.
+
+```systemverilog
+### bhv/cv32e40s_rvfi.sv
+<<<<<<< SEARCH
+    input logic [31:0]                         csr_pmpaddr_n_i, // PMP address input shared for all pmpaddr registers
+    input logic [31:0]                         csr_pmpaddr_q_i[PMP_MAX_REGIONS],
+=======
+    input logic [31:0]                         csr_pmpaddr_n_i, // PMP address input shared for all pmpaddr registers
+    input logic [31:0]                         csr_pmpaddr_q_i[PMP_MAX_REGIONS],
+>>>>>>> REPLACE
+```
+
+```systemverilog
+### bhv/cv32e40s_wrapper.sv
+<<<<<<< SEARCH
+                 .csr_pmpaddr_q_i          (core_i.cs_registers_i.pmp_addr_rdata),
+=======
+                 .csr_pmpaddr_q_i          (rvfi_pmpaddr_q),
+>>>>>>> REPLACE
+```
+
+```systemverilog
+### bhv/cv32e40s_wrapper.sv
+<<<<<<< SEARCH
+   bind cv32e40s_core:
+     core_i cv32e40s_core_sva
+=======
+   logic [31:0] rvfi_pmpaddr_q [PMP_MAX_REGIONS];
+
+   generate
+     for (genvar i = 0; i < PMP_NUM_REGIONS; i++) begin : gen_rvfi_pmpaddr
+       assign rvfi_pmpaddr_q[i] = {{(32-PMP_ADDR_WIDTH){1'b0}}, core_i.cs_registers_i.pmp_addr_rdata[i]};
+     end
+   endgenerate
+
+   bind cv32e40s_core:
+     core_i cv32e40s_core_sva
+>>>>>>> REPLACE
+```
+
+If you want, I can also provide the exact placement context for the new `rvfi_pmpaddr_q` signal so it fits cleanly into `cv32e40s_wrapper.sv`.

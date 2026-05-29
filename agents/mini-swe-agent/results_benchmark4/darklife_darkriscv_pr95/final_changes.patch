@@ -1,0 +1,53 @@
+diff --git a/rtl/darkriscv.v b/rtl/darkriscv.v
+index 0178eb0..0c970a5 100644
+--- a/rtl/darkriscv.v
++++ b/rtl/darkriscv.v
+@@ -323,6 +323,8 @@ module darkriscv
+     `ifdef __INTERRUPT__
+         reg [31:0] MSTATUS  = 0;
+         reg [31:0] MSCRATCH = 0;
++        reg [63:0] MCYCLE   = 0;
++        reg [63:0] MINSTRET = 0;
+         reg [31:0] MCAUSE   = 0;
+         reg [31:0] MEPC     = 0;
+         reg [31:0] MTVEC    = 0;
+@@ -345,6 +347,8 @@ module darkriscv
+     `endif
+ 
+     wire [31:0] CRDATA = 
++                        XIDATA[31:20]==12'hB00 ? MCYCLE[31:0] : // cycle counter
++                        XIDATA[31:20]==12'hB02 ? MINSTRET[31:0] : // instret counter
+     `ifdef __THREADS__    
+                         XIDATA[31:20]==12'hf14 ? { CPTR, TPTR } : // core/thread number
+     `else
+@@ -474,9 +478,12 @@ module darkriscv
+         else
+         if(!HLT && !FLUSH)
+         begin
++            MCYCLE <= MCYCLE + 1;
+             if(CSRX)
+             begin
+                 case(XIDATA[31:20])
++                    12'hB00: MCYCLE   <= WRDATA;
++                    12'hB02: MINSTRET <= WRDATA;
+                     12'h300: MSTATUS  <= WRDATA;
+                     12'h340: MSCRATCH <= WRDATA;
+                     12'h305: MTVEC    <= WRDATA;
+@@ -497,6 +504,9 @@ module darkriscv
+             begin
+                 MSTATUS[3] <= MSTATUS[7]; // return last MIE bit
+             end
++
++            if(!CSRX)
++                MINSTRET <= MINSTRET + 1;
+         end
+ `endif
+ 
+@@ -661,6 +671,7 @@ module darkriscv
+     assign DEBUG = { IRQ, MIP, MIE, MRET };
+ `else
+     assign DEBUG = { XRES, |FLUSH, SCC, LCC };
++
+ `endif
+ 
+ `ifdef SIMULATION

@@ -1,0 +1,33 @@
+diff --git a/src/popcount.sv b/src/popcount.sv
+index 359f928..af471d1 100755
+--- a/src/popcount.sv
++++ b/src/popcount.sv
+@@ -12,8 +12,8 @@
+ 
+ // Description: This module calculates the hamming weight (number of ones) in
+ // its input vector using a balanced binary adder tree. Recursive instantiation
+-// is used to build the tree.  Any unsigned INPUT_WIDTH larger or equal 2 is
+-// legal.  The module pads the signal internally to the next power of two.  The
++// is used to build the tree. Any unsigned INPUT_WIDTH larger or equal 1 is
++// legal. The module pads the signal internally to the next power of two. The
+ // output result width is ceil(log2(INPUT_WIDTH))+1.
+ 
+ module popcount #(
+@@ -27,7 +27,7 @@ module popcount #(
+    localparam int unsigned PaddedWidth = 1 << $clog2(INPUT_WIDTH);
+ 
+    logic [PaddedWidth-1:0]           padded_input;
+-   logic [PopcountWidth-2:0]         left_child_result, right_child_result;
++   logic [PopcountWidth-1:0]         left_child_result, right_child_result;
+ 
+    //Zero pad the input to next power of two
+    always_comb begin
+@@ -37,7 +37,7 @@ module popcount #(
+ 
+    //Recursive instantiation to build binary adder tree
+    if (INPUT_WIDTH == 1) begin : gen_single_node
+-     assign left_child_result  = 1'b0;
++     assign left_child_result  = '0;
+      assign right_child_result = padded_input[0];
+    end else if (INPUT_WIDTH == 2) begin : gen_leaf_node
+      assign left_child_result  = padded_input[1];

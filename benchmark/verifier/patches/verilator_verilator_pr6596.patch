@@ -1,0 +1,235 @@
+From e36c5491128ba9acd79cc5064c3e7ac60bd233a8 Mon Sep 17 00:00:00 2001
+From: Geza Lore <gezalore@gmail.com>
+Date: Sat, 25 Oct 2025 17:19:15 +0100
+Subject: [PATCH 1/2] Fix V3Life eliminating assignments across timing controls
+
+For both JumpBlock and Loop, record if they contain a timing control and
+do not eliminate assignments across them if so.
+
+Fixes #6593
+---
+ src/V3Life.cpp                           | 36 +++++++-----
+ test_regress/t/t_opt_life_timing_loop.py | 18 ++++++
+ test_regress/t/t_opt_life_timing_loop.v  | 75 ++++++++++++++++++++++++
+ 3 files changed, 113 insertions(+), 16 deletions(-)
+ create mode 100755 test_regress/t/t_opt_life_timing_loop.py
+ create mode 100644 test_regress/t/t_opt_life_timing_loop.v
+
+diff --git a/src/V3Life.cpp b/src/V3Life.cpp
+index 3b14c839be2..f0d592b1c98 100644
+--- a/src/V3Life.cpp
++++ b/src/V3Life.cpp
+@@ -278,6 +278,7 @@ class LifeBlock final {
+ class LifeVisitor final : public VNVisitor {
+     // STATE
+     LifeState* const m_statep;  // Current state
++    bool m_containsTiming = false; // Statement contains timing control
+     bool m_sideEffect = false;  // Side effects discovered in assign RHS
+     bool m_noopt = false;  // Disable optimization of variables in this block
+     bool m_tracingCall = false;  // Iterating into a CCall to a CFunc
+@@ -308,6 +309,7 @@ class LifeVisitor final : public VNVisitor {
+         if (nodep->isTimingControl() || VN_IS(nodep, AssignForce)) {
+             // V3Life doesn't understand time sense nor force assigns - don't optimize
+             setNoopt();
++            if (nodep->isTimingControl()) m_containsTiming = true;
+             iterateChildren(nodep);
+             return;
+         }
+@@ -345,6 +347,7 @@ class LifeVisitor final : public VNVisitor {
+         if (nodep->isTimingControl()) {
+             // Don't optimize
+             setNoopt();
++            m_containsTiming = true;
+         }
+         // Don't treat as normal assign
+         iterateChildren(nodep);
+@@ -379,37 +382,37 @@ class LifeVisitor final : public VNVisitor {
+     void visit(AstLoop* nodep) override {
+         // Similar problem to AstJumpBlock, don't optimize loop bodies - most are unrolled
+         UASSERT_OBJ(!nodep->contsp(), nodep, "'contsp' only used before LinkJump");
+-        LifeBlock* const prevLifep = m_lifep;
+-        LifeBlock* const bodyLifep = new LifeBlock{prevLifep, m_statep};
++        VL_RESTORER(m_containsTiming);
+         {
+             VL_RESTORER(m_noopt);
+-            m_lifep = bodyLifep;
++            VL_RESTORER(m_lifep);
++            m_lifep = new LifeBlock{m_lifep, m_statep};
+             setNoopt();
+             iterateAndNextNull(nodep->stmtsp());
+-            m_lifep = prevLifep;
++            UINFO(4, "   joinloop");
++            // For the next assignments, clear any variables that were read or written in the block
++            m_lifep->lifeToAbove();
++            VL_DO_DANGLING(delete m_lifep, m_lifep);
+         }
+-        UINFO(4, "   joinloop");
+-        // For the next assignments, clear any variables that were read or written in the block
+-        bodyLifep->lifeToAbove();
+-        VL_DO_DANGLING(delete bodyLifep, bodyLifep);
++        if (m_containsTiming) setNoopt();
+     }
+     void visit(AstJumpBlock* nodep) override {
+         // As with Loop's we can't predict if a JumpGo will kill us or not
+         // It's worse though as an IF(..., JUMPGO) may change the control flow.
+         // Just don't optimize blocks with labels; they're rare - so far.
+-        LifeBlock* const prevLifep = m_lifep;
+-        LifeBlock* const bodyLifep = new LifeBlock{prevLifep, m_statep};
++        VL_RESTORER(m_containsTiming);
+         {
+             VL_RESTORER(m_noopt);
+-            m_lifep = bodyLifep;
++            VL_RESTORER(m_lifep);
++            m_lifep = new LifeBlock{m_lifep, m_statep};
+             setNoopt();
+             iterateAndNextNull(nodep->stmtsp());
+-            m_lifep = prevLifep;
++            UINFO(4, "   joinjump");
++            // For the next assignments, clear any variables that were read or written in the block
++            m_lifep->lifeToAbove();
++            VL_DO_DANGLING(delete m_lifep, m_lifep);
+         }
+-        UINFO(4, "   joinjump");
+-        // For the next assignments, clear any variables that were read or written in the block
+-        bodyLifep->lifeToAbove();
+-        VL_DO_DANGLING(delete bodyLifep, bodyLifep);
++        if (m_containsTiming) setNoopt();
+     }
+     void visit(AstNodeCCall* nodep) override {
+         // UINFO(4, "  CCALL " << nodep);
+@@ -447,6 +450,7 @@ class LifeVisitor final : public VNVisitor {
+         if (nodep->isTimingControl()) {
+             // V3Life doesn't understand time sense - don't optimize
+             setNoopt();
++            m_containsTiming = true;
+         }
+         iterateChildren(nodep);
+     }
+diff --git a/test_regress/t/t_opt_life_timing_loop.py b/test_regress/t/t_opt_life_timing_loop.py
+new file mode 100755
+index 00000000000..19217b26413
+--- /dev/null
++++ b/test_regress/t/t_opt_life_timing_loop.py
+@@ -0,0 +1,18 @@
++#!/usr/bin/env python3
++# DESCRIPTION: Verilator: Verilog Test driver/expect definition
++#
++# Copyright 2025 by Wilson Snyder. This program is free software; you
++# can redistribute it and/or modify it under the terms of either the GNU
++# Lesser General Public License Version 3 or the Perl Artistic License
++# Version 2.0.
++# SPDX-License-Identifier: LGPL-3.0-only OR Artistic-2.0
++
++import vltest_bootstrap
++
++test.scenarios('vlt_all')
++
++test.compile(verilator_flags2=["--timing", "--binary"])
++
++test.execute()
++
++test.passes()
+diff --git a/test_regress/t/t_opt_life_timing_loop.v b/test_regress/t/t_opt_life_timing_loop.v
+new file mode 100644
+index 00000000000..c2d1e36bb17
+--- /dev/null
++++ b/test_regress/t/t_opt_life_timing_loop.v
+@@ -0,0 +1,75 @@
++// DESCRIPTION: Verilator: Verilog Test module
++//
++// This file ONLY is placed under the Creative Commons Public Domain, for
++// any use, without warranty, 2025 by Wilson Snyder.
++// SPDX-License-Identifier: CC0-1.0
++
++// verilog_format: off
++`define stop $stop
++`define checkd(gotv,expv) do if ((gotv) !== (expv)) begin $write("%t %%Error: %s:%0d:  got=%0d exp=%0d\n", $time, `__FILE__,`__LINE__, (gotv), (expv)); `stop; end while(0);
++// verilog_format: on
++
++module t;
++
++  bit clk = 0;
++  always #10 clk = ~clk;
++
++  // Case A
++  bit [3:0] cnt_A = 0;
++  task task_A();
++    $display("%t %m enter", $time);
++    cnt_A = 0;
++    repeat (2) @(posedge clk);
++    for (int i = 0; i < 8; i++) begin : loop
++      $display("%t %m inc %d", $time, i);
++      ++cnt_A;
++      repeat (2) @(posedge clk);
++    end
++    $display("%t %m inc final", $time);
++    ++cnt_A;
++    repeat (2) @(posedge clk);
++    $display("%t %m exit", $time);
++  endtask
++
++  // Case B - Same, with 'repeat' unrolled
++  bit [3:0] cnt_B = 0;
++  task task_B();
++    $display("%t %m enter", $time);
++    cnt_B = 0;
++    @(posedge clk);
++    @(posedge clk);
++    for (int i = 0; i < 8; i++) begin : loop
++      ++cnt_B;
++      @(posedge clk);
++      @(posedge clk);
++    end
++    $display("%t %m inc final", $time);
++    ++cnt_B;
++    @(posedge clk);
++    @(posedge clk);
++    $display("%t %m exit", $time);
++  endtask
++
++  initial begin
++    task_A();
++    $display("%t taks_A return 1", $time);
++    task_A();
++    $display("%t taks_A return 2", $time);
++  end
++
++  initial begin
++    task_B();
++    $display("%t taks_B return 1", $time);
++    task_B();
++    $display("%t taks_B return 2", $time);
++
++    #100;
++    $write("*-* All Finished *-*\n");
++    $finish;
++  end
++
++  always_ff @(posedge clk) begin
++    #1 `checkd(cnt_A, cnt_B);
++  end
++
++endmodule
+
+From e0e2e0fdacebdc4cd9373f780f61a15fb43422a4 Mon Sep 17 00:00:00 2001
+From: github action <action@example.com>
+Date: Sat, 25 Oct 2025 16:27:56 +0000
+Subject: [PATCH 2/2] Apply 'make format'
+
+---
+ src/V3Life.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/V3Life.cpp b/src/V3Life.cpp
+index f0d592b1c98..938281e32d5 100644
+--- a/src/V3Life.cpp
++++ b/src/V3Life.cpp
+@@ -278,7 +278,7 @@ class LifeBlock final {
+ class LifeVisitor final : public VNVisitor {
+     // STATE
+     LifeState* const m_statep;  // Current state
+-    bool m_containsTiming = false; // Statement contains timing control
++    bool m_containsTiming = false;  // Statement contains timing control
+     bool m_sideEffect = false;  // Side effects discovered in assign RHS
+     bool m_noopt = false;  // Disable optimization of variables in this block
+     bool m_tracingCall = false;  // Iterating into a CCall to a CFunc

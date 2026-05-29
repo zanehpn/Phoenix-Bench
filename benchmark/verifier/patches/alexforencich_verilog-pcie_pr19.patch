@@ -1,0 +1,37 @@
+From 5e708ca4c7e3d3204574c5b65e68d7a231b07a1a Mon Sep 17 00:00:00 2001
+From: Ulrich Langenbach <ulrich.langenbach@missinglinkelectronics.com>
+Date: Fri, 10 Dec 2021 17:39:49 +0100
+Subject: [PATCH] Fix multi-driven net issue when S_RAM_SEL_WIDTH = 0
+
+the same as fixed in verilog-pcie 3a124837115e51e2273ab7d1c61d80ee01f891c1
+in dma_ram_demux_rd.v adapted to module dma_ram_demux_wr.v
+---
+ rtl/dma_ram_demux_wr.v | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/rtl/dma_ram_demux_wr.v b/rtl/dma_ram_demux_wr.v
+index a40c28a..2d4466b 100644
+--- a/rtl/dma_ram_demux_wr.v
++++ b/rtl/dma_ram_demux_wr.v
+@@ -132,7 +132,9 @@ for (n = 0; n < SEG_COUNT; n = n + 1) begin
+     wire [PORTS-1:0]                 seg_ram_wr_cmd_ready;
+ 
+     for (p = 0; p < PORTS; p = p + 1) begin
+-        assign ram_wr_cmd_sel[(p*SEG_COUNT+n)*S_RAM_SEL_WIDTH +: S_RAM_SEL_WIDTH_INT] = seg_ram_wr_cmd_sel[p*S_RAM_SEL_WIDTH +: S_RAM_SEL_WIDTH_INT];
++        if (S_RAM_SEL_WIDTH > 0) begin
++            assign ram_wr_cmd_sel[(p*SEG_COUNT+n)*S_RAM_SEL_WIDTH +: S_RAM_SEL_WIDTH_INT] = seg_ram_wr_cmd_sel[p*S_RAM_SEL_WIDTH +: S_RAM_SEL_WIDTH_INT];
++        end
+         assign ram_wr_cmd_be[(p*SEG_COUNT+n)*SEG_BE_WIDTH +: SEG_BE_WIDTH] = seg_ram_wr_cmd_be[p*SEG_BE_WIDTH +: SEG_BE_WIDTH];
+         assign ram_wr_cmd_addr[(p*SEG_COUNT+n)*SEG_ADDR_WIDTH +: SEG_ADDR_WIDTH] = seg_ram_wr_cmd_addr[p*SEG_ADDR_WIDTH +: SEG_ADDR_WIDTH];
+         assign ram_wr_cmd_data[(p*SEG_COUNT+n)*SEG_DATA_WIDTH +: SEG_DATA_WIDTH] = seg_ram_wr_cmd_data[p*SEG_DATA_WIDTH +: SEG_DATA_WIDTH];
+@@ -140,6 +142,10 @@ for (n = 0; n < SEG_COUNT; n = n + 1) begin
+         assign seg_ram_wr_cmd_ready[p] = ram_wr_cmd_ready[p*SEG_COUNT+n];
+     end
+ 
++    if (S_RAM_SEL_WIDTH == 0) begin
++        assign ram_wr_cmd_sel = 0;
++    end
++
+     // internal datapath
+     reg  [S_RAM_SEL_WIDTH-1:0] seg_ram_wr_cmd_sel_int;
+     reg  [SEG_BE_WIDTH-1:0]    seg_ram_wr_cmd_be_int;

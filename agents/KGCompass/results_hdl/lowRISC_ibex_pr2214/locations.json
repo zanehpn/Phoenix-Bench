@@ -1,0 +1,22 @@
+[
+  {
+    "file_path": "rtl/ibex_cs_registers.sv",
+    "reason": "This is the CSR write/side-effect logic. The bug is specifically about `CSR_OP_CLEAR` updates to PMP registers not triggering a pipeline flush, so the place that decodes CSR operations and detects PMP register changes is the most likely source."
+  },
+  {
+    "file_path": "rtl/ibex_controller.sv",
+    "reason": "Pipeline flush generation is typically centralized in the controller. If PMP register writes with `CSR_OP_CLEAR` are not causing a flush, the controller's flush condition may only be checking certain CSR operations or only some registers."
+  },
+  {
+    "file_path": "rtl/ibex_csr.sv",
+    "reason": "This file likely contains the CSR operation sequencing and write-enable plumbing between the CSR file and control logic. A missed `CSR_OP_CLEAR` path for PMP registers could be implemented here or propagated incorrectly from here."
+  },
+  {
+    "file_path": "rtl/ibex_pmp.sv",
+    "reason": "PMP register update detection and the 'PMP changed' signal are likely generated here. If the flush trigger depends on this module's change indication, it may not be asserting a change on clear operations."
+  },
+  {
+    "file_path": "rtl/ibex_core.sv",
+    "reason": "Top-level integration may wire the PMP change/flush signals together. If the issue is a missing connection or an incomplete OR of flush causes, the core top-level is a plausible place to fix it."
+  }
+]

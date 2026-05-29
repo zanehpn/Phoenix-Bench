@@ -1,0 +1,844 @@
+From 44f3a36ec3f032cbc13066cf52b529032178f88e Mon Sep 17 00:00:00 2001
+From: Muneeb <muneebullashariff@gmail.com>
+Date: Mon, 21 Feb 2022 11:54:11 +0530
+Subject: [PATCH] Integrating RAL into the testbench
+
+---
+ sim/questa_sim/makefile                       |   1 -
+ sim/verif_compile.f                           |   6 +
+ .../apb_master_driver_bfm.sv                  |  20 +++-
+ .../apb_master_agent/apb_master_adapter.sv    |  94 +++++++++++++++
+ .../apb_master_agent/apb_master_agent.sv      |   8 +-
+ .../apb_master_agent/apb_master_pkg.sv        |   1 +
+ .../apb_master_seq_item_converter.sv          |   6 +-
+ src/dv/hvl_top/env/apb_reg_predictor.sv       |  50 ++++++++
+ .../hvl_top/env/pulpino_spi_master_ip_env.sv  |  20 ++++
+ .../env/pulpino_spi_master_ip_env_config.sv   |   4 +
+ .../env/pulpino_spi_master_ip_env_pkg.sv      |   3 +
+ ...pulpino_spi_master_ip_virtual_sequencer.sv |   4 +
+ src/dv/hvl_top/test/apb_simple_reg_test.sv    | 102 +++++++++++++++++
+ .../test/pulpino_spi_master_ip_base_test.sv   |  10 ++
+ .../test/pulpino_spi_master_ip_test_pkg.sv    |   7 ++
+ .../test/reg_sequences/apb_reg_seq_pkg.sv     |  31 +++++
+ .../apb_simple_write_read_reg_seq.sv          | 108 ++++++++++++++++++
+ .../pulpino_spi_master_ip_virtual_seq_pkg.sv  |   4 +
+ .../virtual_simple_reg_seq.sv                 |  57 +++++++++
+ 19 files changed, 525 insertions(+), 11 deletions(-)
+ create mode 100644 src/dv/hvl_top/apb_master_agent/apb_master_adapter.sv
+ create mode 100644 src/dv/hvl_top/env/apb_reg_predictor.sv
+ create mode 100644 src/dv/hvl_top/test/apb_simple_reg_test.sv
+ create mode 100644 src/dv/hvl_top/test/reg_sequences/apb_reg_seq_pkg.sv
+ create mode 100644 src/dv/hvl_top/test/reg_sequences/apb_simple_write_read_reg_seq.sv
+ create mode 100644 src/dv/hvl_top/test/virtual_sequences/virtual_simple_reg_seq.sv
+
+diff --git a/sim/questa_sim/makefile b/sim/questa_sim/makefile
+index 7622f10..96cf504 100755
+--- a/sim/questa_sim/makefile
++++ b/sim/questa_sim/makefile
+@@ -124,7 +124,6 @@ simulate:
+ 	vsim -vopt \
+ 	work.hvl_top \
+ 	work.hdl_top \
+-	work.apb_spi_master \
+ 	-voptargs=+acc=npr \
+ 	-assertdebug \
+ 	+UVM_TESTNAME=$(test) \
+diff --git a/sim/verif_compile.f b/sim/verif_compile.f
+index ebac7db..4ce3333 100644
+--- a/sim/verif_compile.f
++++ b/sim/verif_compile.f
+@@ -1,15 +1,21 @@
+ +incdir+../../src/dv/hvl_top/test/sequences/master_sequences/
+ +incdir+../../src/dv/hvl_top/test/sequences/slave_sequences/
+++incdir+../../src/dv/hvl_top/test/reg_sequences/
+ +incdir+../../src/dv/hvl_top/test/virtual_sequences/
+ +incdir+../../src/dv/hvl_top/apb_master_agent/
+ +incdir+../../src/dv/hvl_top/spi_slave_agent/
+ +incdir+../../src/dv/hvl_top/env/virtual_sequencer/
+ +incdir+../../src/dv/hvl_top/env/
+ +incdir+../../src/dv/hvl_top/test/
+++incdir+../../src/dv/systemRDL
+++incdir+../../src/dv/systemRDL/output
+ ../../src/dv/globals/apb_master_global_pkg.sv
+ ../../src/dv/globals/spi_slave_global_pkg.sv
+ ../../src/dv/hvl_top/apb_master_agent/apb_master_pkg.sv
+ ../../src/dv/hvl_top/spi_slave_agent/spi_slave_pkg.sv
++../../src/dv/systemRDL/output/spi_master_defines_pkg.svh
++../../src/dv/systemRDL/output/spi_master_uvm_pkg.sv
++../../src/dv/hvl_top/test/reg_sequences/apb_reg_seq_pkg.sv
+ ../../src/dv/hvl_top/test/sequences/master_sequences/apb_master_seq_pkg.sv
+ ../../src/dv/hvl_top/test/sequences/slave_sequences/spi_slave_seq_pkg.sv
+ ../../src/dv/hvl_top/env/pulpino_spi_master_ip_env_pkg.sv
+diff --git a/src/dv/hdl_top/apb_master_agent_bfm/apb_master_driver_bfm.sv b/src/dv/hdl_top/apb_master_agent_bfm/apb_master_driver_bfm.sv
+index 6945afb..5fa0157 100644
+--- a/src/dv/hdl_top/apb_master_agent_bfm/apb_master_driver_bfm.sv
++++ b/src/dv/hdl_top/apb_master_agent_bfm/apb_master_driver_bfm.sv
+@@ -154,10 +154,13 @@ interface apb_master_driver_bfm (input  bit   pclk,
+     penable   <= 1'b1;
+     
+     `uvm_info("DEBUG_NADEEM",$sformatf("pready=%0d",pready), UVM_HIGH);
+-    if(pready == 0) begin
+       detect_wait_state(data_packet);
+-    end
+-    `uvm_info("DEBUG_MSHA",$sformatf("wait_apb_access_state=%0d and state=%0d",state.name(),state), UVM_NONE);
++    // MSHA: if(pready == 0) begin
++    // MSHA:   detect_wait_state(data_packet);
++    // MSHA: end
++    // MSHA: `uvm_info("DEBUG_MSHA",$sformatf("wait_apb_access_state=%0d and state=%0d",state.name(),state), UVM_NONE);
++
++
+   endtask: waiting_in_access_state
+ 
+   //--------------------------------------------------------------------------------------------
+@@ -169,12 +172,13 @@ interface apb_master_driver_bfm (input  bit   pclk,
+   //--------------------------------------------------------------------------------------------
+   task detect_wait_state(inout apb_transfer_char_s data_packet);
+    
+-    @(posedge pclk);
+-    `uvm_info(name,$sformatf("DETECT_WAIT_STATE"),UVM_HIGH);
++     @(posedge pclk);
++     `uvm_info(name,$sformatf("DETECT_WAIT_STATE"),UVM_HIGH);
+ 
+     while(pready==0) begin
+       `uvm_info(name,"WAIT_STATE_DETECTED",UVM_HIGH);
+       @(posedge pclk);
++      state=WAIT_STATE;
+       data_packet.no_of_wait_states++;
+     end
+ 
+@@ -185,7 +189,11 @@ interface apb_master_driver_bfm (input  bit   pclk,
+     end
+ 
+     data_packet.pslverr = pslverr;
+-    state=WAIT_STATE;
++
++    // TODO(mshariff): Add logic for making it work for ACCESS to SETUP phase
++    state=IDLE;
++    penable <= 1'b0;
++    pselx <= 'b0;
+ 
+ //     `uvm_info("DEBUG_MSHA", $sformatf("drive_apb_access state = %0s and state = %0d",
+ //                                      state.name(), state), UVM_NONE);
+diff --git a/src/dv/hvl_top/apb_master_agent/apb_master_adapter.sv b/src/dv/hvl_top/apb_master_agent/apb_master_adapter.sv
+new file mode 100644
+index 0000000..1697744
+--- /dev/null
++++ b/src/dv/hvl_top/apb_master_agent/apb_master_adapter.sv
+@@ -0,0 +1,94 @@
++`ifndef APB_MASTER_ADAPTER_INCLUDED_
++`define APB_MASTER_ADAPTER_INCLUDED_
++
++//--------------------------------------------------------------------------------------------
++// Class: apb_master_adapter
++// Converts register transactions to APB transactions and vice-versa
++//--------------------------------------------------------------------------------------------
++class apb_master_adapter extends uvm_reg_adapter;
++  `uvm_object_utils(apb_master_adapter)
++
++  //-------------------------------------------------------
++  // Externally defined Tasks and Functions
++  //-------------------------------------------------------
++  extern function new(string name = "apb_master_adapter");
++  extern function uvm_sequence_item reg2bus( const ref uvm_reg_bus_op rw );
++  extern function void bus2reg( uvm_sequence_item bus_item,
++                              ref uvm_reg_bus_op rw );
++endclass : apb_master_adapter
++
++//--------------------------------------------------------------------------------------------
++// Construct: new
++//
++// Parameters:
++//  name - apb_master_adapter
++//--------------------------------------------------------------------------------------------
++function apb_master_adapter::new(string name = "apb_master_adapter");
++  super.new(name);
++
++  // Set default values for the two variables based on bus protocol
++  // APB does not support either, so both are turned off
++  supports_byte_enable = 0;
++  provides_responses   = 0;
++endfunction : new
++
++//--------------------------------------------------------------------------------------------
++// Function : reg2bus
++// Used for converting register sequences to apb bus transactions
++//--------------------------------------------------------------------------------------------
++function uvm_sequence_item apb_master_adapter::reg2bus( const ref uvm_reg_bus_op rw );
++  apb_master_tx apb_tx
++            = apb_master_tx::type_id::create("apb_master_tx");
++
++  if ( rw.kind == UVM_READ )
++  begin
++    apb_tx.pwrite = READ;
++  end
++  else if ( rw.kind == UVM_WRITE ) 
++  begin 
++    apb_tx.pwrite = WRITE;
++    apb_tx.pwdata = rw.data;
++    apb_tx.pstrb  = 4'b1111; //4bytes 
++  end
++
++  apb_tx.paddr = rw.addr;
++
++  // Assuming these address range falls in the slave0 domain
++  // TODO(mshariff): Need to add more logic to be intelligent to pick correct pselx value
++  apb_tx.pselx = SLAVE_0; 
++
++  `uvm_info(get_type_name(), $sformatf("The converted reg2bus packet is %s\n",apb_tx.sprint()), UVM_HIGH);
++
++  return apb_tx;
++endfunction: reg2bus
++
++//--------------------------------------------------------------------------------------------
++// Function: bus2reg
++// Used for converting apb bus transactions into register transactions
++//--------------------------------------------------------------------------------------------
++function void apb_master_adapter::bus2reg( uvm_sequence_item bus_item,
++                                          ref uvm_reg_bus_op rw );
++  // MSHA:jelly_bean_transaction jb_tx;
++  apb_master_tx apb_tx; 
++
++  if ( ! $cast( apb_tx, bus_item ) ) begin
++     `uvm_fatal( get_name(),
++                 "bus_item is not of the apb_master_tx type." )
++     return;
++  end
++
++  // Assuming these address range falls in the slave0 domain
++  // TODO(mshariff): Need to add more logic to be intelligent to pick correct pselx value
++  apb_tx.pselx = SLAVE_0; 
++
++  rw.kind = ( apb_tx.pwrite == READ ) ? UVM_READ : UVM_WRITE;
++  rw.addr = apb_tx.paddr;
++  rw.data = apb_tx.prdata;
++  rw.status = UVM_IS_OK;
++
++  `uvm_info(get_type_name(), $sformatf("The converted bus2reg packet is %s\n",apb_tx.sprint()), UVM_HIGH);
++
++endfunction: bus2reg
++
++`endif
++
+diff --git a/src/dv/hvl_top/apb_master_agent/apb_master_agent.sv b/src/dv/hvl_top/apb_master_agent/apb_master_agent.sv
+index 3dd67c1..f6808ec 100644
+--- a/src/dv/hvl_top/apb_master_agent/apb_master_agent.sv
++++ b/src/dv/hvl_top/apb_master_agent/apb_master_agent.sv
+@@ -25,9 +25,13 @@ class apb_master_agent extends uvm_agent;
+   //Declaring a handle for apb_master monitor proxy 
+   apb_master_monitor_proxy apb_master_mon_proxy_h;
+ 
+-  // Variable: master_coverage
++  // Variable: apb_master_cov_h
+   // Decalring a handle for master_coverage
+   apb_master_coverage apb_master_cov_h;
++
++  // Variable: apb_reg_adapter_h
++  // Declaring a handle for apb_master_adapter
++  apb_master_adapter apb_reg_adapter_h;
+     
+   //-------------------------------------------------------
+   // Externally defined Tasks and Functions
+@@ -81,6 +85,8 @@ function void apb_master_agent::build_phase(uvm_phase phase);
+   if(apb_master_agent_cfg_h.has_coverage) begin
+     apb_master_cov_h = apb_master_coverage::type_id::create("apb_master_cov_h",this);
+   end
++
++  apb_reg_adapter_h = apb_master_adapter::type_id::create("apb_reg_adapter_h"); 
+ endfunction : build_phase
+ 
+ //--------------------------------------------------------------------------------------------
+diff --git a/src/dv/hvl_top/apb_master_agent/apb_master_pkg.sv b/src/dv/hvl_top/apb_master_agent/apb_master_pkg.sv
+index dc8cffa..95d3954 100644
+--- a/src/dv/hvl_top/apb_master_agent/apb_master_pkg.sv
++++ b/src/dv/hvl_top/apb_master_agent/apb_master_pkg.sv
+@@ -23,6 +23,7 @@ package apb_master_pkg;
+   `include "apb_master_tx.sv"
+   `include "apb_master_seq_item_converter.sv"
+   `include "apb_master_cfg_converter.sv"
++  `include "apb_master_adapter.sv"
+   `include "apb_master_sequencer.sv"
+   `include "apb_master_driver_proxy.sv"
+   `include "apb_master_monitor_proxy.sv"
+diff --git a/src/dv/hvl_top/apb_master_agent/apb_master_seq_item_converter.sv b/src/dv/hvl_top/apb_master_agent/apb_master_seq_item_converter.sv
+index 9496670..6664c4e 100644
+--- a/src/dv/hvl_top/apb_master_agent/apb_master_seq_item_converter.sv
++++ b/src/dv/hvl_top/apb_master_agent/apb_master_seq_item_converter.sv
+@@ -13,7 +13,7 @@ class apb_master_seq_item_converter extends uvm_object;
+   //-------------------------------------------------------
+   extern function new(string name = "apb_master_seq_item_converter");
+   extern static function void from_class(input apb_master_tx input_conv, output apb_transfer_char_s output_conv);
+-  extern static function void to_class(input apb_transfer_char_s input_conv, output apb_master_tx
++  extern static function void to_class(input apb_transfer_char_s input_conv, ref apb_master_tx
+   output_conv_h);
+   extern function void do_print(uvm_printer printer);
+ 
+@@ -82,8 +82,8 @@ endfunction: from_class
+ // name - apb_master_tx, apb_transfer_char_s
+ //--------------------------------------------------------------------------------------------
+ function void apb_master_seq_item_converter::to_class(input apb_transfer_char_s input_conv, 
+-                                                      output apb_master_tx output_conv_h);
+-  output_conv_h = new();
++                                                      ref apb_master_tx output_conv_h);
++  //output_conv_h = new();
+ 
+   `uvm_info("apb_master_seq_item_conv",$sformatf("------------------------------------------------"),UVM_HIGH);
+   
+diff --git a/src/dv/hvl_top/env/apb_reg_predictor.sv b/src/dv/hvl_top/env/apb_reg_predictor.sv
+new file mode 100644
+index 0000000..448313c
+--- /dev/null
++++ b/src/dv/hvl_top/env/apb_reg_predictor.sv
+@@ -0,0 +1,50 @@
++`ifndef APB_REG_PREDICTOR_INCLUDED_
++`define APB_REG_PREDICTOR_INCLUDED_
++
++//--------------------------------------------------------------------------------------------
++// Class: apb_reg_predictor
++// Used for updating the RAL in explicit prediction model 
++//--------------------------------------------------------------------------------------------
++class apb_reg_predictor #(type BUSTYPE=int) extends uvm_reg_predictor #(BUSTYPE);
++  `uvm_component_param_utils(apb_reg_predictor#(BUSTYPE))
++
++  //-------------------------------------------------------
++  // Externally defined Tasks and Functions
++  //-------------------------------------------------------
++  extern function new(string name = "apb_reg_predictor", uvm_component parent);
++  extern function void write(BUSTYPE tr);
++endclass : apb_reg_predictor
++
++//--------------------------------------------------------------------------------------------
++// Construct: new
++//
++// Parameters:
++//  name - apb_reg_predictor
++//--------------------------------------------------------------------------------------------
++function apb_reg_predictor::new(string name = "apb_reg_predictor", uvm_component parent);
++  super.new(name, parent);
++endfunction : new
++
++//--------------------------------------------------------------------------------------------
++// Function: write
++// Over-riding the function to explicitly update the RAL and 
++// to call the sample_values method for coverage
++//--------------------------------------------------------------------------------------------
++function void apb_reg_predictor::write(BUSTYPE tr);
++  uvm_reg rg;
++  uvm_reg_bus_op rw;
++
++  // Calling the parent function
++  super.write(tr);
++
++  // MSHA: // Getting the register handle
++  // MSHA: adapter.bus2reg(tr,rw);
++  // MSHA: rg = map.get_reg_by_offset(rw.addr,(rw.kind == UVM_READ));
++
++  // MSHA: // Sampling the coverage
++  // MSHA: rg.sample_values();
++    
++endfunction: write
++
++`endif
++
+diff --git a/src/dv/hvl_top/env/pulpino_spi_master_ip_env.sv b/src/dv/hvl_top/env/pulpino_spi_master_ip_env.sv
+index 58549a7..9452345 100644
+--- a/src/dv/hvl_top/env/pulpino_spi_master_ip_env.sv
++++ b/src/dv/hvl_top/env/pulpino_spi_master_ip_env.sv
+@@ -36,6 +36,11 @@ class pulpino_spi_master_ip_env extends uvm_env;
+   // Handle for spi slave collector
+   spi_slave_collector spi_slave_coll_h;
+ 
++  // Variable: apb_reg_predictor_h
++  // Handle for apb_reg_predictor#(apb_master_tx)
++  typedef apb_reg_predictor#(apb_master_tx) apb_reg_predictor_t;
++  apb_reg_predictor_t apb_reg_predictor_h;
++
+   // Variable: spi_slave_agent_cfg_h;
+   // Handle for spi slave agent configuration
+   //spi_slave_agent_config spi_slave_agent_cfg_h[];
+@@ -105,6 +110,7 @@ function void pulpino_spi_master_ip_env::build_phase(uvm_phase phase);
+   apb_master_coll_h = apb_master_collector::type_id::create("apb_master_coll_h",this);
+   spi_slave_coll_h  = spi_slave_collector::type_id::create("spi_slave_coll_h",this);
+ 
++  apb_reg_predictor_h = apb_reg_predictor_t::type_id::create("apb_reg_predictor_h", this);
+ endfunction : build_phase
+ 
+ //--------------------------------------------------------------------------------------------
+@@ -121,6 +127,8 @@ function void pulpino_spi_master_ip_env::connect_phase(uvm_phase phase);
+     foreach(spi_slave_agent_h[i]) begin
+       pulpino_spi_master_ip_virtual_seqr_h.spi_slave_seqr_h = spi_slave_agent_h[i].spi_slave_seqr_h;
+     end
++
++    pulpino_spi_master_ip_virtual_seqr_h.env_config_h = pulpino_spi_master_ip_env_config_h; 
+   end
+   
+   apb_master_agent_h.apb_master_mon_proxy_h.apb_master_analysis_port.connect(apb_master_coll_h.apb_master_coll_imp_port);
+@@ -136,6 +144,18 @@ function void pulpino_spi_master_ip_env::connect_phase(uvm_phase phase);
+   //foreach(spi_slave_agent_h[i]) begin
+   //  spi_slave_agent_h[i].slave_mon_proxy_h.slave_analysis_port.connect(pulpino_spi_master_ip_scoreboard_h.spi_slave_analysis_fifo.analysis_export);
+   //end
++
++  // RAL connections
++  if ( pulpino_spi_master_ip_env_config_h.spi_master_reg_block.get_parent() == null ) begin // if the top-level env
++     pulpino_spi_master_ip_env_config_h.spi_master_reg_block.default_map.set_sequencer( 
++                                                  .sequencer( apb_master_agent_h.apb_master_seqr_h ),
++                                                  .adapter( apb_master_agent_h.apb_reg_adapter_h ) );
++  end
++  pulpino_spi_master_ip_env_config_h.spi_master_reg_block.default_map.set_auto_predict( .on( 0 ) );
++  apb_reg_predictor_h.map  = pulpino_spi_master_ip_env_config_h.spi_master_reg_block.default_map;
++  apb_reg_predictor_h.adapter = apb_master_agent_h.apb_reg_adapter_h;
++  apb_master_agent_h.apb_master_mon_proxy_h.apb_master_analysis_port.connect( apb_reg_predictor_h.bus_in );
++
+   
+   endfunction : connect_phase
+ 
+diff --git a/src/dv/hvl_top/env/pulpino_spi_master_ip_env_config.sv b/src/dv/hvl_top/env/pulpino_spi_master_ip_env_config.sv
+index fc02020..527d44e 100644
+--- a/src/dv/hvl_top/env/pulpino_spi_master_ip_env_config.sv
++++ b/src/dv/hvl_top/env/pulpino_spi_master_ip_env_config.sv
+@@ -28,6 +28,10 @@ class pulpino_spi_master_ip_env_config extends uvm_object;
+   // Dynamic array of slave agnet configuration handles
+   spi_slave_agent_config spi_slave_agent_cfg_h[];
+ 
++  // Variable: spi_master_reg_block
++  // Registers block handle for spi master module
++  spi_master_apb_if spi_master_reg_block;
++
+   //-------------------------------------------------------
+   // Externally defined Tasks and Functions
+   //-------------------------------------------------------
+diff --git a/src/dv/hvl_top/env/pulpino_spi_master_ip_env_pkg.sv b/src/dv/hvl_top/env/pulpino_spi_master_ip_env_pkg.sv
+index ec72fd8..09d5457 100644
+--- a/src/dv/hvl_top/env/pulpino_spi_master_ip_env_pkg.sv
++++ b/src/dv/hvl_top/env/pulpino_spi_master_ip_env_pkg.sv
+@@ -20,11 +20,14 @@ package pulpino_spi_master_ip_env_pkg;
+   import spi_slave_global_pkg::*;
+   import apb_master_pkg::*;
+   import spi_slave_pkg::*;
++  import spi_master_defines_pkg::*;
++  import spi_master_uvm_pkg::*;
+ 
+   //-------------------------------------------------------
+   // Including the required files
+   //-------------------------------------------------------
+   `include "pulpino_spi_master_ip_env_config.sv"
++  `include "apb_reg_predictor.sv"
+   `include "pulpino_spi_master_ip_virtual_sequencer.sv"
+   `include "pulpino_spi_master_ip_scoreboard.sv"
+   `include "apb_master_collector.sv"
+diff --git a/src/dv/hvl_top/env/virtual_sequencer/pulpino_spi_master_ip_virtual_sequencer.sv b/src/dv/hvl_top/env/virtual_sequencer/pulpino_spi_master_ip_virtual_sequencer.sv
+index e96700f..210ba64 100644
+--- a/src/dv/hvl_top/env/virtual_sequencer/pulpino_spi_master_ip_virtual_sequencer.sv
++++ b/src/dv/hvl_top/env/virtual_sequencer/pulpino_spi_master_ip_virtual_sequencer.sv
+@@ -16,6 +16,10 @@ class pulpino_spi_master_ip_virtual_sequencer extends uvm_sequencer#(uvm_sequenc
+   // Declaring slave sequencer handle
+   spi_slave_sequencer spi_slave_seqr_h;
+ 
++  //Variable: env_config_h
++  //Declaring handle for pulpino_spi_master_ip_env_config_object
++  pulpino_spi_master_ip_env_config env_config_h;  
++
+   //-------------------------------------------------------
+   // Externally defined Tasks and Functions
+   //-------------------------------------------------------
+diff --git a/src/dv/hvl_top/test/apb_simple_reg_test.sv b/src/dv/hvl_top/test/apb_simple_reg_test.sv
+new file mode 100644
+index 0000000..7ae095d
+--- /dev/null
++++ b/src/dv/hvl_top/test/apb_simple_reg_test.sv
+@@ -0,0 +1,102 @@
++`ifndef APB_SIMPLE_REG_TEST_INCLUDED_
++`define APB_SIMPLE_REG_TEST_INCLUDED_
++
++//--------------------------------------------------------------------------------------------
++// Class: apb_simple_reg_test
++// <Description_here>
++//--------------------------------------------------------------------------------------------
++class apb_simple_reg_test extends pulpino_spi_master_ip_base_test;
++  `uvm_component_utils(apb_simple_reg_test)
++
++  //-------------------------------------------------------
++  // Externally defined Tasks and Functions
++  //-------------------------------------------------------
++  extern function new(string name = "apb_simple_reg_test", uvm_component parent = null);
++  extern virtual function void build_phase(uvm_phase phase);
++  extern virtual function void connect_phase(uvm_phase phase);
++  extern virtual function void end_of_elaboration_phase(uvm_phase phase);
++  extern virtual function void start_of_simulation_phase(uvm_phase phase);
++  extern virtual task run_phase(uvm_phase phase);
++
++endclass : apb_simple_reg_test
++
++//--------------------------------------------------------------------------------------------
++// Construct: new
++//
++// Parameters:
++//  name - apb_simple_reg_test
++//  parent - parent under which this component is created
++//--------------------------------------------------------------------------------------------
++function apb_simple_reg_test::new(string name = "apb_simple_reg_test",
++                                 uvm_component parent = null);
++  super.new(name, parent);
++endfunction : new
++
++//--------------------------------------------------------------------------------------------
++// Function: build_phase
++// <Description_here>
++//
++// Parameters:
++//  phase - uvm phase
++//--------------------------------------------------------------------------------------------
++function void apb_simple_reg_test::build_phase(uvm_phase phase);
++  super.build_phase(phase);
++endfunction : build_phase
++
++//--------------------------------------------------------------------------------------------
++// Function: connect_phase
++// <Description_here>
++//
++// Parameters:
++//  phase - uvm phase
++//--------------------------------------------------------------------------------------------
++function void apb_simple_reg_test::connect_phase(uvm_phase phase);
++  super.connect_phase(phase);
++endfunction : connect_phase
++
++//--------------------------------------------------------------------------------------------
++// Function: end_of_elaboration_phase
++// <Description_here>
++//
++// Parameters:
++//  phase - uvm phase
++//--------------------------------------------------------------------------------------------
++function void apb_simple_reg_test::end_of_elaboration_phase(uvm_phase phase);
++  super.end_of_elaboration_phase(phase);
++endfunction  : end_of_elaboration_phase
++
++//--------------------------------------------------------------------------------------------
++// Function: start_of_simulation_phase
++// <Description_here>
++//
++// Parameters:
++//  phase - uvm phase
++//--------------------------------------------------------------------------------------------
++function void apb_simple_reg_test::start_of_simulation_phase(uvm_phase phase);
++  super.start_of_simulation_phase(phase);
++endfunction : start_of_simulation_phase
++
++//--------------------------------------------------------------------------------------------
++// Task: run_phase
++// <Description_here>
++//
++// Parameters:
++//  phase - uvm phase
++//--------------------------------------------------------------------------------------------
++task apb_simple_reg_test::run_phase(uvm_phase phase);
++  virtual_simple_reg_seq reg_vseq_h;
++
++  reg_vseq_h = virtual_simple_reg_seq::type_id::create("reg_vseq_h");
++
++  `uvm_info(get_type_name(),$sformatf("apb_simple_reg_test"),UVM_LOW);
++
++  phase.raise_objection(this);
++
++  reg_vseq_h.start(pulpino_spi_master_ip_env_h.pulpino_spi_master_ip_virtual_seqr_h); 
++
++  phase.drop_objection(this);
++
++endtask : run_phase
++
++`endif
++
+diff --git a/src/dv/hvl_top/test/pulpino_spi_master_ip_base_test.sv b/src/dv/hvl_top/test/pulpino_spi_master_ip_base_test.sv
+index d35fe3f..bb99584 100644
+--- a/src/dv/hvl_top/test/pulpino_spi_master_ip_base_test.sv
++++ b/src/dv/hvl_top/test/pulpino_spi_master_ip_base_test.sv
+@@ -18,6 +18,10 @@ class pulpino_spi_master_ip_base_test extends uvm_test;
+   //Declaring a handle for env_cfg_h
+   pulpino_spi_master_ip_env_config pulpino_spi_master_ip_env_cfg_h;
+ 
++  // Variable: spi_master_reg_block
++  // Registers block for spi master module
++  spi_master_apb_if spi_master_reg_block;
++
+   //-------------------------------------------------------
+   // Externally defined Tasks and Functions
+   //-------------------------------------------------------
+@@ -80,6 +84,12 @@ function void pulpino_spi_master_ip_base_test::setup_pulpino_spi_master_ip_env_c
+   uvm_config_db#(pulpino_spi_master_ip_env_config)::set(this,"*","pulpino_spi_master_ip_env_config",pulpino_spi_master_ip_env_cfg_h);
+   //`uvm_info(get_type_name(),$sformatf("\npulpino_spi_master_ip_ENV_CONFIG\n%s",pulpino_spi_master_ip_env_cfg_h.sprint()),UVM_LOW);
+ 
++  // Creation of RAL
++  spi_master_reg_block = spi_master_apb_if::type_id::create("spi_master_reg_block");
++  spi_master_reg_block.build();
++  spi_master_reg_block.lock_model();
++
++  pulpino_spi_master_ip_env_cfg_h.spi_master_reg_block = this.spi_master_reg_block;
+ endfunction : setup_pulpino_spi_master_ip_env_config
+ 
+ //--------------------------------------------------------------------------------------------
+diff --git a/src/dv/hvl_top/test/pulpino_spi_master_ip_test_pkg.sv b/src/dv/hvl_top/test/pulpino_spi_master_ip_test_pkg.sv
+index 5d5f9cb..b737dc3 100644
+--- a/src/dv/hvl_top/test/pulpino_spi_master_ip_test_pkg.sv
++++ b/src/dv/hvl_top/test/pulpino_spi_master_ip_test_pkg.sv
+@@ -22,6 +22,8 @@ package pulpino_spi_master_ip_test_pkg;
+   import apb_master_pkg::*;
+   import spi_slave_pkg::*;
+   import pulpino_spi_master_ip_env_pkg::*;
++  import spi_master_uvm_pkg::*;
++  import spi_master_defines_pkg::*;
+   import apb_master_seq_pkg::*;
+   import spi_slave_seq_pkg::*;
+   import pulpino_spi_master_ip_virtual_seq_pkg::*;
+@@ -49,6 +51,11 @@ package pulpino_spi_master_ip_test_pkg;
+ 
+   `include "pulpino_spi_master_ip_rand_test.sv"
+ 
++  //-------------------------------------------------------
++  // Register tests
++  //-------------------------------------------------------
++  `include "apb_simple_reg_test.sv"
++
+   endpackage : pulpino_spi_master_ip_test_pkg
+ 
+ `endif
+diff --git a/src/dv/hvl_top/test/reg_sequences/apb_reg_seq_pkg.sv b/src/dv/hvl_top/test/reg_sequences/apb_reg_seq_pkg.sv
+new file mode 100644
+index 0000000..f142896
+--- /dev/null
++++ b/src/dv/hvl_top/test/reg_sequences/apb_reg_seq_pkg.sv
+@@ -0,0 +1,31 @@
++`ifndef APB_REG_SEQ_PKG_INCLUDED_
++`define APB_REG_SEQ_PKG_INCLUDED_
++
++//--------------------------------------------------------------------------------------------
++// Package : apb_reg_seq_pkg
++// Includes all the master register seq files declared
++//--------------------------------------------------------------------------------------------
++package apb_reg_seq_pkg;
++
++  //-------------------------------------------------------
++  // Importing UVM Pkg
++  //-------------------------------------------------------
++  `include "uvm_macros.svh"
++  import apb_master_global_pkg::*;
++  import spi_slave_global_pkg::*;
++  import uvm_pkg::*;
++  //import apb_master_pkg::*;
++  import spi_master_defines_pkg::*;
++  import spi_master_uvm_pkg::*;
++  
++  //-------------------------------------------------------
++  // Including required apb master seq files
++  //-------------------------------------------------------
++  //`include "apb_master_base_seq.sv"
++  // TODO(mshariff): Need to find a place for complinig spi_master_defines.svh file
++  `include "spi_master_defines.svh"
++
++  `include "apb_simple_write_read_reg_seq.sv"
++endpackage : apb_reg_seq_pkg
++
++`endif
+diff --git a/src/dv/hvl_top/test/reg_sequences/apb_simple_write_read_reg_seq.sv b/src/dv/hvl_top/test/reg_sequences/apb_simple_write_read_reg_seq.sv
+new file mode 100644
+index 0000000..7e0c651
+--- /dev/null
++++ b/src/dv/hvl_top/test/reg_sequences/apb_simple_write_read_reg_seq.sv
+@@ -0,0 +1,108 @@
++`ifndef APB_SIMPLE_WRITE_READ_REG_SEQ_INCLUDED_
++`define APB_SIMPLE_WRITE_READ_REG_SEQ_INCLUDED_
++
++//--------------------------------------------------------------------------------------------
++// Class: apb_simple_write_read_reg_seq
++// Simple register sequence for write and read of registers 
++//--------------------------------------------------------------------------------------------
++class apb_simple_write_read_reg_seq extends uvm_reg_sequence;
++  `uvm_object_utils(apb_simple_write_read_reg_seq)
++
++  //-------------------------------------------------------
++  // Externally defined Tasks and Functions
++  //-------------------------------------------------------
++  extern function new(string name = "apb_simple_write_read_reg_seq");
++  extern task body();
++endclass : apb_simple_write_read_reg_seq
++
++//--------------------------------------------------------------------------------------------
++// Construct: new
++//
++// Parameters:
++//  name - apb_simple_write_read_reg_seq
++//--------------------------------------------------------------------------------------------
++function apb_simple_write_read_reg_seq::new(string name = "apb_simple_write_read_reg_seq");
++  super.new(name);
++endfunction : new
++
++//--------------------------------------------------------------------------------------------
++// Task: body
++// For register access
++//--------------------------------------------------------------------------------------------
++task apb_simple_write_read_reg_seq::body();
++  spi_master_apb_if spi_master_reg_block;
++  uvm_reg_map spi_reg_map;
++
++  uvm_status_e    status;
++  uvm_reg_data_t  wdata;
++  uvm_reg_data_t  rdata;
++
++  $cast( spi_master_reg_block, model );
++
++  //spi_reg_map = spi_master_reg_block.default_map;
++  spi_reg_map = spi_master_reg_block.get_map_by_name("SPI_MASTER_MAP_ABP_IF");
++
++  //-------------------------------------------------------
++  // STATUS Register                                        
++  //-------------------------------------------------------
++
++  // Writing into the register
++  begin
++    bit [3:0] cs_value;
++    cs_value = SLAVE_0;
++    `uvm_info(get_type_name(), $sformatf("Write :: Register cs_value = %0b",cs_value), UVM_LOW)
++
++    // Setting a value 
++    wdata = (wdata & (~ `MASK_STATUS_CS)) | (cs_value << `POS_STATUS_CS);
++    // Setting the required bits
++    wdata = wdata | `MASK_STATUS_RD | `MASK_STATUS_WR; 
++    // Clearing the required bits
++    wdata = wdata & (~`MASK_STATUS_QRD) & (~`MASK_STATUS_QWR);
++
++  end
++  // wdata = 32'h03; 
++  spi_master_reg_block.STATUS.write(.status(status), .value(wdata), .path(UVM_FRONTDOOR), 
++                                    .map(spi_reg_map), .parent(this));
++
++  `uvm_info(get_type_name(), $sformatf("Write :: Register = %0s Data = 32'h%0h",
++                                        spi_master_reg_block.STATUS.get_full_name(),
++                                        wdata), UVM_HIGH);                                   
++
++  // Reading into the register
++  spi_master_reg_block.STATUS.read(.status(status), .value(rdata), .path(UVM_FRONTDOOR), 
++                                   .map(spi_reg_map), .parent(this));
++
++  `uvm_info(get_type_name(), $sformatf("Read :: Register = %0s Data = 32'h%0h",
++                                        spi_master_reg_block.STATUS.get_full_name(),
++                                        rdata), UVM_HIGH);                                   
++
++  //-------------------------------------------------------
++  // CLKDIV Register                                        
++  //-------------------------------------------------------
++  // Writing into the register
++  begin
++    bit [7:0] clkdiv_value;
++    clkdiv_value = 8'd8;
++    wdata = 0;
++    wdata = (wdata & (~ `MASK_CLKDIV_CLKDIV)) | (clkdiv_value << `POS_CLKDIV_CLKDIV);
++  end
++  spi_master_reg_block.CLKDIV.write(.status(status), .value(wdata), .path(UVM_FRONTDOOR), 
++                                    .map(spi_reg_map), .parent(this));
++
++  `uvm_info(get_type_name(), $sformatf("Write :: Register = %0s Data = 32'h%0h",
++                                        spi_master_reg_block.CLKDIV.get_full_name(),
++                                        wdata), UVM_HIGH);                                   
++
++  // Reading into the register
++  spi_master_reg_block.CLKDIV.read(.status(status), .value(rdata), .path(UVM_FRONTDOOR), 
++                                   .map(spi_reg_map), .parent(this));
++
++  `uvm_info(get_type_name(), $sformatf("Read :: Register = %0s Data = 32'h%0h",
++                                        spi_master_reg_block.CLKDIV.get_full_name(),
++                                        rdata), UVM_HIGH);                                   
++endtask: body
++
++
++
++`endif
++
+diff --git a/src/dv/hvl_top/test/virtual_sequences/pulpino_spi_master_ip_virtual_seq_pkg.sv b/src/dv/hvl_top/test/virtual_sequences/pulpino_spi_master_ip_virtual_seq_pkg.sv
+index a5039d8..9f5b500 100644
+--- a/src/dv/hvl_top/test/virtual_sequences/pulpino_spi_master_ip_virtual_seq_pkg.sv
++++ b/src/dv/hvl_top/test/virtual_sequences/pulpino_spi_master_ip_virtual_seq_pkg.sv
+@@ -18,11 +18,13 @@ package pulpino_spi_master_ip_virtual_seq_pkg;
+   import apb_master_seq_pkg::*;
+   import spi_slave_seq_pkg::*;
+   import pulpino_spi_master_ip_env_pkg::*;
++  import apb_reg_seq_pkg::*;
+ 
+   //-------------------------------------------------------
+   // Including required apb master seq files
+   //-------------------------------------------------------
+   `include "pulpino_spi_master_ip_virtual_base_seq.sv"
++  
+   `include "pulpino_spi_master_ip_virtual_basic_write_seq.sv"
+   `include "pulpino_spi_master_ip_virtual_basic_read_seq.sv"
+ 
+@@ -42,6 +44,8 @@ package pulpino_spi_master_ip_virtual_seq_pkg;
+ 
+   `include "pulpino_spi_master_ip_virtual_rand_seq.sv"
+ 
++  // Register virtual sequences
++  `include "virtual_simple_reg_seq.sv"
+ 
+   endpackage : pulpino_spi_master_ip_virtual_seq_pkg
+ 
+diff --git a/src/dv/hvl_top/test/virtual_sequences/virtual_simple_reg_seq.sv b/src/dv/hvl_top/test/virtual_sequences/virtual_simple_reg_seq.sv
+new file mode 100644
+index 0000000..e324b9e
+--- /dev/null
++++ b/src/dv/hvl_top/test/virtual_sequences/virtual_simple_reg_seq.sv
+@@ -0,0 +1,57 @@
++`ifndef VIRTUAL_SIMPLE_REG_SEQ_INCLUDED_
++`define VIRTUAL_SIMPLE_REG_SEQ_INCLUDED_
++
++//--------------------------------------------------------------------------------------------
++// Class: virtual_simple_reg_seq
++// <Description_here>
++//--------------------------------------------------------------------------------------------
++class virtual_simple_reg_seq extends pulpino_spi_master_ip_virtual_base_seq;
++  `uvm_object_utils(virtual_simple_reg_seq)
++
++  //-------------------------------------------------------
++  // Externally defined Tasks and Functions
++  //-------------------------------------------------------
++  extern function new(string name = "virtual_simple_reg_seq");
++  extern task body();
++endclass : virtual_simple_reg_seq
++
++//--------------------------------------------------------------------------------------------
++// Construct: new
++//
++// Parameters:
++//  name - virtual_simple_reg_seq
++//--------------------------------------------------------------------------------------------
++function virtual_simple_reg_seq::new(string name = "virtual_simple_reg_seq");
++  super.new(name);
++endfunction : new
++
++//--------------------------------------------------------------------------------------------
++// Task - body
++// Creates a master reqister sequence and slave normal sequence
++//--------------------------------------------------------------------------------------------
++task virtual_simple_reg_seq::body();
++  apb_simple_write_read_reg_seq apb_master_reg_seq_h;
++  spi_fd_basic_slave_seq spi_fd_basic_slave_seq_h;
++
++  super.body();
++
++  fork
++    forever begin : SLAVE_SEQ
++      `uvm_info("slave_vseq",$sformatf("started slave vseq"),UVM_HIGH)
++      spi_fd_basic_slave_seq_h = spi_fd_basic_slave_seq::type_id::create("spi_fd_basic_slave_seq");
++      spi_fd_basic_slave_seq_h.start(p_sequencer.spi_slave_seqr_h);
++      `uvm_info("slave_vseq",$sformatf("ended slave vseq"),UVM_HIGH)
++    end
++  join_none
++
++  `uvm_info("master_vseq",$sformatf("started master vseq"),UVM_HIGH)
++  apb_master_reg_seq_h = apb_simple_write_read_reg_seq::type_id::create("apb_master_reg_seq_h");
++  apb_master_reg_seq_h.model = p_sequencer.env_config_h.spi_master_reg_block;
++  apb_master_reg_seq_h.start(p_sequencer.apb_master_seqr_h);
++  `uvm_info("master_vseq",$sformatf("ended master vseq"),UVM_HIGH)
++
++ endtask : body
++
++
++`endif
++

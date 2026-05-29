@@ -1,0 +1,74 @@
+# repeat(@posedge) inside a task causes incorrect timing on second call
+
+- Source URL: https://github.com/verilator/verilator/issues/6593
+
+When using repeat(N) @(posedge CLK); inside a task, Verilator produces incorrect timing behavior only on the second call of the task.
+
+
+Verilator 5.041 devel rev v5.040-333-gd864057a6
+
+--------------------------------------------------------------------------------
+```
+`timescale 1ns/1ps
+`default_nettype none
+
+module tb();
+
+  // VCD or FST Dump
+  initial
+    if( $test$plusargs ("WAVE") ) begin
+      $dumpfile("wave_test1.dump");
+      $dumpvars(0, tb);
+    end
+
+  parameter int PREOD = 100;          // 100ns(10MHz)
+
+  bit CLK;
+
+  localparam int H_PREOD = PREOD / 2;
+  always #H_PREOD
+    CLK = ~CLK;
+
+
+  task automatic next_bit();    // NG
+    repeat(4)
+      @(posedge CLK);
+  endtask
+
+/*
+  task automatic next_bit();    // OK
+    repeat(3)
+      @(posedge CLK);
+
+    @(posedge CLK);
+  endtask
+*/
+
+  bit [3:0] cnt = 0;
+
+  task test_txd();
+    cnt = 0;    
+    next_bit();
+    for(int i=0; i < 8; i++) begin
+      ++cnt;
+      next_bit();
+    end
+
+    ++cnt;
+    next_bit();
+  endtask
+
+
+  initial begin
+    test_txd();
+    test_txd();
+
+    repeat(10) @(posedge CLK);
+    $finish;    
+  end
+
+endmodule
+```
+--------------------------------------------------------------------------------
+
+<img width="1127" height="612" alt="Image" src="https://github.com/user-attachments/assets/c6662bb8-ff29-4d32-8d0a-e3d327f7df42" />

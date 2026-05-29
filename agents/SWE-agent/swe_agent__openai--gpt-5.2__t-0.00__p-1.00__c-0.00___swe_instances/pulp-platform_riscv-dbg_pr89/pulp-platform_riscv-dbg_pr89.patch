@@ -1,0 +1,29 @@
+diff --git a/src/dmi_jtag_tap.sv b/src/dmi_jtag_tap.sv
+index 3d11145..9d38e97 100644
+--- a/src/dmi_jtag_tap.sv
++++ b/src/dmi_jtag_tap.sv
+@@ -139,7 +139,23 @@ module dmi_jtag_tap #(
+   dtmcs_t      dtmcs_d, dtmcs_q;
+   logic        bypass_d, bypass_q;  // this is a 1-bit register
+ 
+-  assign dmi_reset_o = dtmcs_q.dmireset;
++  // dtmcs.dmireset is W1 per spec and should act as a pulse to clear sticky error state.
++  // Generate a one-cycle pulse when the dmireset bit is written as '1' via UPDATE-DR.
++  // (dtmcs_q is otherwise reloaded on CAPTURE-DR, so it must not be used as a level signal.)
++  logic dmireset_pulse;
++  assign dmi_reset_o = dmireset_pulse;
++
++
++  // One-cycle dmireset pulse generation in TCK domain.
++  // Assert on UPDATE-DR when DTMCS is the selected data register and the shifted-in value
++  // has dmireset==1. This makes dmireset effectively W1 (write-one) and self-clearing.
++  always_ff @(posedge tck_i, negedge trst_ni) begin
++    if (!trst_ni) begin
++      dmireset_pulse <= 1'b0;
++    end else begin
++      dmireset_pulse <= update_dr_o && dtmcs_select_o && dtmcs_d.dmireset;
++    end
++  end
+ 
+   always_comb begin
+     idcode_d = idcode_q;

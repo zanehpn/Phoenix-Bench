@@ -1,0 +1,311 @@
+From 235a660d6a0fef6e2ce2c9a0d68b61efc09143b0 Mon Sep 17 00:00:00 2001
+From: James Bowman <jamesb@excamera.com>
+Date: Fri, 17 Jul 2020 13:42:09 -0700
+Subject: [PATCH 1/2] Source tweaks for clean compilation on Verilator
+
+---
+ src/audio_clock_regeneration_packet.sv        |  6 ++---
+ src/audio_info_frame.sv                       |  6 +++--
+ src/audio_sample_packet.sv                    |  4 +--
+ src/auxiliary_video_information_info_frame.sv | 24 +++++++++++++++---
+ src/hdmi.sv                                   |  5 +++-
+ src/packet_assembler.sv                       |  6 ++++-
+ src/packet_picker.sv                          | 25 ++++++++++++-------
+ src/source_product_description_info_frame.sv  |  6 ++---
+ src/tmds_channel.sv                           |  2 +-
+ 9 files changed, 58 insertions(+), 26 deletions(-)
+
+diff --git a/src/audio_clock_regeneration_packet.sv b/src/audio_clock_regeneration_packet.sv
+index 76d6644..f1b2921 100644
+--- a/src/audio_clock_regeneration_packet.sv
++++ b/src/audio_clock_regeneration_packet.sv
+@@ -4,8 +4,8 @@
+ // See HDMI 1.4b Section 5.3.3
+ module audio_clock_regeneration_packet
+ #(
+-    parameter real VIDEO_RATE,
+-    parameter int AUDIO_RATE
++    parameter real VIDEO_RATE = 25.2E6,
++    parameter int AUDIO_RATE = 48e3
+ )
+ (
+     input logic clk_pixel,
+@@ -47,7 +47,7 @@ begin
+     if (clk_audio_counter_wrap_synchronizer_chain[1] ^ clk_audio_counter_wrap_synchronizer_chain[0])
+     begin
+         cycle_time_stamp_counter <= CYCLE_TIME_STAMP_COUNTER_WIDTH'(0);
+-        cycle_time_stamp <= {(20-CYCLE_TIME_STAMP_COUNTER_WIDTH)'(0), cycle_time_stamp_counter + 1};
++        cycle_time_stamp <= {(20-CYCLE_TIME_STAMP_COUNTER_WIDTH)'(0), cycle_time_stamp_counter + CYCLE_TIME_STAMP_COUNTER_WIDTH'(1)};
+         clk_audio_counter_wrap <= !clk_audio_counter_wrap;
+     end
+     else
+diff --git a/src/audio_info_frame.sv b/src/audio_info_frame.sv
+index 81b503b..e82adb4 100644
+--- a/src/audio_info_frame.sv
++++ b/src/audio_info_frame.sv
+@@ -4,8 +4,8 @@
+ // See Section 8.2.2
+ module audio_info_frame
+ #(
+-    parameter bit [2:0] AUDIO_CHANNEL_COUNT = 3'd1, // 2 channels. See CEA-861-D table 17 for details.
+-    parameter bit [7:0] CHANNEL_ALLOCATION = 8'h00, // Channel 0 = Front Left, Channel 1 = Front Right (0-indexed)
++    parameter AUDIO_CHANNEL_COUNT = 3'd1, // 2 channels. See CEA-861-D table 17 for details.
++    parameter CHANNEL_ALLOCATION = 8'h00, // Channel 0 = Front Left, Channel 1 = Front Right (0-indexed)
+     parameter bit DOWN_MIX_INHIBITED = 1'b0, // Permitted or no information about any assertion of this. The DM_INH field is to be set only for DVD-Audio applications.
+     parameter bit [3:0] LEVEL_SHIFT_VALUE = 4'd0, // 4-bit unsigned number from 0dB up to 15dB, used for downmixing.
+     parameter bit [1:0] LOW_FREQUENCY_EFFECTS_PLAYBACK_LEVEL = 2'b00 // No information, LFE = bass-only info < 120Hz, used in Dolby Surround.
+@@ -30,7 +30,9 @@ assign header = {{3'b0, LENGTH}, VERSION, {1'b1, TYPE}};
+ // PB7-13 =  sub1
+ // PB14-20 = sub2
+ // PB21-27 = sub3
++/* verilator lint_off UNOPTFLAT */
+ logic [7:0] packet_bytes [27:0];
++/* verilator lint_on UNOPTFLAT */
+ 
+ assign packet_bytes[0] = 8'd1 + ~(header[23:16] + header[15:8] + header[7:0] + packet_bytes[5] + packet_bytes[4] + packet_bytes[3] + packet_bytes[2] + packet_bytes[1]);
+ assign packet_bytes[1] = {AUDIO_CODING_TYPE, 1'b0, AUDIO_CHANNEL_COUNT};
+diff --git a/src/audio_sample_packet.sv b/src/audio_sample_packet.sv
+index cb3b784..7a6f276 100644
+--- a/src/audio_sample_packet.sv
++++ b/src/audio_sample_packet.sv
+@@ -32,13 +32,13 @@ module audio_sample_packet
+     parameter bit [3:0] SOURCE_NUMBER = 4'd0,
+ 
+     // 0000 = 44.1 kHz
+-    parameter bit [3:0] SAMPLING_FREQUENCY,
++    parameter bit [3:0] SAMPLING_FREQUENCY = 4'b0000,
+ 
+     // Normal accuracy: +/- 1000 * 10E-6 (00), High accuracy +/- 50 * 10E-6 (01)
+     parameter bit [1:0] CLOCK_ACCURACY = 2'b00,
+ 
+     // 3-bit representation of the number of bits to subtract (except 101 is actually subtract 0) with LSB first, followed by maxmium length of 20 bits (0) or 24 bits (1)
+-    parameter bit [3:0] WORD_LENGTH,
++    parameter bit [3:0] WORD_LENGTH = 0,
+ 
+     // Frequency prior to conversion in a consumer playback system. 0000 = not indicated.
+     parameter bit [3:0] ORIGINAL_SAMPLING_FREQUENCY = 4'b0000,
+diff --git a/src/auxiliary_video_information_info_frame.sv b/src/auxiliary_video_information_info_frame.sv
+index 4ed98ef..5983822 100644
+--- a/src/auxiliary_video_information_info_frame.sv
++++ b/src/auxiliary_video_information_info_frame.sv
+@@ -15,7 +15,7 @@ module auxiliary_video_information_info_frame
+     parameter bit [2:0] EXTENDED_COLORIMETRY = 3'b000, // Not valid unless COLORIMETRY = 2'b11. The extended colorimetry bits, EC2, EC1, and EC0, describe optional colorimetry encoding that may be applicable to some implementations and are always present, whether their information is valid or not (see CEA 861-D Section 7.5.5).
+     parameter bit [1:0] RGB_QUANTIZATION_RANGE = 2'b00, // Default. Displays conforming to CEA-861-D accept both a limited quantization range of 220 levels (16 to 235) anda full range of 256 levels (0 to 255) when receiving video with RGB color space (see CEA 861-D Sections 5.1, Section 5.2, Section 5.3 and Section 5.4). By default, RGB pixel data values should be assumed to have the limited range when receiving a CE video format, and the full range when receiving an IT format. The quantization bits allow the source to override this default and to explicitly indicate the current RGB quantization range.
+     parameter bit [1:0] NON_UNIFORM_PICTURE_SCALING = 2'b00, // None. The Nonuniform Picture Scaling bits shall be set if the source device scales the picture or has determined that scaling has been performed in a specific direction.
+-    parameter int VIDEO_ID_CODE, // Same as the one from the HDMI module
++    parameter int VIDEO_ID_CODE = 4, // Same as the one from the HDMI module
+     parameter bit [1:0] YCC_QUANTIZATION_RANGE = 2'b00, // 00 = Limited, 01 = Full
+     parameter bit [1:0] CONTENT_TYPE = 2'b00, // No data, becomes Graphics if IT_CONTENT = 1'b1.
+     parameter bit [3:0] PIXEL_REPETITION = 4'b0000 // None
+@@ -48,9 +48,25 @@ assign packet_bytes[5] = {YCC_QUANTIZATION_RANGE, CONTENT_TYPE, PIXEL_REPETITION
+ genvar i;
+ generate
+     if (BAR_INFO != 2'b00) // Assign values to bars if BAR_INFO says they are valid.
+-        assign packet_bytes[13:6] = '{8'd0, 8'd0, ~8'd0, ~8'd0, 8'd0, 8'd0, ~8'd0, ~8'd0};
+-    else
+-        assign packet_bytes[13:6] = '{8'd0, 8'd0, 8'd0, 8'd0, 8'd0, 8'd0, 8'd0, 8'd0};
++    begin
++        assign packet_bytes[6] = 8'hff;
++        assign packet_bytes[7] = 8'hff;
++        assign packet_bytes[8] = 8'hff;
++        assign packet_bytes[9] = 8'hff;
++        assign packet_bytes[10] = 8'hff;
++        assign packet_bytes[11] = 8'hff;
++        assign packet_bytes[12] = 8'hff;
++        assign packet_bytes[13] = 8'hff;
++    end else begin
++        assign packet_bytes[6] = 8'h00;
++        assign packet_bytes[7] = 8'h00;
++        assign packet_bytes[8] = 8'h00;
++        assign packet_bytes[9] = 8'h00;
++        assign packet_bytes[10] = 8'h00;
++        assign packet_bytes[11] = 8'h00;
++        assign packet_bytes[12] = 8'h00;
++        assign packet_bytes[13] = 8'h00;
++    end
+     for (i = 14; i < 28; i++)
+     begin: pb_reserved
+         assign packet_bytes[i] = 8'd0;
+diff --git a/src/hdmi.sv b/src/hdmi.sv
+index 60c6d0d..dfa46fa 100644
+--- a/src/hdmi.sv
++++ b/src/hdmi.sv
+@@ -250,7 +250,7 @@ generate
+ endgenerate
+ 
+ // All logic below relates to the production and output of the 10-bit TMDS code.
+-logic [9:0] tmds [NUM_CHANNELS-1:0];
++logic [9:0] tmds [NUM_CHANNELS-1:0] /* verilator public_flat */ ;
+ genvar i;
+ generate
+     // TMDS code production.
+@@ -316,6 +316,7 @@ generate
+         assign tmds_current_clk = tmds_shift_clk_pixel[0];
+     end
+ 
++`ifndef VERILATOR
+     // Differential signal output
+     `ifdef SYNTHESIS // TODO: Is this really Vivado? https://forums.xilinx.com/t5/Simulation-and-Verification/Predefined-constant-for-simulation/td-p/986901
+         `ifndef ALTERA_RESERVED_QIS
+@@ -330,6 +331,8 @@ generate
+         // If simulation, a mocked signal inversion is used.
+         OBUFDS obufds(.din({tmds_current, tmds_current_clk}), .pad_out({tmds_p, tmds_clock_p}), .pad_out_b({tmds_n, tmds_clock_n}));
+     `endif
++`endif
++
+ endgenerate
+ 
+ endmodule
+diff --git a/src/packet_assembler.sv b/src/packet_assembler.sv
+index f2325ab..ec50aa8 100644
+--- a/src/packet_assembler.sv
++++ b/src/packet_assembler.sv
+@@ -22,7 +22,11 @@ wire [5:0] counter_t2_p1 = {counter, 1'b1};
+ // Initialize parity bits to 0
+ logic [7:0] parity [4:0] = '{8'd0, 8'd0, 8'd0, 8'd0, 8'd0};
+ 
+-wire [63:0] bch [3:0] = '{{parity[3], sub[3]}, {parity[2], sub[2]}, {parity[1], sub[1]}, {parity[0], sub[0]}};
++wire [63:0] bch [3:0];
++assign bch[0] = {parity[0], sub[0]};
++assign bch[1] = {parity[1], sub[1]};
++assign bch[2] = {parity[2], sub[2]};
++assign bch[3] = {parity[3], sub[3]};
+ wire [31:0] bch4 = {parity[4], header};
+ assign packet_data = {bch[3][counter_t2_p1], bch[2][counter_t2_p1], bch[1][counter_t2_p1], bch[0][counter_t2_p1], bch[3][counter_t2], bch[2][counter_t2], bch[1][counter_t2], bch[0][counter_t2], bch4[counter]};
+ 
+diff --git a/src/packet_picker.sv b/src/packet_picker.sv
+index 99c80fa..5ce9bd3 100644
+--- a/src/packet_picker.sv
++++ b/src/packet_picker.sv
+@@ -3,13 +3,13 @@
+ 
+ module packet_picker
+ #(
+-    parameter int VIDEO_ID_CODE,
+-    parameter real VIDEO_RATE,
+-    parameter int AUDIO_BIT_WIDTH,
+-    parameter int AUDIO_RATE,
+-    parameter bit [8*8-1:0] VENDOR_NAME,
+-    parameter bit [8*16-1:0] PRODUCT_DESCRIPTION,
+-    parameter bit [7:0] SOURCE_DEVICE_INFORMATION
++    parameter int VIDEO_ID_CODE = 4,
++    parameter real VIDEO_RATE = 0,
++    parameter int AUDIO_BIT_WIDTH = 0,
++    parameter int AUDIO_RATE = 0,
++    parameter bit [8*8-1:0] VENDOR_NAME = 0,
++    parameter bit [8*16-1:0] PRODUCT_DESCRIPTION = 0,
++    parameter bit [7:0] SOURCE_DEVICE_INFORMATION = 0
+ )
+ (
+     input logic clk_pixel,
+@@ -27,14 +27,21 @@ logic [7:0] packet_type = 8'd0;
+ logic [23:0] headers [255:0];
+ logic [55:0] subs [255:0] [3:0];
+ assign header = headers[packet_type];
+-assign sub = subs[packet_type];
++assign sub[0] = subs[packet_type][0];
++assign sub[1] = subs[packet_type][1];
++assign sub[2] = subs[packet_type][2];
++assign sub[3] = subs[packet_type][3];
+ 
+ // NULL packet
+ // "An HDMI Sink shall ignore bytes HB1 and HB2 of the Null Packet Header and all bytes of the Null Packet Body."
+ `ifdef MODEL_TECH
+ assign headers[0] = {8'd0, 8'd0, 8'd0}; assign subs[0] = '{56'd0, 56'd0, 56'd0, 56'd0};
+ `else
+-assign headers[0] = {8'dX, 8'dX, 8'd0}; assign subs[0] = '{56'dX, 56'dX, 56'dX, 56'dX};
++assign headers[0] = {8'dX, 8'dX, 8'd0};
++assign subs[0][0] = 56'dX;
++assign subs[0][1] = 56'dX;
++assign subs[0][2] = 56'dX;
++assign subs[0][3] = 56'dX;
+ `endif
+ 
+ // Audio Clock Regeneration Packet
+diff --git a/src/source_product_description_info_frame.sv b/src/source_product_description_info_frame.sv
+index cd4cd72..42821cb 100644
+--- a/src/source_product_description_info_frame.sv
++++ b/src/source_product_description_info_frame.sv
+@@ -4,9 +4,9 @@
+ // See CEA-861-D Section 6.5 page 72 (84 in PDF)
+ module source_product_description_info_frame
+ #(
+-    parameter bit [8*8-1:0] VENDOR_NAME,
+-    parameter bit [8*16-1:0] PRODUCT_DESCRIPTION,
+-    parameter bit [7:0] SOURCE_DEVICE_INFORMATION
++    parameter bit [8*8-1:0] VENDOR_NAME = 0,
++    parameter bit [8*16-1:0] PRODUCT_DESCRIPTION = 0,
++    parameter bit [7:0] SOURCE_DEVICE_INFORMATION = 0
+ )
+ (
+     output logic [23:0] header,
+diff --git a/src/tmds_channel.sv b/src/tmds_channel.sv
+index ad5efd1..9400c16 100644
+--- a/src/tmds_channel.sv
++++ b/src/tmds_channel.sv
+@@ -5,7 +5,7 @@ module tmds_channel
+ #(
+     // TMDS Channel number.
+     // There are only 3 possible channel numbers in HDMI 1.4a: 0, 1, 2.
+-    parameter int CN
++    parameter int CN = 0
+ )
+ (
+     input logic clk_pixel,
+
+From 0300913656cacc56ce65398f4d5e37bf2be96cbf Mon Sep 17 00:00:00 2001
+From: James Bowman <jamesb@excamera.com>
+Date: Fri, 17 Jul 2020 17:57:33 -0700
+Subject: [PATCH 2/2] Fixes after review
+
+---
+ src/audio_info_frame.sv                       | 6 ++----
+ src/auxiliary_video_information_info_frame.sv | 8 ++++----
+ 2 files changed, 6 insertions(+), 8 deletions(-)
+
+diff --git a/src/audio_info_frame.sv b/src/audio_info_frame.sv
+index e82adb4..81b503b 100644
+--- a/src/audio_info_frame.sv
++++ b/src/audio_info_frame.sv
+@@ -4,8 +4,8 @@
+ // See Section 8.2.2
+ module audio_info_frame
+ #(
+-    parameter AUDIO_CHANNEL_COUNT = 3'd1, // 2 channels. See CEA-861-D table 17 for details.
+-    parameter CHANNEL_ALLOCATION = 8'h00, // Channel 0 = Front Left, Channel 1 = Front Right (0-indexed)
++    parameter bit [2:0] AUDIO_CHANNEL_COUNT = 3'd1, // 2 channels. See CEA-861-D table 17 for details.
++    parameter bit [7:0] CHANNEL_ALLOCATION = 8'h00, // Channel 0 = Front Left, Channel 1 = Front Right (0-indexed)
+     parameter bit DOWN_MIX_INHIBITED = 1'b0, // Permitted or no information about any assertion of this. The DM_INH field is to be set only for DVD-Audio applications.
+     parameter bit [3:0] LEVEL_SHIFT_VALUE = 4'd0, // 4-bit unsigned number from 0dB up to 15dB, used for downmixing.
+     parameter bit [1:0] LOW_FREQUENCY_EFFECTS_PLAYBACK_LEVEL = 2'b00 // No information, LFE = bass-only info < 120Hz, used in Dolby Surround.
+@@ -30,9 +30,7 @@ assign header = {{3'b0, LENGTH}, VERSION, {1'b1, TYPE}};
+ // PB7-13 =  sub1
+ // PB14-20 = sub2
+ // PB21-27 = sub3
+-/* verilator lint_off UNOPTFLAT */
+ logic [7:0] packet_bytes [27:0];
+-/* verilator lint_on UNOPTFLAT */
+ 
+ assign packet_bytes[0] = 8'd1 + ~(header[23:16] + header[15:8] + header[7:0] + packet_bytes[5] + packet_bytes[4] + packet_bytes[3] + packet_bytes[2] + packet_bytes[1]);
+ assign packet_bytes[1] = {AUDIO_CODING_TYPE, 1'b0, AUDIO_CHANNEL_COUNT};
+diff --git a/src/auxiliary_video_information_info_frame.sv b/src/auxiliary_video_information_info_frame.sv
+index 5983822..20c15e3 100644
+--- a/src/auxiliary_video_information_info_frame.sv
++++ b/src/auxiliary_video_information_info_frame.sv
+@@ -51,12 +51,12 @@ generate
+     begin
+         assign packet_bytes[6] = 8'hff;
+         assign packet_bytes[7] = 8'hff;
+-        assign packet_bytes[8] = 8'hff;
+-        assign packet_bytes[9] = 8'hff;
++        assign packet_bytes[8] = 8'h00;
++        assign packet_bytes[9] = 8'h00;
+         assign packet_bytes[10] = 8'hff;
+         assign packet_bytes[11] = 8'hff;
+-        assign packet_bytes[12] = 8'hff;
+-        assign packet_bytes[13] = 8'hff;
++        assign packet_bytes[12] = 8'h00;
++        assign packet_bytes[13] = 8'h00;
+     end else begin
+         assign packet_bytes[6] = 8'h00;
+         assign packet_bytes[7] = 8'h00;

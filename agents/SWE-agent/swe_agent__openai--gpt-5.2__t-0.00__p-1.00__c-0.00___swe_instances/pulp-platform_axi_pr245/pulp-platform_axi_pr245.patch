@@ -1,0 +1,20 @@
+diff --git a/src/axi_lite_mux.sv b/src/axi_lite_mux.sv
+index 75a9a256..9076f35b 100644
+--- a/src/axi_lite_mux.sv
++++ b/src/axi_lite_mux.sv
+@@ -282,9 +282,12 @@ module axi_lite_mux #(
+     //--------------------------------------
+     // W Channel
+     //--------------------------------------
+-    // multiplexer
+-    assign mst_w_chan      = (!w_fifo_empty && !b_fifo_full) ? slv_reqs_i[w_select].w        :   '0;
+-    assign mst_w_valid     = (!w_fifo_empty && !b_fifo_full) ? slv_reqs_i[w_select].w_valid  : 1'b0;
++    // W channel selection.
++    // Keep `mst_w_chan` tied to 0 whenever `mst_w_valid` is deasserted to avoid propagating
++    // don't-cares/glitches from an unselected slave. This also matches the intent of the
++    // original ternary assignments.
++    assign mst_w_valid = (!w_fifo_empty && !b_fifo_full) ? slv_reqs_i[w_select].w_valid : 1'b0;
++    assign mst_w_chan  = mst_w_valid ? slv_reqs_i[w_select].w : '0;
+     for (genvar i = 0; i < NoSlvPorts; i++) begin : gen_slv_w_ready
+       assign slv_resps_o[i].w_ready =  mst_w_ready & ~w_fifo_empty &
+                                       ~b_fifo_full & (w_select == select_t'(i));

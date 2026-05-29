@@ -1,0 +1,34 @@
+The bug is in `rtl/src/hpdcache_ctrl_pe.sv`.
+
+### Localization
+`evt_write_req_o` is currently emitted only when a write miss is first detected on the core request path, but not when the request is replayed from the RTAB after a memory response with the error bit set. In that case, the replayed store can effectively complete without ever flagging the write request event.
+
+A robust fix is to emit `evt_write_req_o` for write-back stores both:
+- on the original cache hit path, and
+- when the request is replayed from the RTAB after a miss.
+
+This matches the second proposed solution in the issue description and avoids missing the event on error-replay cases.
+
+### SEARCH/REPLACE edit
+
+```systemverilog
+### rtl/src/hpdcache_ctrl_pe.sv
+<<<<<<< SEARCH
+    //      Performance event
+    assign evt_req_on_hold_o   = st1_rtab_alloc | st1_rtab_alloc_and_link,
+           evt_rtab_rollback_o = st1_rtab_rback_o;
+=======
+    //      Performance event
+    assign evt_req_on_hold_o   = st1_rtab_alloc | st1_rtab_alloc_and_link,
+           evt_rtab_rollback_o = st1_rtab_rback_o;
+
+    //      Flag write requests both on the original request path and on RTAB replay.
+    //      This prevents write-back stores replayed after an error response from
+    //      losing the write-request event.
+    assign evt_write_req_o = st1_req_valid_i &
+                             st1_req_is_store_i &
+                             st1_req_wr_wb_i &
+                             (st1_req_rtab_i | cachedir_hit_i);
+>>>>>>> REPLACE
+```
+

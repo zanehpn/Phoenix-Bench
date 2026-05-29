@@ -1,0 +1,24 @@
+diff --git a/src/axi_xbar.sv b/src/axi_xbar.sv
+index 5d0b79c..d7b0b7e 100755
+--- a/src/axi_xbar.sv
++++ b/src/axi_xbar.sv
+@@ -48,6 +48,7 @@ module axi_xbar #(
+   // signals from the axi_demuxes, one index more for decode error
+   slv_req_t  [Cfg.NoSlvPorts-1:0][Cfg.NoMstPorts:0]  slv_reqs;
+   slv_resp_t [Cfg.NoSlvPorts-1:0][Cfg.NoMstPorts:0]  slv_resps;
++  slv_resp_t [Cfg.NoSlvPorts-1:0]                    err_slv_resps;
+ 
+   // signals into the axi_muxes, are of type slave as the multiplexer extends the ID
+   slv_req_t  [Cfg.NoMstPorts-1:0][Cfg.NoSlvPorts-1:0] mst_reqs;
+@@ -165,8 +166,10 @@ module axi_xbar #(
+       .test_i,  // Testmode enable
+       // slave port
+       .slv_req_i  ( slv_reqs[i][Cfg.NoMstPorts]   ),
+-      .slv_resp_o ( slv_resps[i][Cfg.NoMstPorts]  )
++      .slv_resp_o ( err_slv_resps[i]              )
+     );
++
++    assign slv_resps[i][Cfg.NoMstPorts] = err_slv_resps[i];
+   end
+ 
+   // cross all channels

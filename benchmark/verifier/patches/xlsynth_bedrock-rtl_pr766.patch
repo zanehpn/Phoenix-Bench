@@ -1,0 +1,144 @@
+From 58ba563e1b55b03ad4aa45214baf7e5e3a6b1649 Mon Sep 17 00:00:00 2001
+From: Matt Lee <mattskl@openai.com>
+Date: Tue, 17 Jun 2025 17:18:24 +0000
+Subject: [PATCH 1/2] Also allow bin2onehot to be 1.
+
+Revert demux bin default to 2.
+---
+ demux/rtl/br_demux_bin.sv    | 2 +-
+ enc/rtl/BUILD.bazel          | 2 ++
+ enc/rtl/br_enc_bin2onehot.sv | 8 ++++----
+ 3 files changed, 7 insertions(+), 5 deletions(-)
+
+diff --git a/demux/rtl/br_demux_bin.sv b/demux/rtl/br_demux_bin.sv
+index 394942026..2bc5e443c 100644
+--- a/demux/rtl/br_demux_bin.sv
++++ b/demux/rtl/br_demux_bin.sv
+@@ -24,7 +24,7 @@
+ 
+ module br_demux_bin #(
+     // Number of outputs to distribute among. Must be >= 1.
+-    parameter int NumSymbolsOut = 1,
++    parameter int NumSymbolsOut = 2,
+     // The width of each symbol in bits. Must be >= 1.
+     parameter int SymbolWidth = 1,
+     // If 1, then assert there are no valid bits asserted at the end of the test.
+diff --git a/enc/rtl/BUILD.bazel b/enc/rtl/BUILD.bazel
+index aea2047ea..6a3bdb1a3 100644
+--- a/enc/rtl/BUILD.bazel
++++ b/enc/rtl/BUILD.bazel
+@@ -23,6 +23,7 @@ verilog_library(
+     deps = [
+         "//macros:br_asserts_internal",
+         "//macros:br_registers",
++        "//pkg:br_math_pkg",
+     ],
+ )
+ 
+@@ -78,6 +79,7 @@ br_verilog_elab_and_lint_test_suite(
+     name = "br_enc_bin2onehot_test_suite",
+     params = {
+         "NumValues": [
++            "1",
+             "2",
+             "3",
+         ],
+diff --git a/enc/rtl/br_enc_bin2onehot.sv b/enc/rtl/br_enc_bin2onehot.sv
+index b9a6c7d53..b0981dc6e 100644
+--- a/enc/rtl/br_enc_bin2onehot.sv
++++ b/enc/rtl/br_enc_bin2onehot.sv
+@@ -47,12 +47,12 @@
+ `include "br_asserts_internal.svh"
+ 
+ module br_enc_bin2onehot #(
+-    parameter int NumValues = 2,  // Must be at least 2
++    parameter int NumValues = 2,  // Must be at least 1
+     parameter int EnableInputRangeCheck = 1,
+     // If 1, then assert there are no valid bits asserted at the end of the test.
+     parameter bit EnableAssertFinalNotValid = 1,
+     // Width of the binary-encoded value. Must be at least $clog2(NumValues).
+-    parameter int BinWidth = $clog2(NumValues)
++    parameter int BinWidth = br_math::clamped_clog2(NumValues)
+ ) (
+     // ri lint_check_waive INPUT_NOT_READ HIER_NET_NOT_READ HIER_BRANCH_NOT_READ
+     input logic clk,  // Used only for assertions
+@@ -66,8 +66,8 @@ module br_enc_bin2onehot #(
+   //------------------------------------------
+   // Integration checks
+   //------------------------------------------
+-  `BR_ASSERT_STATIC(num_values_gte_2_a, NumValues >= 2)
+-  `BR_ASSERT_STATIC(binwidth_gte_log2_num_values_a, BinWidth >= $clog2(NumValues))
++  `BR_ASSERT_STATIC(num_values_gte_2_a, NumValues >= 1)
++  `BR_ASSERT_STATIC(binwidth_gte_log2_num_values_a, BinWidth >= br_math::clamped_clog2(NumValues))
+   if (EnableInputRangeCheck) begin : gen_in_range_check
+     `BR_ASSERT_INTG(in_within_range_a, in_valid |-> in < NumValues)
+   end
+
+From 4ddfebcff0b0c9e85e4eb08542d929c45fe29e88 Mon Sep 17 00:00:00 2001
+From: Matt Lee <mattskl@openai.com>
+Date: Tue, 17 Jun 2025 17:30:01 +0000
+Subject: [PATCH 2/2] Allow credit counter to support >=32bit max
+ values/changes.
+
+fixes https://github.com/xlsynth/bedrock-rtl/issues/751
+---
+ credit/rtl/BUILD.bazel          | 14 ++++++++++++++
+ credit/rtl/br_credit_counter.sv | 16 ++++++++++++----
+ 2 files changed, 26 insertions(+), 4 deletions(-)
+
+diff --git a/credit/rtl/BUILD.bazel b/credit/rtl/BUILD.bazel
+index d4e1ac37a..e748e3284 100644
+--- a/credit/rtl/BUILD.bazel
++++ b/credit/rtl/BUILD.bazel
+@@ -71,6 +71,20 @@ br_verilog_elab_and_lint_test_suite(
+     deps = [":br_credit_counter"],
+ )
+ 
++br_verilog_elab_and_lint_test_suite(
++    name = "br_credit_counter_test_suite_large_maxes",
++    params = {
++        "MaxValueWidth": ["64"],
++        "MaxChangeWidth": ["64"],
++        "MaxValue": [
++            "18446744073709551615",
++            "18446744073709551614",
++        ],
++        "MaxChange": ["18446744073709551614"],
++    },
++    deps = [":br_credit_counter"],
++)
++
+ verilog_library(
+     name = "br_credit_sender",
+     srcs = ["br_credit_sender.sv"],
+diff --git a/credit/rtl/br_credit_counter.sv b/credit/rtl/br_credit_counter.sv
+index 685021761..1c24093ed 100644
+--- a/credit/rtl/br_credit_counter.sv
++++ b/credit/rtl/br_credit_counter.sv
+@@ -43,14 +43,22 @@
+ `include "br_registers.svh"
+ 
+ module br_credit_counter #(
++    // Width of the MaxValue parameter.
++    // You might need to override this if you need a counter that's larger than 32 bits.
++    parameter int MaxValueWidth = 32,
++    // Width of the MaxChange parameter.
++    // You might need to override this if you need a counter that's larger than 32 bits.
++    parameter int MaxChangeWidth = 32,
+     // Maximum credit counter value (inclusive). Must be at least 1.
+-    parameter int MaxValue = 1,
++    parameter logic [MaxValueWidth-1:0] MaxValue = 1,
+     // Maximum increment/decrement amount (inclusive). Must be at least 1.
+-    parameter int MaxChange = 1,
++    parameter logic [MaxChangeWidth-1:0] MaxChange = 1,
+     // If 1, then assert there are no valid bits asserted at the end of the test.
+     parameter bit EnableAssertFinalNotValid = 1,
+-    localparam int ValueWidth = $clog2(MaxValue + 1),
+-    localparam int ChangeWidth = $clog2(MaxChange + 1)
++    localparam int MaxValueP1Width = MaxValueWidth + 1,
++    localparam int MaxChangeP1Width = MaxChangeWidth + 1,
++    localparam int ValueWidth = $clog2(MaxValueP1Width'(MaxValue) + 1),
++    localparam int ChangeWidth = $clog2(MaxChangeP1Width'(MaxChange) + 1)
+ ) (
+     // Posedge-triggered clock.
+     input  logic                   clk,

@@ -1,0 +1,534 @@
+From 29840fe326af63846410d858124c16d6cebc77a5 Mon Sep 17 00:00:00 2001
+From: amna_fayyaz <amna.fayyaz@lampromellon.com>
+Date: Fri, 22 Jan 2021 11:35:54 +0500
+Subject: [PATCH] - removed comments from sim.py - removed empty c_sample test
+ from testlist - added sim.vcd path in test_tb_top - added verilator tool
+ commands in rtl_simulation.yaml - added common_defines.vh corresponding to
+ the verilator in the snapshot folder - updated tracer.sv;Lint off. - added
+ filelists corresponding to the verilator
+
+---
+ integration_files/SweRV_EH1/flist_verilator.f |  54 +++++
+ .../riscv_dv_extension/testlist.yaml          |   8 -
+ integration_files/SweRV_EH1/sim.py            |   7 +-
+ .../default/common_defines_verilator.vh       | 194 ++++++++++++++++++
+ .../SweRV_EH1/testbench/test_tb_top.cpp       |  82 ++++++++
+ .../SweRV_EH1/testbench/tracer.sv             |  12 ++
+ integration_files/SweRV_EH1/testbench_veri.f  |  11 +
+ .../SweRV_EH1/yaml/rtl_simulation.yaml        |  17 ++
+ 8 files changed, 372 insertions(+), 13 deletions(-)
+ create mode 100644 integration_files/SweRV_EH1/flist_verilator.f
+ create mode 100644 integration_files/SweRV_EH1/snapshots/default/common_defines_verilator.vh
+ create mode 100644 integration_files/SweRV_EH1/testbench/test_tb_top.cpp
+ create mode 100644 integration_files/SweRV_EH1/testbench_veri.f
+
+diff --git a/integration_files/SweRV_EH1/flist_verilator.f b/integration_files/SweRV_EH1/flist_verilator.f
+new file mode 100644
+index 0000000..7a769fe
+--- /dev/null
++++ b/integration_files/SweRV_EH1/flist_verilator.f
+@@ -0,0 +1,54 @@
+++incdir+${PRJ_DIR}/rtl/lib
+++incdir+${PRJ_DIR}/rtl/include
+++incdir+${PRJ_DIR}/snapshots/default
++
++//+libext+.v
++
++// Including Defines Files
++${PRJ_DIR}/snapshots/default/common_defines_verilator.vh
++${PRJ_DIR}/rtl/include/swerv_types.sv
++
++// Including Design Files
++${PRJ_DIR}/rtl/swerv_wrapper.sv
++${PRJ_DIR}/rtl/mem.sv
++${PRJ_DIR}/rtl/pic_ctrl.sv
++${PRJ_DIR}/rtl/swerv.sv
++${PRJ_DIR}/rtl/dma_ctrl.sv
++${PRJ_DIR}/rtl/ifu/ifu_aln_ctl.sv
++${PRJ_DIR}/rtl/ifu/ifu_compress_ctl.sv
++${PRJ_DIR}/rtl/ifu/ifu_ifc_ctl.sv
++${PRJ_DIR}/rtl/ifu/ifu_bp_ctl.sv
++${PRJ_DIR}/rtl/ifu/ifu_ic_mem.sv
++${PRJ_DIR}/rtl/ifu/ifu_mem_ctl.sv
++${PRJ_DIR}/rtl/ifu/ifu_iccm_mem.sv
++${PRJ_DIR}/rtl/ifu/ifu.sv
++${PRJ_DIR}/rtl/dec/dec_decode_ctl.sv
++${PRJ_DIR}/rtl/dec/dec_gpr_ctl.sv
++${PRJ_DIR}/rtl/dec/dec_ib_ctl.sv
++${PRJ_DIR}/rtl/dec/dec_tlu_ctl.sv
++${PRJ_DIR}/rtl/dec/dec_trigger.sv
++${PRJ_DIR}/rtl/dec/dec.sv
++${PRJ_DIR}/rtl/exu/exu_alu_ctl.sv
++${PRJ_DIR}/rtl/exu/exu_mul_ctl.sv
++${PRJ_DIR}/rtl/exu/exu_div_ctl.sv
++${PRJ_DIR}/rtl/exu/exu.sv
++${PRJ_DIR}/rtl/lsu/lsu.sv
++${PRJ_DIR}/rtl/lsu/lsu_clkdomain.sv
++${PRJ_DIR}/rtl/lsu/lsu_addrcheck.sv
++${PRJ_DIR}/rtl/lsu/lsu_lsc_ctl.sv
++${PRJ_DIR}/rtl/lsu/lsu_stbuf.sv
++${PRJ_DIR}/rtl/lsu/lsu_bus_buffer.sv
++${PRJ_DIR}/rtl/lsu/lsu_bus_intf.sv
++${PRJ_DIR}/rtl/lsu/lsu_ecc.sv
++${PRJ_DIR}/rtl/lsu/lsu_dccm_mem.sv
++${PRJ_DIR}/rtl/lsu/lsu_dccm_ctl.sv
++${PRJ_DIR}/rtl/lsu/lsu_trigger.sv
++${PRJ_DIR}/rtl/dbg/dbg.sv
++${PRJ_DIR}/rtl/dmi/dmi_wrapper.v
++${PRJ_DIR}/rtl/dmi/dmi_jtag_to_core_sync.v
++${PRJ_DIR}/rtl/dmi/rvjtag_tap.sv
++${PRJ_DIR}/rtl/lib/beh_lib.sv
++${PRJ_DIR}/rtl/lib/mem_lib.sv
++${PRJ_DIR}/rtl/lib/ahb_to_axi4.sv
++${PRJ_DIR}/rtl/lib/axi4_to_ahb.sv
++
+diff --git a/integration_files/SweRV_EH1/riscv_dv_extension/testlist.yaml b/integration_files/SweRV_EH1/riscv_dv_extension/testlist.yaml
+index 10d1ce4..ab1d60b 100755
+--- a/integration_files/SweRV_EH1/riscv_dv_extension/testlist.yaml
++++ b/integration_files/SweRV_EH1/riscv_dv_extension/testlist.yaml
+@@ -47,14 +47,6 @@
+   rtl_test: core_base_test_benchmark
+   no_iss: 1
+   no_post_compare: 1
+-  
+-- test: c_sample
+-  c_tests: directed_tests/c/c_sample.c
+-  gcc_opts: -g -O3 -funroll-all-loops
+-  iterations: 1
+-  rtl_test: core_base_test_benchmark
+-  no_iss: 1
+-  no_post_compare: 1
+ 
+ - test: hello_world
+   asm_tests: directed_tests/asm/hello_world.s
+diff --git a/integration_files/SweRV_EH1/sim.py b/integration_files/SweRV_EH1/sim.py
+index 81de195..8eb70c4 100755
+--- a/integration_files/SweRV_EH1/sim.py
++++ b/integration_files/SweRV_EH1/sim.py
+@@ -22,6 +22,7 @@
+ import random
+ import subprocess
+ import sys
++from pathlib import Path
+ 
+ _CORE = os.path.normpath(os.path.join(os.path.dirname(__file__)))
+ _RISCV_DV_ROOT = os.path.join(_CORE, '../../google_riscv_dv')
+@@ -222,7 +223,6 @@ def rtl_compile(compile_cmds, output_dir, lsf_cmd, opts):
+             cmd = lsf_cmd + ' ' + cmd
+ 
+         logging.debug("Compile command: %s" % cmd)
+-
+         # Note that we don't use run_parallel_cmd here: the commands in
+         # compile_cmds need to be run serially.
+         run_cmd(cmd)
+@@ -288,7 +288,7 @@ def cp_compiled_test(test, bin_dir, idx):
+ 	bin_dir		: general path to binary directory
+ 	idx 		: iteration number of the test'''
+ 	
+-	test_name = test['test']
++	test_name = test['test']          
+ 	if "c_tests" in test.keys():
+ 		bin_dir		= bin_dir.replace("asm_tests", "directed_c_tests")
+ 		binary 		= os.path.join(bin_dir, '{}.bin'.format(test_name))
+@@ -312,7 +312,6 @@ def cp_compiled_test(test, bin_dir, idx):
+ 	cp_program_hex_cmd 	= "cp %s %s/program.hex" % (program_hex, _CORE)
+ 	os.system(cp_program_hex_cmd)
+ 
+-
+ def run_sim_commands(command_list, test, bin_dir, use_lsf):
+     '''Run the given list of commands
+ 
+@@ -380,7 +379,6 @@ def rtl_sim(sim_cmd, test_list, seed_gen, opts,
+                          })
+     # Compute a list of pairs (cmd, dirname) where cmd is the command to run
+     # and dirname is the directory in which the command should be run.
+-    
+     # cmd_list = []
+     for test in test_list:
+         for i in range(test['iterations']):
+@@ -665,7 +663,6 @@ def main():
+         'compare': args.steps == "all" or 'compare' in args.steps,
+         'cov': args.steps == "all" or 'cov' in args.steps
+     }
+-
+     compile_cmds = []
+     sim_cmd = ""
+     matched_list = []
+diff --git a/integration_files/SweRV_EH1/snapshots/default/common_defines_verilator.vh b/integration_files/SweRV_EH1/snapshots/default/common_defines_verilator.vh
+new file mode 100644
+index 0000000..54e3d93
+--- /dev/null
++++ b/integration_files/SweRV_EH1/snapshots/default/common_defines_verilator.vh
+@@ -0,0 +1,194 @@
++// NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE
++// This is an automatically generated file by amnafayyaz on Wed Jan 13 18:05:15 PKT 2021
++//
++// cmd:    swerv -target=default 
++//
++`define RV_LSU_BUS_TAG 4
++`define RV_SB_BUS_TAG 1
++`define RV_IFU_BUS_TAG 3
++`define RV_DMA_BUS_TAG 1
++`define REGWIDTH 32
++`define RV_INST_ACCESS_ENABLE6 1'h0
++`define RV_DATA_ACCESS_ENABLE6 1'h0
++`define RV_DATA_ACCESS_ENABLE3 1'h0
++`define RV_DATA_ACCESS_ENABLE0 1'h0
++`define RV_INST_ACCESS_ADDR4 'h00000000
++`define RV_DATA_ACCESS_ADDR6 'h00000000
++`define RV_INST_ACCESS_ADDR6 'h00000000
++`define RV_DATA_ACCESS_ENABLE4 1'h0
++`define RV_DATA_ACCESS_ADDR3 'h00000000
++`define RV_INST_ACCESS_MASK7 'hffffffff
++`define RV_DATA_ACCESS_ADDR4 'h00000000
++`define RV_DATA_ACCESS_ENABLE7 1'h0
++`define RV_DATA_ACCESS_ADDR1 'h00000000
++`define RV_INST_ACCESS_ENABLE1 1'h0
++`define RV_DATA_ACCESS_MASK0 'hffffffff
++`define RV_DATA_ACCESS_ADDR5 'h00000000
++`define RV_INST_ACCESS_MASK3 'hffffffff
++`define RV_INST_ACCESS_ADDR0 'h00000000
++`define RV_INST_ACCESS_MASK5 'hffffffff
++`define RV_DATA_ACCESS_MASK2 'hffffffff
++`define RV_INST_ACCESS_MASK0 'hffffffff
++`define RV_DATA_ACCESS_ENABLE5 1'h0
++`define RV_INST_ACCESS_MASK2 'hffffffff
++`define RV_INST_ACCESS_MASK6 'hffffffff
++`define RV_INST_ACCESS_ADDR1 'h00000000
++`define RV_DATA_ACCESS_MASK3 'hffffffff
++`define RV_INST_ACCESS_ENABLE3 1'h0
++`define RV_DATA_ACCESS_ENABLE1 1'h0
++`define RV_INST_ACCESS_ADDR2 'h00000000
++`define RV_INST_ACCESS_ENABLE0 1'h0
++`define RV_DATA_ACCESS_MASK7 'hffffffff
++`define RV_DATA_ACCESS_MASK4 'hffffffff
++`define RV_DATA_ACCESS_MASK6 'hffffffff
++`define RV_DATA_ACCESS_ADDR7 'h00000000
++`define RV_DATA_ACCESS_ADDR0 'h00000000
++`define RV_INST_ACCESS_ADDR3 'h00000000
++`define RV_INST_ACCESS_ENABLE4 1'h0
++`define RV_INST_ACCESS_ADDR5 'h00000000
++`define RV_INST_ACCESS_ENABLE2 1'h0
++`define RV_INST_ACCESS_ENABLE5 1'h0
++`define RV_INST_ACCESS_MASK4 'hffffffff
++`define RV_INST_ACCESS_ADDR7 'h00000000
++`define RV_DATA_ACCESS_MASK1 'hffffffff
++`define RV_INST_ACCESS_MASK1 'hffffffff
++`define RV_INST_ACCESS_ENABLE7 1'h0
++`define RV_DATA_ACCESS_ADDR2 'h00000000
++`define RV_DATA_ACCESS_ENABLE2 1'h0
++`define RV_DATA_ACCESS_MASK5 'hffffffff
++`define RV_FPGA_OPTIMIZE 1
++`define RV_DEC_INSTBUF_DEPTH 4
++`define RV_LSU_STBUF_DEPTH 8
++`define RV_DMA_BUF_DEPTH 4
++`define RV_LSU_NUM_NBLOAD 8
++`define RV_LSU_NUM_NBLOAD_WIDTH 3
++`define RV_TARGET default
++`define RV_RESET_VEC 'h80000000
++`define RV_XLEN 32
++`define RV_UNUSED_REGION6 'h60000000
++`define RV_EXTERNAL_PROG 'hb0000000
++`define RV_UNUSED_REGION0 'h00000000
++`define RV_UNUSED_REGION4 'h40000000
++`define RV_UNUSED_REGION9 'h90000000
++`define RV_UNUSED_REGION5 'h50000000
++`define RV_EXTERNAL_DATA 'hc0580000
++`define RV_SERIALIO 'hd0580000
++`define RV_DEBUG_SB_MEM 'hb0580000
++`define RV_UNUSED_REGION3 'h30000000
++`define RV_UNUSED_REGION7 'h70000000
++`define RV_UNUSED_REGION1 'h10000000
++`define RV_UNUSED_REGION2 'h20000000
++`define RV_EXTERNAL_DATA_1 'h00000000
++`define RV_ICCM_NUM_BANKS_8 
++`define RV_ICCM_BITS 19
++`define RV_ICCM_SADR 32'hee000000
++`define RV_ICCM_DATA_CELL ram_16384x39
++`define RV_ICCM_INDEX_BITS 14
++`define RV_ICCM_BANK_BITS 3
++`define RV_ICCM_RESERVED 'h1000
++`define RV_ICCM_ROWS 16384
++`define RV_ICCM_REGION 4'he
++`define RV_ICCM_SIZE_512 
++`define RV_ICCM_EADR 32'hee07ffff
++`define RV_ICCM_OFFSET 10'he000000
++`define RV_ICCM_SIZE 512
++`define RV_ICCM_NUM_BANKS 8
++`define RV_NUMIREGS 32
++`define TEC_RV_ICG clockhdr
++`define RV_BHT_GHR_SIZE 5
++`define RV_BHT_ARRAY_DEPTH 16
++`define RV_BHT_GHR_RANGE 4:0
++`define RV_BHT_GHR_PAD fghr[4],3'b0
++`define RV_BHT_ADDR_LO 4
++`define RV_BHT_HASH_STRING {ghr[3:2] ^ {ghr[3+1], {4-1-2{1'b0} } },hashin[5:4]^ghr[2-1:0]}
++`define RV_BHT_SIZE 128
++`define RV_BHT_GHR_PAD2 fghr[4:3],2'b0
++`define RV_BHT_ADDR_HI 7
++`define TOP tb_top
++`define RV_STERR_ROLLBACK 0
++`define RV_TOP `TOP.rvtop
++`define ASSERT_ON 
++`define RV_LDERR_ROLLBACK 1
++`define CLOCK_PERIOD 100
++`define RV_EXT_DATAWIDTH 64
++`define RV_EXT_ADDRWIDTH 32
++`define SDVT_AHB 1
++`define CPU_TOP `RV_TOP.swerv
++`define RV_BUILD_AXI4 1
++`define DATAWIDTH 64
++`define RV_ICACHE_ENABLE 1
++`define RV_ICACHE_SIZE 16
++`define RV_ICACHE_IC_DEPTH 8
++`define RV_ICACHE_DATA_CELL ram_256x34
++`define RV_ICACHE_IC_ROWS 256
++`define RV_ICACHE_IC_INDEX 8
++`define RV_ICACHE_TAG_HIGH 12
++`define RV_ICACHE_TAG_LOW 6
++`define RV_ICACHE_TAG_CELL ram_64x21
++`define RV_ICACHE_TAG_DEPTH 64
++`define RV_ICACHE_TADDR_HIGH 5
++`define RV_DCCM_EADR 32'hf004ffff
++`define RV_DCCM_SIZE_64 
++`define RV_DCCM_ENABLE 1
++`define RV_DCCM_BANK_BITS 3
++`define RV_DCCM_NUM_BANKS 8
++`define RV_DCCM_ROWS 2048
++`define RV_DCCM_DATA_CELL ram_2048x39
++`define RV_DCCM_BITS 16
++`define RV_DCCM_SADR 32'hf0040000
++`define RV_DCCM_FDATA_WIDTH 39
++`define RV_DCCM_RESERVED 'h1000
++`define RV_DCCM_NUM_BANKS_8 
++`define RV_DCCM_DATA_WIDTH 32
++`define RV_DCCM_WIDTH_BITS 2
++`define RV_DCCM_REGION 4'hf
++`define RV_DCCM_BYTE_WIDTH 4
++`define RV_DCCM_OFFSET 28'h40000
++`define RV_DCCM_ECC_WIDTH 7
++`define RV_DCCM_INDEX_BITS 11
++`define RV_DCCM_SIZE 64
++`define RV_LSU_SB_BITS 16
++`define RV_NMI_VEC 'h11110000
++`define RV_BTB_INDEX2_LO 6
++`define RV_BTB_ARRAY_DEPTH 4
++`define RV_BTB_BTAG_SIZE 9
++`define RV_BTB_SIZE 32
++`define RV_BTB_INDEX2_HI 7
++`define RV_BTB_INDEX1_HI 5
++`define RV_BTB_ADDR_LO 4
++`define RV_BTB_INDEX3_HI 9
++`define RV_BTB_BTAG_FOLD 1
++`define RV_BTB_INDEX3_LO 8
++`define RV_BTB_INDEX1_LO 4
++`define RV_BTB_ADDR_HI 5
++`define RV_PIC_MEIP_MASK 'h0
++`define RV_PIC_MPICCFG_OFFSET 'h3000
++`define RV_PIC_INT_WORDS 1
++`define RV_PIC_BASE_ADDR 32'hf00c0000
++`define RV_PIC_MEIE_MASK 'h1
++`define RV_PIC_MEIP_COUNT 4
++`define RV_PIC_MEIGWCTRL_MASK 'h3
++`define RV_PIC_MEIGWCLR_COUNT 8
++`define RV_PIC_MEIE_OFFSET 'h2000
++`define RV_PIC_MPICCFG_COUNT 1
++`define RV_PIC_TOTAL_INT 8
++`define RV_PIC_REGION 4'hf
++`define RV_PIC_MEIGWCTRL_COUNT 8
++`define RV_PIC_MEIPL_MASK 'hf
++`define RV_PIC_MEIPT_OFFSET 'h3004
++`define RV_PIC_MEIGWCTRL_OFFSET 'h4000
++`define RV_PIC_SIZE 32
++`define RV_PIC_MPICCFG_MASK 'h1
++`define RV_PIC_MEIE_COUNT 8
++`define RV_PIC_MEIPT_MASK 'h0
++`define RV_PIC_BITS 15
++`define RV_PIC_MEIGWCLR_OFFSET 'h5000
++`define RV_PIC_MEIPL_OFFSET 'h0000
++`define RV_PIC_MEIGWCLR_MASK 'h0
++`define RV_PIC_OFFSET 10'hc0000
++`define RV_PIC_MEIPT_COUNT 8
++`define RV_PIC_MEIPL_COUNT 8
++`define RV_PIC_MEIP_OFFSET 'h1000
++`define RV_PIC_TOTAL_INT_PLUS1 9
++`define RV_RET_STACK_SIZE 4
++`undef ASSERT_ON
+diff --git a/integration_files/SweRV_EH1/testbench/test_tb_top.cpp b/integration_files/SweRV_EH1/testbench/test_tb_top.cpp
+new file mode 100644
+index 0000000..adf1bda
+--- /dev/null
++++ b/integration_files/SweRV_EH1/testbench/test_tb_top.cpp
+@@ -0,0 +1,82 @@
++// SPDX-License-Identifier: Apache-2.0
++// Copyright 2019 Western Digital Corporation or its affiliates.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++// http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++//
++#include <stdlib.h>
++#include <iostream>
++#include <utility>
++#include <string>
++#include <sstream>
++#include "Vtb_top.h"
++#include "verilated.h"
++#include "verilated_vcd_c.h"
++
++vluint64_t main_time = 0;
++
++double sc_time_stamp () {
++ return main_time;
++}
++
++
++int main(int argc, char** argv) {
++  std::cout << "\nVerilatorTB: Start of sim\n" << std::endl;
++
++  Verilated::commandArgs(argc, argv);
++
++  Vtb_top* tb = new Vtb_top;
++
++  // init trace dump
++  VerilatedVcdC* tfp = NULL;
++  
++  // initializing file path for sim.vcd
++  std::stringstream file_path;
++  std::string file;
++
++  // appending sim_dir path with sim.vcd to copy it in the right folder
++  file_path << argv[3] << "/sim.vcd";
++  file = file_path.str();
++  //std::cout << file_path << std::endl;
++  
++  std::string delimiter = "=";
++  std::string f_token;
++  f_token = file.substr(file.rfind(delimiter)+1);
++  //std::cout << f_token << std::endl;
++
++#if VM_TRACE
++  Verilated::traceEverOn(true);
++  tfp = new VerilatedVcdC;
++  tb->trace (tfp, 24);
++  //Adding sim.vcd path
++  tfp->open (f_token.c_str());
++#endif
++  // Simulate
++  while(!Verilated::gotFinish()){
++#if VM_TRACE
++      tfp->dump (main_time);
++#endif
++      main_time += 5;
++      tb->core_clk = !tb->core_clk;
++      tb->eval();
++  }
++
++#if VM_TRACE
++  tfp->close();
++#endif
++
++  std::cout << "\nVerilatorTB: End of sim" << std::endl;
++  exit(EXIT_SUCCESS);
++
++  return 0;
++
++}
+diff --git a/integration_files/SweRV_EH1/testbench/tracer.sv b/integration_files/SweRV_EH1/testbench/tracer.sv
+index ec05787..d037171 100755
+--- a/integration_files/SweRV_EH1/testbench/tracer.sv
++++ b/integration_files/SweRV_EH1/testbench/tracer.sv
+@@ -847,11 +847,15 @@ int i=0;
+ 				    end
+ 				  end
+ 				  INSN_CLW: begin
++            /* verilator lint_off WIDTH */
+             rvfi_rs2_addr = 8 + rvfi_insn[4:2];
++            /* verilator lint_on WIDTH */
+             decode_compressed_load_insn("c.lw");
+           end
+           INSN_CSW: begin
++            /* verilator lint_off WIDTH */
+             rvfi_rs2_addr = 8 + rvfi_insn[4:2];
++            /* verilator lint_on WIDTH */
+             decode_compressed_store_insn("c.sw");
+           end
+           // C1 Opcodes
+@@ -871,19 +875,27 @@ int i=0;
+ 				  INSN_CSRAI:      decode_cb_sr_insn("c.srai");
+ 				  INSN_CANDI:      decode_cb_insn("c.andi");
+ 				  INSN_CSUB: begin
++            /* verilator lint_off WIDTH */
+             rvfi_rs2_addr = 8 + rvfi_insn[4:2];
++            /* verilator lint_on WIDTH */
+             decode_cs_insn("c.sub");
+           end
+ 				  INSN_CXOR: begin
++            /* verilator lint_off WIDTH */
+             rvfi_rs2_addr = 8 + rvfi_insn[4:2];
++            /* verilator lint_on WIDTH */
+             decode_cs_insn("c.xor");
+           end
+           INSN_COR: begin
++            /* verilator lint_off WIDTH */
+             rvfi_rs2_addr = 8 + rvfi_insn[4:2];
++            /* verilator lint_on WIDTH */
+             decode_cs_insn("c.or");
+           end
+           INSN_CAND: begin
++            /* verilator lint_off WIDTH */
+             rvfi_rs2_addr = 8 + rvfi_insn[4:2];
++            /* verilator lint_on WIDTH */
+             decode_cs_insn("c.and");
+           end
+ 				  INSN_CBEQZ:      decode_cb_insn("c.beqz");
+diff --git a/integration_files/SweRV_EH1/testbench_veri.f b/integration_files/SweRV_EH1/testbench_veri.f
+new file mode 100644
+index 0000000..3ab2358
+--- /dev/null
++++ b/integration_files/SweRV_EH1/testbench_veri.f
+@@ -0,0 +1,11 @@
+++incdir+${PRJ_DIR}/rtl/lib
+++incdir+${PRJ_DIR}/rtl/include
+++incdir+${PRJ_DIR}/snapshots/defaults
++
++// Including Testbench Files
++${PRJ_DIR}/testbench/pkg.sv
++${PRJ_DIR}/testbench/tracer_pkg.sv
++${PRJ_DIR}/testbench/tracer.sv
++${PRJ_DIR}/testbench/ahb_sif.sv
++${PRJ_DIR}/testbench/tb_top.sv
++${PRJ_DIR}/testbench/test_tb_top.cpp
+diff --git a/integration_files/SweRV_EH1/yaml/rtl_simulation.yaml b/integration_files/SweRV_EH1/yaml/rtl_simulation.yaml
+index 661cfe1..8b706a0 100755
+--- a/integration_files/SweRV_EH1/yaml/rtl_simulation.yaml
++++ b/integration_files/SweRV_EH1/yaml/rtl_simulation.yaml
+@@ -44,3 +44,20 @@
+       -cm line+tgl+branch
+       -cm_name test_<test_name>_<iteration>
+       -cm_dir <out>/test.vdb
++
++- tool: verilator
++  compile:
++    cmd:
++      - "verilator --cc -CFLAGS \"-std=c++11\"
++         -Wno-UNOPTFLAT -I/testbench
++         -f flist_verilator.f --top-module tb_top -exe test_tb_top.cpp --autoflush --trace
++         -f testbench_veri.f"
++      - "cp ./testbench/test_tb_top.cpp obj_dir"
++      - "make -C obj_dir -f Vtb_top.mk OPT_FAST=\"-O2\""
++  sim:
++    cmd: >
++        ./obj_dir/Vtb_top +dumpon >><sim_dir>/sim.log
++        env SIM_DIR=<sim_dir>
++          <sim_opts> 
++          +tracer_file_base=<sim_dir>/trace_core
++          -l <sim_dir>/sim.log

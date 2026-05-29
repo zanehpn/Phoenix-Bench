@@ -1,0 +1,498 @@
+From 1b75b04b429486586ef64f8200a061d05114c1ab Mon Sep 17 00:00:00 2001
+From: Karol Gugala <kgugala@antmicro.com>
+Date: Mon, 14 Apr 2025 18:10:41 +0200
+Subject: [PATCH] Prevent bus stalling
+
+Do not stall bus on reading from empty FIFO or writing to full.
+Reads from empty FIFOs return 0, writes to full FIFOs are ignored.
+
+Signed-off-by: Karol Gugala <kgugala@antmicro.com>
+---
+ src/hci/tti.sv                                | 71 +++++++++-----
+ src/i3c.sv                                    |  4 +
+ src/recovery/recovery_handler.sv              |  2 +
+ .../hci_queues_ahb/hci_queues_wrapper.sv      |  4 +
+ .../hci_queues_axi/hci_queues_wrapper.sv      |  4 +
+ .../lib_hci_queues/test_read_write_ports.py   | 97 -------------------
+ .../cocotb/block/lib_hci_queues/tti_queues.py |  3 +
+ .../cocotb/top/lib_i3c_top/test_bus_stall.py  | 77 +++++++++++++++
+ 8 files changed, 141 insertions(+), 121 deletions(-)
+ create mode 100644 verification/cocotb/top/lib_i3c_top/test_bus_stall.py
+
+diff --git a/src/hci/tti.sv b/src/hci/tti.sv
+index d0ed24b9..9b5e4acc 100644
+--- a/src/hci/tti.sv
++++ b/src/hci/tti.sv
+@@ -63,6 +63,7 @@ module tti
+     output logic                       tx_desc_queue_reg_rst_o,
+     input  logic                       tx_desc_queue_reg_rst_we_i,
+     input  logic                       tx_desc_queue_reg_rst_data_i,
++    input  logic                       tx_desc_queue_full_i,
+ 
+     // TX data queue
+     output logic                   tx_data_queue_req_o,
+@@ -77,6 +78,7 @@ module tti
+     input  logic                   tx_data_queue_full_i,
+ 
+     // In-band Interrupt queue
++    input  logic                    ibi_queue_full_i,
+     output logic                    ibi_queue_req_o,
+     input  logic                    ibi_queue_ack_i,
+     output logic [CsrDataWidth-1:0] ibi_queue_data_o,
+@@ -153,35 +155,51 @@ module tti
+     ibi_queue_ready_thld_o = IbiThldWidth'(hwif_tti_i.QUEUE_THLD_CTRL.IBI_THLD.value);
+   end : wire_hwif_thld
+ 
+-  logic tx_data_queue_full_r;
+-  always_ff @(posedge clk_i or negedge rst_ni) begin : register_fifo_status
+-    if (~rst_ni) begin
+-      tx_data_queue_full_r <= '0;
+-    end else begin
+-      tx_data_queue_full_r <= tx_data_queue_full_i;
+-    end
+-  end
+-
+   always_comb begin : wire_hwif_xfer
+-    rx_desc_queue_req_o = hwif_tti_i.RX_DESC_QUEUE_PORT.req;
+-    hwif_tti_o.RX_DESC_QUEUE_PORT.rd_ack = rx_desc_queue_ack_i;
+-    hwif_tti_o.RX_DESC_QUEUE_PORT.rd_data = rx_desc_queue_data_i;
++
++    // RX_DESC_QUEUE_PORT
+     hwif_tti_o.RESET_CONTROL.RX_DESC_RST.we = rx_desc_queue_reg_rst_we_i;
+     hwif_tti_o.RESET_CONTROL.RX_DESC_RST.next = rx_desc_queue_reg_rst_data_i;
++    if (rx_desc_queue_empty_i && hwif_tti_i.RX_DESC_QUEUE_PORT.req) begin
++      hwif_tti_o.RX_DESC_QUEUE_PORT.rd_ack = hwif_tti_i.RX_DESC_QUEUE_PORT.req & ~hwif_tti_i.RX_DESC_QUEUE_PORT.req_is_wr;
++      hwif_tti_o.RX_DESC_QUEUE_PORT.rd_data = '0;
++      rx_desc_queue_req_o = '0;
++    end else begin
++      hwif_tti_o.RX_DESC_QUEUE_PORT.rd_ack = rx_desc_queue_ack_i;
++      hwif_tti_o.RX_DESC_QUEUE_PORT.rd_data = rx_desc_queue_data_i;
++      rx_desc_queue_req_o = hwif_tti_i.RX_DESC_QUEUE_PORT.req;
++    end
+ 
+-    tx_desc_queue_req_o  = hwif_tti_i.TX_DESC_QUEUE_PORT.req & hwif_tti_i.TX_DESC_QUEUE_PORT.req_is_wr;
+-    tx_desc_queue_data_o = hwif_tti_i.TX_DESC_QUEUE_PORT.wr_data;
+-    hwif_tti_o.TX_DESC_QUEUE_PORT.wr_ack = tx_desc_queue_ack_i;
++    // TX_DESC_QUEUE_PORT
+     hwif_tti_o.RESET_CONTROL.TX_DESC_RST.we = tx_desc_queue_reg_rst_we_i;
+     hwif_tti_o.RESET_CONTROL.TX_DESC_RST.next = tx_desc_queue_reg_rst_data_i;
++    if (tx_desc_queue_full_i && hwif_tti_i.TX_DESC_QUEUE_PORT.req) begin
++      hwif_tti_o.TX_DESC_QUEUE_PORT.wr_ack = hwif_tti_i.TX_DESC_QUEUE_PORT.req & hwif_tti_i.TX_DESC_QUEUE_PORT.req_is_wr;
++      tx_desc_queue_req_o  = '0;
++      tx_desc_queue_data_o = '0;
++    end else begin
++      hwif_tti_o.TX_DESC_QUEUE_PORT.wr_ack = tx_desc_queue_ack_i;
++      tx_desc_queue_req_o  = hwif_tti_i.TX_DESC_QUEUE_PORT.req & hwif_tti_i.TX_DESC_QUEUE_PORT.req_is_wr;
++      tx_desc_queue_data_o = hwif_tti_i.TX_DESC_QUEUE_PORT.wr_data;
++    end
+ 
+-    rx_data_queue_req_o = hwif_tti_i.RX_DATA_PORT.req;
+-    hwif_tti_o.RX_DATA_PORT.rd_ack = rx_data_queue_ack_i;
+-    hwif_tti_o.RX_DATA_PORT.rd_data = rx_data_queue_data_i;
++    // RX_DATA_PORT
+     hwif_tti_o.RESET_CONTROL.RX_DATA_RST.we = rx_data_queue_reg_rst_we_i;
+     hwif_tti_o.RESET_CONTROL.RX_DATA_RST.next = rx_data_queue_reg_rst_data_i;
++    if (rx_data_queue_empty_i && hwif_tti_i.RX_DATA_PORT.req) begin
++      hwif_tti_o.RX_DATA_PORT.rd_ack = hwif_tti_i.RX_DATA_PORT.req & ~hwif_tti_i.RX_DATA_PORT.req_is_wr;;
++      hwif_tti_o.RX_DATA_PORT.rd_data = '0;
++      rx_data_queue_req_o = '0;
++    end else begin
++      hwif_tti_o.RX_DATA_PORT.rd_ack = rx_data_queue_ack_i;
++      hwif_tti_o.RX_DATA_PORT.rd_data = rx_data_queue_data_i;
++      rx_data_queue_req_o = hwif_tti_i.RX_DATA_PORT.req;
++    end
+ 
+-    if (bypass_i3c_core_i & tx_data_queue_full_r) begin
++    // TX_DATA_PORT
++    hwif_tti_o.RESET_CONTROL.TX_DATA_RST.we = tx_data_queue_reg_rst_we_i;
++    hwif_tti_o.RESET_CONTROL.TX_DATA_RST.next = tx_data_queue_reg_rst_data_i;
++    if (tx_data_queue_full_i && hwif_tti_i.TX_DATA_PORT.req) begin
+       tx_data_queue_req_o = '0;
+       tx_data_queue_data_o = '0;
+       hwif_tti_o.TX_DATA_PORT.wr_ack = hwif_tti_i.TX_DATA_PORT.req & hwif_tti_i.TX_DATA_PORT.req_is_wr;
+@@ -190,14 +208,19 @@ module tti
+       tx_data_queue_data_o = hwif_tti_i.TX_DATA_PORT.wr_data;
+       hwif_tti_o.TX_DATA_PORT.wr_ack = tx_data_queue_ack_i;
+     end
+-    hwif_tti_o.RESET_CONTROL.TX_DATA_RST.we = tx_data_queue_reg_rst_we_i;
+-    hwif_tti_o.RESET_CONTROL.TX_DATA_RST.next = tx_data_queue_reg_rst_data_i;
+ 
+-    ibi_queue_req_o = hwif_tti_i.IBI_PORT.req & hwif_tti_i.IBI_PORT.req_is_wr;
+-    ibi_queue_data_o = hwif_tti_i.IBI_PORT.wr_data;
+-    hwif_tti_o.IBI_PORT.wr_ack = ibi_queue_ack_i;
++    // IBI_PORT
+     hwif_tti_o.RESET_CONTROL.IBI_QUEUE_RST.we = ibi_queue_reg_rst_we_i;
+     hwif_tti_o.RESET_CONTROL.IBI_QUEUE_RST.next = ibi_queue_reg_rst_data_i;
++    if (ibi_queue_full_i && hwif_tti_i.IBI_PORT.req) begin
++      ibi_queue_req_o = '0;
++      ibi_queue_data_o = '0;
++      hwif_tti_o.IBI_PORT.wr_ack = hwif_tti_i.IBI_PORT.req & hwif_tti_i.IBI_PORT.req_is_wr;
++    end else begin
++      ibi_queue_req_o = hwif_tti_i.IBI_PORT.req & hwif_tti_i.IBI_PORT.req_is_wr;
++      ibi_queue_data_o = hwif_tti_i.IBI_PORT.wr_data;
++      hwif_tti_o.IBI_PORT.wr_ack = ibi_queue_ack_i;
++    end
+   end : wire_hwif_xfer
+ 
+   always_comb begin : wire_hwif_rst
+diff --git a/src/i3c.sv b/src/i3c.sv
+index 2ba5824c..29e48afa 100644
+--- a/src/i3c.sv
++++ b/src/i3c.sv
+@@ -884,6 +884,7 @@ module i3c
+   logic                          csr_tti_tx_desc_reg_rst;
+   logic                          csr_tti_tx_desc_reg_rst_we;
+   logic                          csr_tti_tx_desc_reg_rst_data;
++  logic                          csr_tti_tx_desc_full;
+ 
+   // TTI RX data queue
+   logic                          csr_tti_rx_data_req;
+@@ -953,6 +954,7 @@ module i3c
+       .tx_desc_queue_reg_rst_o     (csr_tti_tx_desc_reg_rst),
+       .tx_desc_queue_reg_rst_we_i  (csr_tti_tx_desc_reg_rst_we),
+       .tx_desc_queue_reg_rst_data_i(csr_tti_tx_desc_reg_rst_data),
++      .tx_desc_queue_full_i        (csr_tti_tx_desc_full),
+ 
+       // TTI RX queue
+       .rx_data_queue_req_o         (csr_tti_rx_data_req),
+@@ -983,6 +985,7 @@ module i3c
+       .tx_data_queue_full_i        (csr_tti_tx_data_full),
+ 
+       // TTI In-band Interrupt (IBI) queue
++      .ibi_queue_full_i        (tti_ibi_full),
+       .ibi_queue_req_o         (csr_tti_ibi_req),
+       .ibi_queue_ack_i         (csr_tti_ibi_ack),
+       .ibi_queue_data_o        (csr_tti_ibi_data),
+@@ -1064,6 +1067,7 @@ module i3c
+       .csr_tti_tx_desc_queue_reg_rst_i     (csr_tti_tx_desc_reg_rst),
+       .csr_tti_tx_desc_queue_reg_rst_we_o  (csr_tti_tx_desc_reg_rst_we),
+       .csr_tti_tx_desc_queue_reg_rst_data_o(csr_tti_tx_desc_reg_rst_data),
++      .csr_tti_tx_desc_queue_full_o        (csr_tti_tx_desc_full),
+ 
+       // TTI RX queue
+       .csr_tti_rx_data_queue_req_i         (csr_tti_rx_data_req),
+diff --git a/src/recovery/recovery_handler.sv b/src/recovery/recovery_handler.sv
+index 51cacd98..002428f7 100644
+--- a/src/recovery/recovery_handler.sv
++++ b/src/recovery/recovery_handler.sv
+@@ -120,6 +120,7 @@ module recovery_handler
+     output logic                          csr_tti_rx_desc_queue_ready_thld_trig_o,
+ 
+     // TX Descriptor queue
++    output logic                          csr_tti_tx_desc_queue_full_o,
+     input  logic                          csr_tti_tx_desc_queue_req_i,
+     output logic                          csr_tti_tx_desc_queue_ack_o,
+     input  logic [      CsrDataWidth-1:0] csr_tti_tx_desc_queue_data_i,
+@@ -722,6 +723,7 @@ module recovery_handler
+   // T1MUX disconnects this FIFO from TTI logic
+   logic exec_tti_tx_desc_queue_clr;
+ 
++  assign csr_tti_tx_desc_queue_full_o = tti_tx_desc_queue_full;
+   assign csr_tti_tx_desc_queue_ack_o = tti_tx_desc_queue_ack;
+   assign csr_tti_tx_desc_queue_reg_rst_we_o = tti_tx_desc_queue_reg_rst_we;
+   assign csr_tti_tx_desc_queue_reg_rst_data_o = tti_tx_desc_queue_reg_rst_data;
+diff --git a/verification/cocotb/block/hci_queues_ahb/hci_queues_wrapper.sv b/verification/cocotb/block/hci_queues_ahb/hci_queues_wrapper.sv
+index 93d96efd..1343aa83 100644
+--- a/verification/cocotb/block/hci_queues_ahb/hci_queues_wrapper.sv
++++ b/verification/cocotb/block/hci_queues_ahb/hci_queues_wrapper.sv
+@@ -470,6 +470,7 @@ module hci_queues_wrapper
+       .rx_desc_queue_reg_rst_o     (csr_tti_rx_desc_queue_reg_rst),
+       .rx_desc_queue_reg_rst_we_i  (csr_tti_rx_desc_queue_reg_rst_we),
+       .rx_desc_queue_reg_rst_data_i(csr_tti_rx_desc_queue_reg_rst_data),
++      .rx_desc_queue_empty_i       (tti_rx_desc_empty_o),
+ 
+       // TTI TX descriptors queue
+       .tx_desc_queue_req_o         (csr_tti_tx_desc_queue_req),
+@@ -480,6 +481,7 @@ module hci_queues_wrapper
+       .tx_desc_queue_reg_rst_o     (csr_tti_tx_desc_queue_reg_rst),
+       .tx_desc_queue_reg_rst_we_i  (csr_tti_tx_desc_queue_reg_rst_we),
+       .tx_desc_queue_reg_rst_data_i(csr_tti_tx_desc_queue_reg_rst_data),
++      .tx_desc_queue_full_i        (tti_tx_desc_full_o),
+ 
+       // TTI RX queue
+       .rx_data_queue_req_o         (csr_tti_rx_data_queue_req),
+@@ -491,6 +493,7 @@ module hci_queues_wrapper
+       .rx_data_queue_reg_rst_o     (csr_tti_rx_data_queue_reg_rst),
+       .rx_data_queue_reg_rst_we_i  (csr_tti_rx_data_queue_reg_rst_we),
+       .rx_data_queue_reg_rst_data_i(csr_tti_rx_data_queue_reg_rst_data),
++      .rx_data_queue_empty_i       (tti_rx_empty_o),
+ 
+       // TTI TX queue
+       .tx_data_queue_req_o         (csr_tti_tx_data_queue_req),
+@@ -512,6 +515,7 @@ module hci_queues_wrapper
+       .ibi_queue_reg_rst_o     (csr_tti_ibi_queue_reg_rst),
+       .ibi_queue_reg_rst_we_i  (csr_tti_ibi_queue_reg_rst_we),
+       .ibi_queue_reg_rst_data_i(csr_tti_ibi_queue_reg_rst_data),
++      .ibi_queue_full_i        (tti_ibi_full_o),
+ 
+       .bypass_i3c_core_i,
+ 
+diff --git a/verification/cocotb/block/hci_queues_axi/hci_queues_wrapper.sv b/verification/cocotb/block/hci_queues_axi/hci_queues_wrapper.sv
+index 77d0ccdd..c7067e19 100644
+--- a/verification/cocotb/block/hci_queues_axi/hci_queues_wrapper.sv
++++ b/verification/cocotb/block/hci_queues_axi/hci_queues_wrapper.sv
+@@ -542,6 +542,7 @@ module hci_queues_wrapper
+       .rx_desc_queue_reg_rst_o     (csr_tti_rx_desc_queue_reg_rst),
+       .rx_desc_queue_reg_rst_we_i  (csr_tti_rx_desc_queue_reg_rst_we),
+       .rx_desc_queue_reg_rst_data_i(csr_tti_rx_desc_queue_reg_rst_data),
++      .rx_desc_queue_empty_i       (tti_rx_desc_empty_o),
+ 
+       // TTI TX descriptors queue
+       .tx_desc_queue_req_o         (csr_tti_tx_desc_queue_req),
+@@ -552,6 +553,7 @@ module hci_queues_wrapper
+       .tx_desc_queue_reg_rst_o     (csr_tti_tx_desc_queue_reg_rst),
+       .tx_desc_queue_reg_rst_we_i  (csr_tti_tx_desc_queue_reg_rst_we),
+       .tx_desc_queue_reg_rst_data_i(csr_tti_tx_desc_queue_reg_rst_data),
++      .tx_desc_queue_full_i        (tti_tx_desc_full_o),
+ 
+       // TTI RX queue
+       .rx_data_queue_req_o         (csr_tti_rx_data_queue_req),
+@@ -563,6 +565,7 @@ module hci_queues_wrapper
+       .rx_data_queue_reg_rst_o     (csr_tti_rx_data_queue_reg_rst),
+       .rx_data_queue_reg_rst_we_i  (csr_tti_rx_data_queue_reg_rst_we),
+       .rx_data_queue_reg_rst_data_i(csr_tti_rx_data_queue_reg_rst_data),
++      .rx_data_queue_empty_i       (tti_rx_empty_o),
+ 
+       // TTI TX queue
+       .tx_data_queue_req_o         (csr_tti_tx_data_queue_req),
+@@ -584,6 +587,7 @@ module hci_queues_wrapper
+       .ibi_queue_reg_rst_o     (csr_tti_ibi_queue_reg_rst),
+       .ibi_queue_reg_rst_we_i  (csr_tti_ibi_queue_reg_rst_we),
+       .ibi_queue_reg_rst_data_i(csr_tti_ibi_queue_reg_rst_data),
++      .ibi_queue_full_i        (tti_ibi_full_o),
+ 
+       .bypass_i3c_core_i,
+ 
+diff --git a/verification/cocotb/block/lib_hci_queues/test_read_write_ports.py b/verification/cocotb/block/lib_hci_queues/test_read_write_ports.py
+index 8ce7bc44..7da1209e 100644
+--- a/verification/cocotb/block/lib_hci_queues/test_read_write_ports.py
++++ b/verification/cocotb/block/lib_hci_queues/test_read_write_ports.py
+@@ -254,26 +254,6 @@ async def write_read_tti_tx_desc_queue(dut: SimHandleBase):
+     await ClockCycles(tb.clk, 10)
+ 
+ 
+-@cocotb.test()
+-async def overflow_tti_tx_desc_queue(dut: SimHandleBase):
+-    """
+-    Enqueue multiple transfers through COMMAND_PORT and verify
+-    whether the data matches after fetching it from the controller
+-    """
+-    tb = TTIQueuesTestInterface(dut)
+-    await tb.setup()
+-
+-    data = [randint(1, 2**32 - 1) for _ in range(QUEUE_SIZE + TEST_SIZE)]
+-    await test_write(data[:-TEST_SIZE], tb.put_tx_desc)
+-
+-    write_coroutine = cocotb.start_soon(test_write(data[-TEST_SIZE:], tb.put_tx_desc))
+-    await ClockCycles(tb.clk, 10)
+-
+-    read_coroutine = cocotb.start_soon(test_read(data, tb.get_tx_desc))
+-
+-    await Combine(write_coroutine, read_coroutine)
+-    await ClockCycles(tb.clk, 10)
+-
+ 
+ @cocotb.test()
+ async def underflow_tti_tx_desc_queue(dut: SimHandleBase):
+@@ -307,27 +287,6 @@ async def write_read_tti_tx_queue(dut: SimHandleBase):
+     await ClockCycles(tb.clk, 10)
+ 
+ 
+-@cocotb.test()
+-async def overflow_tti_tx_queue(dut: SimHandleBase):
+-    """
+-    Place TX data through XFER_DATA_PORT (and overflow it) & verify it from the
+-    other (controller's) side of the queue
+-    """
+-    tb = TTIQueuesTestInterface(dut)
+-    await tb.setup()
+-
+-    tx_data = [randint(1, 2**32 - 1) for _ in range(QUEUE_SIZE + TEST_SIZE)]
+-    await test_write(tx_data[:-TEST_SIZE], tb.put_tx_data)
+-
+-    write_coroutine = cocotb.start_soon(test_write(tx_data[-TEST_SIZE:], tb.put_tx_data))
+-    await ClockCycles(tb.clk, 10)
+-
+-    read_coroutine = cocotb.start_soon(test_read(tx_data, tb.get_tx_data))
+-
+-    await Combine(write_coroutine, read_coroutine)
+-    await ClockCycles(tb.clk, 10)
+-
+-
+ @cocotb.test()
+ async def underflow_tti_tx_queue(dut: SimHandleBase):
+     """
+@@ -379,24 +338,6 @@ async def overflow_tti_rx_queue(dut: SimHandleBase):
+     await ClockCycles(tb.clk, 10)
+ 
+ 
+-@cocotb.test()
+-async def underflow_tti_rx_queue(dut: SimHandleBase):
+-    """
+-    Fetch data from RX Queue to cause underflow and write the data to ensure
+-    it's correct when available
+-    """
+-    tb = TTIQueuesTestInterface(dut)
+-    await tb.setup()
+-
+-    rx_data = [randint(1, 2**32 - 1) for _ in range(TEST_SIZE)]
+-    read_coroutine = cocotb.start_soon(test_read(rx_data, tb.get_rx_data))
+-    await ClockCycles(tb.clk, 10)
+-    write_coroutine = cocotb.start_soon(test_write(rx_data, tb.put_rx_data))
+-
+-    await Combine(write_coroutine, read_coroutine)
+-    await ClockCycles(tb.clk, 10)
+-
+-
+ @cocotb.test()
+ async def fetch_response_from_tti_rx_desc_port(dut: SimHandleBase):
+     """
+@@ -432,24 +373,6 @@ async def overflow_tti_rx_desc_queue(dut: SimHandleBase):
+     await ClockCycles(tb.clk, 10)
+ 
+ 
+-@cocotb.test()
+-async def underflow_tti_rx_desc_queue(dut: SimHandleBase):
+-    """
+-    Fetch data from Response Queue to cause underflow and write the data to ensure
+-    it's correct when available
+-    """
+-    tb = TTIQueuesTestInterface(dut)
+-    await tb.setup()
+-
+-    data = [randint(1, 2**32 - 1) for _ in range(TEST_SIZE)]
+-    read_coroutine = cocotb.start_soon(test_read(data, tb.get_rx_desc))
+-    await ClockCycles(tb.clk, 10)
+-    write_coroutine = cocotb.start_soon(test_write(data, tb.put_rx_desc))
+-
+-    await Combine(write_coroutine, read_coroutine)
+-    await ClockCycles(tb.clk, 10)
+-
+-
+ @cocotb.test()
+ async def write_read_ibi_queue(dut: SimHandleBase):
+     """
+@@ -463,26 +386,6 @@ async def write_read_ibi_queue(dut: SimHandleBase):
+     await ClockCycles(tb.clk, 10)
+ 
+ 
+-@cocotb.test()
+-async def overflow_ibi_queue(dut: SimHandleBase):
+-    """
+-    Put read data onto the IBI queue (and overflow it) & fetch it through IBI_PORT
+-    """
+-    tb = HCIQueuesTestInterface(dut)
+-    await tb.setup()
+-
+-    ibi_data = [randint(1, 2**32 - 1) for _ in range(QUEUE_SIZE + TEST_SIZE)]
+-    await test_write(ibi_data[:-TEST_SIZE], tb.put_ibi_data)
+-
+-    write_coroutine = cocotb.start_soon(test_write(ibi_data[-TEST_SIZE:], tb.put_ibi_data))
+-    await ClockCycles(tb.clk, 10)
+-
+-    read_coroutine = cocotb.start_soon(test_read(ibi_data, tb.get_ibi_data))
+-
+-    await Combine(write_coroutine, read_coroutine)
+-    await ClockCycles(tb.clk, 10)
+-
+-
+ @cocotb.test()
+ async def underflow_ibi_queue(dut: SimHandleBase):
+     """
+diff --git a/verification/cocotb/block/lib_hci_queues/tti_queues.py b/verification/cocotb/block/lib_hci_queues/tti_queues.py
+index 6c66424f..91da02e5 100644
+--- a/verification/cocotb/block/lib_hci_queues/tti_queues.py
++++ b/verification/cocotb/block/lib_hci_queues/tti_queues.py
+@@ -31,6 +31,9 @@ async def setup(self):
+         self.dut.tti_tx_flush_i.value = 0
+         self.dut.bypass_i3c_core_i.value = 0
+ 
++        if hasattr(self.dut, "disable_id_filtering_i"):
++            self.dut.disable_id_filtering_i.value = 1
++
+         await super()._setup(get_frontend_bus_if())
+ 
+     async def reset(self):
+diff --git a/verification/cocotb/top/lib_i3c_top/test_bus_stall.py b/verification/cocotb/top/lib_i3c_top/test_bus_stall.py
+new file mode 100644
+index 00000000..d5cadd74
+--- /dev/null
++++ b/verification/cocotb/top/lib_i3c_top/test_bus_stall.py
+@@ -0,0 +1,77 @@
++# SPDX-License-Identifier: Apache-2.0
++
++import logging
++import random
++
++from bus2csr import dword2int, int2dword
++from interface import I3CTopTestInterface
++
++import cocotb
++from cocotb.triggers import Timer
++
++TRANSACTION_COUNT = 1024
++
++async def timeout_task(timeout):
++    await Timer(timeout, "us")
++    raise RuntimeError("Test timeout!")
++
++
++async def initialize(dut, fclk=100.0, timeout=50):
++    """
++    Common test initialization routine
++    """
++
++    cocotb.log.setLevel(logging.DEBUG)
++
++    # Start the background timeout task
++    await cocotb.start(timeout_task(timeout))
++
++    tb = I3CTopTestInterface(dut)
++    await tb.setup(fclk)
++    return tb
++
++
++async def test_read(tb, reg):
++    # try reading empty fifo multiple times
++    for _ in range(TRANSACTION_COUNT):
++        data = dword2int(
++            await tb.read_csr(reg, 4)
++        )
++        # we should not stall and the data should be read as zero
++        assert data == 0
++
++
++@cocotb.test()
++async def test_empty_rx_desc_read(dut):
++    tb = await initialize(dut)
++    await test_read(tb, tb.reg_map.I3C_EC.TTI.RX_DESC_QUEUE_PORT.base_addr)
++
++
++@cocotb.test()
++async def test_empty_rx_data_read(dut):
++    tb = await initialize(dut)
++    await test_read(tb, tb.reg_map.I3C_EC.TTI.RX_DATA_PORT.base_addr)
++
++
++@cocotb.test()
++async def test_empty_indirect_fifo_read(dut):
++    tb = await initialize(dut)
++    await test_read(tb, tb.reg_map.I3C_EC.SECFWRECOVERYIF.INDIRECT_FIFO_DATA.base_addr)
++
++@cocotb.test()
++async def test_full_tx_desc_write(dut):
++    tb = await initialize(dut)
++    for _ in range(TRANSACTION_COUNT):
++        await tb.write_csr(tb.reg_map.I3C_EC.TTI.TX_DESC_QUEUE_PORT.base_addr, int2dword(random.randint(0, 0xffffffff)), 4)
++
++@cocotb.test()
++async def test_full_tx_data_write(dut):
++    tb = await initialize(dut)
++    for _ in range(TRANSACTION_COUNT):
++        await tb.write_csr(tb.reg_map.I3C_EC.TTI.TX_DATA_PORT.base_addr, int2dword(random.randint(0, 0xffffffff)), 4)
++
++@cocotb.test()
++async def test_full_ibi_write(dut):
++    tb = await initialize(dut)
++    for _ in range(TRANSACTION_COUNT):
++        await tb.write_csr(tb.reg_map.I3C_EC.TTI.IBI_PORT.base_addr, int2dword(random.randint(0, 0xffffffff)), 4)

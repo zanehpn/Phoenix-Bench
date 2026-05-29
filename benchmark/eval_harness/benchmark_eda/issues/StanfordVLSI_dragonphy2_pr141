@@ -1,0 +1,36 @@
+# Remove combo logic loop in qr_4t1_mux_top
+
+- Source URL: https://github.com/StanfordVLSI/dragonphy2/issues/140
+
+There is currently a combo logic loop in ``qr_4t1_mux_top``, where ``data`` appears on both the ``RHS`` and ``LHS`` of an ``assign`` statement:
+https://github.com/StanfordVLSI/dragonphy2/blob/1f1c97ba5f52445fe06aa39ac60585e053916806/vlog/chip_src/tx_16t1/qr_4t1_mux_top.sv#L47
+
+I believe this was added to prevent glitches if clocks are non-overlapping, but there may be other ways to deal with this, for example given the 4-bit select signal ``{Q, I, QB, IB}``:
+* ``4'b1100`` or ``4'b0100``: choose ``D1MQ``
+* ``4'b0110`` or ``4'b0010``: choose ``D1MI``
+* ``4'b0011`` or ``4'b0001``: choose ``D2MQB``
+* ``4'b1001`` or ``4'b1000``: choose ``D2MIB``
+
+However, because this is such a critical block, it would be helpful to think about what the intended digital circuit is, so that we can make sure that is what will be produced by the Verilog.
+
+PR title: Combinational loop removed
+
+Source: https://github.com/StanfordVLSI/dragonphy2/pull/141
+
+PR description:
+No description was provided by the pull request author.
+
+Comments:
+- CansWang (October 27, 2020): No additional context provided beyond the PR title.
+- sgherbst (October 28, 2020): "just noticed that the branch was out-of-date so I updated it. If the tests are still passing (will find out in ~1hr), then I'll merge the changes."
+- sgherbst (Approval, October 28, 2020): "LGTM, thanks!"
+
+Linked issue:
+- #140 "Remove combo logic loop in qr_4t1_mux_top"
+
+Key details:
+- Status: Merged
+- Merge date: October 28, 2020
+- Commits: 2 commits merged
+- Reviewers: sgherbst (approved)
+- Participants: CansWang, sgherbst

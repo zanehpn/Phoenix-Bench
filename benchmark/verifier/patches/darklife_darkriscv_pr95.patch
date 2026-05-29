@@ -1,0 +1,61 @@
+From abaae6c6df09e27d27f614e712cfae81171e6636 Mon Sep 17 00:00:00 2001
+From: MrJake222 <norbertzpilicy@gmail.com>
+Date: Sat, 26 Apr 2025 17:15:54 +0200
+Subject: [PATCH] Added 2 CSR counters: cycle & instructions
+
+Fixes #94
+---
+ rtl/config.vh   |  1 +
+ rtl/darkriscv.v | 20 ++++++++++++++++++++
+ 2 files changed, 21 insertions(+)
+
+diff --git a/rtl/config.vh b/rtl/config.vh
+index 33be1459..36c83e5d 100644
+--- a/rtl/config.vh
++++ b/rtl/config.vh
+@@ -121,6 +121,7 @@
+ // order to read some special exception registers.  Also, THREADS use this in
+ // order to identify the core number.  
+ //`define __CSR__
++//`define __CSR_ESSENTIAL__
+ 
+ // instruction trace:
+ //
+diff --git a/rtl/darkriscv.v b/rtl/darkriscv.v
+index 0178eb01..8df6923d 100644
+--- a/rtl/darkriscv.v
++++ b/rtl/darkriscv.v
+@@ -344,6 +344,20 @@ module darkriscv
+         wire SRET = SYS && FCT3==0 && XIDATA[31:20]==12'b000100000010;
+     `endif
+ 
++    `ifdef __CSR_ESSENTIAL__
++		reg [63:0] CSRCLK = 0;
++		reg [63:0] CSRINS = 0;
++		always@(posedge CLK)
++		begin
++			if(!XRES)
++			begin
++				CSRCLK = CSRCLK+1;
++				if(!HLT & !(|FLUSH))
++					CSRINS = CSRINS+1;
++			end
++		end
++    `endif
++
+     wire [31:0] CRDATA = 
+     `ifdef __THREADS__    
+                         XIDATA[31:20]==12'hf14 ? { CPTR, TPTR } : // core/thread number
+@@ -367,6 +381,12 @@ module darkriscv
+                         XIDATA[31:20]==12'h105 ? STVEC    : // machine vector table
+                         XIDATA[31:20]==12'h100 ? SSTATUS  : // machine status
+                         XIDATA[31:20]==12'h140 ? SSCRATCH : // machine status
++    `endif
++    `ifdef __CSR_ESSENTIAL__
++						XIDATA[31:20]==12'hC00 ? CSRCLK[31:0]  :
++						XIDATA[31:20]==12'hC02 ? CSRINS[31:0]  :
++						XIDATA[31:20]==12'hC80 ? CSRCLK[63:32] :
++						XIDATA[31:20]==12'hC82 ? CSRINS[63:32] :
+     `endif
+                                                  0;	 // unknown
+ 

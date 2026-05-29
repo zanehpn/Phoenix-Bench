@@ -1,0 +1,44 @@
+# Add method to trigger ADC dump without external pin
+
+- Source URL: https://github.com/StanfordVLSI/dragonphy2/issues/13
+
+As I understand it, this would make lab testing easier
+
+
+
+
+
+
+
+
+
+
+
+
+PR title: Small fixes
+
+Source: https://github.com/StanfordVLSI/dragonphy2/pull/126
+
+PR description:
+This PR addresses three open issues by implementing the following features:
+
+1. SRAM dump trigger via register - option to trigger SRAM dump without an external pin
+2. CDR update clamping - mode to limit Phase Interpolator (PI) code updates to +/-1
+3. PI local encoder fix - resolves X-optimism in the int_Qperi component
+
+Implementation details:
+The contributor introduced a new 32-bit `misc_ctrl_bits` register to accommodate these features, with only 5 of 32 bits currently utilized. For SRAM dumping, setting bit [2] enables the feature while bit [3] toggles the internal dump_start signal. CDR clamping is enabled via bit [3], with adjustable clamp amounts through a `cdr_clamp_amt` register defaulting to +/-1.
+
+The X-optimism fix was formally verified using JasperGold to ensure logical equivalence with the previous implementation. Additionally, a bug fix improved error reporting in make.py for JusTAG and genesis build failures.
+
+Linked issues:
+- #13 "Add method to trigger ADC dump without external pin"
+- #20 "Investigate mode in CDR to limit updates in PI codes to +/-1"
+- #63 "Fix X-pessimism in int_Qperi in PI_local_encoder"
+
+Comments:
+- sgherbst (Oct 9): "justag and genesis errors weren't previously raising exceptions in make.py"
+- sjkim85 (Oct 13): Requested 30ps clock delay adjustment to "loopback_sram_int" test; confirmed no changes needed to "mm_cdr_slew" test after merge.
+- sgherbst (Oct 13): "if `en_clamp` is `0` (which is the default), then the phase update is exactly the same as before"
+
+Status: Merged Oct 14, 2020.

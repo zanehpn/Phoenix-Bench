@@ -1,0 +1,54 @@
+diff --git a/hw/carfield.sv b/hw/carfield.sv
+index d6ac6ab..02917ff 100755
+--- a/hw/carfield.sv
++++ b/hw/carfield.sv
+@@ -694,6 +694,7 @@ assign hyper_isolate_req = '0;
+ assign slave_isolate_req[SafetyIslandSlvIdx] = car_regs_reg2hw.safety_island_isolate.q;
+ assign slave_isolate_req[IntClusterSlvIdx]   = car_regs_reg2hw.pulp_cluster_isolate.q;
+ assign slave_isolate_req[FPClusterSlvIdx]    = car_regs_reg2hw.spatz_cluster_isolate.q;
++// L2 ports stay non-isolated; AMO handling is provided via axi_riscv_atomics_structs in front of L2 SPM.
+ assign slave_isolate_req[L2Port1SlvIdx]      = 'd0;
+ assign slave_isolate_req[L2Port2SlvIdx]      = 'd0;
+ assign slave_isolate_req[MailboxSlvIdx]      = 'd0;
+@@ -738,9 +739,41 @@ carfield_a32_d32_reg_rsp_t reg_wdt_rsp;
+ carfield_axi_slv_req_t axi_mbox_req;
+ carfield_axi_slv_rsp_t axi_mbox_rsp;
+ 
++// L2 SPM atomic adapters (one per L2 AXI slave port)
++carfield_axi_slv_req_t axi_l2_port1_req_atomics;
++carfield_axi_slv_rsp_t axi_l2_port1_rsp_atomics;
++carfield_axi_slv_req_t axi_l2_port2_req_atomics;
++carfield_axi_slv_rsp_t axi_l2_port2_rsp_atomics;
++
+ /***************
+ * Carfield IPs *
+ ***************/
++
++// Insert AMO support in front of both L2 SPM ports.
++axi_riscv_atomics_structs #(
++  .axi_req_t ( carfield_axi_slv_req_t ),
++  .axi_rsp_t ( carfield_axi_slv_rsp_t )
++) i_axi_riscv_atomics_l2_port1 (
++  .clk_i     ( l2_clk                               ),
++  .rst_ni    ( l2_rst_n                             ),
++  .slv_req_i ( axi_slv_req[L2Port1SlvIdx]           ),
++  .slv_rsp_o ( axi_slv_rsp[L2Port1SlvIdx]           ),
++  .mst_req_o ( axi_l2_port1_req_atomics             ),
++  .mst_rsp_i ( axi_l2_port1_rsp_atomics             )
++);
++
++axi_riscv_atomics_structs #(
++  .axi_req_t ( carfield_axi_slv_req_t ),
++  .axi_rsp_t ( carfield_axi_slv_rsp_t )
++) i_axi_riscv_atomics_l2_port2 (
++  .clk_i     ( l2_clk                               ),
++  .rst_ni    ( l2_rst_n                             ),
++  .slv_req_i ( axi_slv_req[L2Port2SlvIdx]           ),
++  .slv_rsp_o ( axi_slv_rsp[L2Port2SlvIdx]           ),
++  .mst_req_o ( axi_l2_port2_req_atomics             ),
++  .mst_rsp_i ( axi_l2_port2_rsp_atomics             )
++);
++
+ // Cheshire SoC
+ // Host Clock Domain
+ cheshire_wrap #(

@@ -1,0 +1,19 @@
+diff --git a/src/V3Randomize.cpp b/src/V3Randomize.cpp
+index 0c39753..4f9f947 100644
+--- a/src/V3Randomize.cpp
++++ b/src/V3Randomize.cpp
+@@ -2635,6 +2635,14 @@ class RandomizeVisitor final : public VNVisitor {
+                 }
+                 if (!argp) continue;
+                 AstNodeExpr* exprp = argp->exprp();
++                if (VN_IS(exprp, MemberSel) || VN_IS(exprp, ArraySel)) {
++                    // Support mixed std::randomize() argument kinds by normalizing all arguments
++                    // to reference parameters, even when some args are already simple VarRefs.
++                    AstNodeExpr* const exprClonep = exprp->cloneTree(false);
++                    AstNodeVarRef* const targetRefp = VN_CAST(exprClonep, NodeVarRef);
++                    if (!targetRefp) exprp->v3fatalSrc("Expected a variable-like std::randomize() arg");
++                    if (targetRefp->classOrPackagep() == m_modp) targetRefp->classOrPackagep(nullptr);
++                }
+ 
+                 AstCMethodHard* const basicMethodp = new AstCMethodHard{
+                     nodep->fileline(),

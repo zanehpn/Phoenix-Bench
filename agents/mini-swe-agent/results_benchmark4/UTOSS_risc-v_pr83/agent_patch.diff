@@ -1,0 +1,73 @@
+diff --git a/src/Instruction_Decode/Instruction_Decode.v b/src/Instruction_Decode/Instruction_Decode.v
+index ac3156a..ac6b53f 100644
+--- a/src/Instruction_Decode/Instruction_Decode.v
++++ b/src/Instruction_Decode/Instruction_Decode.v
+@@ -4,15 +4,11 @@
+ module Instruction_Decode(
+ 
+ 	input wire [31:0] instr,
+-	input wire clk,
+-	input wire reset,
+ 	input wire [31:0] ResultData,
+   input wire reg_write,
+   output opcode_t opcode,
+   output reg [2:0] funct3,
+ 	output wire [3:0] ALUControl,
+-	output wire [31:0] baseAddr,
+-	output wire [31:0] writeData,
+   output imm_t imm_ext
+ );
+ 
+@@ -144,19 +140,5 @@ module Instruction_Decode(
+ 
+ 	);
+ 
+-	//instantiate Register File module
+-	registerFile instanceRegFile(
+-
+-		.Addr1(rs1),
+-		.Addr2(rs2),
+-		.Addr3(rd),
+-		.clk(clk),
+-		.reset(reset),
+-		.regWrite(reg_write),
+-		.dataIn(ResultData),
+-		.baseAddr(baseAddr),
+-		.writeData(writeData)
+-
+-	);
+-
++	
+ endmodule
+diff --git a/src/top.v b/src/top.v
+index fc4903a..25ccf8f 100644
+--- a/src/top.v
++++ b/src/top.v
+@@ -163,8 +163,6 @@ module top #( parameter MEM_SIZE = 1024 )
+     , .opcode          ( opcode           )
+     , .funct3          ( funct3           ) 
+     , .ALUControl      ( __tmp_ALUControl )
+-    , .baseAddr        ( rd1              )
+-    , .writeData       ( rd2              )
+     , .imm_ext         ( imm_ext          )
+     );
+ 
+@@ -209,6 +207,18 @@ module top #( parameter MEM_SIZE = 1024 )
+     endcase
+   end
+ 
++  registerFile instanceRegFile
++    ( .Addr1    ( instruction_decode.rs1 )
++    , .Addr2    ( instruction_decode.rs2 )
++    , .Addr3    ( instruction_decode.rd  )
++    , .clk      ( clk                    )
++    , .regWrite ( cfsm__reg_write        )
++    , .dataIn   ( result                 )
++    , .reset    ( reset                  )
++    , .baseAddr ( rd1                    )
++    , .writeData( rd2                    )
++    );
++
+   always @(posedge clk) begin
+ 	dataA <= rd1;
+ 	dataB <= rd2;

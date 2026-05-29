@@ -1,0 +1,46 @@
+diff --git a/py_src/pyslint.py b/py_src/pyslint.py
+index f350c7d..acaeaa9 100644
+--- a/py_src/pyslint.py
++++ b/py_src/pyslint.py
+@@ -44,6 +44,7 @@ def pyslint_update_rule_ids():
+   lv_sv_ruleid_l.append('FUNC_NO_BEGIN_IN_TIMING_CTRL')
+   lv_sv_ruleid_l.append('DBG_AVOID_BEGIN_IN_TASK')
+   lv_sv_ruleid_l.append('COMPAT_DPI_NO_MDA')
++  lv_sv_ruleid_l.append('COMPAT_FN_REF_ARG_AUTOMATIC')
+   lv_sv_ruleid_l.append('DBG_CL_MISSING_ENDLABEL')
+   lv_sv_ruleid_l.append('COMPAT_PRE_RAND_NON_VOID')
+   lv_sv_ruleid_l.append('COMPAT_POST_RAND_NON_VOID')
+@@ -1085,6 +1086,7 @@ for scope_i in (tree.root.members):
+   REUSE_NO_TDEF_IN_MOD(scope_i)
+   COMPAT_SVA_NO_CONC_IN_FE(scope_i)
+   COMPAT_SVA_NO_EXPECT_EXPR_IN_INIT(scope_i)
++  COMPAT_FN_REF_ARG_AUTOMATIC(scope_i)
+   COMPAT_CG_OPT_PI_CL(scope_i)
+   REUSE_CG_NO_ILBINS_CL(scope_i)
+   PERF_CG_NO_ABIN_W_DEF_CL(scope_i)
+@@ -1112,3 +1114,25 @@ if (cu_scope.kind.name != 'ClassDeclaration'):
+       DBG_SVA_MISSING_ENDLABEL(m_i)
+       NAME_CG_PREFIX(m_i)
+   
++
++def COMPAT_FN_REF_ARG_AUTOMATIC(lv_cu_scope):
++  if (lv_cu_scope.kind.name == 'ModuleDeclaration' or
++      lv_cu_scope.kind.name == 'InterfaceDeclaration' or
++      lv_cu_scope.kind.name == 'PackageDeclaration' or
++      lv_cu_scope.kind.name == 'ProgramDeclaration'):
++    for lv_mem_i in getattr(lv_cu_scope, 'members', []):
++      if (lv_mem_i.kind.name == 'FunctionDeclaration'):
++        lv_proto = lv_mem_i.prototype
++        lv_has_ref_arg = False
++        for lv_arg_i in getattr(lv_proto, 'formalArguments', []):
++          if (hasattr(lv_arg_i, 'direction') and
++              hasattr(lv_arg_i.direction, 'kind') and
++              lv_arg_i.direction.kind.name == 'Ref'):
++            lv_has_ref_arg = True
++            break
++        if (lv_has_ref_arg and
++            (not hasattr(lv_proto, 'isAutomatic') or not lv_proto.isAutomatic)):
++          msg = 'function with ref argument shall be declared automatic: '
++          msg += str(lv_proto)
++          lv_rule_id = 'COMPAT_FN_REF_ARG_AUTOMATIC'
++          pyslint_msg(lv_rule_id, msg)

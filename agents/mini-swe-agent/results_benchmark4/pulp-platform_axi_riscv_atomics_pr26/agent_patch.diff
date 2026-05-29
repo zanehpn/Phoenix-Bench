@@ -1,0 +1,41 @@
+diff --git a/src/axi_riscv_lrsc.sv b/src/axi_riscv_lrsc.sv
+index 6d2842c..7c78307 100644
+--- a/src/axi_riscv_lrsc.sv
++++ b/src/axi_riscv_lrsc.sv
+@@ -164,6 +164,7 @@ module axi_riscv_lrsc #(
+     typedef logic [1:0]                              axi_resp_t;
+     typedef logic [AXI_USER_WIDTH-1:0]               axi_user_t;
+     typedef logic [AXI_ADDR_WIDTH-AXI_ADDR_LSB-1:0]  res_addr_t; // Track reservations with given granularity.
++    typedef logic [AXI_ADDR_WIDTH-AXI_ADDR_LSB-1:0]  page_addr_t; // Track pages for burst arbitration.
+     typedef logic [RES_ID_WIDTH-1:0]                 res_id_t;
+ 
+     typedef enum logic [1:0] {
+@@ -659,6 +660,8 @@ module axi_riscv_lrsc #(
+     // Control AW Channel
+     always_comb begin
+         mst_aw_valid            = 1'b0;
++        aw_busy_d               = aw_busy_q;
++        aw_busy_page_d          = aw_busy_page_q;
+         slv_aw_ready_o          = 1'b0;
+         art_check_clr_addr      = '0;
+         art_check_clr_excl      = '0;
+@@ -679,16 +682,16 @@ module axi_riscv_lrsc #(
+                     // New AW and we are ready to handle it.
+                     if (slv_aw_addr_i >= ADDR_BEGIN && slv_aw_addr_i <= ADDR_END) begin
+                         // Inside exclusively-accessible range.
+-                        // Make sure no exclusive AR to the same address is currently waiting.
++                        // Make sure no exclusive AR to the same page is currently waiting.
+                         if (!(slv_ar_valid_i && slv_ar_lock_i &&
+                                 slv_ar_addr_i[AXI_ADDR_WIDTH-1:AXI_ADDR_LSB] == slv_aw_addr_i[AXI_ADDR_WIDTH-1:AXI_ADDR_LSB])) begin
+-                            // Make sure no exclusive write to the same address is currently in
++                            // Make sure no exclusive write to the same page is currently in
+                             // flight.
+                             aw_wifq_exists_inp.data.addr = slv_aw_addr_i[AXI_ADDR_WIDTH-1:AXI_ADDR_LSB];
+                             aw_wifq_exists_inp.data.excl = 1'b1;
+                             aw_wifq_exists_req = 1'b1;
+                             if (aw_wifq_exists_gnt && !wifq_exists) begin
+-                                // Check reservation and clear identical addresses.
++                                // Check reservation and clear all affected reservations sequentially for bursts.
+                                 art_check_clr_addr  = slv_aw_addr_i[AXI_ADDR_WIDTH-1:AXI_ADDR_LSB];
+                                 art_check_clr_excl  = slv_aw_lock_i;
+                                 if (mst_aw_ready) begin

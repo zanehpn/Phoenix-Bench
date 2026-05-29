@@ -1,0 +1,70 @@
+The bug is in `src/dmi_jtag_tap.sv` around the `trst_no` generation logic.
+
+### What’s wrong
+`trst_no` is being driven from a small reset-sync style process that updates on `tck_i` and `trst_ni`, but:
+- `trst_sync1` is assigned combinationally from `trst_ni`
+- `trst_sync2` is registered
+- `trst_no` is updated inside the same `always_ff`
+
+This creates a glitch-prone, poorly defined reset pulse generation path. Since `trst_no` is then used as an asynchronous reset in `dmi_jtag.sv` and `dmi_cdc.sv`, any transient on `trst_no` can asynchronously reset logic in a dangerous way.
+
+### Fix strategy
+Make `trst_no` a clean, direct, synchronous representation of the TAP reset state, and avoid generating a glitchy intermediate reset signal. The safest minimal change is to:
+- remove the broken sync-chain logic
+- drive `trst_no` directly from the actual JTAG reset behavior in a controlled combinational assignment derived from the TAP FSM state
+
+A robust and simple interpretation is:
+- `trst_no = 0` while TAP is in `TestLogicReset`
+- `trst_no = 1` otherwise
+
+That keeps reset asserted during the JTAG Test-Logic-Reset state without introducing extra asynchronous pulse-generation logic.
+
+## SEARCH/REPLACE edits
+
+```systemverilog
+### src/dmi_jtag_tap.sv
+<<<<<<< SEARCH
+logic trst_sync1, trst_sync2;
+
+always_ff @(posedge tck_i or negedge trst_ni) begin
+  if (!trst_ni) begin
+    trst_sync2 <= 1'b0;
+  end else begin
+    trst_sync2 <= trst_sync1;
+    trst_no    <= trst_sync2;
+  end
+end
+=======
+  // Generate a clean reset indication for downstream logic.
+  // Avoid a glitch-prone synchronizer chain driving asynchronous resets.
+  always_comb begin
+    trst_no = (tap_state_q == TestLogicReset) ? 1'b0 : 1'b1;
+  end
+>>>>>>> REPLACE
+```
+
+```systemverilog
+### src/dmi_jtag_tap.sv
+<<<<<<< SEARCH
+    trst_sync1         = trst_ni;
+
+    capture_dr         = 1'b0;
+=======
+    capture_dr         = 1'b0;
+>>>>>>> REPLACE
+```
+
+```systemverilog
+### src/dmi_jtag_tap.sv
+<<<<<<< SEARCH
+      TestLogicReset: begin
+        tap_state_d = (tms_i) ? TestLogicReset : RunTestIdle;
+        trst_sync1 = 1'b1;
+      end
+=======
+      TestLogicReset: begin
+        tap_state_d = (tms_i) ? TestLogicReset : RunTestIdle;
+      end
+>>>>>>> REPLACE
+```
+

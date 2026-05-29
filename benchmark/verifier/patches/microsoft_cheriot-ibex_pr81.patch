@@ -1,0 +1,174 @@
+From 2c24d4b737956e57f3a3c2da6d7ffbbdf96f963d Mon Sep 17 00:00:00 2001
+From: Greg Chadwick <gac@lowrisc.org>
+Date: Wed, 21 Sep 2022 15:25:02 +0100
+Subject: [PATCH] [rtl] Don't cache instructions in debug mode
+
+RISC-V debug modules may utilise dynamically changing code. Don't cache
+any instructions in debug mode to correctly support this.
+
+Co-authored-by: Marno van der Maas <mvdmaas+git@lowrisc.org>
+---
+ rtl/ibex_controller.sv   |  8 ++++++--
+ rtl/ibex_core.sv         | 35 +++++++++++++++++++----------------
+ rtl/ibex_cs_registers.sv |  4 +++-
+ rtl/ibex_id_stage.sv     | 18 ++++++++++--------
+ 4 files changed, 38 insertions(+), 27 deletions(-)
+
+diff --git a/rtl/ibex_controller.sv b/rtl/ibex_controller.sv
+index 8b854a3a..1d370133 100644
+--- a/rtl/ibex_controller.sv
++++ b/rtl/ibex_controller.sv
+@@ -93,6 +93,7 @@ module ibex_controller #(
+   output ibex_pkg::dbg_cause_e  debug_cause_o,
+   output logic                  debug_csr_save_o,
+   output logic                  debug_mode_o,
++  output logic                  debug_mode_entering_o,
+   input  logic                  debug_single_step_i,
+   input  logic                  debug_ebreakm_i,
+   input  logic                  debug_ebreaku_i,
+@@ -469,6 +470,7 @@ module ibex_controller #(
+     debug_csr_save_o       = 1'b0;
+     debug_cause_o          = DBG_CAUSE_EBREAK;
+     debug_mode_d           = debug_mode_q;
++    debug_mode_entering_o  = 1'b0;
+     nmi_mode_d             = nmi_mode_q;
+ 
+     perf_tbranch_o         = 1'b0;
+@@ -673,7 +675,8 @@ module ibex_controller #(
+         end
+ 
+         // enter debug mode
+-        debug_mode_d = 1'b1;
++        debug_mode_d          = 1'b1;
++        debug_mode_entering_o = 1'b1;
+ 
+         ctrl_fsm_ns  = DECODE;
+       end
+@@ -704,7 +707,8 @@ module ibex_controller #(
+         end
+ 
+         // enter debug mode
+-        debug_mode_d = 1'b1;
++        debug_mode_d          = 1'b1;
++        debug_mode_entering_o = 1'b1;
+ 
+         ctrl_fsm_ns  = DECODE;
+       end
+diff --git a/rtl/ibex_core.sv b/rtl/ibex_core.sv
+index cd15fa40..d25eb056 100644
+--- a/rtl/ibex_core.sv
++++ b/rtl/ibex_core.sv
+@@ -383,6 +383,7 @@ module ibex_core import ibex_pkg::*; import cheri_pkg::*; #(
+ 
+   // debug mode and dcsr configuration
+   logic        debug_mode;
++  logic        debug_mode_entering;
+   dbg_cause_e  debug_cause;
+   logic        debug_csr_save;
+   logic        debug_single_step;
+@@ -752,14 +753,15 @@ module ibex_core import ibex_pkg::*; import cheri_pkg::*; #(
+     .nmi_mode_o       (nmi_mode),
+ 
+     // Debug Signal
+-    .debug_mode_o       (debug_mode),
+-    .debug_cause_o      (debug_cause),
+-    .debug_csr_save_o   (debug_csr_save),
+-    .debug_req_i        (debug_req_i),
+-    .debug_single_step_i(debug_single_step),
+-    .debug_ebreakm_i    (debug_ebreakm),
+-    .debug_ebreaku_i    (debug_ebreaku),
+-    .trigger_match_i    (trigger_match),
++    .debug_mode_o         (debug_mode),
++    .debug_mode_entering_o(debug_mode_entering),
++    .debug_cause_o        (debug_cause),
++    .debug_csr_save_o     (debug_csr_save),
++    .debug_req_i          (debug_req_i),
++    .debug_single_step_i  (debug_single_step),
++    .debug_ebreakm_i      (debug_ebreakm),
++    .debug_ebreaku_i      (debug_ebreaku),
++    .trigger_match_i      (trigger_match),
+ 
+     // write data to commit in the register file
+     .result_ex_i(result_ex),
+@@ -1500,14 +1502,15 @@ end
+     .csr_pmp_mseccfg_o(csr_pmp_mseccfg),
+ 
+     // debug
+-    .csr_depc_o         (csr_depc),
+-    .debug_mode_i       (debug_mode),
+-    .debug_cause_i      (debug_cause),
+-    .debug_csr_save_i   (debug_csr_save),
+-    .debug_single_step_o(debug_single_step),
+-    .debug_ebreakm_o    (debug_ebreakm),
+-    .debug_ebreaku_o    (debug_ebreaku),
+-    .trigger_match_o    (trigger_match),
++    .csr_depc_o           (csr_depc),
++    .debug_mode_i         (debug_mode),
++    .debug_mode_entering_i(debug_mode_entering),
++    .debug_cause_i        (debug_cause),
++    .debug_csr_save_i     (debug_csr_save),
++    .debug_single_step_o  (debug_single_step),
++    .debug_ebreakm_o      (debug_ebreakm),
++    .debug_ebreaku_o      (debug_ebreaku),
++    .trigger_match_o      (trigger_match),
+ 
+     .pc_if_i(pc_if),
+     .pc_id_i(pc_id),
+diff --git a/rtl/ibex_cs_registers.sv b/rtl/ibex_cs_registers.sv
+index 91b54e4a..9efd4a8f 100644
+--- a/rtl/ibex_cs_registers.sv
++++ b/rtl/ibex_cs_registers.sv
+@@ -95,6 +95,7 @@ module ibex_cs_registers import cheri_pkg::*;  #(
+ 
+   // debug
+   input  logic                 debug_mode_i,
++  input  logic                 debug_mode_entering_i,
+   input  ibex_pkg::dbg_cause_e debug_cause_i,
+   input  logic                 debug_csr_save_i,
+   output logic [31:0]          csr_depc_o,
+@@ -1755,7 +1756,8 @@ module ibex_cs_registers import cheri_pkg::*;  #(
+   assign cpuctrl_wdata.double_fault_seen = cpuctrl_wdata_raw.double_fault_seen;
+   assign cpuctrl_wdata.sync_exc_seen     = cpuctrl_wdata_raw.sync_exc_seen;
+ 
+-  assign icache_enable_o = cpuctrl_q.icache_enable;
++  assign icache_enable_o =
++    cpuctrl_q.icache_enable & ~(debug_mode_i | debug_mode_entering_i);
+ 
+   ibex_csr #(
+     .Width     ($bits(cpu_ctrl_t)),
+diff --git a/rtl/ibex_id_stage.sv b/rtl/ibex_id_stage.sv
+index f8eb8bfb..719325be 100644
+--- a/rtl/ibex_id_stage.sv
++++ b/rtl/ibex_id_stage.sv
+@@ -147,6 +147,7 @@ module ibex_id_stage import cheri_pkg::*; #(
+ 
+   // Debug Signal
+   output logic                      debug_mode_o,
++  output logic                      debug_mode_entering_o,
+   output ibex_pkg::dbg_cause_e      debug_cause_o,
+   output logic                      debug_csr_save_o,
+   input  logic                      debug_req_i,
+@@ -686,14 +687,15 @@ module ibex_id_stage import cheri_pkg::*; #(
+     .csr_pcc_perm_sr_i    (csr_pcc_perm_sr_i),
+ 
+     // Debug Signal
+-    .debug_mode_o       (debug_mode_o),
+-    .debug_cause_o      (debug_cause_o),
+-    .debug_csr_save_o   (debug_csr_save_o),
+-    .debug_req_i        (debug_req_i),
+-    .debug_single_step_i(debug_single_step_i),
+-    .debug_ebreakm_i    (debug_ebreakm_i),
+-    .debug_ebreaku_i    (debug_ebreaku_i),
+-    .trigger_match_i    (trigger_match_i),
++    .debug_mode_o         (debug_mode_o),
++    .debug_mode_entering_o(debug_mode_entering_o),
++    .debug_cause_o        (debug_cause_o),
++    .debug_csr_save_o     (debug_csr_save_o),
++    .debug_req_i          (debug_req_i),
++    .debug_single_step_i  (debug_single_step_i),
++    .debug_ebreakm_i      (debug_ebreakm_i),
++    .debug_ebreaku_i      (debug_ebreaku_i),
++    .trigger_match_i      (trigger_match_i),
+ 
+     .stall_id_i(stall_id),
+     .stall_wb_i(stall_wb),

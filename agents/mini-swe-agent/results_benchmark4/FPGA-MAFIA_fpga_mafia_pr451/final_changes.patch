@@ -1,0 +1,235 @@
+diff --git a/app/cfg/mini_rv32e.json b/app/cfg/mini_rv32e.json
+index a1c976a..b00798c 100644
+--- a/app/cfg/mini_rv32e.json
++++ b/app/cfg/mini_rv32e.json
+@@ -3,7 +3,14 @@
+     "I_MEM_LENGTH": 65536,
+     "D_MEM_OFFSET": 65536,
+     "D_MEM_LENGTH": 61440,
+-    "crt0_file"   : "crt0_mini_rv32e.S",
+-    "rv32_gcc"    : "rv32e -mabi=ilp32e",
+-    "name"        : "rv32e"
+-}
++    "crt0_file": "crt0_mini_rv32e.S",
++    "rv32_gcc": "rv32e -mabi=ilp32e",
++    "name": "rv32e",
++    "rtl_parameter_override": {
++        "RF_NUM_MSB": 31,
++        "RF_NUM_LSB": 0
++    },
++    "verif_pkg_parameter_override": {
++        "TIMEOUT": 1000000
++    }
++}
+\ No newline at end of file
+diff --git a/scripts/ovrd_params.py b/scripts/ovrd_params.py
+index 4e52715..fcf450f 100644
+--- a/scripts/ovrd_params.py
++++ b/scripts/ovrd_params.py
+@@ -1,135 +1,102 @@
+ #!/usr/bin/env python
++"""Override SystemVerilog parameter values from a cfg JSON file.
+ 
+-"""
+-This script allows you to override parameters in files recursively within a specified DUT directory.
+-You can provide a CSV file with parameter overrides, and the script will search for parameters in the files and replace
+-them with the new values. 
+-Usage: ./scripts/ovrd_params.py -dut core_rrv -ovrd_file override_rrv_rv32e 
++This script searches rtl/source and verification files for exact parameter
++assignments of the form:
++    parameter NAME = value;
++It replaces the value, preserves the rest of the line, and appends a note.
+ """
+ 
+ import argparse
++import json
+ import os
+ import re
+-import sys
+ import subprocess
++import sys
+ 
+-# Get the root directory of the model
+-MODEL_ROOT = subprocess.check_output('git rev-parse --show-toplevel', shell=True).decode().split('\n')[0]
++MODEL_ROOT = subprocess.check_output('git rev-parse --show-toplevel', shell=True).decode().strip()
+ os.chdir(MODEL_ROOT)
+ 
++PARAM_RE = re.compile(r'^(?P<prefix>\s*parameter\s+)(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?P<value>[^;]+)(?P<suffix>;.*)$')
++
++
+ def parse_arguments():
+-    parser = argparse.ArgumentParser(description='Override parameters in files.')
++    parser = argparse.ArgumentParser(description='Override parameter values from cfg JSON.')
+     parser.add_argument('-dut', required=True, help='DUT name')
+-    parser.add_argument('-ovrd_file', required=True, help='File with parameter overrides without .csv extension')
++    parser.add_argument('-cfg', required=True, help='Cfg JSON file name without .json')
+     return parser.parse_args()
+ 
+-def search_and_replace_parameters(path, params):
+-    changed_files = []
+-    replacements_log = []  # Log details of replacements
+-    not_found_parameters = params.copy()  # Copy to track not found parameters
+ 
+-    for root, dirs, files in os.walk(path):
+-        for file in files:
+-            file_path = os.path.join(root, file)
+-            try:
+-                with open(file_path, 'r') as file_handle:
+-                    content = file_handle.readlines()
+-            except FileNotFoundError:
+-                print(f"{file_path} file not found", file=sys.stderr)
+-                continue
++def load_overrides(cfg_name):
++    cfg_path = os.path.join('app', 'cfg', cfg_name + '.json')
++    if not os.path.isfile(cfg_path):
++        print(f"[ERROR] cfg file not found: {cfg_path}", file=sys.stderr)
++        sys.exit(1)
++    with open(cfg_path, 'r') as f:
++        cfg = json.load(f)
++    return cfg.get('rtl_parameter_override', {}), cfg.get('verif_pkg_parameter_override', {})
+ 
+-            file_changed = False
+ 
+-            for line_num, line in enumerate(content):
+-                for param, new_value in params.items():
+-                    # Pattern to match parameter declarations only
+-                    pattern = re.compile(r"^\s*parameter\s+" + re.escape(param) + r"\s*=\s*([^;]+)(;.*|$)")
+-                    match = pattern.search(line)
+-                    if match:
+-                        old_value = match.group(1).strip()  # The current value of the parameter
+-                        # Replace the entire line, using standard formatting
+-                        new_line = f"parameter {param} = {new_value}; // NOTE!!!: auto inserted from script ovrd_params.py\n"
+-                        content[line_num] = new_line
+-                        file_changed = True
+-                        # Log the replacement details
+-                        replacements_log.append((param, old_value, new_value, line_num + 1, file_path))
+-                        # Correctly update the not_found_parameters
+-                        if param in not_found_parameters:
+-                            del not_found_parameters[param]
+-
+-            if file_changed:
+-                changed_files.append((file_path, ''.join(content)))
++def apply_overrides(root_path, overrides):
++    changed_files = []
++    logs = []
++    for root, _, files in os.walk(root_path):
++        for filename in files:
++            file_path = os.path.join(root, filename)
++            try:
++                with open(file_path, 'r') as fh:
++                    lines = fh.readlines()
++            except (OSError, UnicodeDecodeError):
++                continue
+ 
+-    return changed_files, replacements_log, not_found_parameters
++            changed = False
++            for i, line in enumerate(lines):
++                m = PARAM_RE.match(line)
++                if not m:
++                    continue
++                name = m.group('name')
++                if name not in overrides:
++                    continue
++                old_value = m.group('value').strip()
++                new_value = str(overrides[name])
++                new_line = f"{m.group('prefix')}{name} = {new_value}{m.group('suffix')} // Note: This line was inserted using parameter override script\n"
++                if new_line != line:
++                    lines[i] = new_line
++                    changed = True
++                    logs.append((file_path, i + 1, name, old_value, new_value))
++            if changed:
++                changed_files.append((file_path, ''.join(lines)))
++    return changed_files, logs
+ 
+ 
+ def main():
+     args = parse_arguments()
+-    script_dir = os.path.dirname(os.path.abspath(__file__))
+-    params = {}
+-    dut_name = args.dut
+-
+-    # Check if the CSV file exists and read parameter overrides
+-    csv_file_path = os.path.join(script_dir, 'ovrd_params', f"{args.ovrd_file}.csv")
+-    if not os.path.isfile(csv_file_path):
+-        print(f"{args.ovrd_file}.csv file not found in 'ovrd_params' folder", file=sys.stderr)
+-        exit(1)
+-
+-    try:
+-        with open(csv_file_path, 'r') as file:
+-            for line in file:
+-                parts = line.strip().split(',')
+-                if len(parts) == 2:
+-                    param, value = parts[0].strip(), parts[1].strip()
+-                    params[param] = value
+-    except FileNotFoundError:
+-        print(f"{args.ovrd_file}.csv file not found in 'ovrd_params' folder", file=sys.stderr)
+-        exit(1)
+-
+-    # Define the paths
+-    source_path = os.path.join("source", dut_name.replace('/', os.sep))
+-    verif_path = os.path.join("verif", dut_name.replace('/', os.sep))
+-
+-    # Process both paths
+-    total_changed_files = []
+-    total_replacements_log = []
+-    total_not_found_parameters = params.copy()
+-
+-    for path in [source_path, verif_path]:
+-        if not os.path.isdir(path):
+-            print(f"Error: Directory '{path}' does not exist.", file=sys.stderr)
+-            continue
+-
+-        changed_files, replacements_log, not_found_parameters = search_and_replace_parameters(path, params)
++    rtl_overrides, verif_overrides = load_overrides(args.cfg)
+ 
+-        total_changed_files.extend(changed_files)
+-        total_replacements_log.extend(replacements_log)
++    root_map = [
++        (os.path.join('source', args.dut), rtl_overrides),
++        (os.path.join('verif', args.dut), verif_overrides),
++    ]
+ 
+-        # Remove found parameters from total_not_found_parameters
+-        for param in params:
+-            if param not in not_found_parameters:
+-                total_not_found_parameters.pop(param, None)
++    total_logs = []
++    total_changes = []
++    for root_path, overrides in root_map:
++        if not overrides or not os.path.isdir(root_path):
++            continue
++        changed_files, logs = apply_overrides(root_path, overrides)
++        total_changes.extend(changed_files)
++        total_logs.extend(logs)
+ 
++    for file_path, line_num, name, old_value, new_value in total_logs:
++        print(f"[OVERRIDE] {file_path}:{line_num} {name}: {old_value} -> {new_value}")
+ 
+-    # Print the log of replacements in the specified format
+-    if total_replacements_log:
+-        print("\n     Parameter           |   Old value   |   New Value   |  Line  |   File path")
+-        print("-" * 100)
+-        for log in total_replacements_log:
+-            param, old_value, new_value, line_num, file_path = log
+-            print(f"{param:<24} | {old_value:<13} | {new_value:<13} | {line_num:<6} | {file_path}")
+-        print("-" * 100)
++    for file_path, content in total_changes:
++        with open(file_path, 'w') as fh:
++            fh.write(content)
+ 
+-    if total_not_found_parameters:
+-        print("\nParameters not found (source OR verif):")
+-        for param in total_not_found_parameters:
+-            print(f"- {param}")            
+-        print("\n")
++    if not total_logs:
++        print('[INFO] No matching parameter overrides were applied')
+ 
+-    # Save the changes to files
+-    for file_path, new_content in total_changed_files:
+-        with open(file_path, 'w') as file:
+-            file.write(new_content)
+ 
+-if __name__ == "__main__":
++if __name__ == '__main__':
+     main()

@@ -1,0 +1,619 @@
+From 9828b2fafb5f0377d4058284b908e322f99cff6b Mon Sep 17 00:00:00 2001
+From: zerotoasic <zerotoasic@zerotoasic.vm.com>
+Date: Mon, 27 Oct 2025 23:09:52 +0100
+Subject: [PATCH 1/2] Add jalr feature, fix tb issues and add more tb for jal
+ and jalr
+
+---
+ Makefile                                    |   6 +-
+ riscof/dut.sv                               |   2 +-
+ src/ControlFSM.sv                           |  29 ++++-
+ src/Instruction_Decode/Instruction_Decode.v |   8 ++
+ src/fetch.sv                                |   4 +-
+ src/params.vh                               |   1 +
+ src/top.v                                   |   1 +
+ src/types.svh                               |   7 +-
+ src/utils/MA.v                              |   4 +-
+ test/beq_tb.sv                              |   2 +-
+ test/fetch_tb.sv                            |  54 ++++++--
+ test/jal_tb.sv                              |  72 +++++++++++
+ test/jalr_tb.sv                             | 133 ++++++++++++++++++++
+ 13 files changed, 298 insertions(+), 25 deletions(-)
+ create mode 100644 test/jal_tb.sv
+ create mode 100644 test/jalr_tb.sv
+
+diff --git a/Makefile b/Makefile
+index 68b053d..dec7f81 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1,10 +1,8 @@
+ SRC_DIR  := src
+ TB_DIR   := test
+ OUTPUT 	 := out/top.vvp
+-IVERILOG := iverilog
+-# /opt/iverilog-12/bin/iverilog
+-VVP 		 := vvp
+-# /opt/iverilog-12/bin/vvp
++IVERILOG := /opt/iverilog-12/bin/iverilog
++VVP 		 := /opt/iverilog-12/bin/vvp
+ 
+ SRCS := $(shell find $(SRC_DIR) -name "*.sv" -o -name "*.v")
+ 
+diff --git a/riscof/dut.sv b/riscof/dut.sv
+index 6674893..94b7a04 100644
+--- a/riscof/dut.sv
++++ b/riscof/dut.sv
+@@ -7,7 +7,7 @@ module dut;
+   reg clk;
+   reg reset;
+ 
+-  top #( .MEM_SIZE ( 250000 /* 1MB */ ) )
++  top #( .MEM_SIZE ( 500000 /* 2MB */ ) )
+     top
+       ( .clk   ( clk   )
+       , .reset ( reset )
+diff --git a/src/ControlFSM.sv b/src/ControlFSM.sv
+index 31bf453..9391ac3 100644
+--- a/src/ControlFSM.sv
++++ b/src/ControlFSM.sv
+@@ -8,12 +8,12 @@ module ControlFSM(
+ 	input opcode_t opcode,
+ 	input wire clk,
+ 	input wire reset,
+-  input wire zero_flag,
++  	input wire zero_flag,
+ 	output adr_src_t AdrSrc,
+ 	output reg IRWrite,
+ 	output reg RegWrite,
+ 	output reg PCUpdate,
+-  output pc_src_t pc_src,
++  	output pc_src_t pc_src,
+ 	output reg MemWrite,
+ 	output reg Branch,
+ 	output alu_src_a_t ALUSrcA,
+@@ -42,6 +42,8 @@ module ControlFSM(
+ 	parameter LUI = 4'b1011;
+ 	parameter AUIPC = 4'b1100;
+ 
++	parameter JALR_CALC  = 4'b1101; // calculate rs1 + imm, store in alu_out
++  	parameter JALR_STEP2 = 4'b1110; // link and use alu_out to update PC
+ 
+ 	//declare state registers
+ 	reg [3:0] current_state, next_state;
+@@ -69,6 +71,8 @@ module ControlFSM(
+ 
+ 				else if (opcode == UType_lui) next_state = LUI;
+ 
++				else if (opcode == IType_jalr) next_state = JALR_CALC;
++
+ 				else next_state = DECODE;
+ 
+ 			end
+@@ -103,6 +107,10 @@ module ControlFSM(
+ 
+ 			MEMWB: next_state = FETCH;
+ 
++			JALR_CALC:  next_state = JALR_STEP2; 
++
++  			JALR_STEP2: next_state = ALUWB; 
++
+ 			default: next_state = FETCH;
+ 
+ 		endcase
+@@ -177,9 +185,26 @@ module ControlFSM(
+ 				ALUOp <= 2'b00;
+ 				ResultSrc <= RESULT_SRC__ALU_OUT;
+         		PCUpdate <= 1'b1;
++				pc_src    <= PC_SRC__JUMP;  // new added
+ 
+ 			end
+ 
++			JALR_CALC: begin
++  			  ALUSrcA  <= ALU_SRC_A__RD1;      // rs1
++  			  ALUSrcB  <= ALU_SRC_B__IMM_EXT;  // + imm
++  			  ALUOp    <= 2'b00;             
++  			end
++
++  			JALR_STEP2: begin
++  			  ALUSrcA   <= ALU_SRC_A__OLD_PC;  // Calculate link = pc_old + 4, write back in ALUWB 
++  			  ALUSrcB   <= ALU_SRC_B__4;
++  			  ALUOp     <= 2'b00;
++  			  ResultSrc <= RESULT_SRC__ALU_OUT;
++  			  pc_src    <= PC_SRC__ALU_RESULT; // fetch  (alu_out & ~1) for new PC
++  			  PCUpdate  <= 1'b1;
++  			end
++
++			
+ 			MEMADR: begin
+ 
+ 				ALUSrcA <= ALU_SRC_A__RD1;
+diff --git a/src/Instruction_Decode/Instruction_Decode.v b/src/Instruction_Decode/Instruction_Decode.v
+index 1bc3e80..e0923e8 100644
+--- a/src/Instruction_Decode/Instruction_Decode.v
++++ b/src/Instruction_Decode/Instruction_Decode.v
+@@ -56,6 +56,7 @@ module Instruction_Decode(
+     case (opcode)
+       RType:      alu_op = ALU_OP__REGISTER_OPERATION;
+       IType_load: alu_op = ALU_OP__MEMORY_ACCESS;
++	  IType_jalr: alu_op = ALU_OP__MEMORY_ACCESS; // rs1 + imm
+       SType:      alu_op = ALU_OP__MEMORY_ACCESS;
+       BType:      alu_op = ALU_OP__BRANCH;
+ 	  UType_auipc: alu_op = ALU_OP__MEMORY_ACCESS; // used to add 0 to imm ext
+@@ -107,6 +108,12 @@ module Instruction_Decode(
+ 			rs2 = 5'b00000;
+ 		end
+ 
++		else if (opcode == IType_jalr) begin
++			rd = instr[11:7];
++			rs1 = instr[19:15];
++			rs2 = 5'b00000;
++		end
++
+ 		else begin
+ 
+ 			rd = 5'b00000;
+@@ -123,6 +130,7 @@ module Instruction_Decode(
+ 		case(opcode)
+ 			IType_logic : imm_ext = {{20{instr[31]}}, instr[31:20]};
+ 			IType_load  : imm_ext = {{20{instr[31]}}, instr[31:20]};
++			IType_jalr : imm_ext = {{20{instr[31]}}, instr[31:20]};
+ 			SType       : imm_ext = {{20{instr[31]}}, instr[31:25], instr[11:7]};
+ 			BType       : imm_ext = {{20{instr[31]}}, instr[7], instr[30:25], instr[11:8], 1'b0};
+ 			JType       : imm_ext = {{12{instr[31]}}, instr[19:12], instr[20], instr[30:21], 1'b0};
+diff --git a/src/fetch.sv b/src/fetch.sv
+index e9ab07c..44d9710 100644
+--- a/src/fetch.sv
++++ b/src/fetch.sv
+@@ -12,6 +12,7 @@ module fetch ( input  wire     clk
+              , input  wire     cfsm__pc_update
+              , input  pc_src_t cfsm__pc_src
+              , input  wire     cfsm__ir_write
++             , input addr_t alu_result_for_pc
+              , input  imm_t    imm_ext
+              , output addr_t   pc_cur
+              , output addr_t   pc_old
+@@ -23,7 +24,8 @@ module fetch ( input  wire     clk
+     if (cfsm__pc_update) begin
+       case (cfsm__pc_src)
+         PC_SRC__INCREMENT: pc_next <= pc_cur + 32'h4;
+-        PC_SRC__JUMP:       pc_next <= pc_cur + imm_ext;
++        PC_SRC__JUMP:       pc_next <= pc_old + imm_ext;
++        PC_SRC__ALU_RESULT: pc_next <= {alu_result_for_pc[31:1], 1'b0};
+       endcase
+     end else begin
+       pc_next <= pc_cur;
+diff --git a/src/params.vh b/src/params.vh
+index c7b4b92..c4a2cc0 100644
+--- a/src/params.vh
++++ b/src/params.vh
+@@ -10,6 +10,7 @@ parameter BType = 7'b1100011;
+ parameter JType = 7'b1101111;
+ parameter UType_auipc = 7'b0010111;
+ parameter UType_lui = 7'b0110111;
++parameter IType_jalr = 7'b1100111;
+ 
+ //ALU Operation Control Codes
+ parameter ALUAdd = 4'b0000;
+diff --git a/src/top.v b/src/top.v
+index 871bb8f..5f1a69e 100644
+--- a/src/top.v
++++ b/src/top.v
+@@ -68,6 +68,7 @@ module top #( parameter MEM_SIZE = 1024 )
+     ( .clk             ( clk             )
+     , .reset           ( reset           )
+     , .cfsm__pc_update ( cfsm__pc_update )
++    , .alu_result_for_pc ( alu_out )
+     , .cfsm__pc_src    ( cfsm__pc_src    )
+     , .cfsm__ir_write  ( cfsm__ir_write  )
+     , .imm_ext         ( imm_ext         )
+diff --git a/src/types.svh b/src/types.svh
+index 7b12738..92d00cb 100644
+--- a/src/types.svh
++++ b/src/types.svh
+@@ -57,9 +57,10 @@ typedef enum logic [1:0] {
+   RESULT_SRC__ALU_RESULT = 2'b10
+ } result_src_t;
+ 
+-typedef enum logic {
+-  PC_SRC__INCREMENT = 1'b0,
+-  PC_SRC__JUMP      = 1'b1
++typedef enum logic [1:0] {
++  PC_SRC__INCREMENT = 2'b00,
++  PC_SRC__JUMP      = 2'b01,
++  PC_SRC__ALU_RESULT = 2'b10
+ } pc_src_t;
+ 
+ `endif
+diff --git a/src/utils/MA.v b/src/utils/MA.v
+index a47036c..8d3dfa7 100644
+--- a/src/utils/MA.v
++++ b/src/utils/MA.v
+@@ -10,6 +10,7 @@ module MA #( parameter SIZE = 1024 )
+ 
+     initial begin
+       string mem_file;
++      
+ 
+       if ($value$plusargs("MEM=%s", mem_file)) begin
+         $display("loading memory from <%s>", mem_file);
+@@ -19,8 +20,7 @@ module MA #( parameter SIZE = 1024 )
+     end
+ 
+     assign RD = M[A[31:2]]; // 2 LSBs used for byte addressing
+-
+-    always @(posedge CLK) begin
++    always @(posedge CLK) begin 
+         if (WE) begin
+             M[A[31:2]] <= WD;
+         end
+diff --git a/test/beq_tb.sv b/test/beq_tb.sv
+index 7689081..f658467 100644
+--- a/test/beq_tb.sv
++++ b/test/beq_tb.sv
+@@ -58,7 +58,7 @@ module beq_tb;
+ 
+     wait_till_next_cfsm_state(uut.control_fsm.FETCH);
+ 
+-    assert(uut.fetch.pc_cur    == 32'hFFFFFFF8) else $fatal(1,"`uut.fetch.pc_cur` is `%0h`", uut.fetch.pc_cur);
++    assert(uut.fetch.pc_cur    == 32'hFFFFFFF4) else $fatal(1,"`uut.fetch.pc_cur` is `%0h`", uut.fetch.pc_cur);
+ 
+     // beq without satisfied condition
+     @(posedge clk); #1;
+diff --git a/test/fetch_tb.sv b/test/fetch_tb.sv
+index 07caddf..1bcd225 100644
+--- a/test/fetch_tb.sv
++++ b/test/fetch_tb.sv
+@@ -10,19 +10,25 @@ module fetch_tb;
+   reg     clk;
+   reg     reset;
+   reg     cfsm__pc_update;
+-  reg     cfsm__pc_src;
++  reg [1:0] cfsm__pc_src;
++  reg     cfsm__ir_write;
+   imm_t   imm_ext;
+   addr_t  pc_cur;
++  addr_t  pc_old;
++  reg [31:0] alu_result_for_pc;
+ 
+   fetch uut
+-    ( .clk             ( clk             )
+-    , .reset           ( reset           )
+-    , .cfsm__pc_update ( cfsm__pc_update )
+-    , .cfsm__pc_src    ( cfsm__pc_src    )
+-    , .imm_ext         ( imm_ext         )
++    ( .clk               ( clk               )
++    , .reset             ( reset             )
++    , .cfsm__pc_update   ( cfsm__pc_update   )
++    , .cfsm__pc_src      ( cfsm__pc_src      )
++    , .cfsm__ir_write    ( cfsm__ir_write    )
++    , .alu_result_for_pc ( alu_result_for_pc )
++    , .imm_ext           ( imm_ext           )
+ 
+     // outputs
+-    , .pc_cur          ( pc_cur          )
++    , .pc_cur            ( pc_cur            )
++    , .pc_old            ( pc_old            )
+     );
+ 
+   initial begin
+@@ -34,7 +40,10 @@ module fetch_tb;
+ 
+     // testing incrementing pc naturally
+     cfsm__pc_update <= `FALSE;
+-    cfsm__pc_src    <= 0;
++    cfsm__pc_src    <= 2'b00;
++    cfsm__ir_write  <= 1'b0;
++    alu_result_for_pc <= 32'h00000000;
++    imm_ext <= '0;
+ 
+     assert(pc_cur  === 32'hxxxxxxxx) else $fatal(1,"`pc_cur` is `%0h`", pc_cur);
+ 
+@@ -110,37 +119,60 @@ module fetch_tb;
+     reset <= `FALSE;
+ 
+     // testing pc update via pc_target
+-    cfsm__pc_src <= 1;
++    cfsm__pc_update <= `TRUE;
++    cfsm__pc_src <= 2'b01;
+     imm_ext      <= 32'h00000100;
+ 
++    cfsm__ir_write <= 1'b1;
++    #10;
++    cfsm__ir_write <= 1'b0;
++
+     #10;
+ 
+     assert(pc_cur  === 32'h00000100) else $fatal(1,"`pc_cur` is `%0h`", pc_cur);
+ 
++    // latch new pc_old from current pc before next jump
++    cfsm__ir_write <= 1'b1;
++    #10;
++    cfsm__ir_write <= 1'b0;
++
+     #10;
+ 
+     assert(pc_cur  === 32'h00000200) else $fatal(1,"`pc_cur` is `%0h`", pc_cur);
+ 
+-    cfsm__pc_src <= 0;
++    cfsm__pc_src <= 2'b00;
+ 
+     #10;
+ 
+     assert(pc_cur  === 32'h00000204) else $fatal(1,"`pc_cur` is `%0h`", pc_cur);
+ 
+     imm_ext <= 32'h00002000; // out of memory bounds
+-    cfsm__pc_src <= 1;
++    cfsm__pc_src <= 2'b01;
++
++    // refresh pc_old so jump uses current pc
++    cfsm__ir_write <= 1'b1;
++    #10;
++    cfsm__ir_write <= 1'b0;
+ 
+     #10;
+ 
+     assert(pc_cur  === 32'h00002204) else $fatal(1,"`pc_cur` is `%0h`", pc_cur);
+ 
+     imm_ext <= 32'h0; // zero jump
++    // refresh pc_old so zero jump keeps pc
++    cfsm__ir_write <= 1'b1;
++    #10;
++    cfsm__ir_write <= 1'b0;
+ 
+     #10;
+ 
+     assert(pc_cur  === 32'h00002204) else $fatal(1,"`pc_cur` is `%0h`", pc_cur);
+ 
+     imm_ext <= -32'd1; // negative jump
++    // refresh pc_old to current before applying -1
++    cfsm__ir_write <= 1'b1;
++    #10;
++    cfsm__ir_write <= 1'b0;
+ 
+     #10;
+ 
+diff --git a/test/jal_tb.sv b/test/jal_tb.sv
+new file mode 100644
+index 0000000..f397265
+--- /dev/null
++++ b/test/jal_tb.sv
+@@ -0,0 +1,72 @@
++`timescale 1ns/1ps
++
++`include "src/types.svh"      // <-- bring in enum literals like PC_SRC__JUMP
++`include "test/utils.svh"
++
++module jal_only_tb;
++
++  reg clk;
++  reg reset;
++
++  // DUT
++  top uut
++    ( .clk   ( clk   )
++    , .reset ( reset )
++    );
++
++  // 10ns clock
++  initial begin
++    clk = 0;
++    forever #5 clk = ~clk;
++  end
++
++  // helper: wait one cycle then assert expected FSM state
++  task wait_till_next_cfsm_state(input [3:0] expected_state);
++    @(posedge clk); #1;
++    `assert_equal(uut.control_fsm.current_state, expected_state)
++  endtask
++
++  initial begin
++    reset <= `TRUE;
++
++    // Program:
++    //   0x00000000: JAL x1, +16   (target = 16)
++    // J-type encoding: opcode=0x6F, rd=x1, imm=+16 -> 0x010000EF
++    uut.memory.M[0] = 32'h010000EF;
++
++    // Enter FETCH first (with reset asserted)
++    wait_till_next_cfsm_state(uut.control_fsm.FETCH);
++
++    // Release reset
++    reset <= `FALSE;
++
++    // -------- Single instruction: JAL x1, +16 --------
++
++    // DECODE: verify opcode, rd and immediate
++    wait_till_next_cfsm_state(uut.control_fsm.DECODE);
++    `assert_equal(uut.opcode, 7'b1101111)                    // JType (JAL)
++    `assert_equal(uut.instruction_decode.rd,  5'd1)          // rd = x1
++    `assert_equal(uut.instruction_decode.imm_ext, 32'sd16)   // imm = +16
++
++    // UNCONDJUMP: link = pc_old + 4, PC updates by pc + imm
++    wait_till_next_cfsm_state(uut.control_fsm.UNCONDJUMP);
++    `assert_equal(uut.alu.a, 32'd0)    // pc_old at address 0
++    `assert_equal(uut.alu.b, 32'd4)
++    `assert_equal(uut.alu.out, 32'd4)  // link value
++    `assert_equal(uut.cfsm__pc_update, 1'b1)
++    `assert_equal(uut.cfsm__pc_src, PC_SRC__JUMP)  // <-- enum literal, no hierarchy
++
++    // ALUWB: write link back to rd (x1)
++    wait_till_next_cfsm_state(uut.control_fsm.ALUWB);
++
++    // Back to FETCH: PC should be 16; x1 should be 4
++    wait_till_next_cfsm_state(uut.control_fsm.FETCH);
++    `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[1], 32'd4)  // rd = link = 4
++    `assert_equal(uut.fetch.pc_cur, 32'd16)                                 // PC jumped to 16
++
++    $finish;
++  end
++
++  `SETUP_VCD_DUMP(jal_only_tb)
++
++endmodule
+diff --git a/test/jalr_tb.sv b/test/jalr_tb.sv
+new file mode 100644
+index 0000000..d611f62
+--- /dev/null
++++ b/test/jalr_tb.sv
+@@ -0,0 +1,133 @@
++`timescale 1ns/1ps
++
++`include "src/types.svh"   // for enum literals like PC_SRC__ALU_RESULT
++`include "test/utils.svh"
++
++module jalr_only_tb;
++
++  reg clk;
++  reg reset;
++
++  // DUT
++  top uut
++    ( .clk   ( clk   )
++    , .reset ( reset )
++    );
++
++  // 10ns clock
++  initial begin
++    clk = 0;
++    forever #5 clk = ~clk;
++  end
++
++  // helper: wait to next FSM state and assert it
++  task wait_till_next_cfsm_state(input [3:0] expected_state);
++    @(posedge clk); #1;
++    `assert_equal(uut.control_fsm.current_state, expected_state)
++  endtask
++
++  // --- Test 1: JALR x1, x2, +5 (rs1=100) -> target=(100+5)&~1 = 104; link=4 ---
++  initial begin
++    // Hold reset
++    reset <= `TRUE;
++
++    // Program @0x00000000:
++    //   JALR x1, x2, +5
++    // Encoding (I/JALR): imm[11:0] | rs1=2 | funct3=000 | rd=1 | opcode=0x67
++    // imm=5 (0x005) -> 0x005100E7
++    uut.memory.M[0] = 32'h005100E7;
++
++    // Registers
++    uut.instruction_decode.instanceRegFile.RFMem[1] = 32'd0;    // x1 (link) cleared
++    uut.instruction_decode.instanceRegFile.RFMem[2] = 32'd100;  // x2 = 100
++
++    // Enter FETCH with reset asserted (for stable pc_old=0)
++    wait_till_next_cfsm_state(uut.control_fsm.FETCH);
++
++    // Release reset
++    reset <= `FALSE;
++
++    // DECODE: opcode/rs1/rd/imm must match
++    wait_till_next_cfsm_state(uut.control_fsm.DECODE);
++    `assert_equal(uut.opcode, 7'b1100111)                  // JALR opcode
++    `assert_equal(uut.instruction_decode.rs1, 5'd2)        // rs1 = x2
++    `assert_equal(uut.instruction_decode.rd,  5'd1)        // rd  = x1
++    `assert_equal(uut.instruction_decode.imm_ext, 32'sd5)  // imm = +5
++
++    // JALR_CALC: ALU computes (rs1+imm) = 105
++    wait_till_next_cfsm_state(uut.control_fsm.JALR_CALC);
++    `assert_equal(uut.alu.a, 32'd100)
++    `assert_equal(uut.alu.b, 32'd5)
++    `assert_equal(uut.alu.out, 32'd105)
++
++    // JALR_STEP2: PC updates from previous ALU result (with LSB cleared);
++    //             ALU computes link = pc_old + 4 (pc_old=0 here)
++    wait_till_next_cfsm_state(uut.control_fsm.JALR_STEP2);
++    `assert_equal(uut.cfsm__pc_update, 1'b1)
++    `assert_equal(uut.cfsm__pc_src, PC_SRC__ALU_RESULT)
++    `assert_equal(uut.alu.a, 32'd0)     // link base = pc_old
++    `assert_equal(uut.alu.b, 32'd4)
++    `assert_equal(uut.alu.out, 32'd4)   // link value
++
++    // ALUWB: write link (4) into rd (x1)
++    wait_till_next_cfsm_state(uut.control_fsm.ALUWB);
++
++    // Back to FETCH: PC should be (100+5)&~1 = 104, x1 should be 4
++    wait_till_next_cfsm_state(uut.control_fsm.FETCH);
++    `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[1], 32'd4)
++    `assert_equal(uut.fetch.pc_cur, 32'd104)
++
++    // End of first subtest -> now run a second variant with negative odd imm
++    // to further exercise LSB clearing and sign extension.
++    @(posedge clk); #1;
++
++    // --- Test 2: JALR x1, x2, -7 (rs1=200) -> target=(200-7)&~1 = 192; link=4 ---
++    reset <= `TRUE;
++
++    // Overwrite program @0x00000000:
++    //   JALR x1, x2, -7
++    // imm = -7 -> 12-bit two's complement 0xFF9
++    // encoding -> 0xFF9100E7
++    uut.memory.M[0] = 32'hFF9100E7;
++
++    // Registers
++    uut.instruction_decode.instanceRegFile.RFMem[1] = 32'd0;     // x1 cleared
++    uut.instruction_decode.instanceRegFile.RFMem[2] = 32'd200;   // x2 = 200
++
++    // Re-enter FETCH, then release reset
++    wait_till_next_cfsm_state(uut.control_fsm.FETCH);
++    reset <= `FALSE;
++
++    // DECODE checks
++    wait_till_next_cfsm_state(uut.control_fsm.DECODE);
++    `assert_equal(uut.opcode, 7'b1100111)
++    `assert_equal(uut.instruction_decode.rs1, 5'd2)
++    `assert_equal(uut.instruction_decode.rd,  5'd1)
++    `assert_equal(uut.instruction_decode.imm_ext, -32'sd7)
++
++    // JALR_CALC: 200 + (-7) = 193
++    wait_till_next_cfsm_state(uut.control_fsm.JALR_CALC);
++    `assert_equal(uut.alu.a, 32'd200)
++    `assert_equal(uut.alu.b, -32'sd7)
++    `assert_equal(uut.alu.out, 32'd193)
++
++    // JALR_STEP2: PC from ALU_RESULT (193 & ~1 = 192); link = pc_old + 4 = 4
++    wait_till_next_cfsm_state(uut.control_fsm.JALR_STEP2);
++    `assert_equal(uut.cfsm__pc_update, 1'b1)
++    `assert_equal(uut.cfsm__pc_src, PC_SRC__ALU_RESULT)
++    `assert_equal(uut.alu.a, 32'd0)
++    `assert_equal(uut.alu.b, 32'd4)
++    `assert_equal(uut.alu.out, 32'd4)
++
++    // Writeback then check PC/link
++    wait_till_next_cfsm_state(uut.control_fsm.ALUWB);
++    wait_till_next_cfsm_state(uut.control_fsm.FETCH);
++    `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[1], 32'd4)
++    `assert_equal(uut.fetch.pc_cur, 32'd192)
++
++    $finish;
++  end
++
++  `SETUP_VCD_DUMP(jalr_only_tb)
++
++endmodule
+
+From 5fef62b89a710d8a985a965699346c183dd87dbc Mon Sep 17 00:00:00 2001
+From: zerotoasic <zerotoasic@zerotoasic.vm.com>
+Date: Mon, 27 Oct 2025 23:14:39 +0100
+Subject: [PATCH 2/2] Add jalr feature, fix tb issues and add more tb for jal
+ and jalr
+
+---
+ Makefile | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index dec7f81..caa487d 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1,8 +1,10 @@
+ SRC_DIR  := src
+ TB_DIR   := test
+ OUTPUT 	 := out/top.vvp
+-IVERILOG := /opt/iverilog-12/bin/iverilog
+-VVP 		 := /opt/iverilog-12/bin/vvp
++IVERILOG := iverilog
++# /opt/iverilog-12/bin/iverilog
++VVP 		 :=vvp
++# = /opt/iverilog-12/bin/vvp
+ 
+ SRCS := $(shell find $(SRC_DIR) -name "*.sv" -o -name "*.v")
+ 

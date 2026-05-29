@@ -1,0 +1,42 @@
+diff --git a/picorv32.v b/picorv32.v
+index 278452e..efbdce6 100644
+--- a/picorv32.v
++++ b/picorv32.v
+@@ -1272,8 +1272,9 @@ module picorv32 #(
+ 								if (CATCH_ILLINSN && pcpi_timeout) begin
+ 									`debug($display("SBREAK OR UNSUPPORTED INSN AT 0x%08x", reg_pc);)
+ 									if (ENABLE_IRQ && !irq_mask[irq_sbreak] && !irq_active) begin
+-										next_irq_pending[irq_sbreak] = 1;
+-										cpu_state <= cpu_state_fetch;
++									next_irq_pending[irq_sbreak] = 1;
++									pcpi_valid <= 0;
++									cpu_state <= cpu_state_fetch;
+ 									end else
+ 										cpu_state <= cpu_state_trap;
+ 								end
+@@ -1284,6 +1285,7 @@ module picorv32 #(
+ 							`debug($display("SBREAK OR UNSUPPORTED INSN AT 0x%08x", reg_pc);)
+ 							if (ENABLE_IRQ && !irq_mask[irq_sbreak] && !irq_active) begin
+ 								next_irq_pending[irq_sbreak] = 1;
++								pcpi_valid <= 0;
+ 								cpu_state <= cpu_state_fetch;
+ 							end else
+ 								cpu_state <= cpu_state_trap;
+@@ -1422,6 +1424,7 @@ module picorv32 #(
+ 							`debug($display("SBREAK OR UNSUPPORTED INSN AT 0x%08x", reg_pc);)
+ 							if (ENABLE_IRQ && !irq_mask[irq_sbreak] && !irq_active) begin
+ 								next_irq_pending[irq_sbreak] = 1;
++								pcpi_valid <= 0;
+ 								cpu_state <= cpu_state_fetch;
+ 							end else
+ 								cpu_state <= cpu_state_trap;
+@@ -1569,7 +1572,8 @@ module picorv32 #(
+ 				cpu_state <= cpu_state_trap;
+ 		end
+ 		if (!CATCH_ILLINSN && decoder_trigger_q && !decoder_pseudo_trigger_q && instr_sbreak) begin
+-			cpu_state <= cpu_state_trap;
++				pcpi_valid <= 0;
++				cpu_state <= cpu_state_trap;
+ 		end
+ 
+ 		if (!resetn || mem_done) begin

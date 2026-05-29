@@ -1,0 +1,39 @@
+# Fix RV32E shifts by immediates >= 0x10
+
+Instance: YosysHQ_picorv32_pr244
+Source: https://github.com/YosysHQ/picorv32/pull/244
+Fetched: 2026-05-03
+Repository: YosysHQ/picorv32
+Pull request: #244
+Author: MichaelBell
+State: closed
+Base branch: main
+Head branch: fix-rv32e
+Created: 2023-08-20
+Updated: 2024-03-26
+Closed: 2024-03-26
+Merged: 2024-03-26
+
+## PR Title
+Fix RV32E shifts by immediates >= 0x10
+
+## PR Description
+Resolves issue #211. Makes shift-by-immediate instructions on the RV32E configuration use the full 5-bit immediate field rather than truncating it to 4 bits, so e.g. `slli` works with shift amounts >= 0x10. The author notes they did not exhaustively test other RV32E instructions but did not find further breakage in cursory testing, and that the change appears not to break Q-register instructions on RV32I (untested).
+
+## PR Comments
+**MichaelBell** (Aug 20, 2023): "This fixes #211. I haven't found any other broken instructions on RV32E, but I haven't done rigorous testing. A cursory check suggests this change doesn't break the Q register instructions in RV32I, but I haven't tested that at all."
+
+**KrystalDelusion** (Mar 26, 2024): Force-pushed and merged the PR at commit de92ce5.
+
+## Linked Issues
+**Issue #211 - "Bug when using RV32E (ENABLE_REGS_16_31=0)"** (closed by this PR).
+
+Issue body (verbatim from the source URL):
+"Support for rv32e is buggy.  Setting ENABLE_REGS_16_31 = 0 leads to the following:
+
+- regindex_bits will be 4 (instead of 5)
+- decoded_rs2 will be 4 bits wide (instead of 5)
+- reg_sh will be set to the 4 least significant bits of the immediate field of the instruction, instead of the full 5 bits
+- shift immediate instructions will fail (e.g. slli)
+
+Easily fixed by setting decoded_rs2 (and possibly decoded_rs1 and decoded_rs) fixed 5 bits wide, instead of having it depend on the size of the register file."

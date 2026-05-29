@@ -1,0 +1,483 @@
+From 614f395c6ebd1ac4cd8e0ee0e672a5f9fb1679d1 Mon Sep 17 00:00:00 2001
+From: roman022285 <roman329@gmail.com>
+Date: Mon, 20 May 2024 22:52:37 +0300
+Subject: [PATCH 1/4] add custom csr for storing SP
+
+---
+ source/big_core/big_core_csr.sv              | 5 +++++
+ source/big_core/packages/big_core_csr_pkg.vh | 3 +++
+ verif/rv32i_ref/tb/rv32i_ref.sv              | 5 +++++
+ verif/rv32i_ref/tb/rv32i_ref_pkg.sv          | 3 +++
+ 4 files changed, 16 insertions(+)
+
+diff --git a/source/big_core/big_core_csr.sv b/source/big_core/big_core_csr.sv
+index f32e65a8..ae4889be 100644
+--- a/source/big_core/big_core_csr.sv
++++ b/source/big_core/big_core_csr.sv
+@@ -253,6 +253,10 @@ always_comb begin
+             {2'b01, CSR_CUSTOM_LFSR}        : next_csr.csr_custom_lfsr = csr_data;
+             {2'b10, CSR_CUSTOM_LFSR}        : next_csr.csr_custom_lfsr = csr.csr_custom_lfsr  | csr_data;
+             {2'b11, CSR_CUSTOM_LFSR}        : next_csr.csr_custom_lfsr = csr.csr_custom_lfsr  & ~csr_data;
++            // CSR_CUSTOM_SP
++            {2'b01, CSR_CUSTOM_SP}        : next_csr.csr_custom_sp = csr_data;
++            {2'b10, CSR_CUSTOM_SP}        : next_csr.csr_custom_sp = csr.csr_custom_sp  | csr_data;
++            {2'b11, CSR_CUSTOM_SP}        : next_csr.csr_custom_sp = csr.csr_custom_sp  & ~csr_data;
+             // CSR_DCSR
+             {2'b01, CSR_DCSR}        : next_csr.csr_dcsr = csr_data;
+             {2'b10, CSR_DCSR}        : next_csr.csr_dcsr = csr.csr_dcsr  | csr_data;
+@@ -365,6 +369,7 @@ always_comb begin
+             CSR_CUSTOM_MTIME   : CsrReadDataQ102H = csr.csr_custom_mtime;
+             CSR_CUSTOM_MTIMECMP: CsrReadDataQ102H = csr.csr_custom_mtimecmp;
+             CSR_CUSTOM_LFSR    : CsrReadDataQ102H = next_csr.csr_custom_lfsr; // reading next avoids from returning the seed at the fisrt read
++            CSR_CUSTOM_SP      : CsrReadDataQ102H = next_csr.csr_custom_sp;
+             CSR_DCSR           : CsrReadDataQ102H = csr.csr_dcsr;
+             CSR_DPC            : CsrReadDataQ102H = csr.csr_dpc;
+             CSR_DSCRATCH0      : CsrReadDataQ102H = csr.csr_dscratch0;
+diff --git a/source/big_core/packages/big_core_csr_pkg.vh b/source/big_core/packages/big_core_csr_pkg.vh
+index adc541ae..a649c54b 100644
+--- a/source/big_core/packages/big_core_csr_pkg.vh
++++ b/source/big_core/packages/big_core_csr_pkg.vh
+@@ -74,6 +74,8 @@ typedef enum logic [11:0] {
+  CSR_CUSTOM_MTIMECMP = 12'hBC0,
+  //Custom csr used for LFSR 
+  CSR_CUSTOM_LFSR     = 12'hBC1,
++ // Custom CSR used for store Stack Pointer register
++ CSR_CUSTOM_SP      = 12'hBC2,
+  //debug csr's
+  CSR_DCSR            = 12'h7B0,
+  CSR_DPC             = 12'h7B1,
+@@ -141,6 +143,7 @@ typedef struct packed {
+     logic [31:0] csr_custom_mtime;
+     logic [31:0] csr_custom_mtimecmp;
+     logic [31:0] csr_custom_lfsr;
++    logic [31:0] csr_custom_sp;
+     logic [31:0] csr_dcsr;
+     logic [31:0] csr_dpc;
+     logic [31:0] csr_dscratch0;
+diff --git a/verif/rv32i_ref/tb/rv32i_ref.sv b/verif/rv32i_ref/tb/rv32i_ref.sv
+index c39d7bea..7683d334 100644
+--- a/verif/rv32i_ref/tb/rv32i_ref.sv
++++ b/verif/rv32i_ref/tb/rv32i_ref.sv
+@@ -691,6 +691,10 @@ always_comb begin
+             {2'b01, CSR_CUSTOM_LFSR}        : next_csr.csr_custom_lfsr = csr_data;
+             {2'b10, CSR_CUSTOM_LFSR}        : next_csr.csr_custom_lfsr = csr.csr_custom_lfsr  | csr_data;
+             {2'b11, CSR_CUSTOM_LFSR}        : next_csr.csr_custom_lfsr = csr.csr_custom_lfsr  & ~csr_data;
++            // CSR_CUSTOM_SP
++            {2'b01, CSR_CUSTOM_SP}        : next_csr.csr_custom_sp = csr_data;
++            {2'b10, CSR_CUSTOM_SP}        : next_csr.csr_custom_sp = csr.csr_custom_sp  | csr_data;
++            {2'b11, CSR_CUSTOM_SP}        : next_csr.csr_custom_sp = csr.csr_custom_sp  & ~csr_data;
+             // CSR_DCSR
+             {2'b01, CSR_DCSR}        : next_csr.csr_dcsr = csr_data;
+             {2'b10, CSR_DCSR}        : next_csr.csr_dcsr = csr.csr_dcsr  | csr_data;
+@@ -755,6 +759,7 @@ always_comb begin
+             CSR_CUSTOM_MTIME   : csr_read_data = csr.csr_custom_mtime;
+             CSR_CUSTOM_MTIMECMP: csr_read_data = csr.csr_custom_mtimecmp;
+             CSR_CUSTOM_LFSR    : csr_read_data = next_csr.csr_custom_lfsr; // reading next avoids from returning the seed at the fisrt read
++            CSR_CUSTOM_SP      : csr_read_data = next_csr.csr_custom_sp;
+             CSR_DCSR           : csr_read_data = csr.csr_dcsr;
+             CSR_DPC            : csr_read_data = csr.csr_dpc;
+             CSR_DSCRATCH0      : csr_read_data = csr.csr_dscratch0;
+diff --git a/verif/rv32i_ref/tb/rv32i_ref_pkg.sv b/verif/rv32i_ref/tb/rv32i_ref_pkg.sv
+index 5edadcc4..a330dbfc 100644
+--- a/verif/rv32i_ref/tb/rv32i_ref_pkg.sv
++++ b/verif/rv32i_ref/tb/rv32i_ref_pkg.sv
+@@ -107,6 +107,8 @@ typedef enum logic [11:0] {
+  CSR_CUSTOM_MTIMECMP = 12'hBC0,
+  //Custom csr used for LFSR 
+  CSR_CUSTOM_LFSR     = 12'hBC1,
++ // Custom CSR used for store Stack Pointer register
++ CSR_CUSTOM_SP      = 12'hBC2,
+  //debug csr's
+  CSR_DCSR            = 12'h7B0,
+  CSR_DPC             = 12'h7B1,
+@@ -153,6 +155,7 @@ typedef struct packed {
+     logic [31:0] csr_custom_mtime;
+     logic [31:0] csr_custom_mtimecmp;
+     logic [31:0] csr_custom_lfsr;
++    logic [31:0] csr_custom_sp;
+     logic [31:0] csr_dcsr;
+     logic [31:0] csr_dpc;
+     logic [31:0] csr_dscratch0;
+
+From f21dde10664a36239d35f6739b3ce8569180b922 Mon Sep 17 00:00:00 2001
+From: roman022285 <roman329@gmail.com>
+Date: Mon, 20 May 2024 22:53:35 +0300
+Subject: [PATCH 2/4] add support of div instruction using trap
+
+---
+ app/crt0/crt0_boot_trap.s       |  2 ++
+ app/defines/csr.h               |  2 +-
+ app/defines/interrupt_handler.h | 51 +++++++++++++++++++++++----------
+ 3 files changed, 39 insertions(+), 16 deletions(-)
+
+diff --git a/app/crt0/crt0_boot_trap.s b/app/crt0/crt0_boot_trap.s
+index 61994f2e..491d7920 100644
+--- a/app/crt0/crt0_boot_trap.s
++++ b/app/crt0/crt0_boot_trap.s
+@@ -73,6 +73,8 @@ jump_to_main:
+ ###############################################
+ trap_handler:
+   .org 0x100
++    # save sp into csr_custom_sp for special needs
++    csrw 0xBC2, sp
+     # Save registers on the stack
+     addi sp, sp, -128     # Allocate stack space for 31 registers
+     sw ra, 124(sp)        
+diff --git a/app/defines/csr.h b/app/defines/csr.h
+index e262b9c0..b3060c24 100644
+--- a/app/defines/csr.h
++++ b/app/defines/csr.h
+@@ -39,7 +39,7 @@
+ #define extract_opcode(instruction) ((instruction) & 0x7F)
+ #define extract_rs1(instruction) (((instruction) >> 15) & 0x1F)
+ #define extract_rs2(instruction) (((instruction) >> 20) & 0x1F)
+-#define extract_rrd(instruction) (((instruction) >> 7) & 0x1F)
++#define extract_rd(instruction) (((instruction) >> 7) & 0x1F)
+ 
+ 
+ // sample relevant csr's for pmon
+diff --git a/app/defines/interrupt_handler.h b/app/defines/interrupt_handler.h
+index 5c2375d3..a8b976cd 100644
+--- a/app/defines/interrupt_handler.h
++++ b/app/defines/interrupt_handler.h
+@@ -1,6 +1,7 @@
+ #include "big_core_defines.h"
+ #include "graphic_vga.h"
+ #include "csr.h"
++#include "math.h"
+ 
+ // RISCV mcause exceptions defines for detection: 
+ #define ILLEGAL_INSTRUCTION_EXCEPTION     0x2
+@@ -10,7 +11,10 @@
+ 
+ unsigned int COUNT_MACHINE_TIMER_INTRPT[1] = {0};
+ unsigned int funct7, funct3;
+-unsigned int rs1, rs2, rd;
++unsigned int rs1_addr, rs2_addr, rd_addr;
++unsigned int rs1_value, rs2_value;
++unsigned int* stack_pointer;
++int rd_value;
+ 
+ void mtime_routine_handler() {
+         COUNT_MACHINE_TIMER_INTRPT[0]++;
+@@ -35,30 +39,47 @@ void interrupt_handler() {
+         }
+ 
+     // execution of DIV, DIVU, REM, REMU
+-    // The mcause gots reserved value from the spec
++    // The mcause gets reserved value from the spec
+     if (mcause == CUSTOM_MCAUSE_DIV_OPERATION){
+         csr_mtval = read_mtval();
+         funct7    = extract_funct7(csr_mtval);
+         funct3    = extract_funct3(csr_mtval);
++        // restore the rs1, rs2 values before entering the exception
++        rs1_addr = extract_rs1(csr_mtval);
++        rs2_addr = extract_rs2(csr_mtval);
++        rd_addr  = extract_rd(csr_mtval);
++        // restore the value of stack pointer before entering to interrupt handler
++        stack_pointer = (unsigned int *)(READ_CUSTOM_CSR(0xBC2));
++
++        // restore the values of rs1 and rs2 before entering the interrupt handler
++        // for example we restore rs1 and rs2 in div rd, rs1, rs2;
++        // reminder: assume stack_pointer = 0x100 and rs1_addr = 2
++        // then in the following line rs1_value we will restored data from memory in address 100 - 2*4 
++        rs1_value = *(stack_pointer - rs1_addr);
++        rs2_value = *(stack_pointer - rs2_addr);
++
+         if(funct7 == 0x1 && funct3 == 0x4) {   // DIV
+-                 rvc_printf("DIV\n"); // TODO handle DIV
+-                 //rvc_printf("MTVAL:");
+-                 //rvc_print_unsigned_int_hex(csr_mtval);
+-        }
++                 rd_value = div(rs1_value, rs2_value);
++                 // we want thar rd will contain the result if the instruction than
++                 // we have to over write it with the rd stores in the stack at the beginning of the
++                 // interupt handler. We have to read again the stack_pointer and than over write
++                stack_pointer = (unsigned int *)(READ_CUSTOM_CSR(0xBC2));
++                *(stack_pointer - rd_addr) = rd_value;
++        }       
+         else if(funct7 == 0x1 && funct3 == 0x5) {  // DIVU
+-                 rvc_printf("DIVU\n"); // TODO handle DIVU
+-                 //rvc_printf("MTVAL:");
+-                 //rvc_print_unsigned_int_hex(csr_mtval);
++                rd_value = divu(rs1_value, rs2_value);
++                stack_pointer = (unsigned int *)(READ_CUSTOM_CSR(0xBC2));
++                *(stack_pointer - rd_addr) = rd_value;
+         }
+         else if(funct7 == 0x1 && funct3 == 0x6) {  // REM
+-                 rvc_printf("REM\n"); // TODO handle DIVU
+-                 //rvc_printf("MTVAL:");
+-                 //rvc_print_unsigned_int_hex(csr_mtval);
++                rd_value = rem(rs1_value, rs2_value);
++                stack_pointer = (unsigned int *)(READ_CUSTOM_CSR(0xBC2));
++                *(stack_pointer - rd_addr) = rd_value;
+         }
+         else if(funct7 == 0x1 && funct3 == 0x7) {  // REMU
+-                 rvc_printf("RIMU\n"); // TODO handle REMU
+-                 //rvc_printf("MTVAL:");
+-                 //rvc_print_unsigned_int_hex(csr_mtval);
++                rd_value = remu(rs1_value, rs2_value);
++                stack_pointer = (unsigned int *)(READ_CUSTOM_CSR(0xBC2));
++                *(stack_pointer - rd_addr) = rd_value;
+         }
+     }
+ 
+
+From a95949e3d248371b7a0938c1e0563c5064261fc4 Mon Sep 17 00:00:00 2001
+From: roman022285 <roman329@gmail.com>
+Date: Mon, 20 May 2024 22:54:00 +0300
+Subject: [PATCH 3/4] add dedicated test fot m extension test
+
+---
+ verif/big_core/tests/m_extension.c | 12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/verif/big_core/tests/m_extension.c b/verif/big_core/tests/m_extension.c
+index 079df322..f062c2d5 100644
+--- a/verif/big_core/tests/m_extension.c
++++ b/verif/big_core/tests/m_extension.c
+@@ -31,8 +31,8 @@ int main() {
+     __asm__ volatile ("mulhsu %0, %1, %2" : "=r"(mulhsu_res) : "r"(a), "r"(b));
+ 
+ 
+-    int dividend = 7;
+-    int divisor  = 3;
++    int dividend = 34;
++    int divisor  = 7;
+ 
+     int div_res;
+     unsigned int divu_res;
+@@ -41,15 +41,23 @@ int main() {
+ 
+     // Performe signed division and sore the results
+     __asm__ volatile ("div %0, %1, %2" : "=r"(div_res) : "r"(dividend), "r"(divisor));
++    rvc_print_int(div_res);
++    rvc_printf("\n");
+ 
++    
+     // Performe unsigned division and sore the results
+     __asm__ volatile ("divu %0, %1, %2" : "=r"(divu_res) : "r"(dividend), "r"(divisor));
++    rvc_print_int(divu_res);
++    rvc_printf("\n");
+ 
+     // Performe signed reminder and sore the results
+     __asm__ volatile ("rem %0, %1, %2" : "=r"(rem_res) : "r"(dividend), "r"(divisor));
++    rvc_print_int(rem_res); 
++    rvc_printf("\n");
+ 
+     // Performe signed reminder and sore the results
+     __asm__ volatile ("remu %0, %1, %2" : "=r"(remu_res) : "r"(dividend), "r"(divisor));
++    rvc_print_int(remu_res);
+ 
+     return 0;
+ }
+\ No newline at end of file
+
+From 14b86d6e5362ff9fe801cc36d4f18e5447629dac Mon Sep 17 00:00:00 2001
+From: roman022285 <roman329@gmail.com>
+Date: Mon, 20 May 2024 22:54:16 +0300
+Subject: [PATCH 4/4] add dedicated library dor math functions
+
+---
+ app/defines/math.h               | 139 +++++++++++++++++++++++++++++++
+ app/defines/rrv_fixed_point.h    |  30 -------
+ verif/big_core/tests/alive_ipc.c |   2 +-
+ 3 files changed, 140 insertions(+), 31 deletions(-)
+ create mode 100644 app/defines/math.h
+ delete mode 100644 app/defines/rrv_fixed_point.h
+
+diff --git a/app/defines/math.h b/app/defines/math.h
+new file mode 100644
+index 00000000..decdcf47
+--- /dev/null
++++ b/app/defines/math.h
+@@ -0,0 +1,139 @@
++#ifndef MATH_H  // Check if GRAPHIC_VGA_H is not defined
++#define MATH_H  // Define GRAPHIC_VGA_H
++
++#define INT_MAX 2147483647
++#define INT_MIN (-INT_MAX - 1)
++#define UINT_MAX 4294967295U
++
++
++//================================================
++//            Standard functions
++// ===============================================
++//------------------------------------------------
++// 1. pow - calculate pow.
++//------------------------------------------------
++
++// calculate power of integer numbers with integer exponent
++int pow(int base, int exp) {
++	int result = 1;
++
++	for (int i = 0; i < exp; i++)
++		result *= base;
++
++	return result;
++}
++
++
++//================================================
++//        M-extensios division functions
++// ===============================================
++//------------------------------------------------
++// 1. div  - m extension division.
++// 2. divu - m extension unsigned division. 
++// 3. rem  - m extension division reminder.
++// 4. remu - m extension division unsigned reminder.
++//------------------------------------------------
++
++// Function implementing DIV, DIVU, REM and REMU 
++
++// Helper function to safely compute the absolute value of an integer
++int safe_abs(int x) {
++    if (x < 0) {
++        return (x == INT_MIN ? INT_MAX : -x);
++    }
++    return x;
++}
++
++// Signed Division
++int div(int rs1, int rs2) {
++    if (rs2 == 0) {
++        return INT_MAX; // Division by zero, return max int value
++    } else if (rs1 == INT_MIN && rs2 == -1) {
++        return INT_MIN; // Overflow case
++    }
++
++    int sign = ((rs1 < 0) ^ (rs2 < 0)) ? -1 : 1;
++    unsigned int num = safe_abs(rs1);
++    unsigned int den = safe_abs(rs2);
++    unsigned int res = 0;
++
++    while (num >= den) {
++        num -= den;
++        res++;
++    }
++
++    return sign * res;
++}
++
++// Unsigned Division
++unsigned divu(unsigned rs1, unsigned rs2) {
++    if (rs2 == 0) {
++        return UINT_MAX; // Division by zero, return max unsigned int value
++    }
++
++    unsigned res = 0;
++    while (rs1 >= rs2) {
++        rs1 -= rs2;
++        res++;
++    }
++
++    return res;
++}
++
++// Signed Remainder
++int rem(int rs1, int rs2) {
++    if (rs2 == 0) {
++        return rs1; // Remainder by zero equals the dividend
++    } else if (rs1 == INT_MIN && rs2 == -1) {
++        return 0; // Overflow case
++    }
++
++    int sign = (rs1 < 0) ? -1 : 1;
++    unsigned int num = safe_abs(rs1);
++    unsigned int den = safe_abs(rs2);
++
++    while (num >= den) {
++        num -= den;
++    }
++
++    return sign * num;
++}
++
++// Unsigned Remainder
++unsigned remu(unsigned rs1, unsigned rs2) {
++    if (rs2 == 0) {
++        return rs1; // Remainder by zero equals the dividend
++    }
++
++    while (rs1 >= rs2) {
++        rs1 -= rs2;
++    }
++
++    return rs1;
++}
++
++
++// TODO - check the proper functionality of the function is special cases
++// print cpi value as remainder and quotient
++void fix_div(int numerator, int denominator, int* quo, int* rem) {
++    int precision = 3;;
++	int sign_numerator   = (numerator > 0) ? 1 : -1;
++	int sign_denominator = (denominator > 0) ? 1 : -1;
++
++	// convert to positive
++	numerator *= sign_numerator;
++	denominator *= sign_denominator;
++
++	*quo = numerator / denominator;
++	*rem = (((numerator) % denominator) * pow(10, precision)) / denominator;
++	
++	// remove zeros from right
++	while (!(*rem % 10) && *rem!=0)
++		*rem /= 10;
++
++	if (sign_numerator * sign_denominator == -1)
++		*quo = -1 * (*quo);
++}
++
++
++#endif // MATH_H
+\ No newline at end of file
+diff --git a/app/defines/rrv_fixed_point.h b/app/defines/rrv_fixed_point.h
+deleted file mode 100644
+index d75aa8c6..00000000
+--- a/app/defines/rrv_fixed_point.h
++++ /dev/null
+@@ -1,30 +0,0 @@
+-// calculate power of integer numbers with integer exponent
+-int pow(int base, int exp) {
+-	int result = 1;
+-
+-	for (int i = 0; i < exp; i++)
+-		result *= base;
+-
+-	return result;
+-}
+-
+-// print cpi value as remainder and quotient
+-void fix_div(int numerator, int denominator, int* quo, int* rem) {
+-    int precision = 3;;
+-	int sign_numerator   = (numerator > 0) ? 1 : -1;
+-	int sign_denominator = (denominator > 0) ? 1 : -1;
+-
+-	// convert to positive
+-	numerator *= sign_numerator;
+-	denominator *= sign_denominator;
+-
+-	*quo = numerator / denominator;
+-	*rem = (((numerator) % denominator) * pow(10, precision)) / denominator;
+-	
+-	// remove zeros from right
+-	while (!(*rem % 10) && *rem!=0)
+-		*rem /= 10;
+-
+-	if (sign_numerator * sign_denominator == -1)
+-		*quo = -1 * (*quo);
+-}
+diff --git a/verif/big_core/tests/alive_ipc.c b/verif/big_core/tests/alive_ipc.c
+index 63436fe8..b7b8e5bd 100644
+--- a/verif/big_core/tests/alive_ipc.c
++++ b/verif/big_core/tests/alive_ipc.c
+@@ -9,7 +9,7 @@
+ #include "big_core_defines.h"
+ #include "graphic_vga.h"
+ #include "csr.h"
+-#include "rrv_fixed_point.h"
++#include "math.h"
+ 
+ void my_program(){
+ 

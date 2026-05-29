@@ -1,0 +1,660 @@
+From 0946220ce0538277af9c80b0dad3aa29cf52360f Mon Sep 17 00:00:00 2001
+From: Nadeem-Ahmed <nadeemahmed@mirafra.com>
+Date: Wed, 9 Feb 2022 18:38:05 +0530
+Subject: [PATCH 1/4] Added the makefile and compile.f file for questa_sim
+ simulator
+
+---
+ ...lpino_spi_master_ip_verification_compile.f |  35 +++
+ sim/questa_sim/enable_assertions.txt          |  30 +++
+ sim/questa_sim/makefile                       | 254 ++++++++++++++++++
+ sim/questa_sim/regression_handling.py         |  47 ++++
+ .../{hdl_top.sv => apb_master_hdl_top.sv}     |  17 +-
+ .../{hdl_top.sv => spi_slave_hdl_top.sv}      |  12 +-
+ 6 files changed, 381 insertions(+), 14 deletions(-)
+ create mode 100644 sim/pulpino_spi_master_ip_verification_compile.f
+ create mode 100644 sim/questa_sim/enable_assertions.txt
+ create mode 100755 sim/questa_sim/makefile
+ create mode 100644 sim/questa_sim/regression_handling.py
+ rename src/dv/apb_master_avip/src/hdl_top/{hdl_top.sv => apb_master_hdl_top.sv} (88%)
+ rename src/dv/spi_slave_avip/src/hdl_top/{hdl_top.sv => spi_slave_hdl_top.sv} (91%)
+
+diff --git a/sim/pulpino_spi_master_ip_verification_compile.f b/sim/pulpino_spi_master_ip_verification_compile.f
+new file mode 100644
+index 0000000..840bfb6
+--- /dev/null
++++ b/sim/pulpino_spi_master_ip_verification_compile.f
+@@ -0,0 +1,35 @@
+++incdir+../../src/dv/apb_master_avip/src/globals/
+++incdir+../../src/dv/apb_master_avip/src/hvl_top/master/
+++incdir+../../src/dv/apb_master_avip/src/hvl_top/test/master_sequences
+++incdir+../../src/dv/apb_master_avip/src/hdl_top/master_agent_bfm
+++incdir+../../src/dv/apb_master_avip/src/hdl_top/apb_interface
+++incdir+../../src/dv/spi_slave_avip/src/globals/
+++incdir+../../src/dv/spi_slave_avip/src/hvl_top/slave
+++incdir+../../src/dv/spi_slave_avip/src/hvl_top/test/slave_sequences
+++incdir+../../src/dv/spi_slave_avip/src/hdl_top/slave_agent_bfm
+++incdir+../../src/dv/spi_slave_avip/src/hdl_top/spi_interface
+++incdir+../../src/rtl/spi_master/
++../../src/dv/apb_master_avip/src/globals/apb_global_pkg.sv
++../../src/dv/apb_master_avip/src/hvl_top/master/apb_master_pkg.sv
++../../src/dv/apb_master_avip/src/hvl_top/test/master_sequences/apb_master_seq_pkg.sv
++../../src/dv/apb_master_avip/src/hdl_top/apb_if/apb_if.sv
++../../src/dv/apb_master_avip/src/hdl_top/master_agent_bfm/apb_master_driver_bfm.sv
++../../src/dv/apb_master_avip/src/hdl_top/master_agent_bfm/apb_master_monitor_bfm.sv
++../../src/dv/apb_master_avip/src/hdl_top/master_agent_bfm/apb_master_agent_bfm.sv
++../../src/dv/apb_master_avip/src/hdl_top/apb_master_hdl_top.sv
++../../src/rtl/spi_master/apb_spi_master.sv
++../../src/rtl/spi_master/spi_master_apb_if.sv
++../../src/rtl/spi_master/spi_master_clkgen.sv
++../../src/rtl/spi_master/spi_master_controller.sv
++../../src/rtl/spi_master/spi_master_fifo.sv
++../../src/rtl/spi_master/spi_master_rx.sv
++../../src/rtl/spi_master/spi_master_tx.sv
++../../src/dv/spi_slave_avip/src/globals/spi_globals_pkg.sv
++../../src/dv/spi_slave_avip/src/hvl_top/slave/spi_slave_pkg.sv
++../../src/dv/spi_slave_avip/src/hvl_top/test/slave_sequences/spi_slave_seq_pkg.sv
++../../src/dv/spi_slave_avip/src/hdl_top/spi_interface/spi_if.sv
++../../src/dv/spi_slave_avip/src/hdl_top/slave_agent_bfm/slave_driver_bfm.sv
++../../src/dv/spi_slave_avip/src/hdl_top/slave_agent_bfm/slave_monitor_bfm.sv
++../../src/dv/spi_slave_avip/src/hdl_top/slave_agent_bfm/slave_agent_bfm.sv
++../../src/dv/spi_slave_avip/src/hdl_top/spi_slave_hdl_top.sv
++
+diff --git a/sim/questa_sim/enable_assertions.txt b/sim/questa_sim/enable_assertions.txt
+new file mode 100644
+index 0000000..073a321
+--- /dev/null
++++ b/sim/questa_sim/enable_assertions.txt
+@@ -0,0 +1,30 @@
++U can debug the Assertions using ATV (Assertions Thread view) in Questasim.
++Add timescale in xbus_tb_top.sv file as follows
++`timescale 1ns/1ns
++
++1) Compile the file with +acc option
++vlog +acc -f compile_questa_sv.f
++
++2) Simulate xbus_tb_top with -assertdebug option
++vsim -assertdebug +OVM_TESTNAME=test_read_modify_write -suppress 3829 xbus_tb_top
++
++3) Add the signals log
++add log -r sim:/xbus_tb_top/*
++
++4) Add the require assertions to the Assertion Thread viewer (ATV).
++atv log -enable /xbus_tb_top/xi0/*
++
++5) Run the simulation
++run -all
++
++6) Now from Top menu open the assertion window as follows.
++view -> coverage -> assertions.
++
++7) At the end of window select any concurrent assertion(example: assertAddrUnknown) and right click and select view ATV.
++or
++Add the required assertion using following command.
++add atv /xbus_tb_top/xi0/assertAddrUnknown 135ns
++
++Now u can see the Assertion thread and allows easy debug.
++
++If u find any doubt go to the Questasim help and search for ATV
+diff --git a/sim/questa_sim/makefile b/sim/questa_sim/makefile
+new file mode 100755
+index 0000000..5be91d7
+--- /dev/null
++++ b/sim/questa_sim/makefile
+@@ -0,0 +1,254 @@
++# -s means silent mode
++# The command executed along with the output will be displayed on the terminal
++# To get only the ouput use 'silent' mode
++#
++# make target -s
++
++
++# -n or --just-print 
++# The first test I perform on a new makefile target is to invoke make with the --just-print (-n) option. 
++# This causes make to read the makefile and print every command it would normally execute to 
++# update the target but without executing them.
++#
++# make target -n
++
++
++# When you run make with the -i or --ignore-errors flag, 
++# errors are ignored in all recipes of all rules. 
++# A rule in the makefile for the special target .IGNORE has the same effect, 
++# if there are no prerequisites. This is less flexible but sometimes useful.
++# When errors are to be ignored, because of -i flag, make treats an error return just like success,
++# except that it prints out a message that tells you the status code the shell exited with, 
++# and says that the error has been ignored.
++#
++# make target -i 
++
++# // TODO(mshariff): 
++# Add .git rules to ignore log files, basically the sim folder except makefile and scripts
++
++
++.IGNORE:
++	compile
++	simulate
++
++# WE can also use the target where we WANT the silent mode 
++.SILENT:
++	compile
++	simulate
++	usage
++
++# First target will be executed incase the user doesn't mention
++# the target to execute
++# In this case, usage will be executed
++# Usage
++usage:
++	echo "";
++	echo "-----------------------------------------------------------------";
++	echo "------------------------- Usage ---------------------------------";
++	echo "";
++	echo "make target <options> <variable>=<value>";
++	echo "";
++	echo "To compile use:"
++	echo "make compile";
++	echo "";
++	echo "To simulate individual test:"
++	echo "make simulate test=<test_name> uvm_verbosity=<VERBOSITY_LEVEL>";
++	echo "";
++	echo "Example:":
++	echo "make simulate test=base_test uvm_verbosity=UVM_HIGH";
++	echo "";
++	echo "To run regression:"
++	echo "make regression testlist_name=<regression_testlist_name.list>";
++	echo "";
++	echo "Example:":
++	echo "make regression testlist_name=pulpino_spi_master_ip_verification_regression.list";
++	echo "";
++	echo "-----------------------------------------------------------------";
++	echo "-----------------------------------------------------------------";
++	echo "";
++
++all:
++	make clean; make compile; make simulate;
++
++# For Assertions use +acc options
++#  +cover=becstf
++compile:
++	make clean_compile;
++	make clean_simulate;
++	vlib work; 
++	vlog -sv \
++	+acc \
++	+cover \
++	+fcover \
++	-l pulpino_spi_master_ip_verification_compile.log \
++	-f ../pulpino_spi_master_ip_verification_compile.f 
++
++	# -s means silent mode
++	#  The command executed along with the output will be displayed on the terminal
++	#  To get only the ouput use 'silent' mode
++	# make compile_war_err -s
++	# or use .SILENT
++	make compile_war_err
++
++# Setting a default test as base_test
++ifndef test
++override test = base_test
++endif
++
++# Setting the default uvm_verbosity to UVM_MEDIUM
++ifndef uvm_verbosity
++override uvm_verbosity = UVM_MEDIUM
++endif
++
++
++ifndef pulpino_spi_master_ip_verification_type
++override  pulpino_spi_master_ip_verification_type= pulpino_spi_master_ip_verification_base_test
++endif
++
++## For randomized seed
++# TODO(mshariff): 
++#Add this line after -sva 
++#-sv_seed random 
++
++# Setting the default test folder to test name 
++ifndef test_folder
++override test_folder = $(test)
++endif
++
++simulate:
++	mkdir $(test_folder)
++
++	# Use -novopt for no optimization - Makes the simulation slower
++	# vsim -pli finesim.so -coverage top
++	vsim -vopt \
++	work.hvl_top \
++	work.hdl_top \
++	-voptargs=+acc=npr \
++	-assertdebug \
++	+UVM_TESTNAME=$(test) \
++	+UVM_VERBOSITY=$(uvm_verbosity) \
++	+define+$(pulpino_spi_master_ip_verification_type) \
++	-l $(test_folder)/$(test).log \
++	-sva \
++  -coverage \
++	-c -do "log -r /*; add wave -r /*; coverage save -onexit -assert -directive -cvg -codeAll $(test_folder)/$(test)_coverage.ucdb; run -all; exit" \
++	-wlf $(test_folder)/waveform.wlf
++
++
++	# For checking and reporting simulation errors
++	make simulate_war_err
++
++	## TODO(mshariff): 
++	## # For coverage report in text format 
++	## #vcover report -text $(test)/$(test)_cov
++	# -c -do "log -r /*; add wave -r /*; coverage save -onexit -assert -directive -cvg -codeAll $(test)/coverage.ucdb; coverage report -file $(teset)/coverage.txt -byfile -detail -noannotate -option -directive -cvg -details -verbose; run -all; exit" \
++	# vcover report -file  -byfile -detail -noannotate -option -cvg
++
++	# For coverage report in HTML format 
++	vcover report -html $(test_folder)/$(test)_coverage.ucdb -htmldir $(test_folder)/html_cov_report -details
++
++	# To open the html coverage report
++	# firefox test_folder/html_cov_report/index.html &
++
++	# To open the waveform use the below command 
++	# vsim -view waveform.wlf &
++	#
++	# To open the wavefrom with saved signals
++	# vsim -view waveform.wlf -do pulpino_spi_master_ip_verification_waves.do &
++
++clean_simulate:
++	rm -rf *_test*
++
++clean_compile:
++	rm -rf work/ *_compile.log transcript waveform.wlf
++	rm -rf merged_coverage.ucdb merged_cov_html_report
++
++#clean:
++#	make clean_compile
++#	make clean_simulate
++
++##
++## For Regression and coverage merge
++##
++regression:
++	# Run compilation
++	#make compile
++	make clean_simulate
++	# Run simualtion - regression 
++	python regression_handling.py $(testlist_name)
++	#	# Get the tests from regression list
++	#	grep "_test" ../../src/hvl_top/testlists/pulpino_spi_master_ip_verification_simple_fd_regression.list | grep -v "\#" > reg_list
++	#	make simulate test=value #Get the name from regression list
++	#	Merge coverage
++	make merge_cov_report
++		
++# For merge to happen, the coverage names for each test must be different
++#
++merge_cov_report:
++	rm -rf merged_coverage.ucdb merged_cov_html_report
++	# Merging all the coverage
++	vcover merge merged_coverage.ucdb -64 */*.ucdb  
++	#vcover merge mem_cover mem_cov1 mem_cov2 mem_cov3 mem_cov4 mem_cov5 mem_cov6 mem_cov7 mem_cov8
++	vcover report -html merged_coverage.ucdb -htmldir ./merged_cov_html_report -details
++
++	echo "";
++	echo "-----------------------------------------------------------------";
++	echo "Coverage report: firefox merged_cov_html_report/index.html &"
++	echo "-----------------------------------------------------------------";
++	echo "";
++
++compile_war_err:
++	echo "";
++	echo "-----------------------------------------------------------------";
++	echo "------------------- Compilation Report --------------------------";
++	echo "";
++	grep "^** " pulpino_spi_master_ip_verification_compile.log;
++	echo "";
++	grep "^Error" pulpino_spi_master_ip_verification_compile.log;
++	echo "";
++	echo "Log file path: pulpino_spi_master_ip_verification_compile.log"
++	echo "";
++	echo "-----------------------------------------------------------------";
++	echo "-----------------------------------------------------------------";
++	echo "";
++
++simulate_war_err:
++	echo "";
++	echo "-----------------------------------------------------------------";
++	echo "-------------------- Simulation Report --------------------------";
++	echo "";
++	echo "Simulator Errors";
++	grep "Error" $(test_folder)/$(test).log;
++	echo "";
++	echo "UVM Fatal";
++	grep "UVM_FATAL" $(test_folder)/$(test).log;
++	echo "";
++	echo "UVM Errors";
++	grep "UVM_ERROR" $(test_folder)/$(test).log;
++	echo "";
++	echo "UVM Warnings";
++	grep "UVM_WARNING" $(test_folder)/$(test).log;
++	echo "";
++	echo "Testname: $(test)"
++	echo "";
++	echo "Log file path: $(test_folder)/$(test).log"
++	echo "";
++	echo "Waveform: vsim -view $(test_folder)/waveform.wlf &"
++	echo "";
++	echo "Coverage report: firefox $(test_folder)/html_cov_report/index.html &"
++	echo "";
++	echo "-----------------------------------------------------------------";
++	echo "-----------------------------------------------------------------";
++	echo "";
++
++
++
++
++
++
++
++
++
++
++
++
+diff --git a/sim/questa_sim/regression_handling.py b/sim/questa_sim/regression_handling.py
+new file mode 100644
+index 0000000..195efbd
+--- /dev/null
++++ b/sim/questa_sim/regression_handling.py
+@@ -0,0 +1,47 @@
++#-----------------------------------------------------------------------
++#Description : Opening a file and searching for a pattern in read mode
++#Function Used : search()
++#-----------------------------------------------------------------------
++import re
++import sys
++import os
++import time
++from datetime import datetime
++
++## Variables
++reg_list_array = []
++debug = 0
++
++# Get regression list as input
++regression_list = str(sys.argv[1])
++if debug:
++  print(regression_list);
++
++# Reading the file
++path = "../../src/hvl_top/testlists/" + regression_list
++if debug:
++  print(path)
++
++with open(path,'r') as f:
++  for line in f:
++    match = re.search('\#',line);
++    if(match): 
++      continue;
++
++    match = re.search('(.*_test)',line);
++    if(match):
++      reg_list_array.append(match.group(0))
++      if debug:
++        print(match.group(0));
++
++for testname in reg_list_array:
++  timestr = time.strftime( "%d%m%Y-%H%M%S" )
++  if debug:
++    print( "time string : ", timestr )
++
++  test_folder = testname + "_" + timestr
++
++  line = "make simulate test_folder=" + test_folder + " test=" + testname
++  if debug:
++    print(line)
++  os.system(line)
+diff --git a/src/dv/apb_master_avip/src/hdl_top/hdl_top.sv b/src/dv/apb_master_avip/src/hdl_top/apb_master_hdl_top.sv
+similarity index 88%
+rename from src/dv/apb_master_avip/src/hdl_top/hdl_top.sv
+rename to src/dv/apb_master_avip/src/hdl_top/apb_master_hdl_top.sv
+index 631167a..da42b34 100644
+--- a/src/dv/apb_master_avip/src/hdl_top/hdl_top.sv
++++ b/src/dv/apb_master_avip/src/hdl_top/apb_master_hdl_top.sv
+@@ -1,12 +1,11 @@
++`ifndef APB_MASTER_HDL_TOP_INCLUDED_
++`define APB_MASTER_HDL_TOP_INCLUDED_
++
+ //--------------------------------------------------------------------------------------------
+ // Module      : HDL Top
+ // Description : Has a interface and slave agent bfm.
+ //--------------------------------------------------------------------------------------------
+-
+-//-------------------------------------------------------
+-// Including APB interface and apb_Slave Agent BFM Files
+-//-------------------------------------------------------
+-module hdl_top;
++module apb_master_hdl_top;
+ 
+   import uvm_pkg::*;
+   import apb_global_pkg::*;
+@@ -19,10 +18,10 @@ module hdl_top;
+   //bit rst;
+ 
+   //-------------------------------------------------------
+-  // Display statement for HDL_TOP
++  // Display statement for apb_master_hdl_top
+   //-------------------------------------------------------
+   initial begin
+-    `uvm_info("UVM_INFO","HDL_TOP",UVM_LOW);
++    `uvm_info("UVM_INFO","apb_master_hdl_top",UVM_LOW);
+     $display("HDL TOP");
+   end
+ 
+@@ -79,4 +78,6 @@ module hdl_top;
+  //   end
+  // endgenerate
+ 
+-endmodule : hdl_top
++endmodule : apb_master_hdl_top
++
++`endif
+diff --git a/src/dv/spi_slave_avip/src/hdl_top/hdl_top.sv b/src/dv/spi_slave_avip/src/hdl_top/spi_slave_hdl_top.sv
+similarity index 91%
+rename from src/dv/spi_slave_avip/src/hdl_top/hdl_top.sv
+rename to src/dv/spi_slave_avip/src/hdl_top/spi_slave_hdl_top.sv
+index a6e4e4f..f28ba27 100644
+--- a/src/dv/spi_slave_avip/src/hdl_top/hdl_top.sv
++++ b/src/dv/spi_slave_avip/src/hdl_top/spi_slave_hdl_top.sv
+@@ -1,12 +1,12 @@
+-`ifndef HDL_TOP_INCLUDED_
+-`define HDL_TOP_INCLUDED_
++`ifndef SPI_SLAVE_HDL_TOP_INCLUDED_
++`define SPI_SLAVE_HDL_TOP_INCLUDED_
+ 
+ //--------------------------------------------------------------------------------------------
+ // Module      : HDL Top
+ // Description : Has a interface and slave agent bfm.
+ //--------------------------------------------------------------------------------------------
+ 
+-module hdl_top;
++module spi_slave_hdl_top;
+ 
+   //-------------------------------------------------------
+   // Clock Reset Initialization
+@@ -15,10 +15,10 @@ module hdl_top;
+   bit rst;
+ 
+   //-------------------------------------------------------
+-  // Display statement for HDL_TOP
++  // Display statement for spi_slave_hdl_top
+   //-------------------------------------------------------
+   initial begin
+-    $display("HDL_TOP");
++    $display("spi_slave_hdl_top");
+   end
+ 
+   //-------------------------------------------------------
+@@ -79,7 +79,7 @@ module hdl_top;
+   //   `endif
+   // end
+ 
+-endmodule : hdl_top
++endmodule : spi_slave_hdl_top
+ 
+ `endif
+ 
+
+From fb409f054e97e95d0f88d3b31a478f41da59687f Mon Sep 17 00:00:00 2001
+From: Nadeem-Ahmed <nadeemahmed@mirafra.com>
+Date: Wed, 9 Feb 2022 18:54:04 +0530
+Subject: [PATCH 2/4] Added the gitignore file and removed the bind statement
+ in the monitor
+
+---
+ sim/.gitignore                                      | 11 +++++++++++
+ sim/questa_sim/makefile                             |  4 ++--
+ .../hdl_top/slave_agent_bfm/slave_monitor_bfm.sv    | 13 -------------
+ 3 files changed, 13 insertions(+), 15 deletions(-)
+ create mode 100644 sim/.gitignore
+
+diff --git a/sim/.gitignore b/sim/.gitignore
+new file mode 100644
+index 0000000..91bca28
+--- /dev/null
++++ b/sim/.gitignore
+@@ -0,0 +1,11 @@
++*_test*
++*.log*
++*.do*
++*work*
++*cov*
++*vish*
++*vsim*
++*transcript*
++*.simvision/*
++*INCA_libs/*
++*.shm*
+diff --git a/sim/questa_sim/makefile b/sim/questa_sim/makefile
+index 5be91d7..99b0572 100755
+--- a/sim/questa_sim/makefile
++++ b/sim/questa_sim/makefile
+@@ -121,8 +121,8 @@ simulate:
+ 	# Use -novopt for no optimization - Makes the simulation slower
+ 	# vsim -pli finesim.so -coverage top
+ 	vsim -vopt \
+-	work.hvl_top \
+-	work.hdl_top \
++	work.apb_master_hdl_top \
++	work.spi_slave_hdl_top \
+ 	-voptargs=+acc=npr \
+ 	-assertdebug \
+ 	+UVM_TESTNAME=$(test) \
+diff --git a/src/dv/spi_slave_avip/src/hdl_top/slave_agent_bfm/slave_monitor_bfm.sv b/src/dv/spi_slave_avip/src/hdl_top/slave_agent_bfm/slave_monitor_bfm.sv
+index f1ced5e..8a48d06 100644
+--- a/src/dv/spi_slave_avip/src/hdl_top/slave_agent_bfm/slave_monitor_bfm.sv
++++ b/src/dv/spi_slave_avip/src/hdl_top/slave_agent_bfm/slave_monitor_bfm.sv
+@@ -187,19 +187,6 @@ interface slave_monitor_bfm(input pclk, input areset,
+     
+   endtask: sample_data
+ 
+-  bind slave_monitor_bfm slave_assertions slave_assertions_h(.pclk(pclk),
+-                                                             .cs(cs),
+-                                                             .areset(areset),
+-                                                             .sclk(sclk),
+-                                                             .mosi0(mosi0),
+-                                                             .mosi1(mosi1),
+-                                                             .mosi2(mosi2),
+-                                                             .mosi3(mosi3),
+-                                                             .miso0(miso0),
+-                                                             .miso1(miso1),
+-                                                             .miso2(miso2),
+-                                                             .miso3(miso3)); 
+-
+ endinterface : slave_monitor_bfm
+ 
+ `endif
+
+From 2330562763bed2a92b90f5d896105b24ee639b96 Mon Sep 17 00:00:00 2001
+From: Nadeem-Ahmed <nadeemahmed@mirafra.com>
+Date: Thu, 10 Feb 2022 11:22:08 +0530
+Subject: [PATCH 3/4] Added two .f files each for rtl and dv files
+
+---
+ sim/questa_sim/makefile                                  | 3 ++-
+ sim/rtl_compile.f                                        | 9 +++++++++
+ ..._master_ip_verification_compile.f => verif_compile.f} | 8 --------
+ 3 files changed, 11 insertions(+), 9 deletions(-)
+ create mode 100644 sim/rtl_compile.f
+ rename sim/{pulpino_spi_master_ip_verification_compile.f => verif_compile.f} (83%)
+
+diff --git a/sim/questa_sim/makefile b/sim/questa_sim/makefile
+index 99b0572..798f56f 100755
+--- a/sim/questa_sim/makefile
++++ b/sim/questa_sim/makefile
+@@ -81,7 +81,8 @@ compile:
+ 	+cover \
+ 	+fcover \
+ 	-l pulpino_spi_master_ip_verification_compile.log \
+-	-f ../pulpino_spi_master_ip_verification_compile.f 
++	-f ../rtl_compile.f \
++	-f ../verif_compile.f
+ 
+ 	# -s means silent mode
+ 	#  The command executed along with the output will be displayed on the terminal
+diff --git a/sim/rtl_compile.f b/sim/rtl_compile.f
+new file mode 100644
+index 0000000..3aad40a
+--- /dev/null
++++ b/sim/rtl_compile.f
+@@ -0,0 +1,9 @@
+++incdir+../../src/rtl/spi_master/
++../../src/rtl/spi_master/apb_spi_master.sv
++../../src/rtl/spi_master/spi_master_apb_if.sv
++../../src/rtl/spi_master/spi_master_clkgen.sv
++../../src/rtl/spi_master/spi_master_controller.sv
++../../src/rtl/spi_master/spi_master_fifo.sv
++../../src/rtl/spi_master/spi_master_rx.sv
++../../src/rtl/spi_master/spi_master_tx.sv
++
+diff --git a/sim/pulpino_spi_master_ip_verification_compile.f b/sim/verif_compile.f
+similarity index 83%
+rename from sim/pulpino_spi_master_ip_verification_compile.f
+rename to sim/verif_compile.f
+index 840bfb6..1581b63 100644
+--- a/sim/pulpino_spi_master_ip_verification_compile.f
++++ b/sim/verif_compile.f
+@@ -8,7 +8,6 @@
+ +incdir+../../src/dv/spi_slave_avip/src/hvl_top/test/slave_sequences
+ +incdir+../../src/dv/spi_slave_avip/src/hdl_top/slave_agent_bfm
+ +incdir+../../src/dv/spi_slave_avip/src/hdl_top/spi_interface
+-+incdir+../../src/rtl/spi_master/
+ ../../src/dv/apb_master_avip/src/globals/apb_global_pkg.sv
+ ../../src/dv/apb_master_avip/src/hvl_top/master/apb_master_pkg.sv
+ ../../src/dv/apb_master_avip/src/hvl_top/test/master_sequences/apb_master_seq_pkg.sv
+@@ -17,13 +16,6 @@
+ ../../src/dv/apb_master_avip/src/hdl_top/master_agent_bfm/apb_master_monitor_bfm.sv
+ ../../src/dv/apb_master_avip/src/hdl_top/master_agent_bfm/apb_master_agent_bfm.sv
+ ../../src/dv/apb_master_avip/src/hdl_top/apb_master_hdl_top.sv
+-../../src/rtl/spi_master/apb_spi_master.sv
+-../../src/rtl/spi_master/spi_master_apb_if.sv
+-../../src/rtl/spi_master/spi_master_clkgen.sv
+-../../src/rtl/spi_master/spi_master_controller.sv
+-../../src/rtl/spi_master/spi_master_fifo.sv
+-../../src/rtl/spi_master/spi_master_rx.sv
+-../../src/rtl/spi_master/spi_master_tx.sv
+ ../../src/dv/spi_slave_avip/src/globals/spi_globals_pkg.sv
+ ../../src/dv/spi_slave_avip/src/hvl_top/slave/spi_slave_pkg.sv
+ ../../src/dv/spi_slave_avip/src/hvl_top/test/slave_sequences/spi_slave_seq_pkg.sv
+
+From f51f22e6bc1a7815fa8e7a9f85ec7f6b1ca2194b Mon Sep 17 00:00:00 2001
+From: Shaik Nadeem Ahmed <91043967+Nadeem-Ahmed-S@users.noreply.github.com>
+Date: Thu, 10 Feb 2022 11:33:05 +0530
+Subject: [PATCH 4/4] Updated the Vplan as link
+
+---
+ doc/Pulpino_ip_Verification_plan.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/doc/Pulpino_ip_Verification_plan.md b/doc/Pulpino_ip_Verification_plan.md
+index aa1b75a..abbc2ca 100644
+--- a/doc/Pulpino_ip_Verification_plan.md
++++ b/doc/Pulpino_ip_Verification_plan.md
+@@ -1 +1 @@
+-[Pulpino_ip_Verification_plan] https://docs.google.com/spreadsheets/d/e/2PACX-1vRv4pFDuovxJrjZQiFEk60aXKkH_BK1IKLXgs3FFsK0-b6lyCz3_hKXMoCryYDTO572pqaBVseIqqVy/pubhtml
++[Pulpino_ip_Verification_plan](https://docs.google.com/spreadsheets/d/e/2PACX-1vRv4pFDuovxJrjZQiFEk60aXKkH_BK1IKLXgs3FFsK0-b6lyCz3_hKXMoCryYDTO572pqaBVseIqqVy/pubhtml)

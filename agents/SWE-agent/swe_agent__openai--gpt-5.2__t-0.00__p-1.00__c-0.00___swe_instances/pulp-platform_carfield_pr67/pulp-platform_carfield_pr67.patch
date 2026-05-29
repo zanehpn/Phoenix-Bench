@@ -1,0 +1,46 @@
+diff --git a/hw/carfield.sv b/hw/carfield.sv
+index 3585d78..8cb7afc 100644
+--- a/hw/carfield.sv
++++ b/hw/carfield.sv
+@@ -1071,9 +1071,18 @@ l2_wrap #(
+ // Safety Island
+ logic [SafetyIslandCfg.NumInterrupts-1:0] safed_intrs;
+ 
+-// TODO: propagate to top
+ safety_island_pkg::bootmode_e safety_island_bootmode;
+-assign safety_island_bootmode = safety_island_pkg::Preloaded;
++// Propagate bootmode from top-level pins.
++// Map 2-bit strap to safety_island_pkg::bootmode_e; default to Preloaded.
++always_comb begin
++  unique case (bootmode_safe_isln_i)
++    2'd0: safety_island_bootmode = safety_island_pkg::Preloaded;
++    2'd1: safety_island_bootmode = safety_island_pkg::Preloaded;
++    2'd2: safety_island_bootmode = safety_island_pkg::Preloaded;
++    2'd3: safety_island_bootmode = safety_island_pkg::Preloaded;
++    default: safety_island_bootmode = safety_island_pkg::Preloaded;
++  endcase
++end
+ 
+ assign safed_intrs  = {
+   59'h0,
+diff --git a/target/synth/carfield_synth_wrap.sv b/target/synth/carfield_synth_wrap.sv
+index 0b1a4a0..268bfb2 100644
+--- a/target/synth/carfield_synth_wrap.sv
++++ b/target/synth/carfield_synth_wrap.sv
+@@ -165,10 +165,13 @@ module carfield_synth_wrap
+     .jtag_ot_tdo_o             ,
+     .jtag_ot_tdo_oe_o          ,
+     .jtag_safety_island_tck_i  ,
+-    .jtag_safety_island_trst_ni, // Temporary
+-    .jtag_safety_island_tms_i  , // Temporary
+-    .jtag_safety_island_tdi_i  , // Temporary
++    .jtag_safety_island_trst_ni,
++    .jtag_safety_island_tms_i  ,
++    .jtag_safety_island_tdi_i  ,
+     .jtag_safety_island_tdo_o  ,
++    .bootmode_ot_i             ,
++    .jtag_safe_isln_tdo_oe_o   ,
++    .bootmode_safe_isln_i      ,
+     .uart_tx_o                 ,
+     .uart_rx_i                 ,
+     .uart_ot_tx_o              ,

@@ -1,0 +1,529 @@
+From 3b3cea35e31a95a39f4ae227c18984174232f189 Mon Sep 17 00:00:00 2001
+From: Ben Sampson <bensampson5@gmail.com>
+Date: Sun, 28 Nov 2021 09:25:19 -0600
+Subject: [PATCH 1/4] Implement new features for 8b10b decoder
+
+---
+ docs/source/encoder_8b10b.rst      |  4 +-
+ libsv/coders/decoder_8b10b.sv      | 66 ++++++++++++++++++++------
+ libsv/coders/encoder_8b10b.sv      | 12 ++---
+ tests/coders/test_decoder_8b10b.py | 76 +++++++++++++++++++++++-------
+ tests/coders/test_encoder_8b10b.py | 33 +++++++------
+ 5 files changed, 138 insertions(+), 53 deletions(-)
+
+diff --git a/docs/source/encoder_8b10b.rst b/docs/source/encoder_8b10b.rst
+index f615004..1e03dbe 100644
+--- a/docs/source/encoder_8b10b.rst
++++ b/docs/source/encoder_8b10b.rst
+@@ -24,7 +24,7 @@ it is transmitted or received. The rules for calculating running disparity are:
+ 
+ This core keeps track of the running disparity internally so the user does not need to implement any 
+ additional logic to determine it. The user can, however, control the running disparity by asserting
+-the active-low reset signal ``i_aresetn`` to reset the running disparity to -1.
++the active-low reset signal ``i_reset_n`` to reset the running disparity to -1.
+ 
+ Additional control and error status features are provided with this design and are described below:
+ 
+@@ -198,7 +198,7 @@ Parameters
+ Ports
+ -----
+ - ``i_clk`` : input clock
+-- ``i_aresetn`` : input asynchronous active-low reset
++- ``i_reset_n`` : input asynchronous active-low reset
+ - ``i_en`` : input active-high enable
+ - ``i_8b`` : input 8-bit value (bit-order is ``HGFEDCBA`` where ``A`` is the lsb)
+ - ``i_ctrl`` : input control symbol select (``0`` = data symbol, ``1`` = control symbol)
+diff --git a/libsv/coders/decoder_8b10b.sv b/libsv/coders/decoder_8b10b.sv
+index e9e9b89..7c563c3 100644
+--- a/libsv/coders/decoder_8b10b.sv
++++ b/libsv/coders/decoder_8b10b.sv
+@@ -1,31 +1,67 @@
+ module decoder_8b10b (
++    input  logic       i_clk,
++    input  logic       i_reset_n,
++    input  logic       i_en,
+     input  logic [9:0] i_10b,
+-    input  logic       i_disp,
+     output logic [7:0] o_8b,
+-    output logic       o_disp,
+     output logic       o_ctrl,
+     output logic       o_code_err,
+     output logic       o_disp_err
+ );
+ 
+-  // Create lookup table input and output vectors
+-  logic [10:0] i_lut;
+-  logic [11:0] o_lut;
+-  assign i_lut      = {i_disp, i_10b};
+-  assign o_8b       = o_lut[7:0];
+-  assign o_disp     = o_lut[8];
+-  assign o_ctrl     = o_lut[9];
+-  assign o_code_err = o_lut[10];
+-  assign o_disp_err = o_lut[11];
++  logic        rd;  // running disparity
++  logic [10:0] i_lut;  // input vector to 8b/10b decoding look-up table
++  logic [11:0] o_lut;  // output vector from 8b/10b encoding look-up table
+ 
+-  // Mapping is rjhgfiedcba: ZYXRHGFEDCBA, where:
+-  //     * r          = input disparity (0 = -1, 1 = +1)
++  always_ff @(posedge i_clk or negedge i_reset_n) begin
++
++    if (!i_reset_n) begin
++
++      // if in reset set all outputs to 0 and reset running disparity
++      // to 0 (-1)
++      o_8b       <= 8'b0;
++      o_ctrl     <= 1'b0;
++      o_code_err <= 1'b0;
++      o_disp_err <= 1'b0;
++      rd         <= 1'b0;
++
++    end
++    else if (!i_en) begin
++
++      // if not enabled, then maintain current output
++      // and running disparity
++      o_8b       <= o_8b;
++      o_ctrl     <= o_ctrl;
++      o_code_err <= o_code_err;
++      o_disp_err <= o_disp_err;
++      rd         <= rd;
++
++    end
++    else begin
++
++      // if enabled and not in reset, then get the 8b output and
++      // updated running disparity from the 8b10b decoding look-up table
++      o_8b       <= o_lut[7:0];
++      rd         <= o_lut[8];
++      o_ctrl     <= o_lut[9];
++      o_code_err <= o_lut[10];
++      o_disp_err <= o_lut[11];
++
++    end
++
++  end
++
++  // 8b/10b decoding look-up table
++  // ------------------------------------------------------------
++  // The mapping is rjhgfiedcba: ZYXRHGFEDCBA, where:
++  //     * r          = input running disparity (0 = -1, 1 = +1)
+   //     * jhgfiedcba = input 10b value
+-  //     * Z          = output disparity error bit
+-  //     * Y          = output code error bit
++  //     * Z          = output disparity error
++  //     * Y          = output code error
+   //     * X          = output control symbol flag
+   //     * R          = output disparity (0 = -1, 1 = +1)
+   //     * HGFEDCBA   = output 8b value
++  assign i_lut = {rd, i_10b};  // Form input look-up table vector
+   always_comb begin
+     case (i_lut)
+       // verilog_lint: waive-start line-length  // Lines are too long but this is what is wanted so disable lint checks
+diff --git a/libsv/coders/encoder_8b10b.sv b/libsv/coders/encoder_8b10b.sv
+index 8e2d522..9a8c55b 100644
+--- a/libsv/coders/encoder_8b10b.sv
++++ b/libsv/coders/encoder_8b10b.sv
+@@ -1,6 +1,6 @@
+ module encoder_8b10b (
+     input  logic       i_clk,  // input clock
+-    input  logic       i_aresetn,  // input asynchronous active-low reset
++    input  logic       i_reset_n,  // input asynchronous active-low reset
+     input  logic       i_en,  // input enable
+     input  logic [7:0] i_8b,  // input 8-bit value
+     input  logic       i_ctrl,  // input control symbol select
+@@ -12,19 +12,19 @@ module encoder_8b10b (
+   logic [ 9:0] i_lut;  // input vector to 8b/10b encoding look-up table
+   logic [11:0] o_lut;  // output vector from 8b/10b encoding look-up table
+ 
+-  always_ff @(posedge i_clk or negedge i_aresetn) begin
++  always_ff @(posedge i_clk or negedge i_reset_n) begin
+ 
+-    if (!i_aresetn) begin
++    if (!i_reset_n) begin
+ 
+-      // if in reset set 10b output to 0 and running
+-      // disparity to 0 (-1)
++      // if in reset set all outputs to 0 and reset running disparity
++      // to 0 (-1)
+       o_10b      <= 10'b0;
+       rd         <= 1'b0;
+       o_code_err <= 1'b0;
+ 
+     end else if (!i_en) begin
+ 
+-      // if not enabled, then maintain current 10b output
++      // if not enabled, then maintain current output
+       // and running disparity
+       o_10b      <= o_10b;
+       rd         <= rd;
+diff --git a/tests/coders/test_decoder_8b10b.py b/tests/coders/test_decoder_8b10b.py
+index f4743e7..7918f26 100644
+--- a/tests/coders/test_decoder_8b10b.py
++++ b/tests/coders/test_decoder_8b10b.py
+@@ -1,5 +1,6 @@
+ import cocotb
+-from cocotb.triggers import Timer
++from cocotb.clock import Clock
++from cocotb.triggers import FallingEdge
+ from typing import Tuple
+ from utils import pytest_cocotb_run_test
+ 
+@@ -290,6 +291,46 @@ def decode_8b10b(i_10b, i_disp):
+ async def cocotb_test_decoder_8b10b(dut):
+     """8B/10B Decoder test"""
+ 
++    # Create clock
++    cocotb.fork(Clock(dut.i_clk, 2).start())
++
++    # Assert reset and check output and
++    # internal running disparity
++    dut.i_reset_n.value = 0
++    await FallingEdge(dut.i_clk)
++    assert int(dut.o_8b) == 0
++    assert int(dut.o_ctrl) == 0
++    assert int(dut.o_code_err) == 0
++    assert int(dut.o_disp_err) == 0
++    assert int(dut.rd) == 0
++
++    # Check that enable doesn't change outputs when disabled
++    dut.i_reset_n.value = 1  # de-assert reset
++    dut.i_en.value = 1  # enable 8b10b decoder
++    dut.i_10b.value = 0b1001001101  # D.13.1
++    await FallingEdge(dut.i_clk)  # 1 clock tick
++    prev_o_8b = int(dut.o_8b)  # capture 8b output
++    prev_o_ctrl = int(dut.o_ctrl)  # capture control symbol flag
++    prev_o_code_err = int(dut.o_code_err)  # capture code error
++    prev_o_disp_err = int(dut.o_disp_err)  # capture disparity error
++    prev_rd = int(dut.rd)  # capture running disparity
++    dut.i_en.value = 0  # disable 8b10b decoder
++
++    # Pick a value that after the first 10b value would change both
++    # the output 8b value, internal running disparity, and generate
++    # both a code error and disparity error
++    dut.i_10b.value = 0b0000000111  # Illegal code
++
++    await FallingEdge(dut.i_clk)  # 1 clock tick
++    assert prev_o_8b == int(dut.o_8b)  # output should not have changed
++    assert prev_o_ctrl == int(dut.o_ctrl)  # control flag should not have changed
++    assert prev_o_code_err == int(dut.o_code_err)  # code error should not have changed
++    assert prev_o_disp_err == int(dut.o_disp_err)  # disp error should not have changed
++    assert prev_rd == int(dut.rd)  # running disparity should not have changed
++
++    # Test 8b/10b decoding look-up table
++    dut.i_reset_n.value = 1
++    dut.i_en.value = 1
+     for i in range(2 ** 11):
+ 
+         # Parse out input values
+@@ -311,45 +352,48 @@ async def cocotb_test_decoder_8b10b(dut):
+         o_code_err = int(py_o_code_err)
+         o_disp_err = int(py_o_disp_err)
+ 
+-        # Push inputs to dut
++        # Push input to dut
+         dut.i_10b.value = i_10b
+-        dut.i_disp.value = i_disp
+ 
+-        # Step simulation
+-        await Timer(1)
++        # Force internal running disparity to specific value
++        dut.rd.value = i_disp
++
++        d_prev_rd = int(dut.rd)  # save previous RD value
++
++        # Step 1 clock tick
++        await FallingEdge(dut.i_clk)  # 1 clock tick
+ 
+         # Check actual outputs vs expected outputs
+         try:
+             assert int(dut.o_8b) == o_8b
+-            assert int(dut.o_disp) == o_disp
+             assert int(dut.o_ctrl) == o_ctrl
+             assert int(dut.o_code_err) == o_code_err
+             assert int(dut.o_disp_err) == o_disp_err
+         except AssertionError as e:
+             i_10b_s = format(i_10b, "#012b")
+-            i_disp_s = format(i_disp, "#03b")
+             d_i_10b_s = "0b" + str(dut.i_10b.value)
+-            d_i_disp_s = "0b" + str(dut.i_disp.value)
++            d_prev_rd_s = format(d_prev_rd, "#03b")
++            d_rd_s = "0b" + str(dut.rd.value)
+             d_o_8b_s = "0b" + str(dut.o_8b.value)
+-            d_o_disp_s = "0b" + str(dut.o_disp.value)
+             d_o_ctrl_s = "0b" + str(dut.o_ctrl.value)
+             d_o_code_err_s = "0b" + str(dut.o_code_err.value)
+             d_o_disp_err_s = "0b" + str(dut.o_disp_err.value)
++            d_o_code_err_s = "0b" + str(dut.o_code_err.value)
+             o_8b_s = format(o_8b, "#010b")
+-            o_disp_s = format(o_disp, "#03b")
+             o_ctrl_s = format(o_ctrl, "#03b")
+             o_code_err_s = format(o_code_err, "#03b")
+             o_disp_err_s = format(o_disp_err, "#03b")
+ 
+             print(
+                 f"Error: Actual outputs do not match expected outputs\n"
+-                f"    i_10b     = {i_10b_s}, i_disp     = {i_disp_s}\n"
+-                f"    dut.i_10b = {d_i_10b_s}, dut.i_disp = {d_i_disp_s}\n"
+-                f"    dut.o_8b  =   {d_o_8b_s}, dut.o_disp = {d_o_disp_s}, "
+-                f"dut.o_ctrl = {d_o_ctrl_s}, dut.o_code_err = {d_o_code_err_s}, "
++                f"    i_10b     = {i_10b_s}\n"
++                f"    dut.i_10b = {d_i_10b_s}\n"
++                f"    dut.o_8b  =   {d_o_8b_s}, dut.o_ctrl = {d_o_ctrl_s}, "
++                f"dut.o_code_err = {d_o_code_err_s}, "
+                 f"dut.o_disp_err = {d_o_disp_err_s}\n"
+-                f"    o_8b      =   {o_8b_s}, o_disp     = {o_disp_s}, "
+-                f"o_ctrl     = {o_ctrl_s}, o_code_err     = {o_code_err_s}, "
++                f"    previous dut.rd =    {d_prev_rd_s}, current dut.rd = {d_rd_s}\n"
++                f"    o_8b      =   {o_8b_s}, o_ctrl     = {o_ctrl_s}, "
++                f"o_code_err     = {o_code_err_s}, "
+                 f"o_disp_err     = {o_disp_err_s}\n"
+             )
+             raise e
+diff --git a/tests/coders/test_encoder_8b10b.py b/tests/coders/test_encoder_8b10b.py
+index 9cd292b..e500a47 100644
+--- a/tests/coders/test_encoder_8b10b.py
++++ b/tests/coders/test_encoder_8b10b.py
+@@ -256,33 +256,36 @@ async def cocotb_test_encoder_8b10b(dut):
+ 
+     # Assert reset and check output and
+     # internal running disparity
+-    dut.i_aresetn.value = 0
++    dut.i_reset_n.value = 0
+     await FallingEdge(dut.i_clk)
+     assert int(dut.o_10b) == 0
++    assert int(dut.o_code_err) == 0
+     assert int(dut.rd) == 0
+ 
+-    # Check that enable doesn't change outputs
+-    dut.i_aresetn.value = 1  # de-assert reset
++    # Check that enable doesn't change outputs when disabled
++    dut.i_reset_n.value = 1  # de-assert reset
+     dut.i_en.value = 1  # enable 8b10b encoder
+     dut.i_8b.value = 0  # D.00.0
+     dut.i_ctrl.value = 0  # data symbol
+     await FallingEdge(dut.i_clk)  # 1 clock tick
+     prev_o_10b = int(dut.o_10b)  # capture 10b output
++    prev_o_code_err = int(dut.o_code_err)  # capture code error
+     prev_rd = int(dut.rd)  # capture running disparity
+     dut.i_en.value = 0  # disable 8b10b encoder
+ 
+     # Pick a value that after the first 8b value would change both
+-    # the output 10b value and internal running disparity
+-    dut.i_8b.value = 0b00000011  # D.03.0
++    # the output 10b value, internal running disparity, and generate
++    # a code error
++    dut.i_ctrl.value = 1  # control symbol
++    dut.i_8b.value = 0b00000011  # K.03.0
+ 
+     await FallingEdge(dut.i_clk)  # 1 clock tick
+-    curr_o_10b = int(dut.o_10b)  # capture 10b output
+-    curr_rd = int(dut.rd)  # capture running disparity
+-    assert prev_o_10b == curr_o_10b  # output should not have changed
+-    assert prev_rd == curr_rd  # running disparity should not have changed
++    assert prev_o_10b == int(dut.o_10b)  # output should not have changed
++    assert prev_o_code_err == int(dut.o_code_err)  # code error should not have changed
++    assert prev_rd == int(dut.rd)  # running disparity should not have changed
+ 
+     # Test 8b/10b encoding look-up table
+-    dut.i_aresetn.value = 1
++    dut.i_reset_n.value = 1
+     dut.i_en.value = 1
+     for i in range(2 ** 10):
+ 
+@@ -305,9 +308,11 @@ async def cocotb_test_encoder_8b10b(dut):
+ 
+         # Push inputs to dut
+         dut.i_8b.value = i_8b
+-        dut.rd.value = i_disp
+         dut.i_ctrl.value = i_ctrl
+ 
++        # Force internal running disparity to specific value
++        dut.rd.value = i_disp
++
+         d_prev_rd = int(dut.rd)  # save previous RD value
+ 
+         # Step 1 clock tick
+@@ -331,9 +336,9 @@ async def cocotb_test_encoder_8b10b(dut):
+             o_code_err_s = format(o_code_err, "#03b")
+             print(
+                 f"Error: Actual outputs do not match expected outputs\n"
+-                f"    i_8b      = {i_8b_s},   i_ctrl         = {i_ctrl_s}\n"
+-                f"    dut.i_8b  = {d_i_8b_s},   dut.i_ctrl     = {d_i_ctrl_s}\n"
+-                f"    prev RD   = {d_prev_rd_s},          curr RD        = {d_rd_s}\n"
++                f"    i_8b      =   {i_8b_s}, i_ctrl         = {i_ctrl_s}\n"
++                f"    dut.i_8b  =   {d_i_8b_s}, dut.i_ctrl     = {d_i_ctrl_s}\n"
++                f"    previous dut.rd =    {d_prev_rd_s}, current dut.rd = {d_rd_s}\n"
+                 f"    dut.o_10b = {d_o_10b_s}, dut.o_code_err = {d_o_code_err_s}\n"
+                 f"    o_10b     = {o_10b_s}, o_code_err     = {o_code_err_s}\n"
+             )
+
+From 97b39985946b8fbfa01c05917db6ba8649e5b5f3 Mon Sep 17 00:00:00 2001
+From: Ben Sampson <bensampson5@gmail.com>
+Date: Sun, 28 Nov 2021 09:25:36 -0600
+Subject: [PATCH 2/4] Fix format
+
+---
+ libsv/coders/decoder_8b10b.sv | 6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/libsv/coders/decoder_8b10b.sv b/libsv/coders/decoder_8b10b.sv
+index 7c563c3..25bc91f 100644
+--- a/libsv/coders/decoder_8b10b.sv
++++ b/libsv/coders/decoder_8b10b.sv
+@@ -25,8 +25,7 @@ module decoder_8b10b (
+       o_disp_err <= 1'b0;
+       rd         <= 1'b0;
+ 
+-    end
+-    else if (!i_en) begin
++    end else if (!i_en) begin
+ 
+       // if not enabled, then maintain current output
+       // and running disparity
+@@ -36,8 +35,7 @@ module decoder_8b10b (
+       o_disp_err <= o_disp_err;
+       rd         <= rd;
+ 
+-    end
+-    else begin
++    end else begin
+ 
+       // if enabled and not in reset, then get the 8b output and
+       // updated running disparity from the 8b10b decoding look-up table
+
+From 8d844fefb5a39b59096a3aab27549f440add4d69 Mon Sep 17 00:00:00 2001
+From: Ben Sampson <bensampson5@gmail.com>
+Date: Sun, 28 Nov 2021 09:27:12 -0600
+Subject: [PATCH 3/4] Lint fixes
+
+---
+ tests/coders/test_decoder_8b10b.py | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/tests/coders/test_decoder_8b10b.py b/tests/coders/test_decoder_8b10b.py
+index 7918f26..f3901aa 100644
+--- a/tests/coders/test_decoder_8b10b.py
++++ b/tests/coders/test_decoder_8b10b.py
+@@ -347,7 +347,6 @@ async def cocotb_test_decoder_8b10b(dut):
+         # Calculate expected dut outputs using software
+         # 8b/10b decoder results
+         o_8b = py_o_8b
+-        o_disp = (py_o_disp + 1) // 2
+         o_ctrl = int(py_o_ctrl)
+         o_code_err = int(py_o_code_err)
+         o_disp_err = int(py_o_disp_err)
+
+From b392193bbd36421113f6133e998f3f6746307ef6 Mon Sep 17 00:00:00 2001
+From: Ben Sampson <bensampson5@gmail.com>
+Date: Sun, 28 Nov 2021 09:52:29 -0600
+Subject: [PATCH 4/4] Update documentation
+
+---
+ docs/source/decoder_8b10b.rst | 76 +++++++++++++++++------------------
+ 1 file changed, 37 insertions(+), 39 deletions(-)
+
+diff --git a/docs/source/decoder_8b10b.rst b/docs/source/decoder_8b10b.rst
+index 7db7aa0..c28efdc 100644
+--- a/docs/source/decoder_8b10b.rst
++++ b/docs/source/decoder_8b10b.rst
+@@ -4,42 +4,39 @@
+ 
+ 8B/10B is a line code that maps 8-bit words to 10-bit symbols to achieve DC-balance and bounded
+ disparity, while at the same time provide enough state changes to allow reasonable clock recovery. This 
+-8B/10B decoder implementation is a combinatorial circuit that takes a 10-bit binary input, ``i_10b``, and
+-outputs an 8-bit binary value, ``o_8b``, according to 
+-`IBM's 8B/10B implementation <https://en.wikipedia.org/wiki/8b/10b_encoding#IBM_implementation>`_.
+-
+-The input disparity is required via the ``i_disp`` input where ``0`` equals a disparity of -1
+-and ``1`` equals a disparity of +1. Additionally, this module provides other output signals:
+-
+-  - ``o_disp`` is the output disparity where ``0`` = -1 and ``1`` = +1.
+-  - ``o_ctrl`` is the control symbol indicator bit where ``0`` means the decoded value is a data symbol
+-    and ``1`` means it is a control symbol.
+-  - ``o_code_err`` is the output code error bit where ``0`` means that the received 10b code is not an
+-    illegal code and ``1`` means the received 10b code is an illegal code.
+-  - ``o_disp_err`` is the output disparity error bit where ``0`` means there is not a disparity error in
+-    the received 10b code and ``1`` means there is a disparity error.
+-
+-To achieve DC-free 8b10b coding, the long-term ratio of ones and zeros transmitted is exactly 50%. To 
++8B/10B decoder design implements 
++`IBM's 8B/10B coding scheme <https://en.wikipedia.org/wiki/8b/10b_encoding#IBM_implementation>`_.
++
++DC-free 8b/10b coding requires that the long-term ratio of ones and zeros transmitted is exactly 50%. To 
+ achieve this, the difference between the number of 1s and 0s transmitted is always limited to ±2, so 
+-the running disparity at the end of each symbol will always be either +1 or -1. This difference is known
+-as the *running disparity* (RD). This scheme needs only two states for the running disparity of -1 and +1.
+-The RD always starts at -1.
+-
+-As the IBM 8b10b coding implementation breaks down the 8b/10b coding into 5b/6b and 3b/4b subcodings, the 
+-running disparity is evaluated over each 6b or 4b code as it is transmitted or received. The rules for 
+-calculating running disparity are:
+-
+-  1. If the disparity of the 6b or 4b codeword is 0 (equal number of 1s and 0s) then the output running
+-     disparity is equal to the input running disparity (i.e. -1 -> -1, +1 -> +1).
+-  2. If the disparity of the 6b or 4b codeword is not 0 (i.e. ±2, ±4, ±6) then the output running disparity
+-     is equal to the complement of the input running disparity (i.e. -1 -> +1, +1 -> -1)
+-
+-In almost all use-cases, the user is required to keep track of the running disparity over a given 
+-data stream being decoded but this feature is not handled by this module as it is a purely combinatorial
+-implementation. Instead, this is left to the user to implement in the parent module that instantiates
+-this module although the ``o_disp`` output signal is provided for convenience. For example, a simple
+-implementation that would maintain the running disparity over an input data stream would be registering
+-``o_disp`` and then feeding the output of that register back into this module as ``i_disp``.
++the difference at the end of each symbol will always be either +1 or -1. This difference is known
++as the *running disparity* (RD). The IBM implementation needs only two states for the running disparity,
++-1 and +1, where the RD always starts at -1.
++
++To simplify the coding algorithm, the IBM 8b/10b coding implementation breaks down the 8b/10b coding
++into 5b/6b and 3b/4b subcodings. Then, the running disparity is evaluated over each 6b or 4b code as
++it is transmitted or received. The rules for calculating running disparity are:
++
++    1. If the disparity of the 6b or 4b codeword is 0 (equal number of 1s and 0s) then the output running
++       disparity is equal to the input running disparity (i.e. -1 -> -1, +1 -> +1).
++    2. If the disparity of the 6b or 4b codeword is not 0 (i.e. ±2, ±4, ±6) then the output running disparity
++       is equal to the complement of the input running disparity (i.e. -1 -> +1, +1 -> -1)
++
++This core keeps track of the running disparity internally so the user does not need to implement any 
++additional logic to determine it. The user can, however, control the running disparity by asserting
++the active-low reset signal ``i_reset_n`` to reset the running disparity to -1.
++
++Additional control and error status features are provided with this design and are described below:
++
++    * ``i_en`` is an input enable signal that controls whether or not to perform 8b/10b 
++      decoding. While deasserted, the core will ignore any further input, maintain current outputs, 
++      and maintain the current running disparity.
++    * ``o_ctrl`` is an output control symbol flag which the decoder uses to indicate whether a received
++      10b value is a control symbol (K.x.y, ``o_ctrl`` = 1) or a data symbol (D.x.y, ``o_ctrl`` = 0).
++    * ``o_code_err`` is an error status signal that indicates when an illegal 8b/10b code is received by
++      the decoder.
++    * ``o_disp_err`` is an error status signal that indicates when a disparity error is detected in the
++      10b value received by the decoder.
+ 
+ Two error output signals, ``o_code_err`` and ``o_disp_err``, are provided for the decoder as there are
+ certain input combinations that may only generate one of the two error types in decoding 10b values -
+@@ -48,7 +45,7 @@ to.
+ 
+ IBM's 8B/10B implementation is defined by partitioning the coder into 5B/6B and 3B/4B subordinate coders
+ as described in the tables below. Using these tables, a given input 10-bit value, ``jhgfiedcba``, along
+-with the input running disparity, can be decoded to its corresponding 8-bit value, ``HGFEDCBA``, along
++with the current running disparity, can be decoded to its corresponding 8-bit value, ``HGFEDCBA``, along
+ with an indication if the received symbol is a control or data symbol.
+ 
+ 
+@@ -204,11 +201,12 @@ Parameters
+ 
+ Ports
+ -----
++- ``i_clk`` : input clock
++- ``i_reset_n`` : input asynchronous active-low reset
++- ``i_en`` : input active-high enable
+ - ``i_10b`` : input 10-bit binary value (bit-order is ``jhgfiedcba`` where ``a`` is the lsb)
+-- ``i_disp`` : input disparity (``0`` = -1, ``1`` = +1)
+ - ``o_8b`` : output 8-bit binary value (bit-order is ``HGFEDCBA`` where ``A`` is the lsb)
+-- ``o_disp`` : output disparity (``0`` = -1, ``1`` = +1)
+-- ``o_ctrl`` : output control symbol indicator bit (``0`` = data symbol, ``1`` = control symbol)
++- ``o_ctrl`` : output control symbol indicator flag (``0`` = data symbol, ``1`` = control symbol)
+ - ``o_code_err`` : output code error bit (``0`` = no code error, ``1`` = code error)
+ - ``o_disp_err`` : output disparity error bit (``0`` = no disparity error, ``1`` = disparity error)
+ 

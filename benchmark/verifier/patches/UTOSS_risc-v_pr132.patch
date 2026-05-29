@@ -1,0 +1,1036 @@
+From d8047395fc7a8bfb57aa69f8e8f1b3d74927fb77 Mon Sep 17 00:00:00 2001
+From: marwannismail <marwan.ismail2004@gmail.com>
+Date: Sun, 30 Nov 2025 19:19:18 -0500
+Subject: [PATCH 01/22] Verilator installation in CI
+
+---
+ .gitignore    |   2 +
+ Dockerfile.ci |  17 +++++
+ Makefile      | 191 ++++++++++++++++++++++++++++++--------------------
+ 3 files changed, 134 insertions(+), 76 deletions(-)
+
+diff --git a/.gitignore b/.gitignore
+index f980c38..9385197 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -18,3 +18,5 @@ envs/de1-soc/quartus/output_files/*
+ envs/de1-soc/quartus/c5_pin_model_dump.txt
+ envs/de1-soc/quartus/*.bak
+ envs/de1-soc/quartus/*.qws
++out/
++build/
+diff --git a/Dockerfile.ci b/Dockerfile.ci
+index 3d94a1b..d247e25 100644
+--- a/Dockerfile.ci
++++ b/Dockerfile.ci
+@@ -75,5 +75,22 @@ RUN mkdir -p /tmp/svlint && \
+     sudo mv bin/* /usr/local/bin/ && \
+     cd .. && rm -r /tmp/svlint
+ 
++# build and install Verilator
++USER dev
++RUN sudo apt-get install git help2man perl python3 make autoconf g++ flex bison ccache && \
++    sudo apt-get install libgoogle-perftools-dev numactl perl-doc && \
++    sudo apt-get install libfl2 && \
++    sudo apt-get install libfl-dev && \
++    sudo apt-get install zlibc zlib1g zlib1g-dev
++RUN git clone https://github.com/verilator/verilator
++RUN unsetenv VERILATOR_ROOT
++RUN unset VERILATOR_ROOT
++RUN cd verilator
++RUN git pull
++RUN autoconf
++RUN ./configure
++RUN make -j 2
++RUN sudo make install
++
+ # CI needs priviledged access
+ USER root
+diff --git a/Makefile b/Makefile
+index 4e9db9d..21d992d 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1,87 +1,126 @@
+-SRC_DIR  := src
+-ENVS_DIR := envs
+-TB_DIR   := test
+-OUTPUT 	 := out/top.vvp
+-IVERILOG := iverilog
+-# /opt/iverilog-12/bin/iverilog
+-VVP 		 :=vvp
+-# = /opt/iverilog-12/bin/vvp
++# ===========================
++# Directories and tools
++# ===========================
++SRC_DIR      := src
++ENVS_DIR     := envs
++TB_DIR       := test
++OUT_DIR      := out
++BUILD_DIR    := build
++VERILATOR    := verilator
++TB_VCD_BASE_PATH := $(TB_DIR)/vcd
++
++ENV          := simulation
++RISCOF_DIR           := riscof
++RISCOF_DUT_SRC       := $(RISCOF_DIR)/dut.sv
++RISCOF_DUT_BIN       := $(RISCOF_DIR)/dut_sim
++RISCOF_CONFIG_TEMPLATE := $(RISCOF_DIR)/config.ini.m4
++RISCOF_CONFIG        := $(RISCOF_DIR)/config.ini
+ 
+-ENV := simulation
++VERILATOR_FLAGS := -Wall --binary --trace --timing -sv -cc \
++	-O3 -Wno-fatal
+ 
++# ===========================
++# Sources
++# ===========================
+ SRCS := $(shell find $(SRC_DIR) -name "*.sv" -o -name "*.v") \
+         $(shell find $(ENVS_DIR)/$(ENV) -name "*.sv" -o -name "*.v")
+-
+-TB_SRC_PATTERN := test/%_tb.sv
+-TB_OUT_PATTERN := out/%_tb.vvp
+-
+-TB_SRCS := $(wildcard $(subst %,*,$(TB_SRC_PATTERN)))
+-TB_VVPS := $(patsubst $(TB_SRC_PATTERN),$(TB_OUT_PATTERN),$(TB_SRCS))
+-TB_UTILS := test/utils.svh
+-
+-TB_VCD_BASE_PATH := test/vcd
+-
+-RISCOF_DIR := riscof
+-RISCOF_DUT_SRC := $(RISCOF_DIR)/dut.sv
+-RISCOF_DUT_VVP := $(RISCOF_DIR)/dut.vvp
+-RISCOF_CONFIG_TEMPLATE := $(RISCOF_DIR)/config.ini.m4
+-RISCOF_CONFIG := $(RISCOF_DIR)/config.ini
+-
++TB_SRCS := $(wildcard $(TB_DIR)/*_tb.sv)
++TB_UTILS := $(TB_DIR)/utils.svh
++TB_BINS := $(patsubst $(TB_DIR)/%_tb.sv, $(OUT_DIR)/%_tb_sim, $(TB_SRCS))
++
++# ===========================
++# Ensure directories exist
++# ===========================
++$(shell mkdir -p $(OUT_DIR))
++$(shell mkdir -p $(TB_VCD_BASE_PATH))
++$(shell mkdir -p $(BUILD_DIR)/top)
++
++# ===========================
++# Default
++# ===========================
+ all: build_top
+-	@echo "Build finished! Try 'make run_top' or 'make run_tb' to run the core or testbenches."
+-
++	@echo "Build finished! Try 'make run_top' or 'make run_tb'."
++	
+ print_srcs:
+ 	@echo $(SRCS)
+ 
+ print_tb_srcs:
+ 	@echo $(TB_SRCS)
++# ===========================
++# Top module
++# ===========================
++build_top: $(OUT_DIR)/top_sim
++
++run_top: $(OUT_DIR)/top_sim
++	./$<
++
++$(OUT_DIR)/top_sim: $(SRCS)
++	@mkdir -p $(BUILD_DIR)/top
++	$(VERILATOR) $(VERILATOR_FLAGS) \
++		--top-module utoss_riscv \
++		--Mdir $(BUILD_DIR)/top \
++		-o top_sim \
++		$(SRCS)
++	cp $(BUILD_DIR)/top/top_sim $@
++
++# ===========================
++# Testbenches
++# ===========================
++build_tb: $(TB_BINS)
+ 
+-build_top: $(OUTPUT)
+-
+-run_top: $(OUTPUT)
+-	$(VVP) $(OUTPUT)
+-
+-$(OUTPUT): $(SRCS)
+-	$(IVERILOG) -g2012 -o $(OUTPUT) $(SRCS)
+-
+-$(TB_OUT_PATTERN): $(TB_SRC_PATTERN) $(TB_UTILS) $(SRCS)
+-	$(IVERILOG) -g2012 -o $@ $(SRCS) $<
++run_tb: build_tb
++	@failed=0; \
++	for tb in $(TB_BINS); do \
++		echo "Running $$tb..."; \
++		if ! ./$$tb +VCD_PATH=$(TB_VCD_BASE_PATH); then \
++			echo "\033[31mFAILED: $$tb\033[0m"; \
++			failed=1; \
++		else \
++			echo "\033[32mPASSED: $$tb\033[0m"; \
++		fi; \
++		echo ""; \
++	done; \
++	if [ $$failed -eq 1 ]; then \
++		echo "\033[31mSome testbenches failed!\033[0m"; \
++		exit 1; \
++	else \
++		echo "\033[32mAll testbenches passed!\033[0m"; \
++	fi
+ 
++# Pattern rule for building individual testbenches
++$(OUT_DIR)/%_tb_sim: $(TB_DIR)/%_tb.sv $(TB_UTILS) $(SRCS)
++	@mkdir -p $(BUILD_DIR)/$(basename $(notdir $@))
++	$(VERILATOR) $(VERILATOR_FLAGS) \
++		--top-module $(basename $(notdir $<)) \
++		--Mdir $(BUILD_DIR)/$(basename $(notdir $@)) \
++		-o $(basename $(notdir $@)) \
++		$(SRCS) $<
++	cp $(BUILD_DIR)/$(basename $(notdir $@))/$(basename $(notdir $@)) $@
++
++# Create new testbench from template
+ new_tb:
+ 	@if [ -z "$(name)" ]; then \
+ 		echo "Usage: make new_tb name=<testbench_name>"; \
+ 		exit 1; \
+ 	fi
+-	m4 -D M4__TB_NAME="$(name)_tb" test/tb_template.sv.m4 > test/$(name)_tb.sv
+-
+-build_tb: $(TB_VVPS) $(TB_SRCS) $(TB_UTILS) $(SRCS)
+-
+-run_tb: build_tb
+-	@failed=0;                                                \
+-	for tb in $(TB_VVPS); do                                  \
+-		echo "Running $$tb...";                                 \
+-		if ! $(VVP) -N $$tb +VCD_PATH=$(TB_VCD_BASE_PATH); then \
+-			echo "\033[31mFAILED: $$tb\033[0m";                   \
+-			failed=1;                                             \
+-		else                                                    \
+-			echo "\033[32mPASSED: $$tb\033[0m";                   \
+-		fi;                                                     \
+-		echo "";                                                \
+-	done;                                                     \
+-	if [ $$failed -eq 1 ]; then                               \
+-		echo "\033[31mSome testbenches failed!\033[0m";         \
+-		exit 1;                                                 \
+-	else                                                      \
+-		echo "\033[32mAll testbenches passed!\033[0m";          \
+-	fi
+-
+-$(RISCOF_DUT_VVP): $(SRCS) $(RISCOF_DUT_SRC)
+-	$(IVERILOG) -g2012 -o $(RISCOF_DUT_VVP) $(SRCS) $(RISCOF_DUT_SRC)
++	m4 -D M4__TB_NAME="$(name)_tb" $(TB_DIR)/tb_template.sv.m4 > $(TB_DIR)/$(name)_tb.sv
++
++# ===========================
++# RISCOF
++# ===========================
++$(RISCOF_DUT_BIN): $(SRCS) $(RISCOF_DUT_SRC)
++	@mkdir -p $(BUILD_DIR)/riscof
++	$(VERILATOR) $(VERILATOR_FLAGS) \
++		--top-module dut \
++		--Mdir $(BUILD_DIR)/riscof \
++		-o dut_sim \
++		$(SRCS) $(RISCOF_DUT_SRC)
++	cp $(BUILD_DIR)/riscof/dut_sim $(RISCOF_DUT_BIN)
+ 
+ $(RISCOF_CONFIG): $(RISCOF_CONFIG_TEMPLATE)
+ 	m4 -D M4__WORKSPACE_PATH="$(PWD)" $< > $@
+ 
+-riscof_build_dut: $(RISCOF_DUT_VVP)
++riscof_build_dut: $(RISCOF_DUT_BIN)
+ 
+ riscof_validateyaml: $(RISCOF_CONFIG)
+ 	cd $(RISCOF_DIR) && riscof validateyaml --config=config.ini
+@@ -90,24 +129,24 @@ riscof_clone_archtest: $(RISCOF_CONFIG)
+ 	cd $(RISCOF_DIR) && riscof arch-test --clone
+ 
+ riscof_generate_testlist: $(RISCOF_CONFIG)
+-	cd $(RISCOF_DIR) &&                             \
+-		riscof testlist                               \
+-			--config=config.ini                         \
+-			--suite=riscv-arch-test/riscv-test-suite/   \
+-			--env=riscv-arch-test/riscv-test-suite/env
++	cd $(RISCOF_DIR) && \
++		riscof testlist --config=config.ini \
++		--suite=riscv-arch-test/riscv-test-suite/ \
++		--env=riscv-arch-test/riscv-test-suite/env
+ 
+ riscof_run: $(RISCOF_CONFIG) riscof_build_dut
+-	cd $(RISCOF_DIR) &&                             \
+-		riscof run                                    \
+-			--config=config.ini                         \
+-			--suite=riscv-arch-test/riscv-test-suite/   \
+-			--env=riscv-arch-test/riscv-test-suite/env
+-
++	cd $(RISCOF_DIR) && \
++		riscof run --config=config.ini \
++		--suite=riscv-arch-test/riscv-test-suite/ \
++		--env=riscv-arch-test/riscv-test-suite/env
++
++# ===========================
++# Linting
++# ===========================
+ svlint:
+ 	bash -o pipefail -c 'svlint $(if $(CI),--github-actions) $(SRCS) $(if $(CI),| sed "s/::error/::warning/g")'
+ 
+ svlint_tb:
+ 	bash -o pipefail -c 'svlint $(if $(CI),--github-actions) $(TB_SRCS) $(if $(CI),| sed "s/::error/::warning/g")'
+ 
+-.PHONY: all run svlint svlint_tb build_top run_top build_tb run_tb new_tb
+-
++.PHONY: all run svlint svlint_tb build_top run_top build_tb run_tb new_tb
+\ No newline at end of file
+
+From cb49fcdd4fc3a23a58c4d24a2e1c4b35768a5a1a Mon Sep 17 00:00:00 2001
+From: marwannismail <marwan.ismail2004@gmail.com>
+Date: Sun, 30 Nov 2025 19:39:08 -0500
+Subject: [PATCH 02/22] Fixing dependency installation for Verilator?
+
+---
+ Dockerfile.ci | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/Dockerfile.ci b/Dockerfile.ci
+index d247e25..d277300 100644
+--- a/Dockerfile.ci
++++ b/Dockerfile.ci
+@@ -77,11 +77,11 @@ RUN mkdir -p /tmp/svlint && \
+ 
+ # build and install Verilator
+ USER dev
+-RUN sudo apt-get install git help2man perl python3 make autoconf g++ flex bison ccache && \
+-    sudo apt-get install libgoogle-perftools-dev numactl perl-doc && \
+-    sudo apt-get install libfl2 && \
+-    sudo apt-get install libfl-dev && \
+-    sudo apt-get install zlibc zlib1g zlib1g-dev
++RUN sudo apt-get install git help2man perl python3 make autoconf g++ flex bison ccache \
++    libgoogle-perftools-dev numactl perl-doc \
++    libfl2 \
++    libfl-dev \
++    zlibc zlib1g zlib1g-dev
+ RUN git clone https://github.com/verilator/verilator
+ RUN unsetenv VERILATOR_ROOT
+ RUN unset VERILATOR_ROOT
+
+From a17a867a1dce554a731ee68188f6754259a99e1e Mon Sep 17 00:00:00 2001
+From: marwannismail <marwan.ismail2004@gmail.com>
+Date: Sun, 30 Nov 2025 19:40:51 -0500
+Subject: [PATCH 03/22] Getting rid of zlibc dependency installation:
+
+---
+ Dockerfile.ci | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Dockerfile.ci b/Dockerfile.ci
+index d277300..c9ef3f9 100644
+--- a/Dockerfile.ci
++++ b/Dockerfile.ci
+@@ -81,7 +81,7 @@ RUN sudo apt-get install git help2man perl python3 make autoconf g++ flex bison
+     libgoogle-perftools-dev numactl perl-doc \
+     libfl2 \
+     libfl-dev \
+-    zlibc zlib1g zlib1g-dev
++    zlib1g zlib1g-dev
+ RUN git clone https://github.com/verilator/verilator
+ RUN unsetenv VERILATOR_ROOT
+ RUN unset VERILATOR_ROOT
+
+From b8d13acf95b6f316a2ea0f17249d14853f89af30 Mon Sep 17 00:00:00 2001
+From: marwannismail <marwan.ismail2004@gmail.com>
+Date: Sun, 30 Nov 2025 19:44:07 -0500
+Subject: [PATCH 04/22] Auto-confirming for automated CI generation
+
+---
+ Dockerfile.ci | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Dockerfile.ci b/Dockerfile.ci
+index c9ef3f9..0504205 100644
+--- a/Dockerfile.ci
++++ b/Dockerfile.ci
+@@ -77,7 +77,7 @@ RUN mkdir -p /tmp/svlint && \
+ 
+ # build and install Verilator
+ USER dev
+-RUN sudo apt-get install git help2man perl python3 make autoconf g++ flex bison ccache \
++RUN sudo apt-get install -y git help2man perl python3 make autoconf g++ flex bison ccache \
+     libgoogle-perftools-dev numactl perl-doc \
+     libfl2 \
+     libfl-dev \
+
+From 5e18754d3369b35616fee4e5995924be8dea0105 Mon Sep 17 00:00:00 2001
+From: marwannismail <marwan.ismail2004@gmail.com>
+Date: Sun, 30 Nov 2025 19:46:53 -0500
+Subject: [PATCH 05/22] Cloning Verilator repo in an accessible directory
+
+---
+ Dockerfile.ci | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/Dockerfile.ci b/Dockerfile.ci
+index 0504205..1fb9bd1 100644
+--- a/Dockerfile.ci
++++ b/Dockerfile.ci
+@@ -77,14 +77,13 @@ RUN mkdir -p /tmp/svlint && \
+ 
+ # build and install Verilator
+ USER dev
++WORKDIR /home/dev
+ RUN sudo apt-get install -y git help2man perl python3 make autoconf g++ flex bison ccache \
+     libgoogle-perftools-dev numactl perl-doc \
+     libfl2 \
+     libfl-dev \
+     zlib1g zlib1g-dev
+ RUN git clone https://github.com/verilator/verilator
+-RUN unsetenv VERILATOR_ROOT
+-RUN unset VERILATOR_ROOT
+ RUN cd verilator
+ RUN git pull
+ RUN autoconf
+
+From a1d6b449866ffd8d265067b8f52e524835a06e52 Mon Sep 17 00:00:00 2001
+From: marwannismail <marwan.ismail2004@gmail.com>
+Date: Sun, 30 Nov 2025 19:50:05 -0500
+Subject: [PATCH 06/22] Running all Verilator repo commands in the same layer
+
+---
+ Dockerfile.ci | 9 ++-------
+ 1 file changed, 2 insertions(+), 7 deletions(-)
+
+diff --git a/Dockerfile.ci b/Dockerfile.ci
+index 1fb9bd1..9a4d7de 100644
+--- a/Dockerfile.ci
++++ b/Dockerfile.ci
+@@ -83,13 +83,8 @@ RUN sudo apt-get install -y git help2man perl python3 make autoconf g++ flex bis
+     libfl2 \
+     libfl-dev \
+     zlib1g zlib1g-dev
+-RUN git clone https://github.com/verilator/verilator
+-RUN cd verilator
+-RUN git pull
+-RUN autoconf
+-RUN ./configure
+-RUN make -j 2
+-RUN sudo make install
++RUN git clone https://github.com/verilator/verilator && cd verilator && git pull && autoconf && \
++    ./configure && make -j 2 && sudo make install
+ 
+ # CI needs priviledged access
+ USER root
+
+From 39e02176cb273e7b9013f196c23635f66d6daf3d Mon Sep 17 00:00:00 2001
+From: marwannismail <marwan.ismail2004@gmail.com>
+Date: Sun, 30 Nov 2025 20:05:43 -0500
+Subject: [PATCH 07/22] Renamed jal and jalr TB testcases to match file names
+
+---
+ test/jal_tb.sv  | 2 +-
+ test/jalr_tb.sv | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/test/jal_tb.sv b/test/jal_tb.sv
+index aa8a8c5..1e61dc5 100644
+--- a/test/jal_tb.sv
++++ b/test/jal_tb.sv
+@@ -3,7 +3,7 @@
+ `include "src/types.svh"      // <-- bring in enum literals like PC_SRC__JUMP
+ `include "test/utils.svh"
+ 
+-module jal_only_tb;
++module jal_tb;
+ 
+   reg clk;
+   reg reset;
+diff --git a/test/jalr_tb.sv b/test/jalr_tb.sv
+index db20d74..7845222 100644
+--- a/test/jalr_tb.sv
++++ b/test/jalr_tb.sv
+@@ -3,7 +3,7 @@
+ `include "src/types.svh"  // for enum literals like PC_SRC__ALU_RESULT
+ `include "test/utils.svh"
+ 
+-module jalr_only_tb;
++module jalr_tb;
+ 
+   reg clk;
+   reg reset;
+
+From 0820b3eeee22c84dc4cffd918a292de78161b006 Mon Sep 17 00:00:00 2001
+From: marwannismail <marwan.ismail2004@gmail.com>
+Date: Sun, 30 Nov 2025 20:11:15 -0500
+Subject: [PATCH 08/22] pc_cur should start off at 32'h0 rather than 32'hx in
+ TB
+
+---
+ test/fetch_tb.sv | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/test/fetch_tb.sv b/test/fetch_tb.sv
+index 1c85dfa..4242b29 100644
+--- a/test/fetch_tb.sv
++++ b/test/fetch_tb.sv
+@@ -45,7 +45,7 @@ module fetch_tb;
+     alu_result_for_pc <= 32'h00000000;
+     imm_ext <= '0;
+ 
+-    assert (pc_cur === 32'hxxxxxxxx) else $fatal(1, "`pc_cur` is `%0h`", pc_cur);
++    assert (pc_cur === 32'h00000000) else $fatal(1, "`pc_cur` is `%0h`", pc_cur);
+ 
+     reset <= `TRUE;
+     #10;
+
+From 387529665a745477e795313e2e0911c5cecacc3e Mon Sep 17 00:00:00 2001
+From: marwannismail <marwan.ismail2004@gmail.com>
+Date: Sun, 30 Nov 2025 20:43:20 -0500
+Subject: [PATCH 09/22] Modified De1-SoC Makefile to use Verilator
+
+---
+ envs/de1-soc/Makefile | 61 ++++++++++++++++++++++++++++++++++++-------
+ 1 file changed, 52 insertions(+), 9 deletions(-)
+
+diff --git a/envs/de1-soc/Makefile b/envs/de1-soc/Makefile
+index 35a8035..a5c76b2 100644
+--- a/envs/de1-soc/Makefile
++++ b/envs/de1-soc/Makefile
+@@ -1,19 +1,62 @@
+-IVERILOG := iverilog
+-VVP 		 := vvp
++# ===========================
++# Tools
++# ===========================
++VERILATOR := verilator
+ 
+-BASE_INCLUDE_DIR=../../
+-CORE_SRC := $(shell find $(BASE_INCLUDE_DIR)src -name "*.sv" -o -name "*.v")
++# ===========================
++# Directories
++# ===========================
++BASE_INCLUDE_DIR := ../../
++OUT_DIR  := out
++BUILD_DIR := build
++
++# ===========================
++# Sources
++# ===========================
++CORE_SRC   := $(shell find $(BASE_INCLUDE_DIR)src -name "*.sv" -o -name "*.v")
+ LOCAL_SRCS := $(wildcard *.sv)
+ 
++# ===========================
++# Verilator Flags
++# ===========================
++VERILATOR_FLAGS := -Wall --binary --trace --timing -sv -cc \
++	-I$(BASE_INCLUDE_DIR) \
++	-O3 -Wno-fatal
++
++# ===========================
++# Default
++# ===========================
+ all: run_tb
+ 
++# ===========================
++# Sub-project
++# ===========================
+ poc:
+ 	$(MAKE) -C poc
+ 
+-top_tb.vvp: poc $(LOCAL_SRCS) $(CORE_SRC)
+-	$(IVERILOG) -g2012 -I$(BASE_INCLUDE_DIR) -o $@ $(LOCAL_SRCS) $(CORE_SRC)
++# ===========================
++# Testbench Build
++# ===========================
++$(OUT_DIR)/top_tb_sim: poc $(LOCAL_SRCS) $(CORE_SRC)
++	@mkdir -p $(OUT_DIR)
++	@mkdir -p $(BUILD_DIR)/top_tb
++	$(VERILATOR) $(VERILATOR_FLAGS) \
++		--top-module top_tb \
++		--Mdir $(BUILD_DIR)/top_tb \
++		-o top_tb_sim \
++		$(LOCAL_SRCS) $(CORE_SRC)
++	cp $(BUILD_DIR)/top_tb/top_tb_sim $@
++
++# ===========================
++# Run Testbench
++# ===========================
++run_tb: $(OUT_DIR)/top_tb_sim
++	./$<
+ 
+-run_tb: top_tb.vvp
+-	$(VVP) -N $<
++# ===========================
++# Utilities
++# ===========================
++clean:
++	rm -rf $(OUT_DIR) $(BUILD_DIR)
+ 
+-.PHONY: run_tb poc
++.PHONY: all run_tb poc clean
+
+From 075fec86880e2187a9f912328b861a7d70c89be4 Mon Sep 17 00:00:00 2001
+From: marwannismail <marwan.ismail2004@gmail.com>
+Date: Sat, 13 Dec 2025 15:47:44 -0500
+Subject: [PATCH 10/22] Include TESTBENCH macro for Verilator
+
+---
+ Makefile | 24 ++++++++++++++++++++----
+ 1 file changed, 20 insertions(+), 4 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index 21d992d..7ad1899 100644
+--- a/Makefile
++++ b/Makefile
+@@ -16,14 +16,21 @@ RISCOF_DUT_BIN       := $(RISCOF_DIR)/dut_sim
+ RISCOF_CONFIG_TEMPLATE := $(RISCOF_DIR)/config.ini.m4
+ RISCOF_CONFIG        := $(RISCOF_DIR)/config.ini
+ 
++# ===========================
++# Verilator flags
++# ===========================
+ VERILATOR_FLAGS := -Wall --binary --trace --timing -sv -cc \
+ 	-O3 -Wno-fatal
+ 
++# Testbench-only defines
++TB_DEFINES := -DTESTBENCH
++
+ # ===========================
+ # Sources
+ # ===========================
+ SRCS := $(shell find $(SRC_DIR) -name "*.sv" -o -name "*.v") \
+         $(shell find $(ENVS_DIR)/$(ENV) -name "*.sv" -o -name "*.v")
++
+ TB_SRCS := $(wildcard $(TB_DIR)/*_tb.sv)
+ TB_UTILS := $(TB_DIR)/utils.svh
+ TB_BINS := $(patsubst $(TB_DIR)/%_tb.sv, $(OUT_DIR)/%_tb_sim, $(TB_SRCS))
+@@ -40,12 +47,13 @@ $(shell mkdir -p $(BUILD_DIR)/top)
+ # ===========================
+ all: build_top
+ 	@echo "Build finished! Try 'make run_top' or 'make run_tb'."
+-	
++
+ print_srcs:
+ 	@echo $(SRCS)
+ 
+ print_tb_srcs:
+ 	@echo $(TB_SRCS)
++
+ # ===========================
+ # Top module
+ # ===========================
+@@ -90,14 +98,16 @@ run_tb: build_tb
+ # Pattern rule for building individual testbenches
+ $(OUT_DIR)/%_tb_sim: $(TB_DIR)/%_tb.sv $(TB_UTILS) $(SRCS)
+ 	@mkdir -p $(BUILD_DIR)/$(basename $(notdir $@))
+-	$(VERILATOR) $(VERILATOR_FLAGS) \
++	$(VERILATOR) $(VERILATOR_FLAGS) $(TB_DEFINES) \
+ 		--top-module $(basename $(notdir $<)) \
+ 		--Mdir $(BUILD_DIR)/$(basename $(notdir $@)) \
+ 		-o $(basename $(notdir $@)) \
+ 		$(SRCS) $<
+ 	cp $(BUILD_DIR)/$(basename $(notdir $@))/$(basename $(notdir $@)) $@
+ 
+-# Create new testbench from template
++# ===========================
++# Create new testbench
++# ===========================
+ new_tb:
+ 	@if [ -z "$(name)" ]; then \
+ 		echo "Usage: make new_tb name=<testbench_name>"; \
+@@ -149,4 +159,10 @@ svlint:
+ svlint_tb:
+ 	bash -o pipefail -c 'svlint $(if $(CI),--github-actions) $(TB_SRCS) $(if $(CI),| sed "s/::error/::warning/g")'
+ 
+-.PHONY: all run svlint svlint_tb build_top run_top build_tb run_tb new_tb
+\ No newline at end of file
++# ===========================
++# Phony targets
++# ===========================
++.PHONY: all build_top run_top build_tb run_tb new_tb \
++        svlint svlint_tb \
++        riscof_build_dut riscof_validateyaml riscof_clone_archtest \
++        riscof_generate_testlist riscof_run
+
+From f94448e476df2ff7498ec5e656fa32dc4ddce2fe Mon Sep 17 00:00:00 2001
+From: marwannismail <marwan.ismail2004@gmail.com>
+Date: Sat, 13 Dec 2025 22:16:26 -0500
+Subject: [PATCH 11/22] Verifying tools installation and executable
+
+---
+ .github/workflows/ci.yaml | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/.github/workflows/ci.yaml b/.github/workflows/ci.yaml
+index 2457eca..eb4974e 100644
+--- a/.github/workflows/ci.yaml
++++ b/.github/workflows/ci.yaml
+@@ -128,9 +128,22 @@ jobs:
+       - name: Checkout code
+         uses: actions/checkout@v4
+ 
++      - name: Install RISC-V toolchain
++        run: |
++          sudo apt update
++          sudo apt install -y gcc-riscv64-unknown-elf
++
++      - name: Verify tools
++        run: |
++          which riscv32-unknown-elf-gcc
++          which riscv32-unknown-elf-objdump
++
+       - name: Build DUT
+         run: make riscof_build_dut
+ 
++      - name: Ensure DUT executable
++        run: chmod +x riscof/dut_sim
++
+       - name: Validate YAML
+         run: make riscof_validateyaml
+ 
+
+From 25c10e946d7937df54b547733793fbd6f2e47635 Mon Sep 17 00:00:00 2001
+From: marwannismail <marwan.ismail2004@gmail.com>
+Date: Sat, 13 Dec 2025 22:31:48 -0500
+Subject: [PATCH 12/22] Revert "Verifying tools installation and executable"
+
+This reverts commit f94448e476df2ff7498ec5e656fa32dc4ddce2fe.
+---
+ .github/workflows/ci.yaml | 13 -------------
+ 1 file changed, 13 deletions(-)
+
+diff --git a/.github/workflows/ci.yaml b/.github/workflows/ci.yaml
+index eb4974e..2457eca 100644
+--- a/.github/workflows/ci.yaml
++++ b/.github/workflows/ci.yaml
+@@ -128,22 +128,9 @@ jobs:
+       - name: Checkout code
+         uses: actions/checkout@v4
+ 
+-      - name: Install RISC-V toolchain
+-        run: |
+-          sudo apt update
+-          sudo apt install -y gcc-riscv64-unknown-elf
+-
+-      - name: Verify tools
+-        run: |
+-          which riscv32-unknown-elf-gcc
+-          which riscv32-unknown-elf-objdump
+-
+       - name: Build DUT
+         run: make riscof_build_dut
+ 
+-      - name: Ensure DUT executable
+-        run: chmod +x riscof/dut_sim
+-
+       - name: Validate YAML
+         run: make riscof_validateyaml
+ 
+
+From cb3d5c26f83758f008417dc79e8f13a89ad581ad Mon Sep 17 00:00:00 2001
+From: Boris <boris.potapov@mail.utoronto.ca>
+Date: Thu, 18 Dec 2025 22:48:38 +0000
+Subject: [PATCH 13/22] dont force creation of vcd folder
+
+---
+ Makefile | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index 7ad1899..01a8451 100644
+--- a/Makefile
++++ b/Makefile
+@@ -7,7 +7,6 @@ TB_DIR       := test
+ OUT_DIR      := out
+ BUILD_DIR    := build
+ VERILATOR    := verilator
+-TB_VCD_BASE_PATH := $(TB_DIR)/vcd
+ 
+ ENV          := simulation
+ RISCOF_DIR           := riscof
+@@ -39,7 +38,6 @@ TB_BINS := $(patsubst $(TB_DIR)/%_tb.sv, $(OUT_DIR)/%_tb_sim, $(TB_SRCS))
+ # Ensure directories exist
+ # ===========================
+ $(shell mkdir -p $(OUT_DIR))
+-$(shell mkdir -p $(TB_VCD_BASE_PATH))
+ $(shell mkdir -p $(BUILD_DIR)/top)
+ 
+ # ===========================
+
+From 42cddb16a0ff8e13c7622723cbb1fefa86cae239 Mon Sep 17 00:00:00 2001
+From: Boris <boris.potapov@mail.utoronto.ca>
+Date: Thu, 18 Dec 2025 22:49:36 +0000
+Subject: [PATCH 14/22] dont force creation of build/top
+
+---
+ Makefile | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/Makefile b/Makefile
+index 01a8451..261d1c1 100644
+--- a/Makefile
++++ b/Makefile
+@@ -38,7 +38,6 @@ TB_BINS := $(patsubst $(TB_DIR)/%_tb.sv, $(OUT_DIR)/%_tb_sim, $(TB_SRCS))
+ # Ensure directories exist
+ # ===========================
+ $(shell mkdir -p $(OUT_DIR))
+-$(shell mkdir -p $(BUILD_DIR)/top)
+ 
+ # ===========================
+ # Default
+
+From 4023c1ea5d8f7377b3a018cc0e335ea12908c3a1 Mon Sep 17 00:00:00 2001
+From: Boris <boris.potapov@mail.utoronto.ca>
+Date: Thu, 18 Dec 2025 22:49:56 +0000
+Subject: [PATCH 15/22] build simulation's top for main exe
+
+---
+ Makefile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Makefile b/Makefile
+index 261d1c1..cb31ebb 100644
+--- a/Makefile
++++ b/Makefile
+@@ -62,7 +62,7 @@ run_top: $(OUT_DIR)/top_sim
+ $(OUT_DIR)/top_sim: $(SRCS)
+ 	@mkdir -p $(BUILD_DIR)/top
+ 	$(VERILATOR) $(VERILATOR_FLAGS) \
+-		--top-module utoss_riscv \
++		--top-module top \
+ 		--Mdir $(BUILD_DIR)/top \
+ 		-o top_sim \
+ 		$(SRCS)
+
+From 90330e16c74707e4cfa3bb5f5f8789b9af388e58 Mon Sep 17 00:00:00 2001
+From: Boris <boris.potapov@mail.utoronto.ca>
+Date: Thu, 18 Dec 2025 22:50:22 +0000
+Subject: [PATCH 16/22] dont force creation of out dir
+
+---
+ Makefile | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index cb31ebb..56d19e6 100644
+--- a/Makefile
++++ b/Makefile
+@@ -34,11 +34,6 @@ TB_SRCS := $(wildcard $(TB_DIR)/*_tb.sv)
+ TB_UTILS := $(TB_DIR)/utils.svh
+ TB_BINS := $(patsubst $(TB_DIR)/%_tb.sv, $(OUT_DIR)/%_tb_sim, $(TB_SRCS))
+ 
+-# ===========================
+-# Ensure directories exist
+-# ===========================
+-$(shell mkdir -p $(OUT_DIR))
+-
+ # ===========================
+ # Default
+ # ===========================
+
+From b8944c4f49358ae20e8de14b7f34c3c788cfd972 Mon Sep 17 00:00:00 2001
+From: Boris <boris.potapov@mail.utoronto.ca>
+Date: Thu, 18 Dec 2025 22:52:40 +0000
+Subject: [PATCH 17/22] dont force per-exe folder creation
+
+---
+ Makefile | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index 56d19e6..2d0c449 100644
+--- a/Makefile
++++ b/Makefile
+@@ -89,7 +89,6 @@ run_tb: build_tb
+ 
+ # Pattern rule for building individual testbenches
+ $(OUT_DIR)/%_tb_sim: $(TB_DIR)/%_tb.sv $(TB_UTILS) $(SRCS)
+-	@mkdir -p $(BUILD_DIR)/$(basename $(notdir $@))
+ 	$(VERILATOR) $(VERILATOR_FLAGS) $(TB_DEFINES) \
+ 		--top-module $(basename $(notdir $<)) \
+ 		--Mdir $(BUILD_DIR)/$(basename $(notdir $@)) \
+@@ -111,7 +110,6 @@ new_tb:
+ # RISCOF
+ # ===========================
+ $(RISCOF_DUT_BIN): $(SRCS) $(RISCOF_DUT_SRC)
+-	@mkdir -p $(BUILD_DIR)/riscof
+ 	$(VERILATOR) $(VERILATOR_FLAGS) \
+ 		--top-module dut \
+ 		--Mdir $(BUILD_DIR)/riscof \
+
+From 171f097011c5ef912b7b94e57ff261f4ac633db8 Mon Sep 17 00:00:00 2001
+From: Boris <boris.potapov@mail.utoronto.ca>
+Date: Thu, 18 Dec 2025 22:54:38 +0000
+Subject: [PATCH 18/22] install a specific version of verilator
+
+---
+ Dockerfile.ci | 11 +++++++----
+ 1 file changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/Dockerfile.ci b/Dockerfile.ci
+index 9a4d7de..c4a86fa 100644
+--- a/Dockerfile.ci
++++ b/Dockerfile.ci
+@@ -77,14 +77,17 @@ RUN mkdir -p /tmp/svlint && \
+ 
+ # build and install Verilator
+ USER dev
+-WORKDIR /home/dev
++ARG VERILATOR_VERSION=v5.042
++ARG VERILATOR_GIT_REPO=https://github.com/verilator/verilator
+ RUN sudo apt-get install -y git help2man perl python3 make autoconf g++ flex bison ccache \
+     libgoogle-perftools-dev numactl perl-doc \
+     libfl2 \
+     libfl-dev \
+-    zlib1g zlib1g-dev
+-RUN git clone https://github.com/verilator/verilator && cd verilator && git pull && autoconf && \
+-    ./configure && make -j 2 && sudo make install
++    zlib1g zlib1g-dev && \
++    cd /tmp && \
++    git clone --depth=1 --branch ${VERILATOR_VERSION} ${VERILATOR_GIT_REPO} && \
++    cd verilator && \
++    autoconf && ./configure && make -j `nproc` && sudo make install
+ 
+ # CI needs priviledged access
+ USER root
+
+From ed0ec4b183863a4157057f46558930517f4fdb1c Mon Sep 17 00:00:00 2001
+From: Boris <boris.potapov@mail.utoronto.ca>
+Date: Thu, 18 Dec 2025 22:55:28 +0000
+Subject: [PATCH 19/22] perform verilator installation earlier in the ci image
+ build
+
+---
+ Dockerfile.ci | 28 ++++++++++++++--------------
+ 1 file changed, 14 insertions(+), 14 deletions(-)
+
+diff --git a/Dockerfile.ci b/Dockerfile.ci
+index c4a86fa..3d16611 100644
+--- a/Dockerfile.ci
++++ b/Dockerfile.ci
+@@ -34,6 +34,20 @@ RUN sudo apt update && sudo apt install -y autoconf gperf make gcc g++ bison fle
+     cd iverilog-* && sh autoconf.sh && ./configure && make && make check && sudo make install && \
+     cd .. && rm ${ICARUS_SRC_TAR} && rm -rf ./iverilog-*
+ 
++# build and install Verilator
++USER dev
++ARG VERILATOR_VERSION=v5.042
++ARG VERILATOR_GIT_REPO=https://github.com/verilator/verilator
++RUN sudo apt-get install -y git help2man perl python3 make autoconf g++ flex bison ccache \
++    libgoogle-perftools-dev numactl perl-doc \
++    libfl2 \
++    libfl-dev \
++    zlib1g zlib1g-dev && \
++    cd /tmp && \
++    git clone --depth=1 --branch ${VERILATOR_VERSION} ${VERILATOR_GIT_REPO} && \
++    cd verilator && \
++    autoconf && ./configure && make -j `nproc` && sudo make install
++
+ # install riscv toolchain
+ USER dev
+ COPY --from=risc-v-toolchain /opt/riscv /opt/riscv
+@@ -75,19 +89,5 @@ RUN mkdir -p /tmp/svlint && \
+     sudo mv bin/* /usr/local/bin/ && \
+     cd .. && rm -r /tmp/svlint
+ 
+-# build and install Verilator
+-USER dev
+-ARG VERILATOR_VERSION=v5.042
+-ARG VERILATOR_GIT_REPO=https://github.com/verilator/verilator
+-RUN sudo apt-get install -y git help2man perl python3 make autoconf g++ flex bison ccache \
+-    libgoogle-perftools-dev numactl perl-doc \
+-    libfl2 \
+-    libfl-dev \
+-    zlib1g zlib1g-dev && \
+-    cd /tmp && \
+-    git clone --depth=1 --branch ${VERILATOR_VERSION} ${VERILATOR_GIT_REPO} && \
+-    cd verilator && \
+-    autoconf && ./configure && make -j `nproc` && sudo make install
+-
+ # CI needs priviledged access
+ USER root
+
+From 74c9d523b08c4619cb4f1cc3a169cb847c928e46 Mon Sep 17 00:00:00 2001
+From: Boris <boris.potapov@mail.utoronto.ca>
+Date: Thu, 18 Dec 2025 23:02:42 +0000
+Subject: [PATCH 20/22] fix riscof
+
+---
+ .gitignore                               | 1 +
+ riscof/utoss_riscv/riscof_utoss_riscv.py | 2 +-
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/.gitignore b/.gitignore
+index 9385197..48273d0 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -8,6 +8,7 @@ riscof/riscv-arch-test/
+ riscof/utoss_riscv/__pycache__/
+ riscof/sail_cSim/__pycache__
+ riscof/config.ini
++riscof/dut_sim
+ 
+ envs/de1-soc/poc/poc.mem
+ envs/de1-soc/poc/poc.elf
+diff --git a/riscof/utoss_riscv/riscof_utoss_riscv.py b/riscof/utoss_riscv/riscof_utoss_riscv.py
+index f184fdd..213fece 100644
+--- a/riscof/utoss_riscv/riscof_utoss_riscv.py
++++ b/riscof/utoss_riscv/riscof_utoss_riscv.py
+@@ -36,7 +36,7 @@ def __init__(self, *args, **kwargs):
+         # test-bench produced by a simulator (like verilator, vcs, incisive, etc). In case of an iss or
+         # emulator, this variable could point to where the iss binary is located. If 'PATH variable
+         # is missing in the config.ini we can hardcode the alternate here.
+-        self.dut_exe = os.path.join(config['PATH'] if 'PATH' in config else "","dut.vvp")
++        self.dut_exe = os.path.join(config['PATH'] if 'PATH' in config else "","dut_sim")
+ 
+         # Number of parallel jobs that can be spawned off by RISCOF
+         # for various actions performed in later functions, specifically to run the tests in
+
+From 55d7e89607f3c90d6ab4e695f3f1aa55fc2c640f Mon Sep 17 00:00:00 2001
+From: Boris <boris.potapov@mail.utoronto.ca>
+Date: Thu, 18 Dec 2025 23:21:58 +0000
+Subject: [PATCH 21/22] keep build folder in the tree
+
+---
+ .gitignore     | 7 +++++--
+ build/.gitkeep | 0
+ 2 files changed, 5 insertions(+), 2 deletions(-)
+ create mode 100644 build/.gitkeep
+
+diff --git a/.gitignore b/.gitignore
+index 48273d0..aa97424 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -19,5 +19,8 @@ envs/de1-soc/quartus/output_files/*
+ envs/de1-soc/quartus/c5_pin_model_dump.txt
+ envs/de1-soc/quartus/*.bak
+ envs/de1-soc/quartus/*.qws
+-out/
+-build/
++
++out/**
++!out/.gitkeep
++build/**
++!build/.gitkeep
+diff --git a/build/.gitkeep b/build/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+
+From 5307b5536260794a7f93172542ee30fee4efd9e8 Mon Sep 17 00:00:00 2001
+From: Boris <boris.potapov@mail.utoronto.ca>
+Date: Fri, 19 Dec 2025 03:25:42 +0000
+Subject: [PATCH 22/22] update project map
+
+---
+ README.md | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/README.md b/README.md
+index 700b223..775faa6 100644
+--- a/README.md
++++ b/README.md
+@@ -13,7 +13,8 @@ Checkout Setting up Developement Environment wiki page.
+ │   └── utoss_riscv.sv ----------- our core's top module
+ ├── test ------------------------- contains our SystemVerilog testbenches
+ │   └── vcd ---------------------- contains VCD file outputs generated by the testbenches
+-├── out -------------------------- contains .vvp builds for testbenches and core module
++├── build ------------------------ contains intermediary verilator artifacts
++├── out -------------------------- contains verilator builds for testbenches and core module
+ ├── riscof ----------------------- contains RISCOF-related files and scripts; we use this framework
+ │                                  for compiance testing, to make sure our core behaves as defined
+ │                                  by the ISA specification; check out the corresponding wiki page

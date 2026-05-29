@@ -1,0 +1,111 @@
+diff --git a/l2_arbiter/l2_arbiter.sv b/l2_arbiter/l2_arbiter.sv
+index 900c3c7..9fd8a2c 100755
+--- a/l2_arbiter/l2_arbiter.sv
++++ b/l2_arbiter/l2_arbiter.sv
+@@ -44,7 +44,7 @@ module l2_arbiter
+ 
+ 
+     fifo_interface #(.DATA_WIDTH($bits(l2_mem_request_t))) mem_addr_fifo();
+-    fifo_interface #(.DATA_WIDTH(32)) mem_data_fifo();
++    fifo_interface #(.DATA_WIDTH(36)) mem_data_fifo();
+ 
+     fifo_interface #(.DATA_WIDTH($bits(l2_data_attributes_t))) data_attributes();
+     fifo_interface #(.DATA_WIDTH(32 + L2_ID_W)) mem_returndata_fifo();
+@@ -70,7 +70,7 @@ module l2_arbiter
+     l2_data_attributes_t new_attr;
+     l2_data_attributes_t current_attr;
+ 
+-    logic [31:0] input_data [L2_NUM_PORTS-1:0];
++    logic [35:0] input_data [L2_NUM_PORTS-1:0];
+ 
+     l2_mem_return_data_t mem_return_data;
+     l2_return_data_t return_data  [L2_NUM_PORTS-1:0];
+@@ -121,7 +121,7 @@ module l2_arbiter
+             assign input_data_fifos[i].push = request[i].wr_data_push;
+             assign input_data_fifos[i].potential_push = request[i].wr_data_push;
+ 
+-            assign input_data_fifos[i].data_in = request[i].wr_data;
++            assign input_data_fifos[i].data_in = {request[i].be, request[i].wr_data};
+ 
+             assign request[i].data_full = input_data_fifos[i].full;
+ 
+@@ -152,7 +152,6 @@ module l2_arbiter
+     assign arb_request = requests[arb.grantee_i];
+ 
+     assign mem_request.addr =  arb_request.addr;
+-    assign mem_request.be =  arb_request.be;
+     assign mem_request.rnw =  arb_request.rnw;
+     assign mem_request.is_amo =  arb_request.is_amo;
+     assign mem_request.amo_type_or_burst_size =  arb_request.amo_type_or_burst_size;
+@@ -261,14 +260,15 @@ module l2_arbiter
+ 
+     assign write_done = data_attributes.valid & ~mem_data_fifo.full & (burst_count == current_attr.burst_size);
+ 
+-    cva5_fifo #(.DATA_WIDTH($bits(32)), .FIFO_DEPTH(L2_MEM_ADDR_FIFO_DEPTH))  mem_data (.*, .fifo(mem_data_fifo));
++    cva5_fifo #(.DATA_WIDTH(36), .FIFO_DEPTH(L2_MEM_ADDR_FIFO_DEPTH))  mem_data (.*, .fifo(mem_data_fifo));
+ 
+     assign mem_data_fifo.push = data_attributes.valid & ~mem_data_fifo.full & ~current_attr.abort_request;
+     assign mem_data_fifo.potential_push = data_attributes.valid & ~mem_data_fifo.full & ~current_attr.abort_request;
+ 
+     assign mem_data_fifo.data_in = input_data[current_attr.id];
+ 
+-    assign mem.wr_data = mem_data_fifo.data_out;
++    assign mem.wr_data = mem_data_fifo.data_out[31:0];
++    assign mem.be = mem_data_fifo.data_out[35:32];
+     assign mem.wr_data_valid = mem_data_fifo.valid;
+     assign mem_data_fifo.pop = mem.wr_data_read;
+ 
+diff --git a/l2_arbiter/l2_config_and_types.sv b/l2_arbiter/l2_config_and_types.sv
+index cd9f824..2f3d86b 100755
+--- a/l2_arbiter/l2_config_and_types.sv
++++ b/l2_arbiter/l2_config_and_types.sv
+@@ -57,7 +57,6 @@ package l2_config_and_types;
+ 
+     typedef struct packed{
+         logic [29:0] addr;
+-        logic [3:0] be;
+         logic rnw;
+         logic is_amo;
+         logic [4:0] amo_type_or_burst_size;
+diff --git a/l2_arbiter/l2_external_interfaces.sv b/l2_arbiter/l2_external_interfaces.sv
+index 18a87d9..a0dbbe4 100644
+--- a/l2_arbiter/l2_external_interfaces.sv
++++ b/l2_arbiter/l2_external_interfaces.sv
+@@ -25,7 +25,6 @@ interface l2_requester_interface;
+ 
+     //l2_request_t request;
+     logic [29:0] addr;
+-    logic [3:0] be;
+     logic rnw;
+     logic is_amo;
+     logic [4:0] amo_type_or_burst_size;
+@@ -81,7 +80,6 @@ interface l2_memory_interface;
+     localparam L2_ID_W = $clog2(L2_NUM_PORTS) + L2_SUB_ID_W;
+ 
+     logic [29:0] addr;
+-    logic [3:0] be;
+     logic rnw;
+     logic is_amo;
+     logic [4:0] amo_type_or_burst_size;
+@@ -100,18 +98,18 @@ interface l2_memory_interface;
+     logic  [L2_ID_W-1:0] rd_id;
+     logic rd_data_valid;
+ 
+-    modport master (output addr, be, rnw, is_amo, amo_type_or_burst_size, id,
++    modport master (output addr, rnw, is_amo, amo_type_or_burst_size, id,
+             output request_valid, abort_request, input request_pop,
+             output wr_data, wr_data_valid, input wr_data_read,
+             input rd_data, rd_id, rd_data_valid);
+ 
+-    modport slave (input addr, be, rnw, is_amo, amo_type_or_burst_size, id,
++    modport slave (input addr, rnw, is_amo, amo_type_or_burst_size, id,
+             input request_valid, abort_request, output request_pop,
+             input wr_data, wr_data_valid, output wr_data_read,
+             output rd_data, rd_id, rd_data_valid);
+ 
+ `ifdef __CVA5_FORMAL__
+-    modport formal (input addr, be, rnw, is_amo, amo_type_or_burst_size, id,
++    modport formal (input addr, rnw, is_amo, amo_type_or_burst_size, id,
+                          request_valid, abort_request, output request_pop,
+                          wr_data, wr_data_valid, output wr_data_read,
+                          rd_data, rd_id, rd_data_valid);

@@ -1,0 +1,37 @@
+diff --git a/dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv b/dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv
+index bf457fb..33ff60e 100644
+--- a/dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv
++++ b/dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv
+@@ -293,9 +293,11 @@ interface core_ibex_fcov_if import ibex_pkg::*; (
+   end
+ 
+   logic instr_id_matches_trigger_d, instr_id_matches_trigger_q;
++  logic pipe_flush_d, pipe_flush_q;
+ 
+   assign instr_id_matches_trigger_d = id_stage_i.controller_i.trigger_match_i &&
+                                       id_stage_i.controller_i.fcov_debug_entry_if;
++  assign pipe_flush_d = id_stage_i.controller_i.fcov_pipe_flush;
+ 
+   // Delay instruction matching trigger point since it is catched in IF stage.
+   // We would want to cross it with decoded instruction categories and it does not matter
+@@ -303,8 +305,10 @@ interface core_ibex_fcov_if import ibex_pkg::*; (
+   always @(posedge clk_i or negedge rst_ni) begin
+     if (!rst_ni) begin
+       instr_id_matches_trigger_q <= 1'b0;
++      pipe_flush_q <= 1'b0;
+     end else begin
+       instr_id_matches_trigger_q <= instr_id_matches_trigger_d;
++      pipe_flush_q <= pipe_flush_d;
+     end
+   end
+ 
+@@ -499,8 +503,7 @@ interface core_ibex_fcov_if import ibex_pkg::*; (
+     `DV_FCOV_EXPR_SEEN(pipe_flush, id_stage_i.controller_i.fcov_pipe_flush)
+     `DV_FCOV_EXPR_SEEN(single_step_taken, id_stage_i.controller_i.fcov_debug_single_step_taken)
+     `DV_FCOV_EXPR_SEEN(insn_trigger_enter_debug, instr_id_matches_trigger_q)
+-    `DV_FCOV_EXPR_SEEN(insn_trigger_exception, instr_id_matches_trigger_q &&
+-                                               id_stage_i.controller_i.fcov_pipe_flush)
++    `DV_FCOV_EXPR_SEEN(insn_trigger_exception, instr_id_matches_trigger_q && pipe_flush_q)
+ 
+     cp_nmi_taken: coverpoint ((fcov_irqs[5] || fcov_irqs[4])) iff
+                              (id_stage_i.controller_i.fcov_interrupt_taken);

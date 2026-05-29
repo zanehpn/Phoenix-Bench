@@ -1,0 +1,42 @@
+diff --git a/src/dm_csrs.sv b/src/dm_csrs.sv
+index 51cd586..520a660 100644
+--- a/src/dm_csrs.sv
++++ b/src/dm_csrs.sv
+@@ -91,8 +91,8 @@ module dm_csrs #(
+   logic        resp_queue_pop;
+   logic [31:0] resp_queue_data;
+ 
+-  localparam dm::dm_csr_e DataEnd = dm::dm_csr_e'(dm::Data0 + {4'b0, dm::DataCount} - 8'h01);
+-  localparam dm::dm_csr_e ProgBufEnd = dm::dm_csr_e'(dm::ProgBuf0 + {4'b0, dm::ProgBufSize} - 8'h01);
++  localparam dm::dm_csr_e DataEnd = dm::dm_csr_e'(dm::Data0 + dm::DataCount - 8'h01);
++  localparam dm::dm_csr_e ProgBufEnd = dm::dm_csr_e'(dm::ProgBuf0 + dm::ProgBufSize - 8'h01);
+ 
+   logic [31:0] haltsum0, haltsum1, haltsum2, haltsum3;
+   logic [((NrHarts-1)/2**5 + 1) * 32 - 1 : 0] halted;
+@@ -123,7 +123,7 @@ module dm_csrs #(
+     haltsum1     = '0;
+     hartsel_idx1 = hartsel_o[19:10];
+ 
+-    for (int unsigned k = 0; k < NrHarts/2**5+1; k++) begin
++    for (int unsigned k = 0; k < (NrHarts-1)/2**5+1; k++) begin
+       halted_flat1[k] = |halted_reshaped0[k];
+     end
+     halted_reshaped1 = halted_flat1;
+@@ -140,7 +140,7 @@ module dm_csrs #(
+     haltsum2     = '0;
+     hartsel_idx2 = hartsel_o[19:15];
+ 
+-    for (int unsigned k = 0; k < NrHarts/2**10+1; k++) begin
++    for (int unsigned k = 0; k < (NrHarts-1)/2**10+1; k++) begin
+       halted_flat2[k] = |halted_reshaped1[k];
+     end
+     halted_reshaped2 = halted_flat2;
+@@ -153,7 +153,7 @@ module dm_csrs #(
+   // haltsum3
+   always_comb begin : p_reduction3
+     halted_flat3 = '0;
+-    for (int unsigned k = 0; k < NrHarts/2**15+1; k++) begin
++    for (int unsigned k = 0; k < (NrHarts-1)/2**15+1; k++) begin
+       halted_flat3[k] = |halted_reshaped2[k];
+     end
+     haltsum3 = halted_flat3;

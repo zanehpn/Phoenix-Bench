@@ -1,0 +1,23 @@
+The bug is in:
+
+- `bsg_mem/bsg_mem_1rw_sync_mask_write_bit_from_1r1w.sv`
+
+Specifically, `addr_li` is declared after it is used in `addr_match`, which can trigger compile issues in some tools. The fix is to move the declaration of `addr_li` above its first use.
+
+```systemverilog
+### bsg_mem/bsg_mem_1rw_sync_mask_write_bit_from_1r1w.sv
+<<<<<<< SEARCH
+  wire [addr_width_lp-1:0]  w_addr_r;
+  wire                      addr_match = w_addr_r == addr_li;
+  wire                      bypass_n = v_and_w_r & addr_match;
+  wire                      bypass_r;
+  
+  wire [addr_width_lp-1:0]  addr_li = els_p > 1 ? addr_i : '0;
+=======
+  wire [addr_width_lp-1:0]  addr_li = els_p > 1 ? addr_i : '0;
+  wire [addr_width_lp-1:0]  w_addr_r;
+  wire                      addr_match = w_addr_r == addr_li;
+  wire                      bypass_n = v_and_w_r & addr_match;
+  wire                      bypass_r;
+>>>>>>> REPLACE
+```

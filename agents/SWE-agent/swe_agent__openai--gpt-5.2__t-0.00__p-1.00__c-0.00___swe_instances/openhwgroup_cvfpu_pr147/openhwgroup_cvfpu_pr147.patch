@@ -1,0 +1,22 @@
+diff --git a/src/fpnew_cast_multi.sv b/src/fpnew_cast_multi.sv
+index 25e5bf5..4b8ee17 100644
+--- a/src/fpnew_cast_multi.sv
++++ b/src/fpnew_cast_multi.sv
+@@ -596,8 +596,15 @@ module fpnew_cast_multi #(
+     end
+   end
+ 
+-  // Negative integer result needs to be brought into two's complement
+-  assign rounded_int_res      = rounded_sign ? unsigned'(-rounded_abs) : rounded_abs;
++  // Negative integer result needs to be brought into two's complement.
++  // NOTE: rounded_abs is an unsigned magnitude. Do the 2's complement in the
++  // target WIDTH to avoid truncating the sign when the magnitude uses more
++  // bits than the destination integer.
++  //
++  // Example: for fcvt.w.d, -2^31 has magnitude 0x8000_0000. Negating this in
++  // 32 bits yields 0x8000_0000 (correct). If negated in a wider WIDTH and then
++  // truncated, the upper sign bits are lost and the result appears positive.
++  assign rounded_int_res      = rounded_sign ? (unsigned'('0) - rounded_abs) : rounded_abs;
+   assign rounded_int_res_zero = (rounded_int_res == '0);
+ 
+   // Detect integer overflows after rounding (only positives)

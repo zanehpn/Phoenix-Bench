@@ -1,0 +1,26 @@
+diff --git a/src/hdmi.sv b/src/hdmi.sv
+index e8fc1ca..d394592 100644
+--- a/src/hdmi.sv
++++ b/src/hdmi.sv
+@@ -8,6 +8,10 @@ module hdmi
+     // Pixel repetition, interlaced scans and other special output modes are not implemented (yet).
+     parameter int VIDEO_ID_CODE = 1,
+ 
++    // Optional offsets for the active video region within the frame.
++    parameter int START_X = 0,
++    parameter int START_Y = 0,
++
+     // The IT content bit indicates that image samples are generated in an ad-hoc
+     // manner (e.g. directly from values in a framebuffer, as by a PC video
+     // card) and therefore aren't suitable for filtering or analog
+@@ -172,8 +176,8 @@ generate
+             assign invert = 0;
+         end
+     endcase
+-    assign hsync = invert ^ (cx >= screen_width + hsync_porch_start && cx < screen_width + hsync_porch_start + hsync_porch_size);
+-    assign vsync = invert ^ (cy >= screen_height + vsync_porch_start && cy < screen_height + vsync_porch_start + vsync_porch_size);
++    assign hsync = invert ^ (cx >= START_X + screen_width + hsync_porch_start && cx < START_X + screen_width + hsync_porch_start + hsync_porch_size);
++    assign vsync = invert ^ (cy >= START_Y + screen_height + vsync_porch_start && cy < START_Y + screen_height + vsync_porch_start + vsync_porch_size);
+ endgenerate
+ 
+ localparam real VIDEO_RATE = (VIDEO_ID_CODE == 1 ? 25.2E6

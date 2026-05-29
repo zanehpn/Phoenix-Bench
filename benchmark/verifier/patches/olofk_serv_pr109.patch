@@ -1,0 +1,34 @@
+From 1f499443205cdcffb50d5a0370b0416216718ccc Mon Sep 17 00:00:00 2001
+From: Jani Alinikula <janialinikula@gmail.com>
+Date: Sun, 12 Nov 2023 23:20:49 +0200
+Subject: [PATCH] Change timer wraparound behavior to be more useful
+
+---
+ servant/servant_timer.v | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/servant/servant_timer.v b/servant/servant_timer.v
+index 2bb0f5e7..45306e9b 100644
+--- a/servant/servant_timer.v
++++ b/servant/servant_timer.v
+@@ -14,9 +14,9 @@ module servant_timer
+    localparam HIGH = WIDTH-1-DIVIDER;
+ 
+    reg [WIDTH-1:0]   mtime;
+-   reg [HIGH:0]      mtimecmp;
++   reg signed [HIGH:0]      mtimecmp;
+ 
+-   wire [HIGH:0]     mtimeslice = mtime[WIDTH-1:DIVIDER];
++   wire signed [HIGH:0]     mtimeslice = mtime[WIDTH-1:DIVIDER];
+ 
+    always @(mtimeslice) begin
+       o_wb_dat = 32'd0;
+@@ -27,7 +27,7 @@ module servant_timer
+       if (i_wb_cyc & i_wb_we)
+ 	mtimecmp <= i_wb_dat[HIGH:0];
+       mtime <= mtime + 'd1;
+-      o_irq <= (mtimeslice >= mtimecmp);
++      o_irq <= (mtimeslice - mtimecmp >= 0);
+       if (RESET_STRATEGY != "NONE")
+ 	if (i_rst) begin
+ 	   mtime <= 0;

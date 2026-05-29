@@ -1,0 +1,422 @@
+2026-01-19 23:02:48,422 - INFO - rex-deploy - Pulling image 'hwebench/pulp-platform_pulp_soc:pr23'
+2026-01-19 23:02:53,590 - INFO - rex-deploy - Building image hwebench/pulp-platform_pulp_soc:pr23 to install a standalone python to /root. This might take a while (but you only have to do it once). To skip this step, set `python_standalone_dir` to None.
+2026-01-19 23:04:09,406 - INFO - rex-deploy - Starting container hwebenchpulp-platform_pulp_socpr23-eb088015-33bd-497a-aacb-f1b7dac1e0cd with image hwebench/pulp-platform_pulp_soc:pr23 serving on port 41915
+2026-01-19 23:04:09,417 - INFO - rex-deploy - Starting runtime at 41915
+2026-01-19 23:04:10,187 - INFO - rex-deploy - Runtime started in 0.77s
+2026-01-19 23:04:10,974 - INFO - swea-env - Environment Initialized
+2026-01-19 23:04:12,335 - INFO - swea-agent - Setting up agent for instance pulp-platform_pulp_soc_pr23
+2026-01-19 23:04:12,340 - INFO - swea-agent - Trajectory will be saved to /workspace/phoenix-bench/agents/SWE-agent/trajectories/anon/swe_agent__openai--gpt-5.2__t-0.00__p-1.00__c-0.00___swe_instances/pulp-platform_pulp_soc_pr23/pulp-platform_pulp_soc_pr23.traj
+2026-01-19 23:04:14,986 - INFO - swea-tools - Resetting tools
+2026-01-19 23:04:15,359 - INFO - swea-agent - SYSTEM (main)
+You are an expert agent that can interact with a computer to debug SystemVerilog/Verilog repositories. You are in an environment
+with Verilator, Make, Python3 and Spike RISC-V ISA Simulator.
+2026-01-19 23:04:15,507 - INFO - swea-agent - 🤖 MODEL INPUT
+<uploaded_files>
+/testbed
+</uploaded_files>
+I've uploaded a HDL code repository in the directory /testbed. Consider the following PR description:
+
+<pr_description>
+# AXI_ID_WIDTH wrong parameters
+
+Some fixes are needed for synthesis.
+There are wrong parameters when instantiating AXI bus to communicate with the cluster.
+
+Current version:
+
+AXI_BUS_ASYNC #(
+        .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH     ),
+        .AXI_DATA_WIDTH ( AXI_DATA_OUT_WIDTH ),
+        **.AXI_ID_WIDTH   ( AXI_ID_OUT_WIDTH   ),**
+        .AXI_USER_WIDTH ( AXI_USER_WIDTH     ),
+        .BUFFER_WIDTH   ( BUFFER_WIDTH       )
+    ) s_data_master ();
+    AXI_BUS_ASYNC #(
+        .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+        .AXI_DATA_WIDTH ( AXI_DATA_IN_WIDTH ),
+        **.AXI_ID_WIDTH   ( AXI_ID_OUT_WIDTH  ),**
+        .AXI_USER_WIDTH ( AXI_USER_WIDTH     ),
+        .BUFFER_WIDTH   ( BUFFER_WIDTH       )
+    ) s_data_slave ();
+
+    AXI_BUS #(
+        .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+        .AXI_DATA_WIDTH ( AXI_DATA_IN_WIDTH ),
+        **.AXI_ID_WIDTH   ( AXI_ID_OUT_WIDTH  ),**
+        .AXI_USER_WIDTH ( AXI_USER_WIDTH    )
+    ) s_data_in_bus ();
+    AXI_BUS #(
+        .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+        .AXI_DATA_WIDTH ( AXI_DATA_OUT_WIDTH),
+        **.AXI_ID_WIDTH   ( AXI_ID_OUT_WIDTH  ),**
+        .AXI_USER_WIDTH ( AXI_USER_WIDTH    )
+    ) s_data_out_bus (); 
+
+
+How it should be:
+AXI_BUS_ASYNC #(
+        .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH     ),
+        .AXI_DATA_WIDTH ( AXI_DATA_OUT_WIDTH ),
+        **.AXI_ID_WIDTH   ( AXI_ID_OUT_WIDTH   ),**
+        .AXI_USER_WIDTH ( AXI_USER_WIDTH     ),
+        .BUFFER_WIDTH   ( BUFFER_WIDTH       )
+    ) s_data_master ();
+
+    AXI_BUS_ASYNC #(
+        .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+        .AXI_DATA_WIDTH ( AXI_DATA_IN_WIDTH ),
+        **.AXI_ID_WIDTH   ( AXI_ID_IN_WIDTH   ),**
+        .AXI_USER_WIDTH ( AXI_USER_WIDTH     ),
+        .BUFFER_WIDTH   ( BUFFER_WIDTH       )
+    ) s_data_slave ();
+
+    AXI_BUS #(
+        .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+        .AXI_DATA_WIDTH ( AXI_DATA_IN_WIDTH ),
+        **.AXI_ID_WIDTH   ( AXI_ID_IN_WIDTH   ),**
+        .AXI_USER_WIDTH ( AXI_USER_WIDTH    )
+    ) s_data_in_bus ();
+
+
+    AXI_BUS #(
+        .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+        .AXI_DATA_WIDTH ( AXI_DATA_OUT_WIDTH),
+        **.AXI_ID_WIDTH   ( AXI_ID_OUT_WIDTH  ),**
+        .AXI_USER_WIDTH ( AXI_USER_WIDTH    )
+    ) s_data_out_bus ();
+
+</pr_description>
+
+Implement the necessary changes to the repository so that the issue specified in the <pr_description> are resolved.
+Your task is to make the minimal changes to files in the /testbed directory to ensure the <pr_description> is fixed.
+Follow these steps to resolve the issue:
+1. As a first step, it might be a good idea to find and read code relevant to the <pr_description>.
+2. Edit the sourcecode of the repo to resolve the issue.
+3. Think about edgecases and make sure your fix handles them as well.
+
+You can use the tools Verilog debugging tools if needed.
+Your thinking should be thorough and so it's fine if it's very long.
+2026-01-19 23:04:15,517 - INFO - swea-agent - ========================= STEP 1 =========================
+2026-01-19 23:04:18,401 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && grep -R "s_data_master" -n .
+2026-01-19 23:04:18,663 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+./rtl/pulp_soc/pulp_soc.sv:387:    ) s_data_master ();
+./rtl/pulp_soc/pulp_soc.sv:502:        .axi_master_async ( s_data_master           )
+./rtl/pulp_soc/pulp_soc.sv:1076:    assign data_master_aw_writetoken_o  = s_data_master.aw_writetoken ;
+./rtl/pulp_soc/pulp_soc.sv:1077:    assign data_master_aw_addr_o        = s_data_master.aw_addr       ;
+./rtl/pulp_soc/pulp_soc.sv:1078:    assign data_master_aw_prot_o        = s_data_master.aw_prot       ;
+./rtl/pulp_soc/pulp_soc.sv:1079:    assign data_master_aw_region_o      = s_data_master.aw_region     ;
+./rtl/pulp_soc/pulp_soc.sv:1080:    assign data_master_aw_len_o         = s_data_master.aw_len        ;
+./rtl/pulp_soc/pulp_soc.sv:1081:    assign data_master_aw_size_o        = s_data_master.aw_size       ;
+./rtl/pulp_soc/pulp_soc.sv:1082:    //assign data_master_aw_atop_o        = s_data_master.aw_atop       ;
+./rtl/pulp_soc/pulp_soc.sv:1083:    assign data_master_aw_burst_o       = s_data_master.aw_burst      ;
+./rtl/pulp_soc/pulp_soc.sv:1084:    assign data_master_aw_lock_o        = s_data_master.aw_lock       ;
+./rtl/pulp_soc/pulp_soc.sv:1085:    assign data_master_aw_cache_o       = s_data_master.aw_cache      ;
+./rtl/pulp_soc/pulp_soc.sv:1086:    assign data_master_aw_qos_o         = s_data_master.aw_qos        ;
+./rtl/pulp_soc/pulp_soc.sv:1087:    assign data_master_aw_id_o          = s_data_master.aw_id         ;
+./rtl/pulp_soc/pulp_soc.sv:1088:    assign data_master_aw_user_o        = s_data_master.aw_user       ;
+./rtl/pulp_soc/pulp_soc.sv:1089:    assign s_data_master.aw_readpointer = data_master_aw_readpointer_i;
+./rtl/pulp_soc/pulp_soc.sv:1091:    assign data_master_ar_writetoken_o  = s_data_master.ar_writetoken ;
+./rtl/pulp_soc/pulp_soc.sv:1092:    assign data_master_ar_addr_o        = s_data_master.ar_addr       ;
+./rtl/pulp_soc/pulp_soc.sv:1093:    assign data_master_ar_prot_o        = s_data_master.ar_prot       ;
+./rtl/pulp_soc/pulp_soc.sv:1094:    assign data_master_ar_region_o      = s_data_master.ar_region     ;
+./rtl/pulp_soc/pulp_soc.sv:1095:    assign data_master_ar_len_o         = s_data_master.ar_len        ;
+./rtl/pulp_soc/pulp_soc.sv:1096:    assign data_master_ar_size_o        = s_data_master.ar_size       ;
+./rtl/pulp_soc/pulp_soc.sv:1097:    assign data_master_ar_burst_o       = s_data_master.ar_burst      ;
+./rtl/pulp_soc/pulp_soc.sv:1098:    assign data_master_ar_lock_o        = s_data_master.ar_lock       ;
+./rtl/pulp_soc/pulp_soc.sv:1099:    assign data_master_ar_cache_o       = s_data_master.ar_cache      ;
+./rtl/pulp_soc/pulp_soc.sv:1100:    assign data_master_ar_qos_o         = s_data_master.ar_qos        ;
+./rtl/pulp_soc/pulp_soc.sv:1101:    assign data_master_ar_id_o          = s_data_master.ar_id         ;
+./rtl/pulp_soc/pulp_soc.sv:1102:    assign data_master_ar_user_o        = s_data_master.ar_user       ;
+./rtl/pulp_soc/pulp_soc.sv:1103:    assign s_data_master.ar_readpointer = data_master_ar_readpointer_i;
+./rtl/pulp_soc/pulp_soc.sv:1105:    assign data_master_w_writetoken_o   = s_data_master.w_writetoken  ;
+./rtl/pulp_soc/pulp_soc.sv:1106:    assign data_master_w_data_o         = s_data_master.w_data        ;
+./rtl/pulp_soc/pulp_soc.sv:1107:    assign data_master_w_strb_o         = s_data_master.w_strb        ;
+./rtl/pulp_soc/pulp_soc.sv:1108:    assign data_master_w_user_o         = s_data_master.w_user        ;
+./rtl/pulp_soc/pulp_soc.sv:1109:    assign data_master_w_last_o         = s_data_master.w_last        ;
+./rtl/pulp_soc/pulp_soc.sv:1110:    assign s_data_master.w_readpointer  = data_master_w_readpointer_i ;
+./rtl/pulp_soc/pulp_soc.sv:1112:    assign s_data_master.r_writetoken   = data_master_r_writetoken_i  ;
+./rtl/pulp_soc/pulp_soc.sv:1113:    assign s_data_master.r_data         = data_master_r_data_i        ;
+./rtl/pulp_soc/pulp_soc.sv:1114:    assign s_data_master.r_resp         = data_master_r_resp_i        ;
+./rtl/pulp_soc/pulp_soc.sv:1115:    assign s_data_master.r_last         = data_master_r_last_i        ;
+./rtl/pulp_soc/pulp_soc.sv:1116:    assign s_data_master.r_id           = data_master_r_id_i          ;
+./rtl/pulp_soc/pulp_soc.sv:1117:    assign s_data_master.r_user         = data_master_r_user_i        ;
+./rtl/pulp_soc/pulp_soc.sv:1118:    assign data_master_r_readpointer_o  = s_data_master.r_readpointer ;
+./rtl/pulp_soc/pulp_soc.sv:1120:    assign s_data_master.b_writetoken   = data_master_b_writetoken_i  ;
+./rtl/pulp_soc/pulp_soc.sv:1121:    assign s_data_master.b_resp         = data_master_b_resp_i        ;
+./rtl/pulp_soc/pulp_soc.sv:1122:    assign s_data_master.b_id           = data_master_b_id_i          ;
+./rtl/pulp_soc/pulp_soc.sv:1123:    assign s_data_master.b_user         = data_master_b_user_i        ;
+./rtl/pulp_soc/pulp_soc.sv:1124:    assign data_master_b_readpointer_o  = s_data_master.b_readpointer ;
+
+2026-01-19 23:04:18,672 - INFO - swea-agent - ========================= STEP 2 =========================
+2026-01-19 23:04:23,418 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+str_replace_editor view /testbed/rtl/pulp_soc/pulp_soc.sv  --view_range 360 430
+2026-01-19 23:04:23,705 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+Here's the result of running `cat -n` on /testbed/rtl/pulp_soc/pulp_soc.sv:
+   360	
+   361	    logic                  master_req;
+   362	    logic [31:0]           master_add;
+   363	    logic                  master_we;
+   364	    logic [31:0]           master_wdata;
+   365	    logic [3:0]            master_be;
+   366	    logic                  master_gnt;
+   367	    logic                  master_r_valid;
+   368	    logic [31:0]           master_r_rdata;
+   369	
+   370	
+   371	    logic [7:0]            soc_jtag_reg_tap;
+   372	    logic [7:0]            soc_jtag_reg_soc;
+   373	
+   374	
+   375	    logic                  spi_master0_csn3, spi_master0_csn2;
+   376	
+   377	    APB_BUS                s_apb_eu_bus ();
+   378	    APB_BUS                s_apb_hwpe_bus ();
+   379	    APB_BUS                s_apb_debug_bus();
+   380	
+   381	    AXI_BUS_ASYNC #(
+   382	        .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH     ),
+   383	        .AXI_DATA_WIDTH ( AXI_DATA_OUT_WIDTH ),
+   384	        .AXI_ID_WIDTH   ( AXI_ID_OUT_WIDTH   ),
+   385	        .AXI_USER_WIDTH ( AXI_USER_WIDTH     ),
+   386	        .BUFFER_WIDTH   ( BUFFER_WIDTH       )
+   387	    ) s_data_master ();
+   388	
+   389	    AXI_BUS_ASYNC #(
+   390	        .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+   391	        .AXI_DATA_WIDTH ( AXI_DATA_IN_WIDTH ),
+   392	        .AXI_ID_WIDTH   ( AXI_ID_OUT_WIDTH  ),
+   393	        .AXI_USER_WIDTH ( AXI_USER_WIDTH     ),
+   394	        .BUFFER_WIDTH   ( BUFFER_WIDTH       )
+   395	    ) s_data_slave ();
+   396	
+   397	    AXI_BUS #(
+   398	        .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+   399	        .AXI_DATA_WIDTH ( AXI_DATA_IN_WIDTH ),
+   400	        .AXI_ID_WIDTH   ( AXI_ID_OUT_WIDTH  ),
+   401	        .AXI_USER_WIDTH ( AXI_USER_WIDTH    )
+   402	    ) s_data_in_bus ();
+   403	
+   404	
+   405	    AXI_BUS #(
+   406	        .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+   407	        .AXI_DATA_WIDTH ( AXI_DATA_OUT_WIDTH),
+   408	        .AXI_ID_WIDTH   ( AXI_ID_OUT_WIDTH  ),
+   409	        .AXI_USER_WIDTH ( AXI_USER_WIDTH    )
+   410	    ) s_data_out_bus ();
+   411	
+   412	    //assign s_data_out_bus.aw_atop = 6'b0;
+   413	
+   414	    FLL_BUS #(
+   415	        .FLL_ADDR_WIDTH ( FLL_ADDR_WIDTH ),
+   416	        .FLL_DATA_WIDTH ( FLL_DATA_WIDTH )
+   417	    ) s_soc_fll_master ();
+   418	
+   419	    FLL_BUS #(
+   420	        .FLL_ADDR_WIDTH ( FLL_ADDR_WIDTH ),
+   421	        .FLL_DATA_WIDTH ( FLL_DATA_WIDTH )
+   422	    ) s_per_fll_master ();
+   423	
+   424	    FLL_BUS #(
+   425	        .FLL_ADDR_WIDTH ( FLL_ADDR_WIDTH ),
+   426	        .FLL_DATA_WIDTH ( FLL_DATA_WIDTH )
+   427	    ) s_cluster_fll_master ();
+   428	
+   429	    APB_BUS s_apb_periph_bus ();
+   430	
+
+
+2026-01-19 23:04:23,718 - INFO - swea-agent - ========================= STEP 3 =========================
+2026-01-19 23:04:29,321 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+str_replace_editor str_replace /testbed/rtl/pulp_soc/pulp_soc.sv   --old_str '    AXI_BUS_ASYNC #(
+        .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+        .AXI_DATA_WIDTH ( AXI_DATA_IN_WIDTH ),
+        .AXI_ID_WIDTH   ( AXI_ID_OUT_WIDTH  ),
+        .AXI_USER_WIDTH ( AXI_USER_WIDTH     ),
+        .BUFFER_WIDTH   ( BUFFER_WIDTH       )
+    ) s_data_slave ();
+
+    AXI_BUS #(
+        .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+        .AXI_DATA_WIDTH ( AXI_DATA_IN_WIDTH ),
+        .AXI_ID_WIDTH   ( AXI_ID_OUT_WIDTH  ),
+        .AXI_USER_WIDTH ( AXI_USER_WIDTH    )
+    ) s_data_in_bus ();
+' --new_str '    AXI_BUS_ASYNC #(
+        .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+        .AXI_DATA_WIDTH ( AXI_DATA_IN_WIDTH ),
+        .AXI_ID_WIDTH   ( AXI_ID_IN_WIDTH   ),
+        .AXI_USER_WIDTH ( AXI_USER_WIDTH     ),
+        .BUFFER_WIDTH   ( BUFFER_WIDTH       )
+    ) s_data_slave ();
+
+    AXI_BUS #(
+        .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+        .AXI_DATA_WIDTH ( AXI_DATA_IN_WIDTH ),
+        .AXI_ID_WIDTH   ( AXI_ID_IN_WIDTH   ),
+        .AXI_USER_WIDTH ( AXI_USER_WIDTH    )
+    ) s_data_in_bus ();
+'
+2026-01-19 23:04:29,614 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+The file /testbed/rtl/pulp_soc/pulp_soc.sv has been edited. Here's the result of running `cat -n` on a snippet of /testbed/rtl/pulp_soc/pulp_soc.sv:
+   384	        .AXI_ID_WIDTH   ( AXI_ID_OUT_WIDTH   ),
+   385	        .AXI_USER_WIDTH ( AXI_USER_WIDTH     ),
+   386	        .BUFFER_WIDTH   ( BUFFER_WIDTH       )
+   387	    ) s_data_master ();
+   388	
+   389	    AXI_BUS_ASYNC #(
+   390	        .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+   391	        .AXI_DATA_WIDTH ( AXI_DATA_IN_WIDTH ),
+   392	        .AXI_ID_WIDTH   ( AXI_ID_IN_WIDTH   ),
+   393	        .AXI_USER_WIDTH ( AXI_USER_WIDTH     ),
+   394	        .BUFFER_WIDTH   ( BUFFER_WIDTH       )
+   395	    ) s_data_slave ();
+   396	
+   397	    AXI_BUS #(
+   398	        .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+   399	        .AXI_DATA_WIDTH ( AXI_DATA_IN_WIDTH ),
+   400	        .AXI_ID_WIDTH   ( AXI_ID_IN_WIDTH   ),
+   401	        .AXI_USER_WIDTH ( AXI_USER_WIDTH    )
+   402	    ) s_data_in_bus ();
+   403	
+   404	
+   405	    AXI_BUS #(
+   406	        .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+Review the changes and make sure they are as expected. Edit the file again if necessary.
+
+2026-01-19 23:04:29,623 - INFO - swea-agent - ========================= STEP 4 =========================
+2026-01-19 23:04:34,317 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && verilator --lint-only -Wall rtl/pulp_soc/pulp_soc.sv 2>&1 | head
+2026-01-19 23:04:34,618 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+%Error: rtl/pulp_soc/pulp_soc.sv:12:10: Cannot find include file: pulp_soc_defines.sv
+   12 | `include "pulp_soc_defines.sv"
+      |          ^~~~~~~~~~~~~~~~~~~~~
+%Error: rtl/pulp_soc/pulp_soc.sv:12:10: This may be because there's no search path specified with -I<dir>.
+   12 | `include "pulp_soc_defines.sv"
+      |          ^~~~~~~~~~~~~~~~~~~~~
+        ... Looked in:
+             pulp_soc_defines.sv
+             pulp_soc_defines.sv.v
+             pulp_soc_defines.sv.sv
+
+2026-01-19 23:04:34,625 - INFO - swea-agent - ========================= STEP 5 =========================
+2026-01-19 23:04:39,611 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && grep -R "parameter.*AXI_ID_IN_WIDTH" -n rtl/pulp_soc/pulp_soc.sv rtl/pulp_soc/pulp_soc_defines.sv 2>/dev/null || true
+2026-01-19 23:04:39,872 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+rtl/pulp_soc/pulp_soc.sv:25:    parameter AXI_ID_IN_WIDTH    = 6,
+
+2026-01-19 23:04:39,879 - INFO - swea-agent - ========================= STEP 6 =========================
+2026-01-19 23:04:43,457 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+submit
+2026-01-19 23:04:43,746 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+Thank you for your work on this issue. Please review your changes and run the submit command again to confirm.
+
+Here is a list of all of your changes:
+
+<diff>
+diff --git a/rtl/pulp_soc/pulp_soc.sv b/rtl/pulp_soc/pulp_soc.sv
+index 4f302a1..a0f7205 100644
+--- a/rtl/pulp_soc/pulp_soc.sv
++++ b/rtl/pulp_soc/pulp_soc.sv
+@@ -389,7 +389,7 @@ module pulp_soc
+     AXI_BUS_ASYNC #(
+         .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+         .AXI_DATA_WIDTH ( AXI_DATA_IN_WIDTH ),
+-        .AXI_ID_WIDTH   ( AXI_ID_OUT_WIDTH  ),
++        .AXI_ID_WIDTH   ( AXI_ID_IN_WIDTH   ),
+         .AXI_USER_WIDTH ( AXI_USER_WIDTH     ),
+         .BUFFER_WIDTH   ( BUFFER_WIDTH       )
+     ) s_data_slave ();
+@@ -397,7 +397,7 @@ module pulp_soc
+     AXI_BUS #(
+         .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+         .AXI_DATA_WIDTH ( AXI_DATA_IN_WIDTH ),
+-        .AXI_ID_WIDTH   ( AXI_ID_OUT_WIDTH  ),
++        .AXI_ID_WIDTH   ( AXI_ID_IN_WIDTH   ),
+         .AXI_USER_WIDTH ( AXI_USER_WIDTH    )
+     ) s_data_in_bus ();
+ 
+
+</diff>
+
+
+2026-01-19 23:04:43,755 - INFO - swea-agent - ========================= STEP 7 =========================
+2026-01-19 23:04:46,282 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+submit
+2026-01-19 23:04:46,575 - INFO - swea-agent - Found submission: diff --git a/rtl/pulp_soc/pulp_soc.sv b/rtl/pulp_soc/pulp_soc.sv
+index 4f302a1..a0f7205 100644
+--- a/rtl/pulp_soc/pulp_soc.sv
++++ b/rtl/pulp_soc/pulp_soc.sv
+@@ -389,7 +389,7 @@ module pulp_soc
+     AXI_BUS_ASYNC #(
+         .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+         .AXI_DATA_WIDTH ( AXI_DATA_IN_WIDTH ),
+-        .AXI_ID_WIDTH   ( AXI_ID_OUT_WIDTH  ),
++        .AXI_ID_WIDTH   ( AXI_ID_IN_WIDTH   ),
+         .AXI_USER_WIDTH ( AXI_USER_WIDTH     ),
+         .BUFFER_WIDTH   ( BUFFER_WIDTH       )
+     ) s_data_slave ();
+@@ -397,7 +397,7 @@ module pulp_soc
+     AXI_BUS #(
+         .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+         .AXI_DATA_WIDTH ( AXI_DATA_IN_WIDTH ),
+-        .AXI_ID_WIDTH   ( AXI_ID_OUT_WIDTH  ),
++        .AXI_ID_WIDTH   ( AXI_ID_IN_WIDTH   ),
+         .AXI_USER_WIDTH ( AXI_USER_WIDTH    )
+     ) s_data_in_bus ();
+ 
+
+2026-01-19 23:04:46,584 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+diff --git a/rtl/pulp_soc/pulp_soc.sv b/rtl/pulp_soc/pulp_soc.sv
+index 4f302a1..a0f7205 100644
+--- a/rtl/pulp_soc/pulp_soc.sv
++++ b/rtl/pulp_soc/pulp_soc.sv
+@@ -389,7 +389,7 @@ module pulp_soc
+     AXI_BUS_ASYNC #(
+         .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+         .AXI_DATA_WIDTH ( AXI_DATA_IN_WIDTH ),
+-        .AXI_ID_WIDTH   ( AXI_ID_OUT_WIDTH  ),
++        .AXI_ID_WIDTH   ( AXI_ID_IN_WIDTH   ),
+         .AXI_USER_WIDTH ( AXI_USER_WIDTH     ),
+         .BUFFER_WIDTH   ( BUFFER_WIDTH       )
+     ) s_data_slave ();
+@@ -397,7 +397,7 @@ module pulp_soc
+     AXI_BUS #(
+         .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH    ),
+         .AXI_DATA_WIDTH ( AXI_DATA_IN_WIDTH ),
+-        .AXI_ID_WIDTH   ( AXI_ID_OUT_WIDTH  ),
++        .AXI_ID_WIDTH   ( AXI_ID_IN_WIDTH   ),
+         .AXI_USER_WIDTH ( AXI_USER_WIDTH    )
+     ) s_data_in_bus ();
+ 
+
+2026-01-19 23:04:46,599 - INFO - swea-agent - Trajectory saved to /workspace/phoenix-bench/agents/SWE-agent/trajectories/anon/swe_agent__openai--gpt-5.2__t-0.00__p-1.00__c-0.00___swe_instances/pulp-platform_pulp_soc_pr23/pulp-platform_pulp_soc_pr23.traj
+2026-01-19 23:04:46,605 - INFO - swea-env - Beginning environment shutdown...

@@ -1,0 +1,314 @@
+From 253e9d195b3d0afd2db2a12f22fe2832846a0ea5 Mon Sep 17 00:00:00 2001
+From: Stefano Mercogliano <stefanomercogliano@gmail.com>
+Date: Thu, 13 Mar 2025 10:08:10 +0100
+Subject: [PATCH 1/4] [quickfix] Fixing wrong interrupt bit line in uninasoc.sv
+
+---
+ hw/xilinx/rtl/uninasoc.sv | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/xilinx/rtl/uninasoc.sv b/hw/xilinx/rtl/uninasoc.sv
+index b80f62d3..20c3541c 100644
+--- a/hw/xilinx/rtl/uninasoc.sv
++++ b/hw/xilinx/rtl/uninasoc.sv
+@@ -548,7 +548,7 @@ module uninasoc (
+     logic plic_int_irq_o;
+ 
+     // Line 11 corresponds to EXT interrupt in RISC-V specification
+-    assign rvm_socket_interrupt_line = {21'h0, plic_int_irq_o, 10'h0};
++    assign rvm_socket_interrupt_line = {'0, plic_int_irq_o, 11'h0};
+ 
+     // Currently, this is the interrupt line mapping (from PLIC perspective/registers)
+     // 0 - RESERVED
+
+From 257cac6167ee4c0b5020ceafbc228156c1885cfa Mon Sep 17 00:00:00 2001
+From: Gr4npasso <stefanomercogliano@gmail.com>
+Date: Thu, 13 Mar 2025 12:38:05 +0100
+Subject: [PATCH 2/4] [Refactoring] Adding a comb proc in uninasoc.sv for
+ interrupts
+
+---
+ hw/xilinx/rtl/rvm_socket.sv   |  4 ----
+ hw/xilinx/rtl/uninasoc.sv     | 29 ++++++++++++++++++-----------
+ hw/xilinx/rtl/uninasoc_pkg.sv |  5 ++++-
+ 3 files changed, 22 insertions(+), 16 deletions(-)
+
+diff --git a/hw/xilinx/rtl/rvm_socket.sv b/hw/xilinx/rtl/rvm_socket.sv
+index 38a0c9e2..a1de9794 100644
+--- a/hw/xilinx/rtl/rvm_socket.sv
++++ b/hw/xilinx/rtl/rvm_socket.sv
+@@ -47,10 +47,6 @@ module rvm_socket # (
+     localparam logic [31:0] dm_HaltAddress = 64'h800;
+     localparam logic [31:0] dm_ExceptionAddress = dm_HaltAddress + 16;
+ 
+-    localparam SW_INT_PIN = 3;
+-    localparam TIM_INT_PIN = 7;
+-    localparam EXT_INT_PIN = 11;
+-
+     //////////////////////////////////////
+     //    ___ _                _        //
+     //   / __(_)__ _ _ _  __ _| |___    //
+diff --git a/hw/xilinx/rtl/uninasoc.sv b/hw/xilinx/rtl/uninasoc.sv
+index 20c3541c..6ef7c6ad 100644
+--- a/hw/xilinx/rtl/uninasoc.sv
++++ b/hw/xilinx/rtl/uninasoc.sv
+@@ -542,24 +542,31 @@ module uninasoc (
+         .s_axi_rready   ( xbar_to_main_mem_axi_rready  )  // input wire s_axi_rready
+     );
+ 
+-
+     // Platform-Level Interrupt Controller (PLIC)
+     logic [31:0] plic_int_line;
+     logic plic_int_irq_o;
+ 
+-    // Line 11 corresponds to EXT interrupt in RISC-V specification
+-    assign rvm_socket_interrupt_line = {'0, plic_int_irq_o, 11'h0};
++    always_comb begin : system_interrupts
++
++        // Mapping PLIC input interrupts (only from pbus at the moment)
++        plic_int_line = {
++            '0,                 // others - reserved
++            pbus_int_line[3],   // 4 - UART Interrupt    (From PBUS) (HPC implementation does not support this yet)
++            pbus_int_line[2],   // 3 - Timer 1 Interrupt (From PBUS)
++            pbus_int_line[1],   // 2 - Timer 0 Interrupt (From PBUS)
++            pbus_int_line[0],   // 1 - GPIO_IN Interrupt (From PBUS) (Embedded Only)
++            1'b0};              // 0 - RESERVED
++
++        // Mppinag PLIC to Socket interrupt lines
+ 
+-    // Currently, this is the interrupt line mapping (from PLIC perspective/registers)
+-    // 0 - RESERVED
+-    // 1 - GPIO_IN Interrupt (From PBUS) (Embedded Only)
+-    // 2 - Timer 0 Interrupt (From PBUS)
+-    // 3 - Timer 1 Interrupt (From PBUS)
+-    // 4 - UART Interrupt    (From PBUS) (HPC implementation does not support this yet)
+-    // others - reserved
++        // Default non-assigned lines
++        rvm_socket_interrupt_line = '0;
++        // Map system-interrupts pins to socket interrupts
++        rvm_socket_interrupt_line[EXT_INT_PIN] = plic_int_irq_o;
+ 
+-    assign plic_int_line = {'0, pbus_int_line, 1'b0};
++    end : system_interrupts
+ 
++ 
+     custom_rv_plic custom_rv_plic_u (
+         .clk_i          ( soc_clk                       ), // input wire s_axi_aclk
+         .rst_ni         ( sys_resetn                    ), // input wire s_axi_aresetn
+diff --git a/hw/xilinx/rtl/uninasoc_pkg.sv b/hw/xilinx/rtl/uninasoc_pkg.sv
+index 81a96240..74ba98a6 100644
+--- a/hw/xilinx/rtl/uninasoc_pkg.sv
++++ b/hw/xilinx/rtl/uninasoc_pkg.sv
+@@ -11,6 +11,10 @@ package uninasoc_pkg;
+     localparam int unsigned NUM_GPIO_IN  = 16;
+     localparam int unsigned NUM_GPIO_OUT = 16;
+ 
++    localparam int unsigned SW_INT_PIN = 3;
++    localparam int unsigned TIM_INT_PIN = 7;
++    localparam int unsigned EXT_INT_PIN = 11;
++
+     ///////////////////////
+     // AXI main crossbar //
+     ///////////////////////
+@@ -28,7 +32,6 @@ package uninasoc_pkg;
+     // Peripheral bus slaves
+     localparam int unsigned PBUS_NUM_MI = `PBUS_NUM_MI;
+ 
+-
+     //////////////////////////
+     // Supported Processors //
+     //////////////////////////
+
+From 6dea4c8c48b3948e09db8ca5762570982e684584 Mon Sep 17 00:00:00 2001
+From: Gr4npasso <stefanomercogliano@gmail.com>
+Date: Fri, 14 Mar 2025 09:24:09 +0100
+Subject: [PATCH 3/4] [Refactoring] Adding Interrupts parameters in uninasoc.sv
+ [Refactoring] Using interrupts parameters in pbus, uniasoc and socket
+
+---
+ hw/xilinx/rtl/peripheral_bus.sv |  6 +++++-
+ hw/xilinx/rtl/rvm_socket.sv     |  6 +++---
+ hw/xilinx/rtl/uninasoc.sv       | 23 +++++++++++------------
+ hw/xilinx/rtl/uninasoc_pkg.sv   | 30 ++++++++++++++++++++++++++----
+ 4 files changed, 45 insertions(+), 20 deletions(-)
+
+diff --git a/hw/xilinx/rtl/peripheral_bus.sv b/hw/xilinx/rtl/peripheral_bus.sv
+index 6307a954..04e2597d 100644
+--- a/hw/xilinx/rtl/peripheral_bus.sv
++++ b/hw/xilinx/rtl/peripheral_bus.sv
+@@ -97,7 +97,11 @@ module peripheral_bus #(
+     // EMBEDDED ONLY
+     logic gpio_in_int;
+ 
+-    assign int_o = {uart_int, tim1_int, tim0_int, gpio_in_int};
++    // Assign interrupt pins
++    assign int_o[PBUS_GPIOIN_INTERRUPT] = gpio_in_int;
++    assign int_o[PBUS_TIM0_INTERRUPT]   = tim0_int;
++    assign int_o[PBUS_TIM1_INTERRUPT]   = tim1_int;
++    assign int_o[PBUS_UART_INTERRUPT]   = uart_int;
+ 
+     /////////////////////
+     // AXI-lite Master //
+diff --git a/hw/xilinx/rtl/rvm_socket.sv b/hw/xilinx/rtl/rvm_socket.sv
+index a1de9794..8c75127e 100644
+--- a/hw/xilinx/rtl/rvm_socket.sv
++++ b/hw/xilinx/rtl/rvm_socket.sv
+@@ -242,9 +242,9 @@ module rvm_socket # (
+ 
+                 // Interrupts
+                 // Ublaze can only take one external interrupt, which we tie to EXT interrupt (from the PLIC)
+-                .Interrupt          ( irq_i[EXT_INT_PIN]    ), // input wire Interrupt
+-                .Interrupt_Address  ('0                     ), // input wire [0 : 31] Interrupt_Address
+-                .Interrupt_Ack      (                       ), // output wire [0 : 1] Interrupt_Ack
++                .Interrupt          ( irq_i[CORE_EXT_INTERRUPT] ), // input wire Interrupt
++                .Interrupt_Address  ('0                         ), // input wire [0 : 31] Interrupt_Address
++                .Interrupt_Ack      (                           ), // output wire [0 : 1] Interrupt_Ack
+ 
+                 // Debug port to MDMV
+                 .Dbg_Clk            ( Dbg_Clk     ), // input wire Dbg_Clk
+diff --git a/hw/xilinx/rtl/uninasoc.sv b/hw/xilinx/rtl/uninasoc.sv
+index 6ef7c6ad..5d703a85 100644
+--- a/hw/xilinx/rtl/uninasoc.sv
++++ b/hw/xilinx/rtl/uninasoc.sv
+@@ -548,21 +548,20 @@ module uninasoc (
+ 
+     always_comb begin : system_interrupts
+ 
+-        // Mapping PLIC input interrupts (only from pbus at the moment)
+-        plic_int_line = {
+-            '0,                 // others - reserved
+-            pbus_int_line[3],   // 4 - UART Interrupt    (From PBUS) (HPC implementation does not support this yet)
+-            pbus_int_line[2],   // 3 - Timer 1 Interrupt (From PBUS)
+-            pbus_int_line[1],   // 2 - Timer 0 Interrupt (From PBUS)
+-            pbus_int_line[0],   // 1 - GPIO_IN Interrupt (From PBUS) (Embedded Only)
+-            1'b0};              // 0 - RESERVED
+-
+-        // Mppinag PLIC to Socket interrupt lines
+-
+         // Default non-assigned lines
++        plic_int_line = '0;
+         rvm_socket_interrupt_line = '0;
++
++        // Mapping PLIC input interrupts (only from pbus at the moment)
++        // Mapping is static (refer to uninasoc_pkg.sv)
++        plic_int_line[PLIC_RESERVED_INTERRUPT]  = 1'b0; 
++        plic_int_line[PLIC_GPIOIN_INTERRUPT]    = pbus_int_line[PBUS_GPIOIN_INTERRUPT];
++        plic_int_line[PLIC_TIM0_INTERRUPT]      = pbus_int_line[PBUS_TIM0_INTERRUPT];
++        plic_int_line[PLIC_TIM1_INTERRUPT]      = pbus_int_line[PBUS_TIM1_INTERRUPT];
++        plic_int_line[PLIC_UART_INTERRUPT]      = pbus_int_line[PBUS_UART_INTERRUPT];
++
+         // Map system-interrupts pins to socket interrupts
+-        rvm_socket_interrupt_line[EXT_INT_PIN] = plic_int_irq_o;
++        rvm_socket_interrupt_line[CORE_EXT_INTERRUPT] = plic_int_irq_o;
+ 
+     end : system_interrupts
+ 
+diff --git a/hw/xilinx/rtl/uninasoc_pkg.sv b/hw/xilinx/rtl/uninasoc_pkg.sv
+index 74ba98a6..0891bcdd 100644
+--- a/hw/xilinx/rtl/uninasoc_pkg.sv
++++ b/hw/xilinx/rtl/uninasoc_pkg.sv
+@@ -11,10 +11,6 @@ package uninasoc_pkg;
+     localparam int unsigned NUM_GPIO_IN  = 16;
+     localparam int unsigned NUM_GPIO_OUT = 16;
+ 
+-    localparam int unsigned SW_INT_PIN = 3;
+-    localparam int unsigned TIM_INT_PIN = 7;
+-    localparam int unsigned EXT_INT_PIN = 11;
+-
+     ///////////////////////
+     // AXI main crossbar //
+     ///////////////////////
+@@ -45,5 +41,31 @@ package uninasoc_pkg;
+     // Select core from macro
+     localparam core_selector_t CORE_SELECTOR = `CORE_SELECTOR;
+ 
++    ///////////////////////
++    // System Interrupts //
++    ///////////////////////
++
++    // Masters and Buses (Slves) can generate interrupts, which are forwarded to the PLIC (Platform interrupts).
++    // The PLIC forwards interrupts to the Masters (e.g. the Socket)
++
++    // RISC-V cores standard interrupts 
++    localparam int unsigned CORE_SW_INTERRUPT = 3;      // Inter Processor Interrupts
++    localparam int unsigned CORE_TIM_INTERRUPT = 7;     // Real-time Clock Timer
++    localparam int unsigned CORE_EXT_INTERRUPT = 11;    // PLIC-to-hart interrupts
++
++    // Peripheral Bus interrupts
++    localparam int unsigned PBUS_GPIOIN_INTERRUPT = 0;      // GPIO In [embedded only]
++    localparam int unsigned PBUS_TIM0_INTERRUPT = 1;        // Timer 0 
++    localparam int unsigned PBUS_TIM1_INTERRUPT = 2;        // Timer 1 
++    localparam int unsigned PBUS_UART_INTERRUPT = 3;        // UART
++
++    // PLIC Interrupts mapping
++    // We support 32 possible sources of platform interrupts, which are statically mapped
++    // regardless of the configuration. 
++    localparam int unsigned PLIC_RESERVED_INTERRUPT = 0;    // PLIC line 0 is reserved
++    localparam int unsigned PLIC_GPIOIN_INTERRUPT = 1;      // GPIO In (From PBUS)[embedded only]
++    localparam int unsigned PLIC_TIM0_INTERRUPT = 2;        // Timer 0 (From PBUS)
++    localparam int unsigned PLIC_TIM1_INTERRUPT = 3;        // Timer 1 (From PBUS)
++    localparam int unsigned PLIC_UART_INTERRUPT = 4;        // UART    (From PBUS)
+ 
+ endpackage : uninasoc_pkg
+
+From 728b08c1f640b8cce6b26dbd3a5da8eef0aee598 Mon Sep 17 00:00:00 2001
+From: Vincenzo Maisto <vincenzo.maisto2@unina.it>
+Date: Fri, 14 Mar 2025 13:00:12 +0100
+Subject: [PATCH 4/4] Remove trailing whitespaces
+
+---
+ hw/xilinx/rtl/uninasoc.sv     | 4 ++--
+ hw/xilinx/rtl/uninasoc_pkg.sv | 8 ++++----
+ 2 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/hw/xilinx/rtl/uninasoc.sv b/hw/xilinx/rtl/uninasoc.sv
+index 5d703a85..152e365f 100644
+--- a/hw/xilinx/rtl/uninasoc.sv
++++ b/hw/xilinx/rtl/uninasoc.sv
+@@ -554,7 +554,7 @@ module uninasoc (
+ 
+         // Mapping PLIC input interrupts (only from pbus at the moment)
+         // Mapping is static (refer to uninasoc_pkg.sv)
+-        plic_int_line[PLIC_RESERVED_INTERRUPT]  = 1'b0; 
++        plic_int_line[PLIC_RESERVED_INTERRUPT]  = 1'b0;
+         plic_int_line[PLIC_GPIOIN_INTERRUPT]    = pbus_int_line[PBUS_GPIOIN_INTERRUPT];
+         plic_int_line[PLIC_TIM0_INTERRUPT]      = pbus_int_line[PBUS_TIM0_INTERRUPT];
+         plic_int_line[PLIC_TIM1_INTERRUPT]      = pbus_int_line[PBUS_TIM1_INTERRUPT];
+@@ -565,7 +565,7 @@ module uninasoc (
+ 
+     end : system_interrupts
+ 
+- 
++
+     custom_rv_plic custom_rv_plic_u (
+         .clk_i          ( soc_clk                       ), // input wire s_axi_aclk
+         .rst_ni         ( sys_resetn                    ), // input wire s_axi_aresetn
+diff --git a/hw/xilinx/rtl/uninasoc_pkg.sv b/hw/xilinx/rtl/uninasoc_pkg.sv
+index 0891bcdd..96d7dfab 100644
+--- a/hw/xilinx/rtl/uninasoc_pkg.sv
++++ b/hw/xilinx/rtl/uninasoc_pkg.sv
+@@ -48,20 +48,20 @@ package uninasoc_pkg;
+     // Masters and Buses (Slves) can generate interrupts, which are forwarded to the PLIC (Platform interrupts).
+     // The PLIC forwards interrupts to the Masters (e.g. the Socket)
+ 
+-    // RISC-V cores standard interrupts 
++    // RISC-V cores standard interrupts
+     localparam int unsigned CORE_SW_INTERRUPT = 3;      // Inter Processor Interrupts
+     localparam int unsigned CORE_TIM_INTERRUPT = 7;     // Real-time Clock Timer
+     localparam int unsigned CORE_EXT_INTERRUPT = 11;    // PLIC-to-hart interrupts
+ 
+     // Peripheral Bus interrupts
+     localparam int unsigned PBUS_GPIOIN_INTERRUPT = 0;      // GPIO In [embedded only]
+-    localparam int unsigned PBUS_TIM0_INTERRUPT = 1;        // Timer 0 
+-    localparam int unsigned PBUS_TIM1_INTERRUPT = 2;        // Timer 1 
++    localparam int unsigned PBUS_TIM0_INTERRUPT = 1;        // Timer 0
++    localparam int unsigned PBUS_TIM1_INTERRUPT = 2;        // Timer 1
+     localparam int unsigned PBUS_UART_INTERRUPT = 3;        // UART
+ 
+     // PLIC Interrupts mapping
+     // We support 32 possible sources of platform interrupts, which are statically mapped
+-    // regardless of the configuration. 
++    // regardless of the configuration.
+     localparam int unsigned PLIC_RESERVED_INTERRUPT = 0;    // PLIC line 0 is reserved
+     localparam int unsigned PLIC_GPIOIN_INTERRUPT = 1;      // GPIO In (From PBUS)[embedded only]
+     localparam int unsigned PLIC_TIM0_INTERRUPT = 2;        // Timer 0 (From PBUS)

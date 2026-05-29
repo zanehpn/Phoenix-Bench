@@ -1,0 +1,23 @@
+From 8267942955667e6193cd7b023e70c1cb860f0467 Mon Sep 17 00:00:00 2001
+From: Shane Lynch <lynch3@gmail.com>
+Date: Fri, 1 Jan 2021 00:52:16 -0800
+Subject: [PATCH] Fixing EXT port read logic, which caused "Hyokkori
+ Hyoutanjima: Daitouryou wo Mezase!" input to not work.
+
+---
+ rtl/gen_io.sv | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/rtl/gen_io.sv b/rtl/gen_io.sv
+index 2eb2b66..21c5393 100644
+--- a/rtl/gen_io.sv
++++ b/rtl/gen_io.sv
+@@ -119,7 +119,7 @@ always @(posedge RESET or posedge CLK) begin
+ 						0: DO <= {EXPORT, PAL, ~DISK, 5'd0};
+ 						1: DO <= (CTLA & DATA) | (~CTLA & (SER_OPT[0] ? SERJOYSTICK_IN : (MOUSE_OPT[0] ? mdata : PAD1_DO)));
+ 						2: DO <= (CTLB & DATB) | (~CTLB & (GUN_OPT ? GUN_DO : (SER_OPT[1] ? SERJOYSTICK_IN : (MOUSE_OPT[1] ? mdata : PAD2_DO))));
+-						3: DO <= R[3] & R[6]; // Unconnected port
++						3: DO <= R[3] | ~R[6]; // Unconnected port
+ 				default: DO <= R[A];
+ 				endcase
+ 			end

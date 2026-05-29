@@ -1,0 +1,37 @@
+From 250534b7e800a95a0be48433d3ce4954ca1aa03c Mon Sep 17 00:00:00 2001
+From: Andreas Kurth <akurth@iis.ee.ethz.ch>
+Date: Fri, 5 Aug 2022 08:20:48 +0200
+Subject: [PATCH] axi_lite_mux: Reduce complexity of master port W channel
+
+See #243.
+---
+ CHANGELOG.md        | 2 ++
+ src/axi_lite_mux.sv | 2 +-
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 236cf6d26..e7ff06361 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
+ ### Changed
+ 
+ ### Fixed
++- `axi_lite_mux`: Reduce complexity of W channel at master port by removing an unnecessary
++  multiplexer.
+ 
+ 
+ ## 0.36.0 - 2022-07-07
+diff --git a/src/axi_lite_mux.sv b/src/axi_lite_mux.sv
+index 75a9a256c..577280279 100644
+--- a/src/axi_lite_mux.sv
++++ b/src/axi_lite_mux.sv
+@@ -283,7 +283,7 @@ module axi_lite_mux #(
+     // W Channel
+     //--------------------------------------
+     // multiplexer
+-    assign mst_w_chan      = (!w_fifo_empty && !b_fifo_full) ? slv_reqs_i[w_select].w        :   '0;
++    assign mst_w_chan      = slv_reqs_i[w_select].w;
+     assign mst_w_valid     = (!w_fifo_empty && !b_fifo_full) ? slv_reqs_i[w_select].w_valid  : 1'b0;
+     for (genvar i = 0; i < NoSlvPorts; i++) begin : gen_slv_w_ready
+       assign slv_resps_o[i].w_ready =  mst_w_ready & ~w_fifo_empty &

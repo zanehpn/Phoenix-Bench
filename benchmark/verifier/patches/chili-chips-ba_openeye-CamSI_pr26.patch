@@ -1,0 +1,1126 @@
+From e64520133037e92fc5f499740961cb53b9456354 Mon Sep 17 00:00:00 2001
+From: Juninho99 <azunic1@etf.unsa.ba>
+Date: Sat, 3 Aug 2024 23:42:53 +0200
+Subject: [PATCH] Added raw10 support and 4-lane simulation
+
+---
+ 1.hw/csi_rx/csi_rx_10bit_unpack.sv            |  85 +++++++
+ 1.hw/csi_rx/csi_rx_top.sv                     |  59 +++--
+ 1.hw/isp/isp_top.sv                           |  38 +++-
+ 1.hw/isp/raw2rgb.10.sv                        | 209 +++++++++---------
+ 1.hw/isp/raw2rgb.8.sv                         |  31 +--
+ 1.hw/top.filelist                             |   3 +-
+ 1.hw/top.sv                                   |  34 +--
+ 1.hw/top_pkg.sv                               |  22 +-
+ 2.sim/cocotb/top/cocotbext_csi.py             |  34 ++-
+ 2.sim/cocotb/top/csi-2-raw2rgb-4lane.gtkw     |  27 +--
+ .../top/csi-rx-10bit-unpack-raw2rgb_10.gtkw   | 109 +++++++++
+ 2.sim/cocotb/top/csi-rx-10bit-unpack.gtkw     |  46 ++++
+ 2.sim/cocotb/top/test_top.py                  |   4 +-
+ 13 files changed, 501 insertions(+), 200 deletions(-)
+ create mode 100644 1.hw/csi_rx/csi_rx_10bit_unpack.sv
+ create mode 100644 2.sim/cocotb/top/csi-rx-10bit-unpack-raw2rgb_10.gtkw
+ create mode 100644 2.sim/cocotb/top/csi-rx-10bit-unpack.gtkw
+
+diff --git a/1.hw/csi_rx/csi_rx_10bit_unpack.sv b/1.hw/csi_rx/csi_rx_10bit_unpack.sv
+new file mode 100644
+index 0000000..bc52cf6
+--- /dev/null
++++ b/1.hw/csi_rx/csi_rx_10bit_unpack.sv
+@@ -0,0 +1,85 @@
++module csi_rx_10bit_unpack 
++   import top_pkg::*;
++(
++   input  logic        clock,      // byte clock in
++   input  logic        reset,      // active-1 synchronous reset
++   input  logic        enable,     // active-1 enable
++
++   input  logic [31:0] data_in,    // packet payload in from packet handler
++   input  logic        din_valid,  // payload in valid from packet handler
++
++   output logic [39:0] data_out,   // unpacked data out
++   output logic        dout_valid  // data out valid (see above)
++);
++
++   logic [39:0] dout_int;
++   logic [39:0] dout_unpacked;
++
++   logic [31:0] bytes_int;
++   logic [2:0]  byte_count_int;
++
++   logic dout_valid_int;
++   logic dout_valid_up;
++
++   // Unpack CSI packed 10-bit to 4 sequential 10-bit pixels
++   function logic [39:0] mipi10_unpack(input logic [39:0] packed_data);
++      logic [39:0] result;
++      result[9:0]   = {packed_data[7:0],   packed_data[33:32]};
++      result[19:10] = {packed_data[15:8],  packed_data[35:34]};
++      result[29:20] = {packed_data[23:16], packed_data[37:36]};
++      result[39:30] = {packed_data[31:24], packed_data[39:38]};
++      return result;
++   endfunction
++
++   always_ff @(posedge clock or posedge reset) begin
++      if (reset == 1'b1) begin
++         dout_int       <= '0;
++         byte_count_int <= '0;
++         dout_valid_int <= 1'b0;
++      end else if (enable == 1'b1) begin
++         if (din_valid == 1'b1) begin
++               // Behaviour is based on the number of bytes in the buffer
++               case (byte_count_int)
++                  0: begin
++                     dout_int       <= '0;
++                     byte_count_int <= 3'd4;
++                     dout_valid_int <= 1'b0;
++                     bytes_int      <= data_in;
++                  end
++                  1: begin
++                     dout_int       <= {data_in, bytes_int[7:0]};
++                     byte_count_int <= 3'd0;
++                     dout_valid_int <= 1'b1;
++                     bytes_int      <= '0;   
++                  end
++                  2: begin
++                     dout_int       <= {data_in[23:0], bytes_int[15:0]};
++                     byte_count_int <= 3'd1;
++                     dout_valid_int <= 1'b1;
++                     bytes_int      <= {24'd0, data_in[31:24]};
++                     
++                  end
++                  3: begin
++                     dout_int       <= {data_in[15:0], bytes_int[23:0]};
++                     byte_count_int <= 3'd2;
++                     dout_valid_int <= 1'b1;
++                     bytes_int      <= {16'd0, data_in[31:16]};
++                  end
++                  4: begin
++                     dout_int       <= {data_in[7:0], bytes_int[31:0]};
++                     byte_count_int <= 3'd3;
++                     dout_valid_int <= 1'd1;
++                     bytes_int      <= {8'd0, data_in[31:8]};  
++                  end
++               endcase
++         end else begin
++               byte_count_int <= '0;
++               dout_valid_int <= 1'b0;
++         end
++         dout_unpacked <= mipi10_unpack(dout_int);
++         dout_valid_up <= dout_valid_int;
++         data_out      <= dout_unpacked;
++         dout_valid    <= dout_valid_up;
++      end
++   end
++endmodule
+diff --git a/1.hw/csi_rx/csi_rx_top.sv b/1.hw/csi_rx/csi_rx_top.sv
+index 389c6a8..5d89f59 100644
+--- a/1.hw/csi_rx/csi_rx_top.sv
++++ b/1.hw/csi_rx/csi_rx_top.sv
+@@ -50,24 +50,24 @@ module csi_rx_top
+ (
+ 
+  //clocks and resets
+-   input  logic       ref_clock, // 200MHz refclk
+-   input  logic       reset,     // active-1 synchronous reset
++   input  logic           ref_clock, // 200MHz refclk
++   input  logic           reset,     // active-1 synchronous reset
+ 
+  //MIPI DPHY from/to Camera
+-   input  diff_t      cam_dphy_clk,
+-   input  lane_diff_t cam_dphy_dat,
+-   input  logic       cam_en,
++   input  diff_t          cam_dphy_clk,
++   input  lane_diff_t     cam_dphy_dat,
++   input  logic           cam_en,
+ 
+  //CSI to internal video pipeline
+-   output logic       csi_byte_clk,
+-   output lane_data_t csi_unpack_dat,
+-   output logic       csi_unpack_dat_vld,
++   output logic           csi_byte_clk,
++   output lane_raw_data_t csi_unpack_raw_dat,
++   output logic           csi_unpack_raw_dat_vld,
+     
+-   output logic       csi_in_line,
+-   output logic       csi_in_frame,   
++   output logic           csi_in_line,
++   output logic           csi_in_frame,   
+ 
+  //Misc/Debug
+-   output bus8_t      debug_pins
++   output bus8_t          debug_pins
+ );
+    
+ //--------------------------------
+@@ -159,8 +159,10 @@ module csi_rx_top
+    );
+ 
+ //--------------------------------
+-   logic   csi_sync_seq;
+-   bus2_t  debug_pkt;
++   lane_data_t csi_unpack_dat;
++   logic       csi_unpack_dat_vld;
++   logic       csi_sync_seq;
++   bus2_t      debug_pkt;
+ 
+    csi_rx_packet_handler u_depacket (
+       .clock           (csi_byte_clk),       //i 
+@@ -183,6 +185,21 @@ module csi_rx_top
+       .debug_out       (debug_pkt)           //o[1:0]
+    );
+ 
++//--------------------------------
++`ifdef RAW8
++   assign csi_unpack_raw_dat     = csi_unpack_dat;
++   assign csi_unpack_raw_dat_vld = csi_unpack_dat_vld;
++`else // RAW10
++   csi_rx_10bit_unpack u_10bit_unpack (
++      .clock           (csi_byte_clk),          //i
++      .reset           (csi_reset),             //i
++      .enable          (cam_en),                //i
++      .data_in         (csi_unpack_dat),        //i'lane_data_t
++      .din_valid       (csi_unpack_dat_vld),    //i
++      .data_out        (csi_unpack_raw_dat),    //o'lane_raw_data_t
++      .dout_valid      (csi_unpack_raw_dat_vld) //o
++   );
++`endif
+ 
+ //--------------------------------
+ // Misc and Debug
+@@ -238,14 +255,14 @@ module csi_rx_top
+ 
+  */   
+     
+-    assign debug_pins = {
+-       debug_pkt, 
+-       byte_valid[1:0], 
+-       csi_sync_seq, 
+-       1'b0, 
+-       csi_in_line, 
+-       csi_in_frame
+-    };
++   assign debug_pins = {
++      debug_pkt, 
++      byte_valid[1:0], 
++      csi_sync_seq, 
++      1'b0, 
++      csi_in_line, 
++      csi_in_frame
++   };
+     
+ endmodule: csi_rx_top
+ 
+diff --git a/1.hw/isp/isp_top.sv b/1.hw/isp/isp_top.sv
+index d1943ff..0750d79 100644
+--- a/1.hw/isp/isp_top.sv
++++ b/1.hw/isp/isp_top.sv
+@@ -41,41 +41,59 @@
+ 
+ module isp_top
+   import top_pkg::*;
++  import hdmi_pkg::*;
+ #(
+    parameter LINE_LENGTH = 640, // number of data entries per line
+    parameter RGB_WIDTH   = 24   // width of RGB data (24-bit)
+ )(
+-   input  logic        clk,     // byte_clock      
+-   input  logic        rst,
++   input  logic            clk, // byte_clock      
++   input  logic            rst,
+                         
+-   input  lane_data_t  data_in,
+-   input  logic        data_valid,    
+-   input  logic        rgb_valid,
++   input  lane_raw_data_t  data_in,
++   input  logic            data_valid,    
++   input  logic            rgb_valid,
+                         
+-   output logic        reading,
++   output logic            reading,
+    output logic         
+-      [RGB_WIDTH-1:0]  rgb_out
++      [RGB_WIDTH-1:0]      rgb_out
+ );
+ 
+ //---------------------------------
+ // Debayer ISP function
+ //---------------------------------
+-   raw2rgb #(
+-      .LINE_LENGTH (LINE_LENGTH), // number of data entries per line
++`ifdef RAW8
++   raw2rgb_8 #(
++      .LINE_LENGTH (HSCREEN/NUM_LANE), // number of data entries per line
+       .RGB_WIDTH   (RGB_WIDTH)    // width of RGB data (24-bit)
+    )
+    u_raw2rgb (
+       .clk        (clk),          //i           
+       .rst        (rst),          //i
+ 
+-      .data_in    (data_in),      //i'lane_data_t
++      .data_in    (data_in),      //i'lane_raw_data_t
+       .data_valid (data_valid),   //i  
+       .rgb_valid  (rgb_valid),    //i
+ 
+       .reading    (reading),      //o
+       .rgb_out    (rgb_out)       //o[RGB_WIDTH-1:0]
+    );
++`else // RAW10
++   raw2rgb_10 #(
++      .LINE_LENGTH (HSCREEN/NUM_LANE), // number of data entries per line
++      .RGB_WIDTH   (24)                // width of RGB data (24-bit)
++   )
++   u_raw2rgb (
++      .clk        (clk),          //i           
++      .rst        (rst),          //i
++
++      .data_in    (data_in),      //i'lane_raw_data_t
++      .data_valid (data_valid),   //i  
++      .rgb_valid  (rgb_valid),    //i
+ 
++      .reading    (reading),      //o
++      .rgb_out    (rgb_out)       //o[RGB_WIDTH-1:0]
++   );
++`endif
+ //---------------------------------
+ // More ISP functions to follow
+ //---------------------------------
+diff --git a/1.hw/isp/raw2rgb.10.sv b/1.hw/isp/raw2rgb.10.sv
+index 77c7b41..d77ec34 100644
+--- a/1.hw/isp/raw2rgb.10.sv
++++ b/1.hw/isp/raw2rgb.10.sv
+@@ -42,22 +42,22 @@
+ //   FIXME: Adapt logic to 4-lane datapath
+ //========================================================================
+ 
+-module raw2rgb 
++module raw2rgb_10 
+   import top_pkg::*;
+ #(
+    parameter LINE_LENGTH = 640, // number of data entries per line
+    parameter RGB_WIDTH   = 24   // width of RGB data (24-bit)
+ )(
+-   input  logic        clk,     // byte_clock      
+-   input  logic        rst,
++   input  logic           clk,  // byte_clock      
++   input  logic           rst,
+                         
+-   input  lane_data_t  data_in,
+-   input  logic        data_valid,    
+-   input  logic        rgb_valid,
++   input  lane_raw_data_t data_in,
++   input  logic           data_valid,    
++   input  logic           rgb_valid,
+                         
+-   output logic        reading,
++   output logic           reading,
+    output logic         
+-      [RGB_WIDTH-1:0]  rgb_out
++      [RGB_WIDTH-1:0]     rgb_out
+ );
+ 
+    localparam CNT_WIDTH = $clog2(LINE_LENGTH);
+@@ -80,10 +80,11 @@ module raw2rgb
+           writing <= 1'b1;         
+        end 
+        else if (writing == 1'b1) begin
+-          if (write_count < cnt_t'(LINE_LENGTH)) begin
+-             write_count <= cnt_t'(write_count + cnt_t'(1));
++          if (write_count < cnt_t'(LINE_LENGTH-1)) begin
++             if(data_valid == 1'b1)
++               write_count <= cnt_t'(write_count + cnt_t'(1));
+           end 
+-          else if (data_valid == 1'b0)  begin
++          else begin
+              write_count <= '0;   // Reset write_count for the next cycle
+              writing     <= 1'b0; // Stop writing
+              wr_line_sel <= 2'(wr_line_sel + 2'd1);
+@@ -98,10 +99,10 @@ module raw2rgb
+    //       block, distributed, registers, ultra, mixed, auto
+    //  2) Yosys  'ram_style' synth attributes: 
+    //       block, distributed
+-   (* ram_style = "block" *) lane_mem_t line0_mem[LINE_LENGTH:0];
+-   (* ram_style = "block" *) lane_mem_t line1_mem[LINE_LENGTH:0];
+-   (* ram_style = "block" *) lane_mem_t line2_mem[LINE_LENGTH:0];
+-   (* ram_style = "block" *) lane_mem_t line3_mem[LINE_LENGTH:0];
++   (* ram_style = "block" *) lane_raw_data_t line0_mem[LINE_LENGTH:0];
++   (* ram_style = "block" *) lane_raw_data_t line1_mem[LINE_LENGTH:0];
++   (* ram_style = "block" *) lane_raw_data_t line2_mem[LINE_LENGTH:0];
++   (* ram_style = "block" *) lane_raw_data_t line3_mem[LINE_LENGTH:0];
+ 
+    always_comb begin
+       for (int i=0; i<4; i++) begin
+@@ -164,81 +165,81 @@ module raw2rgb
+       end
+    end
+    
+-   logic [7:0] line0_green0, line0_blue0,  line0_green1, line0_blue1;
+-   logic [7:0] line1_red0,   line1_green0, line1_red1,   line1_green1;
+-   logic [7:0] line2_green0, line2_blue0,  line2_green1, line2_blue1;
+-   logic [7:0] line3_red0,   line3_green0, line3_red1,   line3_green1;  
++   logic [9:0] line0_green0, line0_blue0,  line0_green1, line0_blue1;
++   logic [9:0] line1_red0,   line1_green0, line1_red1,   line1_green1;
++   logic [9:0] line2_green0, line2_blue0,  line2_green1, line2_blue1;
++   logic [9:0] line3_red0,   line3_green0, line3_red1,   line3_green1;  
+ 
+    always_ff @(posedge clk) begin
+      `ifdef MIPI_4_LANE
+       if (reading == 1'b1) begin
+          //                           line                  lane
+          if (temp_4lane == 1'b0) begin
+-            line0_green0 <= line0_mem[read_count][31:24]; //1
+-            line0_blue0  <= line0_mem[read_count][23:16]; //0
+-            line0_green1 <= line0_mem[read_count][15:8];
+-            line0_blue1  <= line0_mem[read_count][ 7:0];
++            line0_green0 <= line0_mem[read_count][39:30]; //1
++            line0_blue0  <= line0_mem[read_count][29:20]; //0
++            line0_green1 <= line0_mem[read_count][19:10];
++            line0_blue1  <= line0_mem[read_count][ 9:0];
+             
+-            line1_red0   <= line1_mem[read_count][31:24];
+-            line1_green0 <= line1_mem[read_count][23:16];
+-            line1_red1   <= line1_mem[read_count][15:8];
+-            line1_green1 <= line1_mem[read_count][ 7:0];
++            line1_red0   <= line1_mem[read_count][39:30];
++            line1_green0 <= line1_mem[read_count][29:20];
++            line1_red1   <= line1_mem[read_count][19:10];
++            line1_green1 <= line1_mem[read_count][ 9:0];
+             
+-            line2_green0 <= line2_mem[read_count][31:24];
+-            line2_blue0  <= line2_mem[read_count][23:16];
+-            line2_green1 <= line2_mem[read_count][15:8];
+-            line2_blue1  <= line2_mem[read_count][7:0];
++            line2_green0 <= line2_mem[read_count][39:30];
++            line2_blue0  <= line2_mem[read_count][29:20];
++            line2_green1 <= line2_mem[read_count][19:10];
++            line2_blue1  <= line2_mem[read_count][ 9:0];
+             
+-            line3_red0   <= line3_mem[read_count][31:24];
+-            line3_green0 <= line3_mem[read_count][23:16]; 
+-            line3_red1   <= line3_mem[read_count][15:8];
+-            line3_green1 <= line3_mem[read_count][7:0];
++            line3_red0   <= line3_mem[read_count][39:30];
++            line3_green0 <= line3_mem[read_count][29:20]; 
++            line3_red1   <= line3_mem[read_count][19:10];
++            line3_green1 <= line3_mem[read_count][ 9:0];
+          end
+          else begin
+          //                           line                  lane
+-         line0_green0 <= line0_mem[read_count]    [15:8]; //1
+-         line0_blue0  <= line0_mem[read_count]    [ 7:0]; //0
+-         line0_green1 <= line0_mem[read_count_nxt][31:24];
+-         line0_blue1  <= line0_mem[read_count_nxt][23:16];
++         line0_green0 <= line0_mem[read_count]    [19:10]; //1
++         line0_blue0  <= line0_mem[read_count]    [ 9:0];  //0
++         line0_green1 <= line0_mem[read_count_nxt][39:30];
++         line0_blue1  <= line0_mem[read_count_nxt][29:20];
+          
+-         line1_red0   <= line1_mem[read_count]    [15:8];
+-         line1_green0 <= line1_mem[read_count]    [7:0];
+-         line1_red1   <= line1_mem[read_count_nxt][31:24];
+-         line1_green1 <= line1_mem[read_count_nxt][23:16];
++         line1_red0   <= line1_mem[read_count]    [19:10];
++         line1_green0 <= line1_mem[read_count]    [ 9:0];
++         line1_red1   <= line1_mem[read_count_nxt][39:30];
++         line1_green1 <= line1_mem[read_count_nxt][29:20];
+          
+-         line2_green0 <= line2_mem[read_count]    [15:8];
+-         line2_blue0  <= line2_mem[read_count]    [7:0];
+-         line2_green1 <= line2_mem[read_count_nxt][31:24];
+-         line2_blue1  <= line2_mem[read_count_nxt][23:16];
++         line2_green0 <= line2_mem[read_count]    [19:10];
++         line2_blue0  <= line2_mem[read_count]    [ 9:0];
++         line2_green1 <= line2_mem[read_count_nxt][39:30];
++         line2_blue1  <= line2_mem[read_count_nxt][29:20];
+          
+-         line3_red0   <= line3_mem[read_count]    [15:8];
+-         line3_green0 <= line3_mem[read_count]    [7:0];  
+-         line3_red1   <= line3_mem[read_count_nxt][31:24];
+-         line3_green1 <= line3_mem[read_count_nxt][23:16];
++         line3_red0   <= line3_mem[read_count]    [19:10];
++         line3_green0 <= line3_mem[read_count]    [ 9:0];  
++         line3_red1   <= line3_mem[read_count_nxt][39:30];
++         line3_green1 <= line3_mem[read_count_nxt][29:20];
+          end
+       end
+      `else
+       if (reading == 1'b1) begin
+          //                           line                  lane
+-         line0_green0 <= line0_mem[read_count]    [15:8]; //1
+-         line0_blue0  <= line0_mem[read_count]    [ 7:0]; //0
+-         line0_green1 <= line0_mem[read_count_nxt][15:8];
+-         line0_blue1  <= line0_mem[read_count_nxt][7:0];
++         line0_green0 <= line0_mem[read_count]    [19:10]; //1
++         line0_blue0  <= line0_mem[read_count]    [ 9:0]; //0
++         line0_green1 <= line0_mem[read_count_nxt][19:10];
++         line0_blue1  <= line0_mem[read_count_nxt][ 9:0];
+          
+-         line1_red0   <= line1_mem[read_count]    [15:8];
+-         line1_green0 <= line1_mem[read_count]    [7:0];
+-         line1_red1   <= line1_mem[read_count_nxt][15:8];
+-         line1_green1 <= line1_mem[read_count_nxt][7:0];
++         line1_red0   <= line1_mem[read_count]    [19:10];
++         line1_green0 <= line1_mem[read_count]    [ 9:0];
++         line1_red1   <= line1_mem[read_count_nxt][19:10];
++         line1_green1 <= line1_mem[read_count_nxt][ 9:0];
+          
+-         line2_green0 <= line2_mem[read_count]    [15:8];
+-         line2_blue0  <= line2_mem[read_count]    [7:0];
+-         line2_green1 <= line2_mem[read_count_nxt][15:8];
+-         line2_blue1  <= line2_mem[read_count_nxt][7:0];
++         line2_green0 <= line2_mem[read_count]    [19:10];
++         line2_blue0  <= line2_mem[read_count]    [ 9:0];
++         line2_green1 <= line2_mem[read_count_nxt][19:10];
++         line2_blue1  <= line2_mem[read_count_nxt][ 9:0];
+          
+-         line3_red0   <= line3_mem[read_count]    [15:8];
+-         line3_green0 <= line3_mem[read_count]    [7:0];  
+-         line3_red1   <= line3_mem[read_count_nxt][15:8];
+-         line3_green1 <= line3_mem[read_count_nxt][7:0];
++         line3_red0   <= line3_mem[read_count]    [19:10];
++         line3_green0 <= line3_mem[read_count]    [ 9:0];  
++         line3_red1   <= line3_mem[read_count_nxt][19:10];
++         line3_green1 <= line3_mem[read_count_nxt][ 9:0];
+       end
+      `endif
+    end  
+@@ -250,81 +251,81 @@ module raw2rgb
+     unique case (line_not_read) 
+       2'd3: begin //-----line0/1/2 (first three lines)
+          if (odd_pixel == 1'b0) begin
+-            rgb_out1[23:16] <= (line1_red0   >> 1) + (line1_red1   >> 1);
++            rgb_out1[23:16] <= ((line1_red0   >> 1) + (line1_red1   >> 1) >> 2);
+ 
+-            rgb_out1[15:8]  <= (line0_green0 >> 2) + (line0_green1 >> 2) 
+-                             + (line2_green0 >> 2) + (line2_green1 >> 2);
++            rgb_out1[15:8]  <= ((line0_green0 >> 2) + (line0_green1 >> 2) >> 2) 
++                             + ((line2_green0 >> 2) + (line2_green1 >> 2) >> 2);
+ 
+-            rgb_out1[7:0]   <= (line0_blue0  >> 1) + (line2_blue0  >> 1);
++            rgb_out1[7:0]   <= ((line0_blue0  >> 1) + (line2_blue0  >> 1) >> 2);
+          end 
+          else begin
+-            rgb_out1[23:16] <=  line1_red1;
++            rgb_out1[23:16] <=  line1_red1 >> 2;
+ 
+-            rgb_out1[15:8]  <= (line0_green1 >> 2) + (line1_green0 >> 2) 
+-                             + (line1_green1 >> 2) + (line2_green1 >> 2);
++            rgb_out1[15:8]  <= ((line0_green1 >> 2) + (line1_green0 >> 2) >> 2) 
++                             + ((line1_green1 >> 2) + (line2_green1 >> 2) >> 2);
+ 
+-            rgb_out1[7:0]   <= (line0_blue0  >> 2) + (line0_blue1  >> 2)
+-                             + (line2_blue0  >> 2) + (line2_blue1  >> 2);
++            rgb_out1[7:0]   <= ((line0_blue0  >> 2) + (line0_blue1  >> 2) >> 2)
++                             + ((line2_blue0  >> 2) + (line2_blue1  >> 2) >> 2);
+          end
+       end 
+ 
+       2'd0: begin //-----line1/2/3
+          if (odd_pixel == 1'b0) begin
+-            rgb_out1[23:16] <= (line1_red0   >> 2) + (line1_red1   >> 2) 
+-                             + (line3_red0   >> 2) + (line3_red1   >> 2);
++            rgb_out1[23:16] <= ((line1_red0   >> 2) + (line1_red1   >> 2) >> 2) 
++                             + ((line3_red0   >> 2) + (line3_red1   >> 2) >> 2);
+ 
+-            rgb_out1[15:8]  <= (line1_green0 >> 2) + (line2_green0 >> 2) 
+-                             + (line2_green1 >> 2) + (line3_green0 >> 2);
++            rgb_out1[15:8]  <= ((line1_green0 >> 2) + (line2_green0 >> 2) >> 2) 
++                             + ((line2_green1 >> 2) + (line3_green0 >> 2) >> 2);
+ 
+-            rgb_out1[7:0]   <=  line2_blue0;
++            rgb_out1[7:0]   <=  line2_blue0 >> 2;
+          end 
+          else begin
+-            rgb_out1[23:16] <= (line1_red1   >> 1) + (line3_red1   >> 1);
++            rgb_out1[23:16] <= ((line1_red1   >> 1) + (line3_red1   >> 1) >> 2);
+ 
+-            rgb_out1[15:8]  <= (line1_green0 >> 2) + (line1_green1 >> 2) 
+-                             + (line3_green0 >> 2) + (line3_green1 >> 2);
++            rgb_out1[15:8]  <= ((line1_green0 >> 2) + (line1_green1 >> 2) >> 2) 
++                             + ((line3_green0 >> 2) + (line3_green1 >> 2) >> 2);
+ 
+-            rgb_out1[7:0]   <= (line2_blue0  >> 1) + (line2_blue1  >> 1);
++            rgb_out1[7:0]   <= ((line2_blue0  >> 1) + (line2_blue1  >> 1) >> 2);
+          end
+       end 
+ 
+       2'd1: begin //-----line0/2/3
+          if (odd_pixel == 1'b0) begin
+-            rgb_out1[23:16] <= (line3_red0   >> 1) + (line3_red1   >> 1);
++            rgb_out1[23:16] <= ((line3_red0   >> 1) + (line3_red1   >> 1) >> 2);
+ 
+-            rgb_out1[15:8]  <= (line2_green0 >> 2) + (line2_green1 >> 2) 
+-                             + (line0_green0 >> 2) + (line0_green1 >> 2);
++            rgb_out1[15:8]  <= ((line2_green0 >> 2) + (line2_green1 >> 2) >> 2) 
++                             + ((line0_green0 >> 2) + (line0_green1 >> 2) >> 2);
+ 
+-            rgb_out1[7:0]   <= (line2_blue0  >> 1) + (line0_blue0  >> 1);
++            rgb_out1[7:0]   <= ((line2_blue0  >> 1) + (line0_blue0  >> 1) >> 2);
+          end 
+          else begin
+-            rgb_out1[23:16] <=  line3_red1;
++            rgb_out1[23:16] <=  line3_red1 >> 2;
+ 
+-            rgb_out1[15:8]  <= (line2_green1 >> 2) + (line3_green0 >> 2) 
+-                             + (line3_green1 >> 2) + (line0_green1 >> 2);
++            rgb_out1[15:8]  <= ((line2_green1 >> 2) + (line3_green0 >> 2) >> 2) 
++                             + ((line3_green1 >> 2) + (line0_green1 >> 2) >> 2);
+ 
+-            rgb_out1[7:0]   <= (line2_blue0  >> 2) + (line2_blue1  >> 2) 
+-                             + (line0_blue0  >> 2) + (line0_blue1  >> 2);
++            rgb_out1[7:0]   <= ((line2_blue0  >> 2) + (line2_blue1  >> 2) >> 2) 
++                             + ((line0_blue0  >> 2) + (line0_blue1  >> 2) >> 2);
+          end
+       end 
+ 
+       default: begin // 2'd2 -----line0/1/3
+          if (odd_pixel == 1'b0) begin
+-            rgb_out1[23:16] <= (line3_red0   >> 2) + (line3_red1   >> 2) 
+-                             + (line1_red0   >> 2) + (line1_red1   >> 2);
++            rgb_out1[23:16] <= ((line3_red0   >> 2) + (line3_red1   >> 2) >> 2) 
++                             + ((line1_red0   >> 2) + (line1_red1   >> 2) >> 2);
+ 
+-            rgb_out1[15:8]  <= (line3_green0 >> 2) + (line0_green0 >> 2) 
+-                             + (line0_green1 >> 2) + (line1_green0 >> 2);
++            rgb_out1[15:8]  <= ((line3_green0 >> 2) + (line0_green0 >> 2) >> 2) 
++                             + ((line0_green1 >> 2) + (line1_green0 >> 2) >> 2);
+ 
+-            rgb_out1[7:0]   <=  line0_blue0;
++            rgb_out1[7:0]   <=  line0_blue0 >> 2;
+          end 
+          else begin
+-            rgb_out1[23:16] <= (line3_red1   >> 1) + (line1_red1   >> 1);
++            rgb_out1[23:16] <= ((line3_red1   >> 1) + (line1_red1   >> 1) >> 2);
+ 
+-            rgb_out1[15:8]  <= (line3_green0 >> 2) + (line3_green1 >> 2) 
+-                             + (line1_green0 >> 2) + (line1_green1 >> 2);
++            rgb_out1[15:8]  <= ((line3_green0 >> 2) + (line3_green1 >> 2) >> 2) 
++                             + ((line1_green0 >> 2) + (line1_green1 >> 2) >> 2);
+ 
+-            rgb_out1[7:0]   <= (line0_blue0  >> 1) + (line0_blue1  >> 1);
++            rgb_out1[7:0]   <= ((line0_blue0  >> 1) + (line0_blue1  >> 1) >> 2);
+          end
+       end
+     endcase // unique case (line_not_read)
+@@ -382,7 +383,7 @@ module raw2rgb
+                      ~rgb_out1[15:8], 
+                       rgb_out1[7:0]}; 
+ 
+-endmodule: raw2rgb
++endmodule: raw2rgb_10 
+ 
+ /*
+ ------------------------------------------------------------------------------
+diff --git a/1.hw/isp/raw2rgb.8.sv b/1.hw/isp/raw2rgb.8.sv
+index 54c7646..3bf8529 100644
+--- a/1.hw/isp/raw2rgb.8.sv
++++ b/1.hw/isp/raw2rgb.8.sv
+@@ -42,22 +42,22 @@
+ //   FIXME: Adapt logic to 4-lane datapath
+ //========================================================================
+ 
+-module raw2rgb 
++module raw2rgb_8 
+   import top_pkg::*;
+ #(
+    parameter LINE_LENGTH = 640, // number of data entries per line
+    parameter RGB_WIDTH   = 24   // width of RGB data (24-bit)
+ )(
+-   input  logic        clk,     // byte_clock      
+-   input  logic        rst,
++   input  logic            clk, // byte_clock      
++   input  logic            rst,
+                         
+-   input  lane_data_t  data_in,
+-   input  logic        data_valid,    
+-   input  logic        rgb_valid,
++   input  lane_raw_data_t  data_in,
++   input  logic            data_valid,    
++   input  logic            rgb_valid,
+                         
+-   output logic        reading,
++   output logic            reading,
+    output logic         
+-      [RGB_WIDTH-1:0]  rgb_out
++      [RGB_WIDTH-1:0]      rgb_out
+ );
+ 
+    localparam CNT_WIDTH = $clog2(LINE_LENGTH);
+@@ -80,8 +80,9 @@ module raw2rgb
+           writing <= 1'b1;         
+        end 
+        else if (writing == 1'b1) begin
+-          if (write_count < cnt_t'(LINE_LENGTH)) begin
+-             write_count <= cnt_t'(write_count + cnt_t'(1));
++          if (write_count < cnt_t'(LINE_LENGTH-1)) begin
++             if(data_valid == 1'b1)
++               write_count <= cnt_t'(write_count + cnt_t'(1));
+           end 
+           else if (data_valid == 1'b0)  begin
+              write_count <= '0;   // Reset write_count for the next cycle
+@@ -98,10 +99,10 @@ module raw2rgb
+    //       block, distributed, registers, ultra, mixed, auto
+    //  2) Yosys  'ram_style' synth attributes: 
+    //       block, distributed
+-   (* ram_style = "block" *) lane_mem_t line0_mem[LINE_LENGTH:0];
+-   (* ram_style = "block" *) lane_mem_t line1_mem[LINE_LENGTH:0];
+-   (* ram_style = "block" *) lane_mem_t line2_mem[LINE_LENGTH:0];
+-   (* ram_style = "block" *) lane_mem_t line3_mem[LINE_LENGTH:0];
++   (* ram_style = "block" *) lane_raw_data_t line0_mem[LINE_LENGTH:0];
++   (* ram_style = "block" *) lane_raw_data_t line1_mem[LINE_LENGTH:0];
++   (* ram_style = "block" *) lane_raw_data_t line2_mem[LINE_LENGTH:0];
++   (* ram_style = "block" *) lane_raw_data_t line3_mem[LINE_LENGTH:0];
+ 
+    always_comb begin
+       for (int i=0; i<4; i++) begin
+@@ -382,7 +383,7 @@ module raw2rgb
+                      ~rgb_out1[15:8], 
+                       rgb_out1[7:0]}; 
+ 
+-endmodule: raw2rgb
++endmodule: raw2rgb_8
+ 
+ /*
+ ------------------------------------------------------------------------------
+diff --git a/1.hw/top.filelist b/1.hw/top.filelist
+index 63bf6e7..5c1f352 100644
+--- a/1.hw/top.filelist
++++ b/1.hw/top.filelist
+@@ -37,11 +37,12 @@ ${HW_SRC}/csi_rx/csi_rx_align_byte.sv
+ ${HW_SRC}/csi_rx/csi_rx_align_word.sv
+ ${HW_SRC}/csi_rx/csi_rx_packer_handler.sv
+ ${HW_SRC}/csi_rx/csi_rx_hdr_ecc.sv
++${HW_SRC}/csi_rx/csi_rx_10bit_unpack.sv
+ ${HW_SRC}/csi_rx/csi_rx_top.sv
+ 
+ #---ISP
+ ${HW_SRC}/isp/raw2rgb.8.sv
+-#${HW_SRC}/isp/raw2rgb.10.sv
++${HW_SRC}/isp/raw2rgb.10.sv
+ #${HW_SRC}/isp/raw2rgb.12.sv
+ #${HW_SRC}/isp/raw2rgb.14.sv
+ ${HW_SRC}/isp/isp_top.sv
+diff --git a/1.hw/top.sv b/1.hw/top.sv
+index 5a4beb5..21721b1 100644
+--- a/1.hw/top.sv
++++ b/1.hw/top.sv
+@@ -123,32 +123,32 @@ glbl glbl();
+ //--------------------------------
+ // CSI_RX
+ //--------------------------------
+-   logic       csi_byte_clk;
+-   lane_data_t csi_word_data;
+-   logic       csi_word_valid;
+-   logic       csi_in_line, csi_in_frame;   
++   logic           csi_byte_clk;
++   lane_raw_data_t csi_word_data;
++   logic           csi_word_valid;
++   logic           csi_in_line, csi_in_frame;   
+ 
+    bus8_t      debug_csi;
+     
+    csi_rx_top u_csi_rx_top (
+-      .ref_clock          (clk_200),        //i 
+-      .reset              (reset),          //i 
++      .ref_clock              (clk_200),        //i 
++      .reset                  (reset),          //i 
+                           
+      //MIPI DPHY from/to Camera
+-      .cam_dphy_clk       (cam_dphy_clk),   //i'diff_t
+-      .cam_dphy_dat       (cam_dphy_dat),   //i'lane_diff_t
+-      .cam_en             (cam_en),         //o 
++      .cam_dphy_clk           (cam_dphy_clk),   //i'diff_t
++      .cam_dphy_dat           (cam_dphy_dat),   //i'lane_diff_t
++      .cam_en                 (cam_en),         //o 
+ 
+      //CSI to internal video pipeline     
+-      .csi_byte_clk       (csi_byte_clk),   //o
+-      .csi_unpack_dat     (csi_word_data),  //o'lane_data_t
+-      .csi_unpack_dat_vld (csi_word_valid), //o
++      .csi_byte_clk           (csi_byte_clk),   //o
++      .csi_unpack_raw_dat     (csi_word_data),  //o'lane_raw_data_t
++      .csi_unpack_raw_dat_vld (csi_word_valid), //o
+ 
+-      .csi_in_line        (csi_in_line),    //o    
+-      .csi_in_frame       (csi_in_frame),   //o
++      .csi_in_line            (csi_in_line),    //o    
++      .csi_in_frame           (csi_in_frame),   //o
+ 
+      //Misc/Debug
+-      .debug_pins         (debug_csi)       //o[7:0]
++      .debug_pins             (debug_csi)       //o[7:0]
+    );
+       
+ //--------------------------------
+@@ -166,8 +166,8 @@ glbl glbl();
+       .clk        (csi_byte_clk),   //i           
+       .rst        (reset),          //i
+ 
+-      .data_in    (csi_word_data),  //i'lane_data_t
+-      .data_valid (csi_in_line),    //i  
++      .data_in    (csi_word_data),  //i'lane_raw_data_t
++      .data_valid (csi_word_valid), //i  
+       .rgb_valid  (rgb_valid),      //i
+ 
+       .reading    (rgb_reading),    //o
+diff --git a/1.hw/top_pkg.sv b/1.hw/top_pkg.sv
+index 81e7941..d3e839f 100644
+--- a/1.hw/top_pkg.sv
++++ b/1.hw/top_pkg.sv
+@@ -46,10 +46,15 @@
+ //`define HDMI_1080p30
+ //`define HDMI_1080p60 /*Artix-7 cannot do this option*/ 
+ 
+-`define MIPI_4_LANE
+-//`define MIPI_2_LANE
++//`define MIPI_4_LANE
++`define MIPI_2_LANE
+ //`define MIPI_1_LANE
+ 
++`define RAW8
++//`define RAW10
++//`define RAW12
++//`define RAW14
++
+ 
+ package top_pkg;
+    
+@@ -119,7 +124,20 @@ package top_pkg;
+ 
+    typedef logic  [NUM_LANE-1   :0] lane_vld_t;
+    typedef bus8_t [NUM_LANE-1   :0] lane_data_t;
++
++`ifdef RAW8
++   typedef logic  [NUM_LANE*8-1 :0] lane_raw_data_t;
+    typedef logic  [NUM_LANE*8-1 :0] lane_mem_t;
++`elsif RAW10
++   typedef logic  [NUM_LANE*10-1:0] lane_raw_data_t;
++   typedef logic  [NUM_LANE*10-1:0] lane_mem_t;
++`elsif RAW12
++   typedef logic  [NUM_LANE*12-1:0] lane_raw_data_t;
++   typedef logic  [NUM_LANE*12-1:0] lane_mem_t;
++`else // RAW14
++   typedef logic  [NUM_LANE*14-1:0] lane_raw_data_t;
++   typedef logic  [NUM_LANE*14-1:0] lane_mem_t;
++`endif
+ 
+ endpackage: top_pkg
+ 
+diff --git a/2.sim/cocotb/top/cocotbext_csi.py b/2.sim/cocotb/top/cocotbext_csi.py
+index d737e5c..e75c17a 100644
+--- a/2.sim/cocotb/top/cocotbext_csi.py
++++ b/2.sim/cocotb/top/cocotbext_csi.py
+@@ -2,16 +2,17 @@
+ from cocotb.triggers import Timer
+ 
+ class CSI:
+-   def __init__(self, dut, signal, period_ns, fps_Hz, line_length, frame_length, frame_blank, num_lane, dinvert, uniform_data=True, start_value=0x00):
++   def __init__(self, dut, signal, period_ns, fps_Hz, line_length, frame_length, frame_blank, num_lane, dinvert, raw=8, uniform_data=True, start_value=0x00):
+       self.dut          = dut
+       self.signal       = signal
+       self.period_ns    = period_ns
+       self.fps_Hz       = fps_Hz
+-      self.line_length  = line_length
++      self.line_length  = line_length if raw == 8 else int(line_length * (5 / 4))
+       self.frame_length = frame_length
+       self.frame_blank  = frame_blank
+       self.num_lane     = num_lane
+       self.dinvert      = dinvert
++      self.raw          = raw
+       self.uniform_data = uniform_data
+       self.start_value  = start_value
+       self.temp_var     = (1_000_000_000 / fps_Hz) / (8 * period_ns)
+@@ -78,19 +79,32 @@ async def send_combined_bytes(self, byte0, byte1, byte2=0x00, byte3=0x00):
+          await Timer(self.period_ns, units='ns')
+ 
+    async def send_incrementing_data(self, start_value, repeat_count=1):
+-      value = start_value
+-      for _ in range(repeat_count):
+-         byte3 = self.invert_byte(value & 0xFF, 3)
+-         byte2 = self.invert_byte((value >> 8) & 0xFF, 2)
+-         byte1 = self.invert_byte((value >> 16) & 0xFF, 1)
+-         byte0 = self.invert_byte((value >> 24) & 0xFF, 0)
++      value0, value1, value2, value3 = (start_value,) * 4
++      for i in range(repeat_count):
++         byte3 = self.invert_byte(value0 & 0xFF, 3)
++         byte2 = self.invert_byte((value1 + 0) & 0xFF, 2)
++         byte1 = self.invert_byte((value2 + 0) & 0xFF, 1)
++         byte0 = self.invert_byte((value3 + 0) & 0xFF, 0)
+ 
+          if self.num_lane == 2:
+             await self.send_combined_bytes(byte1, byte0) #Because of the inversion of CSI2 protocol [1,0], not [0,1]
+          elif self.num_lane == 4:
+             await self.send_combined_bytes(byte0, byte1, byte2, byte3)
+          
+-         value += 1
++         if (self.raw == 8):
++            value0, value1, value2, value3 = map(lambda v: v + 1, (value0, value1, value2, value3))
++         elif (self.raw == 10):
++            if (i % 5 == 0):
++               value1, value2, value3 = map(lambda v: v + 1, (value1, value2, value3))
++            elif (i % 5 == 1):
++               value0, value2, value3 = map(lambda v: v + 1, (value0, value2, value3))
++            elif (i % 5 == 2):
++               value0, value1, value3 = map(lambda v: v + 1, (value0, value1, value3))
++            elif (i % 5 == 3):
++               value0, value1, value2 = map(lambda v: v + 1, (value0, value1, value2))
++            elif (i % 5 == 4):
++               value0, value1, value2, value3 = map(lambda v: v + 1, (value0, value1, value2, value3))
++
+ 
+    async def send_data_pattern(self, byte0, byte1, byte2=0x00, byte3=0x00, repeat_count=1):
+       """
+@@ -205,7 +219,7 @@ async def send_frame(self):
+       await self.start_frame()
+       line_data = 0x22  # Example data for a line
+ 
+-      for i in range(7):  # (self.frame_length + self.frame_blank) instead of 5
++      for i in range(10):  # (self.frame_length + self.frame_blank) instead of 5
+          if i > 10:        # (self.frame_length - 1) instead of 2
+             line_data = 0x11
+          await self.send_line(line_data)
+diff --git a/2.sim/cocotb/top/csi-2-raw2rgb-4lane.gtkw b/2.sim/cocotb/top/csi-2-raw2rgb-4lane.gtkw
+index f612f44..e91c282 100644
+--- a/2.sim/cocotb/top/csi-2-raw2rgb-4lane.gtkw
++++ b/2.sim/cocotb/top/csi-2-raw2rgb-4lane.gtkw
+@@ -1,15 +1,15 @@
+ [*]
+ [*] GTKWave Analyzer v3.3.104 (w)1999-2020 BSI
+-[*] Tue Jul  9 22:34:11 2024
++[*] Sat Aug  3 15:40:56 2024
+ [*]
+ [dumpfile] "/mnt/c/Users/Armin/Desktop/openeye/2.sim/cocotb/top/dump.fst"
+-[dumpfile_mtime] "Tue Jul  9 22:32:13 2024"
+-[dumpfile_size] 3169758
++[dumpfile_mtime] "Sat Aug  3 15:36:23 2024"
++[dumpfile_size] 4406399
+ [savefile] "/mnt/c/Users/Armin/Desktop/openeye/2.sim/cocotb/top/csi-2-raw2rgb-4lane.gtkw"
+-[timestart] 108631700
++[timestart] 0
+ [size] 1588 827
+-[pos] -341 -77
+-*-15.966154 108781072 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
++[pos] -111 -79
++*-25.775402 187263440 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+ [treeopen] .
+ [treeopen] .top.
+ [treeopen] .top.u_csi_rx_top.
+@@ -54,22 +54,11 @@ top.cam_dphy_dat[1][1:0]
+ @28
+ top.csi_in_frame
+ top.csi_in_line
+-@22
+-top.csi_word_data[0][7:0]
+-top.csi_word_data[1][7:0]
+-top.csi_word_data[2][7:0]
+-top.csi_word_data[3][7:0]
+-@28
+ top.csi_word_valid
+ @200
+ -top/u_isp/u_raw2rgb
+ @420
+ top.u_isp.u_raw2rgb.LINE_LENGTH
+-@22
+-top.u_isp.u_raw2rgb.data_in[0][7:0]
+-top.u_isp.u_raw2rgb.data_in[1][7:0]
+-top.u_isp.u_raw2rgb.data_in[2][7:0]
+-top.u_isp.u_raw2rgb.data_in[3][7:0]
+ @28
+ top.u_isp.u_raw2rgb.data_valid
+ @22
+@@ -81,8 +70,10 @@ top.u_isp.u_raw2rgb.read_count[8:0]
+ top.u_isp.u_raw2rgb.read_count_nxt[8:0]
+ @28
+ top.u_isp.u_raw2rgb.temp_4lane
+-@29
+ top.u_isp.u_raw2rgb.odd_pixel
++top.u_isp.u_raw2rgb.wr_line_sel[1:0]
++@23
++top.u_isp.u_raw2rgb.write_count[8:0]
+ @28
+ top.u_isp.u_raw2rgb.writing
+ @22
+diff --git a/2.sim/cocotb/top/csi-rx-10bit-unpack-raw2rgb_10.gtkw b/2.sim/cocotb/top/csi-rx-10bit-unpack-raw2rgb_10.gtkw
+new file mode 100644
+index 0000000..f92ffa2
+--- /dev/null
++++ b/2.sim/cocotb/top/csi-rx-10bit-unpack-raw2rgb_10.gtkw
+@@ -0,0 +1,109 @@
++[*]
++[*] GTKWave Analyzer v3.3.104 (w)1999-2020 BSI
++[*] Sat Aug  3 14:19:45 2024
++[*]
++[dumpfile] "/mnt/c/Users/Armin/Desktop/openeye/2.sim/cocotb/top/dump.fst"
++[dumpfile_mtime] "Fri Aug  2 15:21:07 2024"
++[dumpfile_size] 3819616
++[savefile] "/mnt/c/Users/Armin/Desktop/openeye/2.sim/cocotb/top/csi-rx-10bit-unpack-raw2rgb_10.gtkw"
++[timestart] 0
++[size] 1588 827
++[pos] -308 -64
++*-25.280722 73007632 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
++[treeopen] .
++[treeopen] .top.
++[treeopen] .top.u_csi_rx_top.
++[treeopen] .top.u_isp.
++[sst_width] 262
++[signals_width] 318
++[sst_expanded] 1
++[sst_vpaned_height] 488
++@28
++top.u_csi_rx_top.u_10bit_unpack.clock
++top.u_csi_rx_top.u_10bit_unpack.din_valid
++@22
++top.u_csi_rx_top.u_10bit_unpack.data_in[31:0]
++@200
++-
++@24
++top.u_csi_rx_top.u_10bit_unpack.byte_count_int[2:0]
++@22
++top.u_csi_rx_top.u_10bit_unpack.bytes_int[31:0]
++@200
++-
++@28
++top.u_csi_rx_top.u_10bit_unpack.dout_valid_int
++top.u_csi_rx_top.u_10bit_unpack.dout_valid_up
++@22
++top.u_csi_rx_top.u_10bit_unpack.dout_int[39:0]
++top.u_csi_rx_top.u_10bit_unpack.dout_unpacked[39:0]
++@200
++-
++@28
++top.u_csi_rx_top.u_10bit_unpack.dout_valid
++@22
++top.u_csi_rx_top.u_10bit_unpack.data_out[39:0]
++@200
++-
++@22
++top.u_csi_rx_top.csi_unpack_raw_dat[39:0]
++@28
++top.u_csi_rx_top.csi_unpack_raw_dat_vld
++@200
++-
++@420
++top.u_isp.u_raw2rgb.CNT_WIDTH
++top.u_isp.u_raw2rgb.LINE_LENGTH
++top.u_isp.u_raw2rgb.RGB_WIDTH
++@25
++top.u_isp.u_raw2rgb.write_count[8:0]
++@28
++top.u_isp.u_raw2rgb.writing
++top.u_isp.u_raw2rgb.clk
++@22
++top.u_isp.u_raw2rgb.data_in[39:0]
++@28
++top.u_isp.u_raw2rgb.data_valid
++@22
++top.u_isp.u_raw2rgb.line0_blue0[9:0]
++top.u_isp.u_raw2rgb.line0_blue1[9:0]
++top.u_isp.u_raw2rgb.line0_green0[9:0]
++top.u_isp.u_raw2rgb.line0_green1[9:0]
++top.u_isp.u_raw2rgb.line1_green0[9:0]
++top.u_isp.u_raw2rgb.line1_green1[9:0]
++top.u_isp.u_raw2rgb.line1_red0[9:0]
++top.u_isp.u_raw2rgb.line1_red1[9:0]
++top.u_isp.u_raw2rgb.line2_blue0[9:0]
++top.u_isp.u_raw2rgb.line2_blue1[9:0]
++top.u_isp.u_raw2rgb.line2_green0[9:0]
++top.u_isp.u_raw2rgb.line2_green1[9:0]
++top.u_isp.u_raw2rgb.line3_green0[9:0]
++top.u_isp.u_raw2rgb.line3_green1[9:0]
++top.u_isp.u_raw2rgb.line3_red0[9:0]
++top.u_isp.u_raw2rgb.line3_red1[9:0]
++@28
++top.u_isp.u_raw2rgb.line_end
++top.u_isp.u_raw2rgb.line_not_read[1:0]
++top.u_isp.u_raw2rgb.odd_pixel
++@22
++top.u_isp.u_raw2rgb.read_count[8:0]
++top.u_isp.u_raw2rgb.read_count_nxt[8:0]
++@28
++top.u_isp.u_raw2rgb.reading
++@22
++top.u_isp.u_raw2rgb.rgb_out1[23:0]
++top.u_isp.u_raw2rgb.rgb_out[23:0]
++@28
++top.u_isp.u_raw2rgb.rgb_valid
++top.u_isp.u_raw2rgb.rst
++top.u_isp.u_raw2rgb.temp_4lane
++@22
++top.u_isp.u_raw2rgb.wen[3:0]
++@28
++top.u_isp.u_raw2rgb.wr_line_sel[1:0]
++@22
++top.u_isp.u_raw2rgb.write_count[8:0]
++@28
++top.u_isp.u_raw2rgb.writing
++[pattern_trace] 1
++[pattern_trace] 0
+diff --git a/2.sim/cocotb/top/csi-rx-10bit-unpack.gtkw b/2.sim/cocotb/top/csi-rx-10bit-unpack.gtkw
+new file mode 100644
+index 0000000..4013b8b
+--- /dev/null
++++ b/2.sim/cocotb/top/csi-rx-10bit-unpack.gtkw
+@@ -0,0 +1,46 @@
++[*]
++[*] GTKWave Analyzer v3.3.104 (w)1999-2020 BSI
++[*] Sun Jul 28 22:03:42 2024
++[*]
++[dumpfile] "/mnt/c/Users/Armin/Desktop/openeye/2.sim/cocotb/top/dump.fst"
++[dumpfile_mtime] "Sun Jul 28 19:30:32 2024"
++[dumpfile_size] 3599121
++[savefile] "/mnt/c/Users/Armin/Desktop/openeye/2.sim/cocotb/top/csi-rx-10bit-unpack.gtkw"
++[timestart] 69453980
++[size] 1588 827
++[pos] -187 -90
++*-14.280722 69544272 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
++[treeopen] .
++[treeopen] .top.
++[treeopen] .top.u_csi_rx_top.
++[sst_width] 214
++[signals_width] 318
++[sst_expanded] 1
++[sst_vpaned_height] 488
++@28
++top.u_csi_rx_top.u_10bit_unpack.clock
++top.u_csi_rx_top.u_10bit_unpack.din_valid
++@22
++top.u_csi_rx_top.u_10bit_unpack.data_in[31:0]
++@200
++-
++@24
++top.u_csi_rx_top.u_10bit_unpack.byte_count_int[2:0]
++@22
++top.u_csi_rx_top.u_10bit_unpack.bytes_int[31:0]
++@200
++-
++@28
++top.u_csi_rx_top.u_10bit_unpack.dout_valid_int
++top.u_csi_rx_top.u_10bit_unpack.dout_valid_up
++@22
++top.u_csi_rx_top.u_10bit_unpack.dout_int[39:0]
++top.u_csi_rx_top.u_10bit_unpack.dout_unpacked[39:0]
++@200
++-
++@29
++top.u_csi_rx_top.u_10bit_unpack.dout_valid
++@22
++top.u_csi_rx_top.u_10bit_unpack.data_out[39:0]
++[pattern_trace] 1
++[pattern_trace] 0
+diff --git a/2.sim/cocotb/top/test_top.py b/2.sim/cocotb/top/test_top.py
+index 584863e..1e4629f 100644
+--- a/2.sim/cocotb/top/test_top.py
++++ b/2.sim/cocotb/top/test_top.py
+@@ -90,10 +90,10 @@ async def test_2(dut):
+ 
+    await Timer(8*diff_clock_period_ns, units='ns')
+ 
+-   num_lane = 4
++   num_lane = 2
+    dinvert = [0, 1] if num_lane == 2 else [0, 1, 0, 1]
+     
+-   csi = CSI(dut, dut.cam_dphy_dat, period_ns=1.096, fps_Hz=60, line_length=1280, frame_length=720, frame_blank=130, num_lane=num_lane, dinvert=dinvert, uniform_data=False)
++   csi = CSI(dut, dut.cam_dphy_dat, period_ns=1.096, fps_Hz=60, line_length=1280, frame_length=720, frame_blank=130, num_lane=num_lane, dinvert=dinvert, raw=8, uniform_data=True, start_value=0x01)
+     
+    # Run the CSI class to send frames
+    await csi.run(1)  # Sending 3 frames as an example

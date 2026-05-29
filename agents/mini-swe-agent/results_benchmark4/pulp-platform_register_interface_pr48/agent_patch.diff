@@ -1,0 +1,59 @@
+diff --git a/src/axi_lite_to_reg.sv b/src/axi_lite_to_reg.sv
+index 98eca25..5ca7421 100644
+--- a/src/axi_lite_to_reg.sv
++++ b/src/axi_lite_to_reg.sv
+@@ -216,6 +216,54 @@ module axi_lite_to_reg #(
+ 
+ endmodule
+ 
++/// A protocol converter from a register interface to AXI4-Lite.
++module reg_to_axi_lite #(
++  /// The width of the address.
++  parameter int ADDR_WIDTH = -1,
++  /// The width of the data.
++  parameter int DATA_WIDTH = -1,
++  /// Buffer depth (how many outstanding transactions do we allow)
++  parameter int BUFFER_DEPTH = 2,
++  /// Whether the AXI-Lite W channel should be decoupled with a register. This
++  /// can help break long paths at the expense of registers.
++  parameter bit DECOUPLE_W = 1,
++  /// Register request struct type.
++  parameter type reg_req_t = logic,
++  /// Register response struct type.
++  parameter type reg_rsp_t = logic,
++  /// AXI-Lite request struct type.
++  parameter type axi_lite_req_t = logic,
++  /// AXI-Lite response struct type.
++  parameter type axi_lite_rsp_t = logic
++) (
++  input  logic           clk_i         ,
++  input  logic           rst_ni        ,
++  input  reg_req_t       reg_req_i     ,
++  output reg_rsp_t       reg_rsp_o     ,
++  output axi_lite_req_t  axi_lite_req_o,
++  input  axi_lite_rsp_t  axi_lite_rsp_i
++);
++
++  axi_lite_to_reg #(
++    .ADDR_WIDTH    ( ADDR_WIDTH     ),
++    .DATA_WIDTH    ( DATA_WIDTH     ),
++    .BUFFER_DEPTH  ( BUFFER_DEPTH   ),
++    .DECOUPLE_W    ( DECOUPLE_W     ),
++    .axi_lite_req_t( axi_lite_req_t ),
++    .axi_lite_rsp_t( axi_lite_rsp_t ),
++    .reg_req_t     ( reg_req_t      ),
++    .reg_rsp_t     ( reg_rsp_t      )
++  ) i_reg_to_axi_lite_adapter (
++    .clk_i,
++    .rst_ni,
++    .axi_lite_req_i ( axi_lite_req_o ),
++    .axi_lite_rsp_o ( axi_lite_rsp_i ),
++    .reg_req_o      ( reg_req_i      ),
++    .reg_rsp_i      ( reg_rsp_o      )
++  );
++
++endmodule
++
+ `include "register_interface/typedef.svh"
+ `include "register_interface/assign.svh"
+ `include "axi/typedef.svh"

@@ -1,0 +1,86 @@
+diff --git a/src/dv/hvl_top/env/axi4_master_collector.sv b/src/dv/hvl_top/env/axi4_master_collector.sv
+index ea01532..d7a7dc8 100644
+--- a/src/dv/hvl_top/env/axi4_master_collector.sv
++++ b/src/dv/hvl_top/env/axi4_master_collector.sv
+@@ -13,6 +13,9 @@ class axi4_master_collector extends uvm_component;
+ 
+   uvm_reg_map map;
+ 
++  // reference to register model for resolving addresses to registers
++  uvm_reg_block model;
++
+   collector_packet_s coll_pkt;
+ 
+   //-------------------------------------------------------
+@@ -46,6 +49,15 @@ endfunction : new
+ //--------------------------------------------------------------------------------------------
+ function void axi4_master_collector::build_phase(uvm_phase phase);
+   super.build_phase(phase);
++  coll_pkt = '{default:'0};
++
++  if(!uvm_config_db#(uvm_reg_map)::get(this, "", "reg_map", map)) begin
++    `uvm_fatal(get_type_name(), "Failed to get reg_map for axi4_master_collector")
++  end
++
++  if(!uvm_config_db#(uvm_reg_block)::get(this, "", "reg_model", model)) begin
++    `uvm_fatal(get_type_name(), "Failed to get reg_model for axi4_master_collector")
++  end
+ endfunction : build_phase
+ 
+ //--------------------------------------------------------------------------------------------
+@@ -60,13 +72,17 @@ function void axi4_master_collector::write(axi4_master_tx t);
+   `uvm_info(get_type_name(),$sformatf("Req print = %0s",t.sprint()),UVM_HIGH)
+ 
+   rg = map.get_reg_by_offset(t.awaddr,t.tx_type);
+-`uvm_info(get_type_name(), $sformatf("rg_name = %0s", rg.get_name()),UVM_HIGH)
++  if(rg == null) begin
++    `uvm_warning(get_type_name(), $sformatf("No register found for address %0h", t.awaddr))
++    return;
++  end
++  `uvm_info(get_type_name(), $sformatf("rg_name = %0s", rg.get_name()),UVM_HIGH)
+   `uvm_info(get_type_name(), $sformatf("rg_address = %0h", rg.get_address()),UVM_HIGH)
+   `uvm_info(get_type_name(), $sformatf("rg_data = %0h", rg.get()),UVM_HIGH)
+   `uvm_info(get_type_name(), $sformatf("map_name = %0p", map.get_full_name()),UVM_HIGH)
+   //`uvm_info(get_type_name(), $sformatf("map_value = %0p", map),UVM_HIGH) 
+ 
+-  if(rg.get_name == "SPILEN") begin
++  if(rg.get_name() == "SPILEN") begin
+     coll_pkt.spi_length = rg.get();  
+     `uvm_info(get_type_name(), $sformatf("coll_pkt.spi_length = %0h", coll_pkt.spi_length),UVM_HIGH)
+     coll_pkt.cmd_len = coll_pkt.spi_length[5:0];
+@@ -74,7 +90,7 @@ function void axi4_master_collector::write(axi4_master_tx t);
+     coll_pkt.mosi_data_len = coll_pkt.spi_length[31:16];
+   end
+ 
+-  if(rg.get_name == "SPICMD") begin : SPICMD
++  if(rg.get_name() == "SPICMD") begin : SPICMD
+     
+     bit [31:0]cmd_local;
+     int k;
+@@ -107,7 +123,7 @@ function void axi4_master_collector::write(axi4_master_tx t);
+   
+   end
+   
+-  if(rg.get_name == "SPIADR") begin : SPIADR
++  if(rg.get_name() == "SPIADR") begin : SPIADR
+     
+     bit [31:0]addr_local;
+     int k;
+@@ -138,7 +154,7 @@ function void axi4_master_collector::write(axi4_master_tx t);
+     `uvm_info(get_type_name(),$sformatf("Inside TX_FIFO -flag=%0h",coll_pkt.flag),UVM_HIGH)
+   end
+ 
+-  if(rg.get_name == "SPIDUM") begin : SPIDUM
++  if(rg.get_name() == "SPIDUM") begin : SPIDUM
+     
+     bit [31:0]dummy_local;
+     bit [15:0]dummy_wr_local;
+@@ -166,7 +182,7 @@ function void axi4_master_collector::write(axi4_master_tx t);
+     `uvm_info(get_type_name(),$sformatf("Inside DUMMY_WR -flag=%0h",coll_pkt.flag),UVM_HIGH)
+   end
+ 
+-  if(rg.get_name == "TXFIFO") begin : TXFIFIO
++  if(rg.get_name() == "TXFIFO") begin : TXFIFIO
+ 
+     bit [31:0]mosi_data_local;
+ 

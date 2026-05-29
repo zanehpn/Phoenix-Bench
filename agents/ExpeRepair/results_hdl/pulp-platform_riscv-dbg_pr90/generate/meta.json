@@ -1,0 +1,10 @@
+{
+    "task_info": {
+        "base_commit": "485fa979098288b41f5bc2063c9cdd057c3a7a89",
+        "problem_statement": "# abstract cmd error? or a typo?  when two dscratch implemented\n\nHi sir, I find there may be wrong in the code below:\n1. the comment is  \"store a0 in dscratch1\" while used the \"dm::csrr\" which means that read a csr(dscratch1) and store it into a0.  so the code or comment maybe wrong here!\nhttps://github.com/pulp-platform/riscv-dbg/blob/3670267ab150f5a95e773bc18b1814e4031dc508/src/dm_mem.sv#L357\n2. the senario in which can execute a abstract cmd is executing this sequence : \"_entry\" , \"going\", \"whereto\" and going into abstract cmd.  codes can be expanded bellow (assume dscratch1 implemented ):\n\n_entry:\n....\ngoing:\n#ifdef SND_SCRATCH\n        sw zero, GOING(a0)          // When debug module sees this write, the GO flag is reset.\n        **csrr a0, CSR_DSCRATCH1      // Restore a0 here**  **_where CSR_DSCRATCH1 contains the original value of a0_**\n#else\n        sw zero, GOING(zero)          // When debug module sees this write, the GO flag is reset.\n#endif\n        csrr s0, CSR_DSCRATCH0      // Restore s0 here\n        jal zero, whereto\n\n// store a0 in dscratch1 \ndm::csrr(dm::CSR_DSCRATCH1, 5'd10)   **@AbstractCmdBaseAddr the first instruction**\nhere the values of CSR_DSCRATCH1 and a0 are the same (see the csrr a0, .. above)\nso why should we move data between CSR_DSCRATCH1 & a0 when thay already the same?\nso I think here no csr instruction is needed at all,   what do you think?\n......\n",
+        "instance_id": "pulp-platform_riscv-dbg_pr90"
+    },
+    "setup_info": {
+        "repo_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_riscv-dbg_pr90"
+    }
+}

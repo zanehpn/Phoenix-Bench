@@ -1,0 +1,713 @@
+From 7a428c4f900ba6a59979f4ffb22fe8e4ca4898b1 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Wed, 17 Sep 2025 17:50:43 +0200
+Subject: [PATCH 1/9] wip - flip correction in jtframe_tilemap
+
+---
+ modules/jtframe/hdl/video/tilemap/jtframe_tilemap.v | 12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/modules/jtframe/hdl/video/tilemap/jtframe_tilemap.v b/modules/jtframe/hdl/video/tilemap/jtframe_tilemap.v
+index f45989b86..bb4f8ba9e 100644
+--- a/modules/jtframe/hdl/video/tilemap/jtframe_tilemap.v
++++ b/modules/jtframe/hdl/video/tilemap/jtframe_tilemap.v
+@@ -74,7 +74,8 @@ module jtframe_tilemap #( parameter
+ );
+ 
+ reg   [DW-1:0]    pxl_data;
+-reg [PALW-1:0]    cur_pal, nx_pal;
++reg   [CW-1:0]    fcode;
++reg [PALW-1:0]    cur_pal, nx_pal, flip_pal;
+ wire              vflip_g, xhflip;
+ reg               hflip_g, nx_hf;
+ reg  [HDUMPW-1:0] heff, hoff;
+@@ -86,6 +87,8 @@ assign veff = FLIP_VDUMP ? vdump ^ { FLIP_MSB[0]&flip, {VDUMPW-1{flip}}} : vdump
+ always @* begin
+     hoff = hdump - HDUMP_OFFSET[HDUMPW-1:0];
+     heff = FLIP_HDUMP ? hoff ^ {HDUMPW{flip}} : hoff;
++    if(hflip_g)
++        heff = heff -9'h8;
+ end
+ 
+ initial begin
+@@ -127,6 +130,7 @@ end
+ integer i;
+ always @* begin
+     pxl[PW-1-:PALW] = cur_pal;
++    if(xhflip) pxl[PW-1-:PALW] = flip_pal;
+     for(i=0;i<BPP;i=i+1) begin
+         if( hflip_g )
+             pxl[i] = pxl_data[i<<3];
+@@ -145,20 +149,24 @@ always @(posedge clk) begin
+         rom_addr <= 0;
+         pxl_data <= 0;
+         cur_pal  <= 0;
++        fcode    <= 0;
++        flip_pal <= 0;
+         hflip_g  <= 0;
+     end else if(pxl_cen) begin
+         heff_l <= heff[3];
+         hmsb_l <= hdump[7];
++        fcode  <= code;
+         if( zero ) begin
+             rom_cs <= ~rst & blankn;
+             rom_addr[0+:VW] <= veff[0+:VW]^{VW{vflip_g}};
+-            rom_addr[VR-1-:CW] <= code;
++            rom_addr[VR-1-:CW] <= xhflip ? fcode : code;
+             if( SIZE==16 ) rom_addr[VW]      <= heff[3]^xhflip;
+             if( SIZE==32 ) rom_addr[VW+1-:2] <= heff[4:3]^{2{xhflip}};
+             pxl_data <= rom_ok ? rom_data : {DW{1'b0}};
+             // draw information is eight pixels behind
+             nx_pal   <= pal;
+             cur_pal  <= nx_pal;
++            flip_pal <= cur_pal;
+             nx_hf    <= xhflip;
+             hflip_g  <= nx_hf;
+         end else begin
+
+From 738a0f4f8e4409246ee0abb8f9a4c634ff760649 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Thu, 18 Sep 2025 12:44:44 +0200
+Subject: [PATCH 2/9] linter
+
+---
+ modules/jtframe/hdl/video/tilemap/jtframe_tilemap.v | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/modules/jtframe/hdl/video/tilemap/jtframe_tilemap.v b/modules/jtframe/hdl/video/tilemap/jtframe_tilemap.v
+index bb4f8ba9e..56cbcec86 100644
+--- a/modules/jtframe/hdl/video/tilemap/jtframe_tilemap.v
++++ b/modules/jtframe/hdl/video/tilemap/jtframe_tilemap.v
+@@ -88,7 +88,7 @@ always @* begin
+     hoff = hdump - HDUMP_OFFSET[HDUMPW-1:0];
+     heff = FLIP_HDUMP ? hoff ^ {HDUMPW{flip}} : hoff;
+     if(hflip_g)
+-        heff = heff -9'h8;
++        heff = heff +{{HDUMPW-3{1'b1}},3'b0};
+ end
+ 
+ initial begin
+
+From ab055048538da732f7b86df024671b9a6086639d Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Thu, 18 Sep 2025 17:16:03 +0200
+Subject: [PATCH 3/9] parameter for delay when flip=1
+
+---
+ cores/karnov/hdl/jtkarnov_video.v                   |  4 ++--
+ modules/jtframe/hdl/video/tilemap/jtframe_scroll.v  |  2 ++
+ modules/jtframe/hdl/video/tilemap/jtframe_tilemap.v | 10 ++++++----
+ 3 files changed, 10 insertions(+), 6 deletions(-)
+
+diff --git a/cores/karnov/hdl/jtkarnov_video.v b/cores/karnov/hdl/jtkarnov_video.v
+index bcc50ecef..5de77ff4c 100644
+--- a/cores/karnov/hdl/jtkarnov_video.v
++++ b/cores/karnov/hdl/jtkarnov_video.v
+@@ -120,7 +120,7 @@ wire [10:1] vram_raw;
+ 
+ assign vram_addr = wndrplnt ? {vram_raw[5:1], vram_raw[10:6]} : vram_raw;
+ 
+-jtframe_tilemap #(.PW(6),.CW(10),.XOR_HFLIP(1)) u_fix(
++jtframe_tilemap #(.PW(6),.CW(10),.XOR_HFLIP(1),.FLIP_DLY(1)) u_fix(
+     .rst        ( rst       ),
+     .clk        ( clk       ),
+     .pxl_cen    ( pxl_cen   ),
+@@ -145,7 +145,7 @@ jtframe_tilemap #(.PW(6),.CW(10),.XOR_HFLIP(1)) u_fix(
+     .pxl        ( { fix_pxl[4:3], fix_pxl[2:0], nc } ) // the fix layer is only 3 bpp
+ );
+ 
+-jtframe_scroll #(.SIZE(16),.PW(8),.VA(10),.CW(11),.XOR_HFLIP(1)) u_scroll(
++jtframe_scroll #(.SIZE(16),.PW(8),.VA(10),.CW(11),.XOR_HFLIP(1),.FLIP_DLY(1)) u_scroll(
+     .rst        ( rst       ),
+     .clk        ( clk       ),
+     .pxl_cen    ( pxl_cen   ),
+diff --git a/modules/jtframe/hdl/video/tilemap/jtframe_scroll.v b/modules/jtframe/hdl/video/tilemap/jtframe_scroll.v
+index dc222671d..8dffc3071 100644
+--- a/modules/jtframe/hdl/video/tilemap/jtframe_scroll.v
++++ b/modules/jtframe/hdl/video/tilemap/jtframe_scroll.v
+@@ -33,6 +33,7 @@ module jtframe_scroll #( parameter
+     // override VH and HW only for non rectangular tiles
+     VW   = SIZE==8 ? 3 : SIZE==16 ? 4:5,
+     HW   = VW,
++    FLIP_DLY  = 0,
+     XOR_HFLIP = 0, // set to 1 so hflip gets ^ with flip
+     XOR_VFLIP = 0, // set to 1 so vflip gets ^ with flip
+     HJUMP     = 1, // set to 0 for linear hdump starting at zero after HB
+@@ -105,6 +106,7 @@ jtframe_tilemap #(
+     .FLIP_HDUMP ( 0         ), // hdump is already flipped, don't flip it again
+     .FLIP_VDUMP ( 0         ), // same for vdump
+     .FLIP_MSB   ( 0         ),
++    .FLIP_DLY   ( FLIP_DLY  ),
+     .XOR_HFLIP  ( XOR_HFLIP ),
+     .XOR_VFLIP  ( XOR_VFLIP ),
+     .VW         ( VW        ),
+diff --git a/modules/jtframe/hdl/video/tilemap/jtframe_tilemap.v b/modules/jtframe/hdl/video/tilemap/jtframe_tilemap.v
+index 56cbcec86..16fd4e7bf 100644
+--- a/modules/jtframe/hdl/video/tilemap/jtframe_tilemap.v
++++ b/modules/jtframe/hdl/video/tilemap/jtframe_tilemap.v
+@@ -34,6 +34,7 @@ module jtframe_tilemap #( parameter
+     FLIP_MSB     = 1, // set to 0 for scroll tile maps
+     FLIP_HDUMP   = 1,
+     FLIP_VDUMP   = 1,
++    FLIP_DLY     = 0,
+     XOR_HFLIP    = 0,  // set to 1 so hflip gets ^ with flip
+     XOR_VFLIP    = 0,  // set to 1 so vflip gets ^ with flip
+     HDUMP_OFFSET = 0,  // adds an offset to hdump
+@@ -76,7 +77,7 @@ module jtframe_tilemap #( parameter
+ reg   [DW-1:0]    pxl_data;
+ reg   [CW-1:0]    fcode;
+ reg [PALW-1:0]    cur_pal, nx_pal, flip_pal;
+-wire              vflip_g, xhflip;
++wire              vflip_g, xhflip, flip_dly;
+ reg               hflip_g, nx_hf;
+ reg  [HDUMPW-1:0] heff, hoff;
+ wire [VDUMPW-1:0] veff;
+@@ -87,7 +88,7 @@ assign veff = FLIP_VDUMP ? vdump ^ { FLIP_MSB[0]&flip, {VDUMPW-1{flip}}} : vdump
+ always @* begin
+     hoff = hdump - HDUMP_OFFSET[HDUMPW-1:0];
+     heff = FLIP_HDUMP ? hoff ^ {HDUMPW{flip}} : hoff;
+-    if(hflip_g)
++    if(flip && FLIP_DLY==1)
+         heff = heff +{{HDUMPW-3{1'b1}},3'b0};
+ end
+ 
+@@ -112,6 +113,7 @@ end
+ 
+ assign xhflip  = (flip & XOR_HFLIP[0])^hflip;
+ assign vflip_g = (flip & XOR_VFLIP[0])^vflip;
++assign flip_dly= xhflip && FLIP_DLY==1;
+ 
+ // VRAM address width of H and V portions
+ localparam AHW=MAP_HW-HW,
+@@ -130,7 +132,7 @@ end
+ integer i;
+ always @* begin
+     pxl[PW-1-:PALW] = cur_pal;
+-    if(xhflip) pxl[PW-1-:PALW] = flip_pal;
++    if(flip_dly) pxl[PW-1-:PALW] = flip_pal;
+     for(i=0;i<BPP;i=i+1) begin
+         if( hflip_g )
+             pxl[i] = pxl_data[i<<3];
+@@ -159,7 +161,7 @@ always @(posedge clk) begin
+         if( zero ) begin
+             rom_cs <= ~rst & blankn;
+             rom_addr[0+:VW] <= veff[0+:VW]^{VW{vflip_g}};
+-            rom_addr[VR-1-:CW] <= xhflip ? fcode : code;
++            rom_addr[VR-1-:CW] <= flip_dly ? fcode : code;
+             if( SIZE==16 ) rom_addr[VW]      <= heff[3]^xhflip;
+             if( SIZE==32 ) rom_addr[VW+1-:2] <= heff[4:3]^{2{xhflip}};
+             pxl_data <= rom_ok ? rom_data : {DW{1'b0}};
+
+From 5fb494ddeadcf8bebe4a8f3f3ba19d50535f5749 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Fri, 19 Sep 2025 13:29:19 +0200
+Subject: [PATCH 4/9] Scene simulation in Karnov
+
+---
+ cores/karnov/cfg/files.yaml      |  3 +++
+ cores/karnov/cfg/macros.def      |  4 +++-
+ cores/karnov/cfg/mem.yaml        |  3 +++
+ cores/karnov/hdl/jtkarnov_game.v |  5 ++++-
+ cores/karnov/hdl/jtkarnov_main.v | 14 +++++++++++---
+ 5 files changed, 24 insertions(+), 5 deletions(-)
+
+diff --git a/cores/karnov/cfg/files.yaml b/cores/karnov/cfg/files.yaml
+index 8e54e5fa8..131bda81e 100644
+--- a/cores/karnov/cfg/files.yaml
++++ b/cores/karnov/cfg/files.yaml
+@@ -25,6 +25,9 @@ jtframe:
+     unless: [NOMCU]
+     get:
+       - jtframe_8751.yaml
++  - from: debug
++    get:
++      - jtframe_simdumper.v
+   - from: ram
+     get:
+       - jtframe_ram.v
+diff --git a/cores/karnov/cfg/macros.def b/cores/karnov/cfg/macros.def
+index 1d4169bfb..cbd3de7fd 100644
+--- a/cores/karnov/cfg/macros.def
++++ b/cores/karnov/cfg/macros.def
+@@ -27,4 +27,6 @@ JTFRAME_WIDTH=256
+ JTFRAME_HEIGHT=240
+ 
+ JTFRAME_ARX=5
+-JTFRAME_ARY=4
+\ No newline at end of file
++JTFRAME_ARY=4
++
++debug JTFRAME_IOCTL_RD=8216
+\ No newline at end of file
+diff --git a/cores/karnov/cfg/mem.yaml b/cores/karnov/cfg/mem.yaml
+index 544c40759..99d0d55e3 100644
+--- a/cores/karnov/cfg/mem.yaml
++++ b/cores/karnov/cfg/mem.yaml
+@@ -55,12 +55,14 @@ bram:
+     data_width: 16
+     addr_width: 11
+     sim_file: true
++    ioctl: { save: true, order: 0 }
+     dual_port: { name: main, we: vram_we, rw: true }
+ 
+   - name: scrram
+     data_width: 16
+     addr_width: 11
+     sim_file: true
++    ioctl: { save: true, order: 1 }
+     dual_port: { name: main, we: scrram_we, rw: true }
+ 
+   - name: objram
+@@ -68,6 +70,7 @@ bram:
+     addr_width: 12
+     addr: dma_addr
+     sim_file: true
++    ioctl: { save: true, order: 2 }
+     dual_port: { name: main, we: objram_we, rw: true }
+ 
+   - name: objbuf
+diff --git a/cores/karnov/hdl/jtkarnov_game.v b/cores/karnov/hdl/jtkarnov_game.v
+index cf44e71d8..f9d877831 100644
+--- a/cores/karnov/hdl/jtkarnov_game.v
++++ b/cores/karnov/hdl/jtkarnov_game.v
+@@ -46,7 +46,8 @@ assign objram_we  = {2{objram_cs & ~main_wrn}} & ~main_dsn;
+ assign sdtkn = 0;
+ 
+ always @(posedge clk) begin
+-    if( ioctl_addr=='h163 ) wndrplnt <= prog_data==2;
++    if( ioctl_addr=='h163 && !ioctl_ram )
++        wndrplnt <= prog_data==2;
+ end
+ 
+ jtkarnov_main u_main(
+@@ -106,6 +107,8 @@ jtkarnov_main u_main(
+     .dipsw      ( dipsw[15:0]   ),
+ 
+     // Debug
++    .ioctl_addr ( ioctl_addr[1:0]),
++    .ioctl_din  ( ioctl_din     ),
+     .st_addr    ( debug_bus     ),
+     .st_dout    ( st_main       )
+ );
+diff --git a/cores/karnov/hdl/jtkarnov_main.v b/cores/karnov/hdl/jtkarnov_main.v
+index f19d181cc..5d450c810 100644
+--- a/cores/karnov/hdl/jtkarnov_main.v
++++ b/cores/karnov/hdl/jtkarnov_main.v
+@@ -75,6 +75,8 @@ module jtkarnov_main(
+     input       [15:0] dipsw,
+ 
+     // Debug
++    input    [1:0]     ioctl_addr,
++    output   [7:0]     ioctl_din,
+     input    [7:0]     st_addr,
+     output   [7:0]     st_dout
+ );
+@@ -278,16 +280,15 @@ assign sonreq   = 0;
+ assign RnW      = 1;
+ assign st_dout  = 0;
+ assign secreq   = 0;
+-assign flip     = 0;
+ assign mcu_din  = 0;
+ assign dsn      = 3;
+ // Read the scroll values in simulation
+ reg [8:0] scrfile[0:1];
+ 
+ initial begin
+-    $readmemh( "scrpos.hex", scrfile);
++    // $readmemh( "scrpos.hex", scrfile);
+     scrx = scrfile[0];
+-    scry = scrfile[1];
++    // scry = scrfile[1];
+ end
+ always @(negedge LVBL) begin
+     scrx <= scrx+1'd1;
+@@ -295,4 +296,11 @@ end
+ always @(posedge clk) dmarq <= LVBL;
+ 
+ `endif
++
++jtframe_simdumper #(.DW(19)) dumper(
++    .clk        ( clk           ),
++    .data       ( {flip,scry,`ifndef NOMAIN scrx `else scrfile[0] `endif} ),
++    .ioctl_addr ( ioctl_addr    ),
++    .ioctl_din  ( ioctl_din     )
++);
+ endmodule
+\ No newline at end of file
+
+From a7c52ec09fca407aad461dcdc8f6c7d8201c0403 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Fri, 19 Sep 2025 13:31:05 +0200
+Subject: [PATCH 5/9] wndrplnt: added scenes with and without flip
+
+---
+ cores/karnov/ver/wndrplnt/scenes/1/dump.bin      | Bin 0 -> 8216 bytes
+ .../ver/wndrplnt/scenes/flip-title/dump.bin      | Bin 0 -> 8216 bytes
+ cores/karnov/ver/wndrplnt/scenes/flip1/dump.bin  | Bin 0 -> 8216 bytes
+ cores/karnov/ver/wndrplnt/scenes/title/dump.bin  | Bin 0 -> 8216 bytes
+ 4 files changed, 0 insertions(+), 0 deletions(-)
+ create mode 100644 cores/karnov/ver/wndrplnt/scenes/1/dump.bin
+ create mode 100644 cores/karnov/ver/wndrplnt/scenes/flip-title/dump.bin
+ create mode 100644 cores/karnov/ver/wndrplnt/scenes/flip1/dump.bin
+ create mode 100644 cores/karnov/ver/wndrplnt/scenes/title/dump.bin
+
+diff --git a/cores/karnov/ver/wndrplnt/scenes/1/dump.bin b/cores/karnov/ver/wndrplnt/scenes/1/dump.bin
+new file mode 100644
+index 0000000000000000000000000000000000000000..123a8c5b49960a1c58a4cd9c1aececaebbda3ae8
+GIT binary patch
+literal 8216
+zcmeHI$xc*36g`ECf&v11ac)IGAYvm<ptRkLilTHFj601TFaANhQ+8}z=-!n>jBy~w
+z7}VczK%D0R#d$(atXr?&v%7<>aX}=hSE=FT)w%cFQ}yzI@$odE9ZhIN3p%yn%JCuE
+zs<aM_LkAl5mlj4FI$~d2gI>2_>ljxOMyu9Qr&TnKab}zDe{*06ukadg@m>r2h|l<n
+zZ}<@>vQ{-GwSWQ+_8jVQHod@04C4*nY4`!3@C76I?(wgL0(xELVP{dVZ~Ye38*m*r
+za1*z2SEKuQh{t$}=idIS5PtlV{C~QJ0Sw|6?&wYT@BokS1kXG|UMN500kinUClsI}
+z_Oe?4_nelv+al|Lb-+6CPYw{gR!SvQr27J%!^C-9OpDFCC~csP6gFdklCpSgP#G;T
+z-N$pefb-dn9HlN=M**s#4n6*!FZrb}<VA*CM1@*UA=S|~s@2T3)R~g+=AXy2cm_}B
+zGOb@~h*Eo8OO?OS<e$&8c_!zwXptJ~;_45NqTf$`TB-L*F45rnCu@ga6RTfbNY1~E
+zR!}Qf@+z~pRM+eJ=jM;<%ANXUOy*ZmHErTGF}`SUd@C_pB!5V=q{%7%i7)%zIwZfu
+zYNqwnrkP!%o?iu3(Pm!GOO1Ze6mxb`htw~zU?K$cDUN=At4W$<24!*vPv%MH?m6|#
+zjdUXfw2tKZ9iBT*<t)mgY@Vo96dV6Vg;Pb4q^0Ih)BJKBVS;yiMTP5XBiC~(ekSK|
+zx#4GX8cSB^s}NTtMiV!r<coUYivnftFU*Z}T`^TA3NWs@)jR54zMO&Mf{v@3<4PjE
+zw>K9#>S$!|ex>JA5y3un++d$NZLnXRFxaoo7#vh54GyZakv)dr7ujz3{RaEgIfH%b
+zqQQQ3-eAAFWN=VjFgU0#NA_vnF^u$e>-h+VcFMdP!x=kz^Kk$J=`tV2V7kOF1Nsxy
+oTVx%u4p;}Q1J(iSfOWt+U>&dySO=^F)&c9l-#E~XU1_8BpS3g8JOBUy
+
+literal 0
+HcmV?d00001
+
+diff --git a/cores/karnov/ver/wndrplnt/scenes/flip-title/dump.bin b/cores/karnov/ver/wndrplnt/scenes/flip-title/dump.bin
+new file mode 100644
+index 0000000000000000000000000000000000000000..2b819de2905d6faa3d8df59c64ef95e3aa5ba4e5
+GIT binary patch
+literal 8216
+zcmeH_%SyvQ6o!Ang-cx&Ty~#L1hv*{Yg=y%EnfD0gg!zSB1J@kh=_;;5fKpy;*?TF
+zf{2KSWaGXsFz?{x@4|wGVx*wuOvs$cIr+|Hz83iX7&I-0ki-}gW|c)6>*fY>W?nOE
+zAcGaGBF{OjE}GS{$#-hB`i4&JC4I$!7!U(uKn(mp152^SwHRB7VWY*>=1ASh_kA>Z
+zh<N^KHKy1l5}#EwDyfFU4sAwj|2dUX<7y-_Kc~`aLXAe|=hdv5REfwuHZp1|q$8f6
+zWJv#<&o!}8_{OeZbEMy|=^HxCw`nhBF(3xI*nn3aKtFCQhw;`5OpK#qh50zD%*Ro)
+zihRDe@{A9b&FEYGjF04OJdv~UOwPs&IUBF!Y`l@P@lMW0!1oH+)M5VuwshFPfU<T>
+zEMlAaB6gTBVpqE+UxK4cjC;DkxUW-;2dq0dWZl6L>kf`tcW}bG3zu~lr>wg;W8K9$
+z_w{hWeLY-qUk_Kz`?zM_hsV5+8}<uu%YFeW>=&S_^Q9gHsA<o{I_}8VaZkRE2l93J
+lx{Lo>ax^g@2E>3E5CdXB42S_SAO^&M82D2LdV7KI_a}I1_s;+T
+
+literal 0
+HcmV?d00001
+
+diff --git a/cores/karnov/ver/wndrplnt/scenes/flip1/dump.bin b/cores/karnov/ver/wndrplnt/scenes/flip1/dump.bin
+new file mode 100644
+index 0000000000000000000000000000000000000000..b9e36ebe0775110079909731506a07253f278a16
+GIT binary patch
+literal 8216
+zcmeHINlz3(7=7h}fPw=0G46_h0}(;o24$38Q50k`dLx<m#j7X0n8=Nb2fcf8i7_t3
+z7=!vZToCttL2=(T@%yT$$6<nF;(<s~Q|YdH)Aj0m?^Sgg7#qJ@w4xq$XhgdRE*l%7
+zol2L$7)+o}-n14pqb>Tj)ylXLTSwVR3z|enwWz2c<;t$y|CYcYUg0&~;=Ks_h|l<n
+z@Aw%fveGmpw6FmVb|32YCcVH*4B-vl3H*Rh_=0cv5#wK}3d^`WhP^?Jocb-OvEVvx
+z;3jV4uAuvPh{t$}=dt-$q5Sw?;`iwq`Z0i8xFeJ9;Q=1u37*9W*;P4JF<=M3`Gj1Q
+zL?4FayXUpxvmJ5?xCC4R|C9hB)`C<>`Et$USxlVG1+>UM>!J;`ky`9MObJzDY)}y`
+zw%2@~&AFVz{>oj{L2D^Y71Sp8Kl8P|UJH1k<>phK=*gpM+D?_iTtn?i`F{O59N_6Z
+zjf+ITdg!9oxR$Jbo~=KZXYvfrV%4G^s^k2(jG(`iN@<16(^{&*&rio5zar{iQ%J18
+zl$KKym+?wFHz<Dn{QUY|;@tDE_e6dPg=iD6j`CH5ms_FLqV=nUrA>G7Z+xBa`_THj
+zRs*f0W?^=WxPK*7PMdidFR}VTsdn$whx*sGU{?ssE{?o^t4Nzx2BmWvPvVL8?0Nq6
+zMEWa)MMt84kLTYfa|UHlCQlF*1vY<G;kj5(+LH692)|fX7#};ms=`mTj%zp>Kb@y?
+zvE^s-IM%A(TcN4w8ueV8l&|WQuL_Jkzpy9LPsO?%F2JVdyZ6-leBA>t1zA^`m&$N@
+zPfr$7&C$r-{YLsz5yb&>+~R;aZE?_?usCSWSR67ZEe@Hpk=>Tx8`)v`eHI7IIg114
+zqQyaT-r}ISWO2w`usCEcNA?Ks7{2xHl>P_?JGI}1p|ov1IXHm+6zvaVAf;LUPY3$6
+t&OYgfyKu-Q;1X~NxCC4RE&-Q-OTZ=I5^xE)1Y80xfn*7Ef>TDiegVIm)p7s;
+
+literal 0
+HcmV?d00001
+
+diff --git a/cores/karnov/ver/wndrplnt/scenes/title/dump.bin b/cores/karnov/ver/wndrplnt/scenes/title/dump.bin
+new file mode 100644
+index 0000000000000000000000000000000000000000..534083eea84f474fbce8cdbaaea78068865d2f52
+GIT binary patch
+literal 8216
+zcmeH_ze>YU6o-Fqj&&$FcFz()ZR_7^ty%{yYWF-sAEARt5s@GwA|gRVL_~ski>OEt
+z5fPCr?tOv#4&MAa*r8C2bZ9v@<er;z`kkBmrNIBkuxT-ZEHX%&)dJ?QX>Ook<_)t3
+z@>s(<N}Qu=(X3WYzFVW+J9KL==_>}rfEW-1Vxad7tR$OPF}a*Xxy{w#Nd3qUez$mt
+zdHxxdQS1_nUr@6ut45;^9Y%Zq1(j11YAiOtsOHq98jsB{sd+V}(y@7z^J+SxW1gR6
+zME{*Hw6Jmb=B~eUtnb(I4qfIuw3o6N5CeT|z^@G<fm_REyt6_RQ>a@}K81VcQ+Ti{
+ze15V@jL(+M7+49$7jiaU$=P@#XXBlmjSq4*KFQhmB4;Dy?;LFDsK0}49rbrm)2@jX
+z>@Z)!F7p-aY0u=VaCMb&UptHkI>&g(x{D*$T^zIS;)Hb<r>uMMSod(ox`%VtJzQ{K
+zAD7(M#})VWam{>y8|DM}%m=t-zYurq7oyI7A?|glI)D%l+BdO*NAe9kk#FFcd;@{*
+f<G+?1O$>+uF(3xSfEW-1Vn7Ut0Wly3dceRBc0u=_
+
+literal 0
+HcmV?d00001
+
+
+From acb172d47f4d412528822b0fea4ede2f13cfee78 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Fri, 19 Sep 2025 15:49:01 +0200
+Subject: [PATCH 6/9] sim linter
+
+---
+ cores/wc/hdl/jtwc_main.v  | 2 +-
+ cores/wc/hdl/jtwc_sound.v | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/cores/wc/hdl/jtwc_main.v b/cores/wc/hdl/jtwc_main.v
+index 0dab0db41..942b40fdf 100644
+--- a/cores/wc/hdl/jtwc_main.v
++++ b/cores/wc/hdl/jtwc_main.v
+@@ -276,6 +276,6 @@ initial begin
+     rom_cs  = 0;
+     m2s     = 0;
+ end
+-assign {cpu_dout,wr_n,rom_addr} = 0;
++assign {cpu_dout,wr_n,rom_addr,form0,st_dout} = 0;
+ `endif
+ endmodule
+\ No newline at end of file
+diff --git a/cores/wc/hdl/jtwc_sound.v b/cores/wc/hdl/jtwc_sound.v
+index cb191bfaf..10f09405a 100644
+--- a/cores/wc/hdl/jtwc_sound.v
++++ b/cores/wc/hdl/jtwc_sound.v
+@@ -229,6 +229,6 @@ initial begin
+     rom_cs   = 0;
+     pcm_addr = 0;
+ end
+-assign {rom_addr, pcm_cs, psg0, psg1, pcm} = 0;
++assign {rom_addr, pcm_cs, psg0, psg1, pcm,st_dout} = 0;
+ `endif
+ endmodule
+\ No newline at end of file
+
+From c006ddb7a6e5b4b369bdb6a9b24885a059116d5f Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Fri, 19 Sep 2025 17:07:02 +0200
+Subject: [PATCH 7/9] I think this solves the issue
+
+---
+ cores/karnov/hdl/jtkarnov_video.v             |  4 ++--
+ .../hdl/video/tilemap/jtframe_scroll.v        |  2 --
+ .../hdl/video/tilemap/jtframe_tilemap.v       | 20 +++++--------------
+ 3 files changed, 7 insertions(+), 19 deletions(-)
+
+diff --git a/cores/karnov/hdl/jtkarnov_video.v b/cores/karnov/hdl/jtkarnov_video.v
+index 5de77ff4c..bcc50ecef 100644
+--- a/cores/karnov/hdl/jtkarnov_video.v
++++ b/cores/karnov/hdl/jtkarnov_video.v
+@@ -120,7 +120,7 @@ wire [10:1] vram_raw;
+ 
+ assign vram_addr = wndrplnt ? {vram_raw[5:1], vram_raw[10:6]} : vram_raw;
+ 
+-jtframe_tilemap #(.PW(6),.CW(10),.XOR_HFLIP(1),.FLIP_DLY(1)) u_fix(
++jtframe_tilemap #(.PW(6),.CW(10),.XOR_HFLIP(1)) u_fix(
+     .rst        ( rst       ),
+     .clk        ( clk       ),
+     .pxl_cen    ( pxl_cen   ),
+@@ -145,7 +145,7 @@ jtframe_tilemap #(.PW(6),.CW(10),.XOR_HFLIP(1),.FLIP_DLY(1)) u_fix(
+     .pxl        ( { fix_pxl[4:3], fix_pxl[2:0], nc } ) // the fix layer is only 3 bpp
+ );
+ 
+-jtframe_scroll #(.SIZE(16),.PW(8),.VA(10),.CW(11),.XOR_HFLIP(1),.FLIP_DLY(1)) u_scroll(
++jtframe_scroll #(.SIZE(16),.PW(8),.VA(10),.CW(11),.XOR_HFLIP(1)) u_scroll(
+     .rst        ( rst       ),
+     .clk        ( clk       ),
+     .pxl_cen    ( pxl_cen   ),
+diff --git a/modules/jtframe/hdl/video/tilemap/jtframe_scroll.v b/modules/jtframe/hdl/video/tilemap/jtframe_scroll.v
+index 8dffc3071..dc222671d 100644
+--- a/modules/jtframe/hdl/video/tilemap/jtframe_scroll.v
++++ b/modules/jtframe/hdl/video/tilemap/jtframe_scroll.v
+@@ -33,7 +33,6 @@ module jtframe_scroll #( parameter
+     // override VH and HW only for non rectangular tiles
+     VW   = SIZE==8 ? 3 : SIZE==16 ? 4:5,
+     HW   = VW,
+-    FLIP_DLY  = 0,
+     XOR_HFLIP = 0, // set to 1 so hflip gets ^ with flip
+     XOR_VFLIP = 0, // set to 1 so vflip gets ^ with flip
+     HJUMP     = 1, // set to 0 for linear hdump starting at zero after HB
+@@ -106,7 +105,6 @@ jtframe_tilemap #(
+     .FLIP_HDUMP ( 0         ), // hdump is already flipped, don't flip it again
+     .FLIP_VDUMP ( 0         ), // same for vdump
+     .FLIP_MSB   ( 0         ),
+-    .FLIP_DLY   ( FLIP_DLY  ),
+     .XOR_HFLIP  ( XOR_HFLIP ),
+     .XOR_VFLIP  ( XOR_VFLIP ),
+     .VW         ( VW        ),
+diff --git a/modules/jtframe/hdl/video/tilemap/jtframe_tilemap.v b/modules/jtframe/hdl/video/tilemap/jtframe_tilemap.v
+index 16fd4e7bf..8867f9b74 100644
+--- a/modules/jtframe/hdl/video/tilemap/jtframe_tilemap.v
++++ b/modules/jtframe/hdl/video/tilemap/jtframe_tilemap.v
+@@ -34,7 +34,6 @@ module jtframe_tilemap #( parameter
+     FLIP_MSB     = 1, // set to 0 for scroll tile maps
+     FLIP_HDUMP   = 1,
+     FLIP_VDUMP   = 1,
+-    FLIP_DLY     = 0,
+     XOR_HFLIP    = 0,  // set to 1 so hflip gets ^ with flip
+     XOR_VFLIP    = 0,  // set to 1 so vflip gets ^ with flip
+     HDUMP_OFFSET = 0,  // adds an offset to hdump
+@@ -75,9 +74,8 @@ module jtframe_tilemap #( parameter
+ );
+ 
+ reg   [DW-1:0]    pxl_data;
+-reg   [CW-1:0]    fcode;
+-reg [PALW-1:0]    cur_pal, nx_pal, flip_pal;
+-wire              vflip_g, xhflip, flip_dly;
++reg [PALW-1:0]    cur_pal, nx_pal;
++wire              vflip_g, xhflip;
+ reg               hflip_g, nx_hf;
+ reg  [HDUMPW-1:0] heff, hoff;
+ wire [VDUMPW-1:0] veff;
+@@ -88,8 +86,6 @@ assign veff = FLIP_VDUMP ? vdump ^ { FLIP_MSB[0]&flip, {VDUMPW-1{flip}}} : vdump
+ always @* begin
+     hoff = hdump - HDUMP_OFFSET[HDUMPW-1:0];
+     heff = FLIP_HDUMP ? hoff ^ {HDUMPW{flip}} : hoff;
+-    if(flip && FLIP_DLY==1)
+-        heff = heff +{{HDUMPW-3{1'b1}},3'b0};
+ end
+ 
+ initial begin
+@@ -113,7 +109,6 @@ end
+ 
+ assign xhflip  = (flip & XOR_HFLIP[0])^hflip;
+ assign vflip_g = (flip & XOR_VFLIP[0])^vflip;
+-assign flip_dly= xhflip && FLIP_DLY==1;
+ 
+ // VRAM address width of H and V portions
+ localparam AHW=MAP_HW-HW,
+@@ -132,7 +127,6 @@ end
+ integer i;
+ always @* begin
+     pxl[PW-1-:PALW] = cur_pal;
+-    if(flip_dly) pxl[PW-1-:PALW] = flip_pal;
+     for(i=0;i<BPP;i=i+1) begin
+         if( hflip_g )
+             pxl[i] = pxl_data[i<<3];
+@@ -151,24 +145,20 @@ always @(posedge clk) begin
+         rom_addr <= 0;
+         pxl_data <= 0;
+         cur_pal  <= 0;
+-        fcode    <= 0;
+-        flip_pal <= 0;
+         hflip_g  <= 0;
+     end else if(pxl_cen) begin
+         heff_l <= heff[3];
+         hmsb_l <= hdump[7];
+-        fcode  <= code;
+         if( zero ) begin
+             rom_cs <= ~rst & blankn;
+             rom_addr[0+:VW] <= veff[0+:VW]^{VW{vflip_g}};
+-            rom_addr[VR-1-:CW] <= flip_dly ? fcode : code;
+-            if( SIZE==16 ) rom_addr[VW]      <= heff[3]^xhflip;
+-            if( SIZE==32 ) rom_addr[VW+1-:2] <= heff[4:3]^{2{xhflip}};
++            rom_addr[VR-1-:CW] <= code;
++            if( SIZE==16 ) rom_addr[VW]      <= heff[3]^(xhflip&hflip);
++            if( SIZE==32 ) rom_addr[VW+1-:2] <= heff[4:3]^{2{xhflip&hflip}};
+             pxl_data <= rom_ok ? rom_data : {DW{1'b0}};
+             // draw information is eight pixels behind
+             nx_pal   <= pal;
+             cur_pal  <= nx_pal;
+-            flip_pal <= cur_pal;
+             nx_hf    <= xhflip;
+             hflip_g  <= nx_hf;
+         end else begin
+
+From fec87bc65fd235b31d9e6e1f945dafff5f2b0bc8 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Fri, 19 Sep 2025 17:40:01 +0200
+Subject: [PATCH 8/9] parameter to turn off flipping rom addr in karnov
+
+---
+ cores/karnov/hdl/jtkarnov_video.v                   | 2 +-
+ modules/jtframe/hdl/video/tilemap/jtframe_scroll.v  | 2 ++
+ modules/jtframe/hdl/video/tilemap/jtframe_tilemap.v | 5 +++--
+ 3 files changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/cores/karnov/hdl/jtkarnov_video.v b/cores/karnov/hdl/jtkarnov_video.v
+index bcc50ecef..e56b00b4c 100644
+--- a/cores/karnov/hdl/jtkarnov_video.v
++++ b/cores/karnov/hdl/jtkarnov_video.v
+@@ -145,7 +145,7 @@ jtframe_tilemap #(.PW(6),.CW(10),.XOR_HFLIP(1)) u_fix(
+     .pxl        ( { fix_pxl[4:3], fix_pxl[2:0], nc } ) // the fix layer is only 3 bpp
+ );
+ 
+-jtframe_scroll #(.SIZE(16),.PW(8),.VA(10),.CW(11),.XOR_HFLIP(1)) u_scroll(
++jtframe_scroll #(.SIZE(16),.PW(8),.VA(10),.CW(11),.XOR_HFLIP(1),.ROM_HFLIP(0)) u_scroll(
+     .rst        ( rst       ),
+     .clk        ( clk       ),
+     .pxl_cen    ( pxl_cen   ),
+diff --git a/modules/jtframe/hdl/video/tilemap/jtframe_scroll.v b/modules/jtframe/hdl/video/tilemap/jtframe_scroll.v
+index dc222671d..a3717723b 100644
+--- a/modules/jtframe/hdl/video/tilemap/jtframe_scroll.v
++++ b/modules/jtframe/hdl/video/tilemap/jtframe_scroll.v
+@@ -33,6 +33,7 @@ module jtframe_scroll #( parameter
+     // override VH and HW only for non rectangular tiles
+     VW   = SIZE==8 ? 3 : SIZE==16 ? 4:5,
+     HW   = VW,
++    ROM_HFLIP = 1,
+     XOR_HFLIP = 0, // set to 1 so hflip gets ^ with flip
+     XOR_VFLIP = 0, // set to 1 so vflip gets ^ with flip
+     HJUMP     = 1, // set to 0 for linear hdump starting at zero after HB
+@@ -105,6 +106,7 @@ jtframe_tilemap #(
+     .FLIP_HDUMP ( 0         ), // hdump is already flipped, don't flip it again
+     .FLIP_VDUMP ( 0         ), // same for vdump
+     .FLIP_MSB   ( 0         ),
++    .ROM_HFLIP  ( ROM_HFLIP ),
+     .XOR_HFLIP  ( XOR_HFLIP ),
+     .XOR_VFLIP  ( XOR_VFLIP ),
+     .VW         ( VW        ),
+diff --git a/modules/jtframe/hdl/video/tilemap/jtframe_tilemap.v b/modules/jtframe/hdl/video/tilemap/jtframe_tilemap.v
+index 8867f9b74..7deeb8ba5 100644
+--- a/modules/jtframe/hdl/video/tilemap/jtframe_tilemap.v
++++ b/modules/jtframe/hdl/video/tilemap/jtframe_tilemap.v
+@@ -34,6 +34,7 @@ module jtframe_tilemap #( parameter
+     FLIP_MSB     = 1, // set to 0 for scroll tile maps
+     FLIP_HDUMP   = 1,
+     FLIP_VDUMP   = 1,
++    ROM_HFLIP    = 1,
+     XOR_HFLIP    = 0,  // set to 1 so hflip gets ^ with flip
+     XOR_VFLIP    = 0,  // set to 1 so vflip gets ^ with flip
+     HDUMP_OFFSET = 0,  // adds an offset to hdump
+@@ -153,8 +154,8 @@ always @(posedge clk) begin
+             rom_cs <= ~rst & blankn;
+             rom_addr[0+:VW] <= veff[0+:VW]^{VW{vflip_g}};
+             rom_addr[VR-1-:CW] <= code;
+-            if( SIZE==16 ) rom_addr[VW]      <= heff[3]^(xhflip&hflip);
+-            if( SIZE==32 ) rom_addr[VW+1-:2] <= heff[4:3]^{2{xhflip&hflip}};
++            if( SIZE==16 ) rom_addr[VW]      <= heff[  3]^  (xhflip&ROM_HFLIP[0]);
++            if( SIZE==32 ) rom_addr[VW+1-:2] <= heff[4:3]^{2{xhflip&ROM_HFLIP[0]}};
+             pxl_data <= rom_ok ? rom_data : {DW{1'b0}};
+             // draw information is eight pixels behind
+             nx_pal   <= pal;
+
+From 71cbcb335ea1c6def13f5f01c42a3b3d670563e0 Mon Sep 17 00:00:00 2001
+From: Rafael Paiva <rafael.paiva@jotego.es>
+Date: Fri, 19 Sep 2025 17:44:59 +0200
+Subject: [PATCH 9/9] minor
+
+---
+ cores/karnov/hdl/jtkarnov_main.v | 12 +-----------
+ 1 file changed, 1 insertion(+), 11 deletions(-)
+
+diff --git a/cores/karnov/hdl/jtkarnov_main.v b/cores/karnov/hdl/jtkarnov_main.v
+index 5d450c810..2f21b14b4 100644
+--- a/cores/karnov/hdl/jtkarnov_main.v
++++ b/cores/karnov/hdl/jtkarnov_main.v
+@@ -282,24 +282,14 @@ assign st_dout  = 0;
+ assign secreq   = 0;
+ assign mcu_din  = 0;
+ assign dsn      = 3;
+-// Read the scroll values in simulation
+-reg [8:0] scrfile[0:1];
+ 
+-initial begin
+-    // $readmemh( "scrpos.hex", scrfile);
+-    scrx = scrfile[0];
+-    // scry = scrfile[1];
+-end
+-always @(negedge LVBL) begin
+-    scrx <= scrx+1'd1;
+-end
+ always @(posedge clk) dmarq <= LVBL;
+ 
+ `endif
+ 
+ jtframe_simdumper #(.DW(19)) dumper(
+     .clk        ( clk           ),
+-    .data       ( {flip,scry,`ifndef NOMAIN scrx `else scrfile[0] `endif} ),
++    .data       ( {flip,scry,scrx} ),
+     .ioctl_addr ( ioctl_addr    ),
+     .ioctl_din  ( ioctl_din     )
+ );

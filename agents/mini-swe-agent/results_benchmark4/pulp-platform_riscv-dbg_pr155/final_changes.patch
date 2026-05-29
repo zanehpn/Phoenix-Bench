@@ -1,0 +1,16 @@
+diff --git a/src/dm_csrs.sv b/src/dm_csrs.sv
+index 98c2e5f..e767c45 100755
+--- a/src/dm_csrs.sv
++++ b/src/dm_csrs.sv
+@@ -462,8 +462,10 @@ module dm_csrs #(
+             sbcs = dm::sbcs_t'(dmi_req_i.data);
+             sbcs_d = sbcs;
+             // R/W1C
++            // sberror is a 3-bit write-one-to-clear field; any asserted bit in
++            // the write data clears the corresponding latched error bits.
+             sbcs_d.sbbusyerror = sbcs_q.sbbusyerror & (~sbcs.sbbusyerror);
+-            sbcs_d.sberror     = sbcs_q.sberror     & {3{~(sbcs.sberror == 3'd1)}};
++            sbcs_d.sberror     = sbcs_q.sberror & {3{~(|sbcs.sberror)}};
+           end
+         end
+         dm::SBAddress0: begin

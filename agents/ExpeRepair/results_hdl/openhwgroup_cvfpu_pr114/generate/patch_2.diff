@@ -1,0 +1,53 @@
+diff --git a/src/fpnew_fma_multi.sv b/src/fpnew_fma_multi.sv
+index 471d966..c5f6750 100644
+--- a/src/fpnew_fma_multi.sv
++++ b/src/fpnew_fma_multi.sv
+@@ -249,6 +249,12 @@ module fpnew_fma_multi #(
+         operand_a = '{sign: 1'b0, exponent: fpnew_pkg::bias(src_fmt_q), mantissa: '0};
+         info_a    = '{is_normal: 1'b1, is_boxed: 1'b1, default: 1'b0}; //normal, boxed value.
+       end
++      fpnew_pkg::ADDW: begin // Set multiplicand to +1, addend is narrow
++        operand_a = '{sign: 1'b0, exponent: fpnew_pkg::bias(src_fmt_q), mantissa: '0};
++        info_a    = '{is_normal: 1'b1, is_boxed: 1'b1, default: 1'b0}; //normal, boxed value.
++        operand_c = {fmt_sign[src_fmt_q][2], fmt_exponent[src_fmt_q][2], fmt_mantissa[src_fmt_q][2]};
++        info_c    = info_q[src_fmt_q][2];
++      end
+       fpnew_pkg::MUL: begin // Set addend to +0 or -0, depending whether the rounding mode is RDN
+         if (inp_pipe_rnd_mode_q[NUM_INP_REGS] == fpnew_pkg::RDN)
+           operand_c = '{sign: 1'b0, exponent: '0, mantissa: '0};
+diff --git a/src/fpnew_pkg.sv b/src/fpnew_pkg.sv
+index 7addc3e..44ea6b6 100644
+--- a/src/fpnew_pkg.sv
++++ b/src/fpnew_pkg.sv
+@@ -117,10 +117,10 @@ package fpnew_pkg;
+   localparam int unsigned OP_BITS = 4;
+ 
+   typedef enum logic [OP_BITS-1:0] {
+-    FMADD, FNMSUB, ADD, MUL,     // ADDMUL operation group
+-    DIV, SQRT,                   // DIVSQRT operation group
+-    SGNJ, MINMAX, CMP, CLASSIFY, // NONCOMP operation group
+-    F2F, F2I, I2F, CPKAB, CPKCD  // CONV operation group
++    FMADD, FNMSUB, ADD, ADDW, MUL, // ADDMUL operation group
++    DIV, SQRT,                     // DIVSQRT operation group
++    SGNJ, MINMAX, CMP, CLASSIFY,   // NONCOMP operation group
++    F2F, F2I, I2F, CPKAB, CPKCD     // CONV operation group
+   } operation_e;
+ 
+   // -------------------
+@@ -367,11 +367,11 @@ package fpnew_pkg;
+   // Returns the operation group of the given operation
+   function automatic opgroup_e get_opgroup(operation_e op);
+     unique case (op)
+-      FMADD, FNMSUB, ADD, MUL:     return ADDMUL;
+-      DIV, SQRT:                   return DIVSQRT;
+-      SGNJ, MINMAX, CMP, CLASSIFY: return NONCOMP;
+-      F2F, F2I, I2F, CPKAB, CPKCD: return CONV;
+-      default:                     return NONCOMP;
++      FMADD, FNMSUB, ADD, ADDW, MUL: return ADDMUL;
++      DIV, SQRT:                     return DIVSQRT;
++      SGNJ, MINMAX, CMP, CLASSIFY:   return NONCOMP;
++      F2F, F2I, I2F, CPKAB, CPKCD:    return CONV;
++      default:                       return NONCOMP;
+     endcase
+   endfunction
+ 

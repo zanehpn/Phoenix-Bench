@@ -1,0 +1,41 @@
+# Using axi wdata without wvalid qualification in TLUL
+
+- Source URL: https://github.com/chipsalliance/caliptra-ss/issues/535
+
+Hi Caliptra team,
+        In Caliptra SS simulation, we encounter X value issue. By tracing the code, we found that there could be an issue  in the RTL code: caliptra-ss-main/src/tlul/rtl/tlul_cmd_ingt_chk.sv ( line 44 ).
+
+
+![Image](https://github.com/user-attachments/assets/c0ae44cc-8335-4501-8b44-e8aec0334985)
+
+The issue is using "data_err" without checking qualification of AXI wvalid. "tl_i.a_valid" is from AXI awvalid or arvalid, but "data_err" is from AXI wdata, so there could be scenerio when AXI arvalid == 1, but wvalid == 0, wdata is unknown.
+
+
+        Could you help to check whether this is a real issue ?
+
+
+Best Regards
+Derek Wang
+
+PR Title: [BUG FIX] Drive a_data with zeroes for reads instead of wdata, which may be arbitrary
+PR Number: #590
+Status: Merged
+Merged by: nileshbpat on July 23, 2025
+
+Description:
+The PR resolves issue #535 regarding improper handling of write data signals during read operations. The submitter notes this bug "remain undetected so far as avery interconnect VIP drives zero instead of x for the undriven IOs."
+
+Commits (7 total):
+1. Drive 0 wdata for read commands
+2. Match the conditional assignment convention elsewhere in file
+3. Fix a force statement on sub2tlul wdata signal so it's not always driven
+4. Use more precise reg addr
+5. Actually fail the test when an error is observed
+6. Use a local a_data signal to allow TB to inject ECC errors at TL a_data
+7. MICROSOFT AUTOMATED PIPELINE: Stamp 'cwhitehead-msft-tlul-X-fix' with updated timestamp and hash after successful run
+
+Review & Approval:
+Reviewer: upadhyayulakiran approved the changes on July 23, 2025
+
+Linked Issue:
+Title: Using axi wdata without wvalid qualification in TLUL (Issue #535)

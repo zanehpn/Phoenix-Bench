@@ -1,0 +1,22 @@
+[
+    {
+        "role": "system",
+        "content": "As a software developer maintaining the GitHub repository MiSTer-devel_MegaDrive_MiSTer_pr58, you are responsible for analyzing a submitted issue and identifying the exact location in the repository where the issue occurs."
+    },
+    {
+        "role": "user",
+        "content": "Here is the issue description:\n# Incorrect button mapping for Master System games\nUsing a Mega Drive controller to play Master System games on either Mega Drive or Master System hardware, the Master System buttons 1 and 2 map to Mega Drive B and C respectively.\nThis is also handled correctly by the core using controllers via SNAC.\nHowever, MiSTer mapped controllers configured for the Mega Drive core use A for 1, and B for 2, rather than B and C.\nThis can of course be worked around by remapping a Mega Drive style modern controller every time you go between Mega Drive and Master System games if the original inputs are sought, but corrected mapping would be convenient.\nMany thanks"
+    },
+    {
+        "role": "user",
+        "content": "Here is the project structure:\n./\n  MegaDrive.sv\n  README.md\nrtl/\n  EEPROM_24CXX.sv\n  EEPROM_STM95.sv\n  audio_cond.sv\n  audio_iir_filter.v\n  cartridge.sv\n  cheatcodes.sv\n  cofi.sv\n  fourway.sv\n  genesis_lpf.v\n  lightgun.sv\n  md_io.sv\n  multitap_sms.sv\n  pad_io.sv\n  pll.v\n  ram_md.v\n  sdram.sv\n  teamplayer.sv\n  video_cond.sv\n  SVP/\n  nuked-md/\n    68k.v\n    68k_ncode.txt\n    68k_ucode.txt\n    Progress.md\n    README.md\n    fc1004.v\n    md_board.v\n    tmss.v\n    vram.v\n    ym3438.v\n    ym3438_ch.v\n    ym3438_detune.v\n    ym3438_eg.v\n    ym3438_fsm.v\n    ym3438_io.v\n    ym3438_lfo.v\n    ym3438_op.v\n    ym3438_pg.v\n    ym3438_prescaler.v\n    ym3438_regs.v\n    ym6045.v\n    ym6046.v\n    ym7101.v\n    ym_lib.v\n    z80.v\n  pll/\n    pll_0002.v\n  VM2413/\nsys/\n  alsa.sv\n  arcade_video.v\n  audio_out.v\n  build_id.tcl\n  ddr_svc.sv\n  f2sdram_safe_terminator.sv\n  gamma_corr.sv\n  hps_io.sv\n  hq2x.sv\n  i2c.v\n  i2s.v\n  iir_filter.v\n  ltc2308.sv\n  math.sv\n  mcp23009.sv\n  mt32pi.sv\n  osd.v\n  pll_audio.v\n  pll_hdmi.v\n  scandoubler.v\n  scanlines.v\n  sd_card.sv\n  shadowmask.sv\n  sigma_delta_dac.v\n  spdif.v\n  sys.tcl\n  sys_analog.tcl\n  sys_dual_sdram.tcl\n  sys_top.v\n  sysmem.sv\n  vga_out.sv\n  video_cleaner.sv\n  video_freak.sv\n  video_freezer.sv\n  video_mixer.sv\n  yc_out.sv\n  pll_cfg/\n    altera_pll_reconfig_core.v\n    altera_pll_reconfig_top.v\n    pll_cfg.v\n    pll_cfg_hdmi.v\n  pll_audio/\n    pll_audio_0002.v\n  pll_hdmi/\n    pll_hdmi_0002.v\nreleases/"
+    },
+    {
+        "role": "user",
+        "content": "Please review the issue description and thoroughly analyze the issue to uncover all possible causes.\nThen, review the file structure and identify TEN files that are most likely to require edits to resolve the issue.\n\nIMPORTANT:\n1. Select files ONLY FROM THE PROVIDED LIST and specify their FULL PATHS, starting from the root directory. Do not include any test files.\n2. If multiple files share the same name but are in different directories, and the issue description does not specify a particular one, include all relevant ones.\n3. Separate each file path with a new line. Wrap the list in triple backticks (```).\n\nExplain your reasoning, then provide your answer in the following format:\n```\nfull_path1/file1.py\nfull_path2/file2.py\n...\n```"
+    },
+    {
+        "role": "assistant",
+        "content": "Good issue report.  \nThe key clue is: **SNAC behaves correctly, MiSTer-mapped controllers do not**.  \nThat usually means the bug is in the **HPS joystick bitfield \u2192 core pad signal translation path**, not in raw DB9/SNAC electrical handling.\n\nSo the most likely fix area is:\n\n1. **Top-level input mapping logic** (where `joystick_*` bits are interpreted),\n2. **Pad/IO modules** that branch behavior for **SMS mode vs MD mode**,\n3. **SMS-specific multitap/controller modules** that may duplicate button mapping,\n4. **Mode-detection/control plumbing** (how SMS mode is signaled to input logic),\n5. Potentially **shared HPS input interface wiring** if bit positions are being misread.\n\nBased on that, these are the ten files most likely to need edits:\n\n```text\n./MegaDrive.sv\n./rtl/md_io.sv\n./rtl/pad_io.sv\n./rtl/multitap_sms.sv\n./rtl/teamplayer.sv\n./rtl/cartridge.sv\n./rtl/lightgun.sv\n./sys/hps_io.sv\n./sys/sys_top.v\n./README.md\n```"
+    }
+]

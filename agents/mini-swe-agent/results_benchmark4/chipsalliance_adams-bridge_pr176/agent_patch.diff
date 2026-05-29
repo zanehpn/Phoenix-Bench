@@ -1,0 +1,25 @@
+diff --git a/src/compress/rtl/compress_top.sv b/src/compress/rtl/compress_top.sv
+index 6f08c16..6560d46 100644
+--- a/src/compress/rtl/compress_top.sv
++++ b/src/compress/rtl/compress_top.sv
+@@ -58,7 +58,10 @@ module compress_top
+     logic [DATA_WIDTH-1:0] buffer_data, buffer_data_f;
+     logic compress_busy;
+ 
+-    always_comb compress_done = compress_busy & read_done & ~(|api_rw_en) & ~buffer_valid_f;
++    logic compress_done_int;
++
++    always_comb compress_done_int = compress_busy & read_done & ~(|api_rw_en) & ~buffer_valid_f;
++    always_comb compress_done = compress_done_int & ~compress_enable;
+ 
+     always_ff @(posedge clk or negedge reset_n) begin
+         if (!reset_n) begin
+@@ -71,7 +74,7 @@ module compress_top
+         end
+         else begin
+             compress_busy <= compress_enable ? '1 :
+-                             compress_done ? '0 : compress_busy;
++                             compress_done_int ? '0 : compress_busy;
+             mem_rd_data_hold_f <= mem_rd_data_hold;
+         end
+     end

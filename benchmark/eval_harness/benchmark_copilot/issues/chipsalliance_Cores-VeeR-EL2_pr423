@@ -1,0 +1,42 @@
+Changes in #285 cause the logic to fail when multiple LSU Read requests are issued. The symptom is observed when hready deasserts to stall the AHB request, in compliance with the AHB-lite specification.
+
+This failing scenario may be reproduced in Calitpra by running the tmp_fpga_repro on this branch:
+https://github.com/chipsalliance/caliptra-rtl/tree/cwhitehead-msft-rv-b2b-access-dbg
+
+Specifically, changes to the ahb_htrans signal in https://github.com/chipsalliance/Cores-VeeR-EL2/pull/285/files#diff-49cc6a6800643a1307ae082c5b50091ff340fbb656fa66e6e5abdd8999021448
+cause 2 problems:
+
+On back-to-back reads, the htrans signal transitions from 2'b10 (NONSEQ request) to 2'11 (SEQ request) when the state machine enters the STREAM_RD state
+This results in the lower 3-bits of buf_addr being masked incorrectly, which forces alignment on the ahb_haddr signal and overrides the buffered request address.
+
+
+
+# Pull Request Summary
+
+PR Title: 2.0 ahb fix
+
+PR Number: #423
+
+Status: Merged (Oct 6, 2025)
+
+Target Branch: 2.0-patches
+
+Source Branch: 2.0-ahb-fix
+
+## PR Description
+The pull request addresses issue #418 and includes comprehensive fixes related to AHB protocol handling. The changes span multiple commits focused on improving the AXI to AHB translation functionality.
+
+## Key Comments
+- kgugala (Author): "fixes #418"
+- calebofearth (Reviewer): Initially requested adding the prefix_macros.sh script to the PR, then later approved the changes with a note: "We will merge with lint test bypass - this is expected to be fixed in #424"
+
+## Commits Included (6 total)
+1. CI infrastructure update - Updated test scripts for current testing infrastructure
+2. Revert commit - Reverted AXI4-to-AHB STREAM_RD state coverage addition
+3. ahb_lsu_dma_bridge behavior change - Modified to maintain AHB protocol throughout, eliminating unnecessary conversions and delays
+4. read_after_read test - Added new test case
+5. Prefix macro script - Script for adding custom prefixes to macros, parameter structures, and module names
+6. Design file name prefixing - Updated file naming when prefixing VeeR macros
+
+## Related Issues
+Successfully addresses: [BUG] AXI to AHB translator breaks with multiple back-to-back reads #418

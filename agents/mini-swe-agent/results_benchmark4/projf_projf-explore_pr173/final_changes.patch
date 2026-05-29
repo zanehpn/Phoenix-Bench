@@ -1,0 +1,24 @@
+diff --git a/graphics/racing-the-beam/sim/top_hitomezashi.sv b/graphics/racing-the-beam/sim/top_hitomezashi.sv
+index 26f5408..5e35208 100644
+--- a/graphics/racing-the-beam/sim/top_hitomezashi.sv
++++ b/graphics/racing-the-beam/sim/top_hitomezashi.sv
+@@ -46,12 +46,18 @@ module top_hitomezashi #(parameter CORDW=10) (  // coordinate width
+     logic stitch;
+     logic v_line, v_on;
+     logic h_line, h_on;
++    logic last_h_stitch0;
++
++    always_ff @(posedge clk_pix) begin
++        last_h_stitch0 <= h_line && h_on;
++    end
++
+     always_comb begin
+         v_line = (sx[3:0] == 4'b0000);
+         h_line = (sy[3:0] == 4'b0000);
+         v_on = sy[4] ^ v_start[sx[9:4]];
+         h_on = sx[4] ^ h_start[sy[8:4]];
+-        stitch = (v_line && v_on) || (h_line && h_on);
++        stitch = (v_line && v_on) || (h_line && h_on) || last_h_stitch0;
+     end
+ 
+     // paint colour: yellow lines, blue background

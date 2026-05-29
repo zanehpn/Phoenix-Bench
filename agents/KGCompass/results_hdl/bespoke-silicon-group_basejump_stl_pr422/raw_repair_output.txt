@@ -1,0 +1,39 @@
+The bug is in the testbench top module:
+
+- `testing/bsg_test/bsg_nonsynth_dpi/top.v`
+- and the duplicate copy at `basejump_stl/testing/bsg_test/bsg_nonsynth_dpi/top.v` if present in the repo layout
+
+Both instantiate **two** `bsg_nonsynth_dpi_clock_gen` modules driving the same `ns_clk` net:
+
+- `core_clk_gen (.o(ns_clk));`
+- `core_clk_gen2 (.o(ns_clk));`
+
+This causes multiple drivers on `ns_clk`, which matches the issue description.
+
+Fix: remove the second clock generator so only one module drives `ns_clk`.
+
+```systemverilog
+### testing/bsg_test/bsg_nonsynth_dpi/top.v
+<<<<<<< SEARCH
+    bsg_nonsynth_dpi_clock_gen
+      #(.cycle_time_p(lc_cycle_time_p/2)
+        )
+    core_clk_gen2
+      (.o(ns_clk));
+=======
+>>>>>>> REPLACE
+```
+
+If the duplicated file under `basejump_stl/testing/bsg_test/bsg_nonsynth_dpi/top.v` is also tracked separately in your repository, apply the same edit there as well:
+
+```systemverilog
+### basejump_stl/testing/bsg_test/bsg_nonsynth_dpi/top.v
+<<<<<<< SEARCH
+    bsg_nonsynth_dpi_clock_gen
+      #(.cycle_time_p(lc_cycle_time_p/2)
+        )
+    core_clk_gen2
+      (.o(ns_clk));
+=======
+>>>>>>> REPLACE
+```

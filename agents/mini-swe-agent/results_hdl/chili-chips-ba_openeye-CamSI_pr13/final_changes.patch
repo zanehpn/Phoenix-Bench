@@ -1,0 +1,47 @@
+diff --git a/1.hw/lib/ip/i2c_master/i2c_ctrl.sv b/1.hw/lib/ip/i2c_master/i2c_ctrl.sv
+index f118209..ab396cf 100644
+--- a/1.hw/lib/ip/i2c_master/i2c_ctrl.sv
++++ b/1.hw/lib/ip/i2c_master/i2c_ctrl.sv
+@@ -44,6 +44,7 @@ module i2c_ctrl (
+    input  logic        enable,
+    input  logic        read_write,
+    input  logic [6:0]  slave_address,
++   input  logic        precharge,
+    input  logic [15:0] register_address,
+    input  logic [7:0]  data_in,
+    output logic        register_done,
+@@ -103,7 +104,9 @@ module i2c_ctrl (
+                process_cnt           <= '0;
+                bit_cnt               <= '0;
+                acknowledge_bit       <= 1'b0;
+-               slave_address_plus_rw <= {slave_address, read_write};
++               if (precharge == 1'b1) begin
++                  slave_address_plus_rw <= {slave_address, read_write};
++               end
+                scl_di                <= 1'b1;
+                sda_di                <= 1'b1;
+ 
+diff --git a/1.hw/lib/ip/i2c_master/i2c_top.sv b/1.hw/lib/ip/i2c_master/i2c_top.sv
+index d04fe9f..524ba50 100644
+--- a/1.hw/lib/ip/i2c_master/i2c_top.sv
++++ b/1.hw/lib/ip/i2c_master/i2c_top.sv
+@@ -46,6 +46,7 @@ module i2c_top #(
+    input  logic  clk,
+    input  logic  strobe_400kHz, // 400kHz strobe synchrnous to 'clk'
+    input  logic  areset_n,      // active-0 asynchronous reset
++   input  logic  cam_en,
+ 
+  //I/O pads
+    inout  wire   i2c_scl,
+diff --git a/1.hw/top.sv b/1.hw/top.sv
+index 3513359..f386c37 100644
+--- a/1.hw/top.sv
++++ b/1.hw/top.sv
+@@ -110,6 +110,7 @@ glbl glbl();
+       .clk           (clk_100),       //i
+       .strobe_400kHz (strobe_400kHz), //i
+       .areset_n      (i2c_reset),     //i
++      .cam_en        (cam_en),        //i
+ 
+      //I2C_Master to Camera
+       .i2c_scl       (i2c_scl),       //io

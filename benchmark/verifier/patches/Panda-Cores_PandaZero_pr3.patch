@@ -1,0 +1,1083 @@
+From 755a3016bb6431b7a99146d3f2c3e762a56e0234 Mon Sep 17 00:00:00 2001
+From: Luca Hanel <lhanel@pm.me>
+Date: Fri, 24 Jul 2020 23:27:30 +0200
+Subject: [PATCH 1/3] added wishbone to IF stage, surprisingly, CPI = 1. There
+ might be an issue coming when MEM stage is integrated: it is possible that
+ multiple, unnessecary reads are done at the same address by IF stage
+
+---
+ common                                        |  2 +-
+ rtl/core/core_top.sv                          | 13 +----
+ .../instructionFetch/IF_stage.sv              | 34 ++++++++++----
+ rtl/core_wrapper.sv                           | 42 +++++++++++------
+ rtl/memory/dual_ram.sv                        | 47 ++++++++++---------
+ rtl/memory/wb_ram_wrapper.sv                  |  4 +-
+ tests/rtl/common/sources.txt                  | 12 +++--
+ 7 files changed, 91 insertions(+), 63 deletions(-)
+
+diff --git a/common b/common
+index 7bae71b..868abb0 160000
+--- a/common
++++ b/common
+@@ -1 +1 @@
+-Subproject commit 7bae71beebacdca9bf96335afb3b0ac59310c673
++Subproject commit 868abb0663806f2c5b75734936c17a4a0d5961f9
+diff --git a/rtl/core/core_top.sv b/rtl/core/core_top.sv
+index 5238263..439d378 100644
+--- a/rtl/core/core_top.sv
++++ b/rtl/core/core_top.sv
+@@ -26,11 +26,7 @@ module core_top (
+     output logic         rst_reqn_o,
+     input logic          halt_core_i,
+ // IF-Memory
+-    output logic [31:0]  IF_addr_o,
+-    output logic         IF_en_o,
+-    input logic  [31:0]  IF_data_i,
+-    output logic [31:0]  IF_data_o,
+-    output logic [3:0]   IF_write_o,
++    wb_master_bus_t      IF_wb_bus,
+ // MEM-Memory
+     output logic [31:0]  MEM_addr_o,
+     output logic         MEM_en_o,
+@@ -41,8 +37,6 @@ module core_top (
+ 
+ 
+ assign rst_reqn_o = rstn_i;
+-assign IF_data_o = 'b0;
+-assign IF_write_o = 'b0;
+ 
+ //IF-ID
+ logic                ID_IF_ack;
+@@ -113,10 +107,7 @@ IF_stage IF_i (
+     .valid_o     ( IF_ID_valid   ),
+     .instr_o     ( IF_ID_instr   ),
+     .pc_o        ( IF_ID_pc      ),
+-    //TODO: Cache
+-    .MEM_en_o    ( IF_en_o      ),
+-    .MEM_addr_o  ( IF_addr_o     ),
+-    .MEM_data_i  ( IF_data_i     ),
++    .wb_bus      ( IF_wb_bus     ),
+     //Branching
+     .branch_i    ( branch        ),
+     .pc_i        ( EX_MEM_result )
+diff --git a/rtl/core/pipelineStages/instructionFetch/IF_stage.sv b/rtl/core/pipelineStages/instructionFetch/IF_stage.sv
+index 9958d43..b00d960 100644
+--- a/rtl/core/pipelineStages/instructionFetch/IF_stage.sv
++++ b/rtl/core/pipelineStages/instructionFetch/IF_stage.sv
+@@ -26,10 +26,8 @@ module IF_stage (
+     output logic         valid_o,
+     output logic  [31:0] instr_o,
+     output logic  [31:0] pc_o,
+-    //IF-MEM (TODO: cache)
+-    output logic         MEM_en_o,
+-    output logic [31:0]  MEM_addr_o,
+-    input logic [31:0]   MEM_data_i,
++    //Memory
++    wb_master_bus_t      wb_bus,
+     //Branching
+     input logic [31:0]   pc_i,
+     input logic          branch_i
+@@ -38,6 +36,9 @@ module IF_stage (
+ logic incr_pc;
+ logic [31:0] pc_n;
+ logic [31:0] pc_q;
++logic [31:0] mem_data;
++logic read;
++logic read_valid;
+ 
+ // Data register, 2x32 bit + valid: instr, pc
+ struct packed {
+@@ -46,27 +47,44 @@ struct packed {
+     logic [31:0]    pc;
+ } data_n, data_q;
+ 
+-assign MEM_addr_o = pc_q;
+ 
+ assign valid_o = data_q.valid;
+ assign instr_o = data_q.instr;
+ assign pc_o = data_q.pc;
+ 
++load_unit lu_i
++(
++    .clk                ( clk       ),
++    .rstn_i             ( rstn_i    ),
++    .read_i             ( read      ),
++    .addr_i             ( pc_q      ),
++    .valid_o            ( read_valid),
++    .data_o             ( mem_data  ),
++    .wb_bus             ( wb_bus    )
++);
++
+ always_comb
+ begin
+-    MEM_en_o = 1'b1;
++    read    = 1'b0;
+     data_n  = data_q;
+     incr_pc = 1'b0;
+ 
++    if(ack_i)
++        data_n.valid = 1'b0;
++
+     if((!data_q.valid || ack_i)) begin
+-        data_n         = {1'b1, MEM_data_i, pc_q};
+-        incr_pc        = 1'b1;
++        read = 1'b1;
++        if(read_valid) begin
++            data_n         = {1'b1, mem_data, pc_q};
++            incr_pc        = 1'b1;
++        end
+     end
+ 
+     // Invalidate if flush and use the provided pc
+     if(flush_i) begin
+         data_n.valid     = 1'b0;
+         incr_pc          = 1'b0;
++        read             = 1'b0;
+     end
+ end
+ 
+diff --git a/rtl/core_wrapper.sv b/rtl/core_wrapper.sv
+index a8bd753..666752d 100644
+--- a/rtl/core_wrapper.sv
++++ b/rtl/core_wrapper.sv
+@@ -17,6 +17,7 @@
+ //
+ // ------------------------------------------------------------
+ 
++/* verilator lint_off PINMISSING */
+ module core_wrapper
+ (
+     input wire          clk,
+@@ -26,19 +27,16 @@ module core_wrapper
+ );
+ 
+ wire        rst_reqn;
+-wire [31:0] IF_addr;
+-wire [31:0] mem_IF_data;
+-wire [31:0] IF_mem_data;
+ wire [31:0] MEM_addr;
+ wire [31:0] mem_MEM_data;
+ wire [31:0] MEM_mem_data;
+-wire [3:0]  IF_write;
+ wire [3:0]  MEM_write;
+-wire        IF_en;
+ wire        MEM_en;
+ 
+ assign rst_o = ~rst_reqn;
+-assign IF_mem_data = 'b0;
++
++wb_master_bus_t#(.TAGSIZE(1)) IF_wb_bus[1];
++wb_slave_bus_t#(.TAGSIZE(1))  rom_wb_bus[1];
+ 
+ core_top core_i
+ (
+@@ -46,11 +44,7 @@ core_top core_i
+     .rstn_i     ( rstn_i       ),
+     .halt_core_i( halt_core_i  ),
+     .rst_reqn_o ( rst_reqn     ),
+-    .IF_en_o    ( IF_en        ),
+-    .IF_write_o ( IF_write     ),
+-    .IF_addr_o  ( IF_addr      ),
+-    .IF_data_i  ( mem_IF_data  ),
+-    .IF_data_o  ( IF_mem_data  ),
++    .IF_wb_bus  ( IF_wb_bus[0] ),
+     .MEM_en_o   ( MEM_en       ),
+     .MEM_addr_o ( MEM_addr     ),
+     .MEM_data_i ( mem_MEM_data ),
+@@ -63,9 +57,8 @@ dual_ram #(
+ ) ram_i (
+   .clk      ( clk          ),
+   .rstn_i   ( rst_reqn     ),
+-  .addra_i  ( IF_addr      ),
+-  .ena_i    ( IF_en        ),
+-  .douta_o  ( mem_IF_data  ),
++  .addra_i  ( 32'b0        ),
++  .ena_i    ( 1'b0         ),
+   .addrb_i  ( MEM_addr     ),
+   .enb_i    ( MEM_en       ),
+   .web_i    ( MEM_write    ),
+@@ -73,4 +66,25 @@ dual_ram #(
+   .doutb_o  ( mem_MEM_data )
+ );
+ 
++wb_ram_wrapper #(
++  .SIZE (32)
++) IF_mem (
++  .clk    ( clk       ),
++  .rstn_i ( rstn_i    ),
++  .wb_bus ( rom_wb_bus[0])
++);
++
++wishbone_interconnect #(
++    .TAGSIZE    ( 1 ),
++    .N_SLAVE    ( 1 ),
++    .N_MASTER   ( 1 )
++) intercon (
++    .clk_i      ( clk ),
++    .rst_i      ( ~rstn_i ),
++    .SSTART_ADDR({32'h0}),
++    .SEND_ADDR  ({32'h40}),
++    .wb_master_bus(IF_wb_bus),
++    .wb_slave_bus(rom_wb_bus)
++);
++
+ endmodule
+\ No newline at end of file
+diff --git a/rtl/memory/dual_ram.sv b/rtl/memory/dual_ram.sv
+index c4f201b..7ab19cf 100644
+--- a/rtl/memory/dual_ram.sv
++++ b/rtl/memory/dual_ram.sv
+@@ -14,6 +14,7 @@
+ // Functionality: Simple ram with dual read, single write ports
+ //
+ // ------------------------------------------------------------
++
+ module dual_ram #(
+     parameter SIZE = 1024
+ )(
+@@ -37,30 +38,30 @@ logic [31:0]    addrb;
+ (*ram_style = "block" *) reg [31:0] data[SIZE];
+ 
+ initial begin
+-    data['h0]      = 32'b000000010000_00000_000_00001_0010011;     // addi 16, x0, x1;
+-    data['h1]      = 32'b000000000001_00010_000_00010_0010011;     // addi 1, x2, x2;
++    data['h0]      = 32'b00000000010000_00000_000_00001_0010011;     // addi 16, x0, x1;
++    data['h1]      = 32'b00000000000001_00010_000_00010_0010011;     // addi 1, x2, x2;
+     data['h2]      = 32'b1111111_00001_00010_100_11101_1100011;    // blt x2, x1, -2
+-    data['h3]      = 32'b000011_00011_00000_010_00000_0100011;     // sw x2, 64+x0;
+-    data['h4]      = 32'b000000000001_00010_000_00010_0010011;     // addi 1, x2, x2;
+-    data['h5]      = 32'b000000000001_00011_000_00011_0010011;     // addi 1, x3, x3;
+-    data['h6]      = 32'b000000000001_00100_000_00100_0010011;     // addi 1, x4, x4;
+-    data['h7]      = 32'b000000000001_00101_000_00101_0010011;     // addi 1, x5, x5;
+-    data['h8]      = 32'b000000000001_00110_000_00110_0010011;     // addi 1, x6, x6;
+-    data['h9]      = 32'b000011_00010_00000_010_00000_0100011;     // sw x2, 64+x0;
+-    data['ha]      = 32'b000011_00011_00000_010_00100_0100011;     // sw x3, 68+x0;
+-    data['hb]      = 32'b000011_00100_00000_010_01000_0100011;     // sw x4, 72+x0;
+-    data['hc]      = 32'b000011_00101_00000_010_01100_0100011;     // sw x5, 76+x0;
+-    data['hd]      = 32'b000011_00110_00000_010_10000_0100011;     // sw x5, 80+x0;
+-    data['he]      = 32'b000000000001_00010_000_00010_0010011;     // addi 1, x2, x2;
+-    data['hf]      = 32'b000000000001_00011_000_00011_0010011;     // addi 1, x3, x3;
+-    data['h10]     = 32'b000000000001_00100_000_00100_0010011;     // addi 1, x4, x4;
+-    data['h11]     = 32'b000000000001_00101_000_00101_0010011;     // addi 1, x5, x5;
+-    data['h12]     = 32'b000000000001_00110_000_00110_0010011;     // addi 1, x6, x6;
+-    data['h13]     = 32'b000011_00010_00000_010_00000_0100011;     // sw x2, 64+x0;
+-    data['h14]     = 32'b000011_00011_00000_010_00100_0100011;     // sw x3, 68+x0;
+-    data['h15]     = 32'b000011_00100_00000_010_01000_0100011;     // sw x4, 72+x0;
+-    data['h16]     = 32'b000011_00101_00000_010_01100_0100011;     // sw x5, 76+x0;
+-    data['h17]     = 32'b000011_00110_00000_010_10000_0100011;     // sw x5, 80+x0;
++    data['h3]      = 32'b0000011_00010_00000_000_00000_0100011;     // sw x2, 64+x0;
++    data['h4]      = 32'b00000000000001_00010_000_00010_0010011;     // addi 1, x2, x2;
++    data['h5]      = 32'b00000000000001_00011_000_00011_0010011;     // addi 1, x3, x3;
++    data['h6]      = 32'b00000000000001_00100_000_00100_0010011;     // addi 1, x4, x4;
++    data['h7]      = 32'b00000000000001_00101_000_00101_0010011;     // addi 1, x5, x5;
++    data['h8]      = 32'b00000000000001_00110_000_00110_0010011;     // addi 1, x6, x6;
++    data['h9]      = 32'b0000011_00010_00000_010_00000_0100011;     // sw x2, 64+x0;
++    data['ha]      = 32'b0000011_00011_00000_010_00100_0100011;     // sw x3, 68+x0;
++    data['hb]      = 32'b0000011_00100_00000_010_01000_0100011;     // sw x4, 72+x0;
++    data['hc]      = 32'b0000011_00101_00000_010_01100_0100011;     // sw x5, 76+x0;
++    data['hd]      = 32'b0000011_00110_00000_010_10000_0100011;     // sw x5, 80+x0;
++    data['he]      = 32'b00000000000001_00010_000_00010_0010011;     // addi 1, x2, x2;
++    data['hf]      = 32'b00000000000001_00011_000_00011_0010011;     // addi 1, x3, x3;
++    data['h10]     = 32'b00000000000001_00100_000_00100_0010011;     // addi 1, x4, x4;
++    data['h11]     = 32'b00000000000001_00101_000_00101_0010011;     // addi 1, x5, x5;
++    data['h12]     = 32'b00000000000001_00110_000_00110_0010011;     // addi 1, x6, x6;
++    data['h13]     = 32'b0000011_00010_00000_010_00000_0100011;     // sw x2, 64+x0;
++    data['h14]     = 32'b0000011_00011_00000_010_00100_0100011;     // sw x3, 68+x0;
++    data['h15]     = 32'b0000011_00100_00000_010_01000_0100011;     // sw x4, 72+x0;
++    data['h16]     = 32'b0000011_00101_00000_010_01100_0100011;     // sw x5, 76+x0;
++    data['h17]     = 32'b0000011_00110_00000_010_10000_0100011;     // sw x5, 80+x0;
+ end
+ 
+ assign addra = $signed(addra_i >> 2);
+diff --git a/rtl/memory/wb_ram_wrapper.sv b/rtl/memory/wb_ram_wrapper.sv
+index ee8bf38..d0a038a 100644
+--- a/rtl/memory/wb_ram_wrapper.sv
++++ b/rtl/memory/wb_ram_wrapper.sv
+@@ -34,7 +34,9 @@ logic [3:0]     ram_we;
+ 
+ assign ram_we = (wb_we) ? wb_sel : 4'b0;
+ 
+-wishbone_slave wb_slave_i(
++wishbone_slave #(
++    .TAGSIZE    ( 1         )
++)wb_slave_i(
+     .clk_i      ( clk       ),
+     .rst_i      ( ~rstn_i   ),
+     .data_i     ( ram_wb_d  ),
+diff --git a/tests/rtl/common/sources.txt b/tests/rtl/common/sources.txt
+index 7e2874d..d7ccd0d 100644
+--- a/tests/rtl/common/sources.txt
++++ b/tests/rtl/common/sources.txt
+@@ -13,9 +13,11 @@
+ ../../../../rtl/memory/dual_ram.sv
+ ../../../../rtl/memory/wb_ram_wrapper.sv
+ 
+-../../../../common/wishbone/wishbone_interconnect.sv
+-../../../../common/wishbone/wishbone_master.sv
+-../../../../common/wishbone/wishbone_slave.sv
++../../../../common/wishbone/src/wishbone_interconnect.sv
++../../../../common/wishbone/src/wishbone_master.sv
++../../../../common/wishbone/src/wishbone_slave.sv
++-I../../../../common/wishbone/includes
+ 
+--I../../../../rtl/includes
+--I../../../../common/includes
+\ No newline at end of file
++../../../../common/load_unit/src/load_unit.sv
++
++-I../../../../rtl/includes
+\ No newline at end of file
+
+From a32e18a03a58dff6cea3eedff6a737034fc11a0c Mon Sep 17 00:00:00 2001
+From: Luca Hanel <lhanel@pm.me>
+Date: Sat, 25 Jul 2020 18:25:26 +0200
+Subject: [PATCH 2/3] update common repo to latest load-store-branch
+
+---
+ common | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/common b/common
+index 868abb0..cf70722 160000
+--- a/common
++++ b/common
+@@ -1 +1 @@
+-Subproject commit 868abb0663806f2c5b75734936c17a4a0d5961f9
++Subproject commit cf70722edc1ff35da174b5d8921130a54aeaca61
+
+From d354959bf461e3ddcae8577d8ca16bfb0f079600 Mon Sep 17 00:00:00 2001
+From: Luca Hanel <lhanel@pm.me>
+Date: Sat, 25 Jul 2020 18:55:50 +0200
+Subject: [PATCH 3/3] added wishbone to mem_stage, as expected the performace
+ drops drastically when loads and stores are made, to be fixed (for example
+ faster granting of the bus)
+
+---
+ common                                   |   2 +-
+ rtl/core/core_top.sv                     |  12 +-
+ rtl/core/pipelineStages/mem/MEM_stage.sv |  88 ++++++----
+ rtl/core_wrapper.sv                      |  35 +---
+ tests/rtl/common/sources.txt             |   4 +-
+ tests/rtl/tests/wishbone/Makefile        |  69 --------
+ tests/rtl/tests/wishbone/sim_main.cpp    | 199 -----------------------
+ tests/rtl/tests/wishbone/testbench.h     |   1 -
+ tests/rtl/tests/wishbone/wishbone_tb.sv  | 154 ------------------
+ 9 files changed, 66 insertions(+), 498 deletions(-)
+ delete mode 100644 tests/rtl/tests/wishbone/Makefile
+ delete mode 100644 tests/rtl/tests/wishbone/sim_main.cpp
+ delete mode 120000 tests/rtl/tests/wishbone/testbench.h
+ delete mode 100644 tests/rtl/tests/wishbone/wishbone_tb.sv
+
+diff --git a/common b/common
+index cf70722..1990999 160000
+--- a/common
++++ b/common
+@@ -1 +1 @@
+-Subproject commit cf70722edc1ff35da174b5d8921130a54aeaca61
++Subproject commit 199099954c4c9918fdeae4625ca4cb3e01684f97
+diff --git a/rtl/core/core_top.sv b/rtl/core/core_top.sv
+index 439d378..26309ec 100644
+--- a/rtl/core/core_top.sv
++++ b/rtl/core/core_top.sv
+@@ -28,11 +28,7 @@ module core_top (
+ // IF-Memory
+     wb_master_bus_t      IF_wb_bus,
+ // MEM-Memory
+-    output logic [31:0]  MEM_addr_o,
+-    output logic         MEM_en_o,
+-    input logic  [31:0]  MEM_data_i,
+-    output logic [31:0]  MEM_data_o,
+-    output logic [3:0]   MEM_write_o
++    wb_master_bus_t      MEM_wb_bus
+ );
+ 
+ 
+@@ -167,11 +163,7 @@ MEM_stage MEM_i (
+     .instr_i     ( EX_MEM_instr  ),
+     .result_i    ( EX_MEM_result ),
+     .rs2_i       ( EX_MEM_rs2    ),
+-    .MEM_en_o    ( MEM_en_o      ),
+-    .MEM_addr_o  ( MEM_addr_o    ),
+-    .MEM_data_i  ( MEM_data_i    ),
+-    .MEM_data_o  ( MEM_data_o    ),
+-    .MEM_write_o ( MEM_write_o   ),
++    .wb_bus      ( MEM_wb_bus    ),
+     .ack_i       ( WB_MEM_ack    ),
+     .valid_o     ( MEM_WB_valid  ),
+     .instr_o     ( MEM_WB_instr  ),
+diff --git a/rtl/core/pipelineStages/mem/MEM_stage.sv b/rtl/core/pipelineStages/mem/MEM_stage.sv
+index 8402222..99ed93b 100644
+--- a/rtl/core/pipelineStages/mem/MEM_stage.sv
++++ b/rtl/core/pipelineStages/mem/MEM_stage.sv
+@@ -34,12 +34,8 @@ module MEM_stage
+     input logic [31:0]  result_i,
+     input logic [31:0]  rs2_i,
+     input logic [31:0]  pc_i,
+-    //MEM-MEM
+-    output logic        MEM_en_o,
+-    output logic [31:0] MEM_addr_o,
+-    input logic [31:0]  MEM_data_i,
+-    output logic [31:0] MEM_data_o,
+-    output logic [3:0]  MEM_write_o,
++    //MEM-Memory
++    wb_master_bus_t     wb_bus,
+     //MEM-WB
+     input logic         ack_i,
+     output logic        valid_o,
+@@ -54,19 +50,39 @@ struct packed {
+     logic [31:0]    data;
+ } data_n, data_q;
+ 
++logic load;
++logic store;
++logic lsu_valid;
++logic lsu_valid_n;
++logic lsu_valid_q;
++logic [31:0] lu_data;
++logic [3:0] lsu_we;
+ 
+ assign valid_o = data_q.valid;
+ assign data_o = data_q.data;
+ assign instr_o = data_q.instr;
+-assign MEM_addr_o = result_i;
+-assign MEM_data_o = rs2_i;
++
++lsu lsu_i(
++    .clk        ( clk       ),
++    .rstn_i     ( rstn_i    ),
++    .read_i     ( load      ),
++    .write_i    ( store     ),
++    .we_i       ( lsu_we    ),
++    .addr_i     ( result_i  ),
++    .data_i     ( rs2_i     ),
++    .data_o     ( lu_data   ),
++    .valid_o    ( lsu_valid ),
++    .wb_bus     ( wb_bus    )
++);
+ 
+ always_comb
+ begin
+-    data_n = data_q;
+-    ack_o = 1'b0;
+-    MEM_en_o = 1'b0;
+-    MEM_write_o = 'b0;
++    lsu_valid_n = lsu_valid_q;
++    data_n  = data_q;
++    ack_o   = 1'b0;
++    load    = 1'b0;
++    store   = 1'b0;
++    lsu_we  = 'b0;
+ 
+     // Data is no longer valid if we recieved and ack
+     if(ack_i)
+@@ -76,46 +92,49 @@ begin
+         // In case of LOAD or STORE, we give the respective signal
+         // to the memory and wait for the next stage to ack
+         `LOAD: begin
+-            if((!data_q.valid || ack_i) && valid_i) begin
++            if(!lsu_valid_q) begin
++                lsu_valid_n = lsu_valid;
++                load        = 1'b1;
++            end else if((!data_q.valid || ack_i) && valid_i) begin
+                 ack_o          = 1'b1;
+                 data_n.valid   = 1'b1;
+                 data_n.instr   = instr_i;
++                lsu_valid_n    = 1'b0;
+                 case(instr_i[13:12])
+                     2'b00:
+-                        data_n.data = {{24{MEM_data_i[7]}}, MEM_data_i[7:0]};
++                        data_n.data = {{24{lu_data[7]}}, lu_data[7:0]};
+                     2'b01:
+-                        data_n.data = {{16{MEM_data_i[15]}}, MEM_data_i[15:0]};
++                        data_n.data = {{16{lu_data[15]}}, lu_data[15:0]};
+                     2'b10:
+-                        data_n.data = MEM_data_i;
++                        data_n.data = lu_data;
+                     default: begin
+                     end
+                 endcase
+             end
+-            MEM_en_o = 1'b1;
+         end
+ 
+         // In case of LOAD or STORE, we give the respective signal
+         // to the memory and wait for the next stage to ack
+         `STORE: begin
+-            if((!data_q.valid || ack_i) && valid_i)begin
++            if(!lsu_valid_q) begin
++                lsu_valid_n  = lsu_valid;
++                store        = 1'b1;
++                // Write the correct amount of bytes
++                case(instr_i[13:12])
++                    2'b00:
++                        lsu_we = 4'b0001;
++                    2'b01:
++                        lsu_we = 4'b0011;
++                    2'b10:
++                        lsu_we = 4'b1111;
++                    default: begin
++                    end
++                endcase
++            end else if((!data_q.valid || ack_i) && valid_i)begin
+                 ack_o          = 1'b1;
+-                data_n         = {1'b1, instr_i, MEM_data_i};
+-                MEM_en_o       = 1'b1;
+-                MEM_write_o = 'b1111;
+-                MEM_en_o    = 1'b1;
++                data_n         = {1'b1, instr_i, 32'b0};
++                lsu_valid_n    = 1'b0;
+             end
+-            // Write the correct amount of bytes
+-            case(instr_i[13:12])
+-                2'b00:
+-                    MEM_write_o = 4'b0001;
+-                2'b01:
+-                    MEM_write_o = 4'b0011;
+-                2'b10:
+-                    MEM_write_o = 4'b1111;
+-                default: begin
+-                end
+-            endcase
+-            MEM_en_o    = 1'b1;            
+         end
+ 
+         // In case of these, we can directly give the data to the
+@@ -148,6 +167,7 @@ always_ff @(posedge clk, negedge rstn_i) begin
+         data_q <= 'b0;
+     end else if(!halt_i) begin
+         data_q <= data_n;
++        lsu_valid_q <= lsu_valid_n;
+     end
+ end
+ 
+diff --git a/rtl/core_wrapper.sv b/rtl/core_wrapper.sv
+index 666752d..b4885c1 100644
+--- a/rtl/core_wrapper.sv
++++ b/rtl/core_wrapper.sv
+@@ -27,15 +27,10 @@ module core_wrapper
+ );
+ 
+ wire        rst_reqn;
+-wire [31:0] MEM_addr;
+-wire [31:0] mem_MEM_data;
+-wire [31:0] MEM_mem_data;
+-wire [3:0]  MEM_write;
+-wire        MEM_en;
+ 
+ assign rst_o = ~rst_reqn;
+ 
+-wb_master_bus_t#(.TAGSIZE(1)) IF_wb_bus[1];
++wb_master_bus_t#(.TAGSIZE(1)) masters[2];
+ wb_slave_bus_t#(.TAGSIZE(1))  rom_wb_bus[1];
+ 
+ core_top core_i
+@@ -44,26 +39,8 @@ core_top core_i
+     .rstn_i     ( rstn_i       ),
+     .halt_core_i( halt_core_i  ),
+     .rst_reqn_o ( rst_reqn     ),
+-    .IF_wb_bus  ( IF_wb_bus[0] ),
+-    .MEM_en_o   ( MEM_en       ),
+-    .MEM_addr_o ( MEM_addr     ),
+-    .MEM_data_i ( mem_MEM_data ),
+-    .MEM_data_o ( MEM_mem_data ),
+-    .MEM_write_o( MEM_write    )
+-);
+-
+-dual_ram #(
+-  .SIZE     ( 32           )
+-) ram_i (
+-  .clk      ( clk          ),
+-  .rstn_i   ( rst_reqn     ),
+-  .addra_i  ( 32'b0        ),
+-  .ena_i    ( 1'b0         ),
+-  .addrb_i  ( MEM_addr     ),
+-  .enb_i    ( MEM_en       ),
+-  .web_i    ( MEM_write    ),
+-  .dinb_i   ( MEM_mem_data ),
+-  .doutb_o  ( mem_MEM_data )
++    .IF_wb_bus  ( masters[1] ),
++    .MEM_wb_bus ( masters[0])
+ );
+ 
+ wb_ram_wrapper #(
+@@ -77,13 +54,13 @@ wb_ram_wrapper #(
+ wishbone_interconnect #(
+     .TAGSIZE    ( 1 ),
+     .N_SLAVE    ( 1 ),
+-    .N_MASTER   ( 1 )
++    .N_MASTER   ( 2 )
+ ) intercon (
+     .clk_i      ( clk ),
+     .rst_i      ( ~rstn_i ),
+     .SSTART_ADDR({32'h0}),
+-    .SEND_ADDR  ({32'h40}),
+-    .wb_master_bus(IF_wb_bus),
++    .SEND_ADDR  ({32'h80}),
++    .wb_master_bus(masters),
+     .wb_slave_bus(rom_wb_bus)
+ );
+ 
+diff --git a/tests/rtl/common/sources.txt b/tests/rtl/common/sources.txt
+index d7ccd0d..512a6dc 100644
+--- a/tests/rtl/common/sources.txt
++++ b/tests/rtl/common/sources.txt
+@@ -18,6 +18,8 @@
+ ../../../../common/wishbone/src/wishbone_slave.sv
+ -I../../../../common/wishbone/includes
+ 
+-../../../../common/load_unit/src/load_unit.sv
++../../../../common/load_store_unit/src/load_unit.sv
++../../../../common/load_store_unit/src/store_unit.sv
++../../../../common/load_store_unit/src/lsu.sv
+ 
+ -I../../../../rtl/includes
+\ No newline at end of file
+diff --git a/tests/rtl/tests/wishbone/Makefile b/tests/rtl/tests/wishbone/Makefile
+deleted file mode 100644
+index a5dbc9e..0000000
+--- a/tests/rtl/tests/wishbone/Makefile
++++ /dev/null
+@@ -1,69 +0,0 @@
+-######################################################################
+-# Check for sanity to avoid later confusion
+-
+-ifneq ($(words $(CURDIR)),1)
+- $(error Unsupported: GNU Make cannot build in directories containing spaces, build elsewhere: '$(CURDIR)')
+-endif
+-
+-######################################################################
+-# Set up variables
+-
+-# If $VERILATOR_ROOT isn't in the environment, we assume it is part of a
+-# package inatall, and verilator is in your path. Otherwise find the
+-# binary relative to $VERILATOR_ROOT (such as when inside the git sources).
+-ifeq ($(VERILATOR_ROOT),)
+-VERILATOR = verilator
+-VERILATOR_COVERAGE = verilator_coverage
+-else
+-export VERILATOR_ROOT
+-VERILATOR = $(VERILATOR_ROOT)/bin/verilator
+-VERILATOR_COVERAGE = $(VERILATOR_ROOT)/bin/verilator_coverage
+-endif
+-
+-VERILATOR_FLAGS =
+-# Generate C++ in executable form
+-VERILATOR_FLAGS += -cc --exe
+-# Optimize
+-VERILATOR_FLAGS += -O2 -x-assign 0
+-# Warn abount lint issues; may not want this on less solid designs
+-VERILATOR_FLAGS += -Wall
+-# Make waveforms
+-VERILATOR_FLAGS += --trace
+-# Check SystemVerilog assertions
+-VERILATOR_FLAGS += --assert
+-# Generate coverage analysis
+-VERILATOR_FLAGS += --coverage
+-VERILATOR_FLAGS += --trace-structs
+-# VERILATOR_FLAGS += --prefix top
+-
+-VERILATOR_FLAGS += wishbone_tb.sv
+-VERILATOR_FLAGS += --top-module wishbone_tb
+-
+-INCLUDE := $(shell cat ../../common/sources.txt)
+-
+-######################################################################
+-default: run
+-
+-run:
+-	@echo "-- VERILATE ----------------"
+-	$(VERILATOR) $(VERILATOR_FLAGS) $(INCLUDE) sim_main.cpp
+-
+-	@echo
+-	@echo "-- COMPILE -----------------"
+-	$(MAKE) -j 4 -C obj_dir -f Vwishbone_tb.mk 
+-
+-	@echo
+-	@echo "-- RUN ---------------------"
+-	@mkdir -p logs
+-	obj_dir/Vwishbone_tb --trace
+-
+-	@echo
+-	@echo "-- COVERAGE ----------------"
+-	$(VERILATOR_COVERAGE) --annotate logs/annotated logs/coverage.dat
+-
+-	@echo
+-	@echo "-- TEST RESULT -------------"
+-	@echo "   `cat result.txt`"
+-
+-clean:
+-	-rm -rf obj_dir logs *.log *.dmp *.vpd coverage.dat result.txt
+diff --git a/tests/rtl/tests/wishbone/sim_main.cpp b/tests/rtl/tests/wishbone/sim_main.cpp
+deleted file mode 100644
+index 267b4aa..0000000
+--- a/tests/rtl/tests/wishbone/sim_main.cpp
++++ /dev/null
+@@ -1,199 +0,0 @@
+-#include <verilated.h>
+-#include "Vwishbone_tb.h"
+-#include "testbench.h"
+-
+-typedef unsigned __int128 uint128_t;
+-
+-TESTBENCH<Vwishbone_tb> *tb;
+-
+-void write_nowait(int master, int addr, int data){
+-    tb->m_core->mdata_i = tb->m_core->mdata_i & ( ~( (uint128_t) 0xffffffff << (32*master)));
+-    tb->m_core->mdata_i = tb->m_core->mdata_i | (uint128_t) data << (32*master);
+-    tb->m_core->maddr_i = tb->m_core->maddr_i & (~((uint128_t) 0xffffffff << (32*master)));
+-    tb->m_core->maddr_i = tb->m_core->maddr_i | (uint128_t) addr << (32*master);
+-    tb->m_core->mwe_i = tb->m_core->mwe_i | (0b1111 << (4 * master));
+-    tb->m_core->mvalid_i = tb->m_core->mvalid_i | (1 << master);
+-}
+-
+-void write(int master, int addr, int data){
+-    write_nowait(master, addr, data);
+-    tb->tick();
+-    while((tb->m_core->mvalid_o & (1 << master)) == 0){
+-        tb->tick();
+-    }
+-    tb->m_core->mvalid_i = 0;
+-    tb->tick();
+-}
+-
+-void read_nowait(int master, int addr){
+-    tb->m_core->mdata_i = tb->m_core->mdata_i & (~((uint128_t) 0xffffffff << (32*master)));
+-    tb->m_core->maddr_i = tb->m_core->maddr_i & (~((uint128_t) 0xffffffff << (32*master)));
+-    tb->m_core->maddr_i = tb->m_core->maddr_i | (uint128_t) addr << (32*master);
+-    tb->m_core->mwe_i = tb->m_core->mwe_i & (~(0b1111 << (4 * master)));
+-    tb->m_core->mvalid_i = tb->m_core->mvalid_i | (1 << master);
+-}
+-
+-int read(int master, int addr){
+-    read_nowait(master, addr);
+-    tb->tick();
+-    while((tb->m_core->mvalid_o & (1 << master) == 0)){
+-        tb->tick();
+-    }
+-    tb->m_core->mvalid_i = 0;
+-    tb->tick();
+-    return (uint32_t) (tb->m_core->mdata_o >> (32 * master));
+-}
+-
+-uint128_t simultaneous_read(int master0, int master1, int addr0, int addr1){
+-    read_nowait(master0, addr0);
+-    read_nowait(master1, addr1);
+-    int valid = tb->m_core->mvalid_o;
+-    while(((valid & (1 << master0)) == 0) || ((valid & (1 << master1)) == 0)){
+-        tb->tick();
+-        valid |= tb->m_core->mvalid_o;
+-        tb->m_core->mvalid_i = ~valid;
+-    }
+-    tb->m_core->mvalid_i = 0;
+-    tb->tick();
+-    return (uint128_t) tb->m_core->mdata_o;
+-}
+-
+-int simultaneous_read_write(int wmaster, int rmaster, int waddr, int raddr, int wdata){
+-    write_nowait(wmaster, waddr, wdata);
+-    read_nowait(rmaster, raddr);
+-    int valid = tb->m_core->mvalid_o;
+-    while((valid & (1 << wmaster) == 0) || (valid & (1 << rmaster)) == 0){
+-        tb->tick();
+-        valid |= tb->m_core->mvalid_o;
+-        tb->m_core->mvalid_i = ~valid;
+-    }
+-    tb->m_core->mvalid_i = 0;
+-    tb->tick();
+-    return (uint32_t) (tb->m_core->mdata_o >> (32 * rmaster));
+-}
+-
+-int simultaneous_write(int master0, int master1, int addr0, int addr1, int data0, int data1){
+-    write_nowait(master0, addr0, data0);
+-    write_nowait(master1, addr1, data1);
+-    int valid = tb->m_core->mvalid_o;
+-    while((valid & (1 << master0) == 0) || (valid & (1 << master1)) == 0){
+-        tb->tick();
+-        valid |= tb->m_core->mvalid_o;
+-        tb->m_core->mvalid_i = ~valid;
+-    }
+-    tb->m_core->mvalid_i = 0;
+-    tb->tick();
+-    if(read(master1, addr0) != data0)
+-        return 1;
+-        
+-    if(read(master0, addr1) != data1)
+-        return 2;
+-    return 0;
+-}
+-
+-void n_write(int master, int addr, int data[7], int n){
+-    tb->m_core->mnaccess_i = n;
+-    for(int i = 0; i < n; i++){
+-        write_nowait(master, addr, data[i]);
+-        tb->tick();
+-        while(tb->m_core->mvalid_o & (1 << master) == 0){
+-            tb->tick();
+-        }
+-    }
+-    tb->m_core->mvalid_i = 0;
+-    tb->m_core->mnaccess_i = 0;
+-    tb->tick();
+-}
+-
+-int n_read(int master, int addr, int data[7], int n){
+-    tb->m_core->mnaccess_i = n;
+-    for(int i = 0; i < n; i++){
+-        read_nowait(master, addr);
+-        tb->tick();
+-        while(tb->m_core->mvalid_o & (1 << master) == 0){
+-            tb->tick();
+-        }
+-        if((uint32_t) (tb->m_core->mdata_o >> (32 * master)) != data[i])
+-            return i + 1;
+-    }
+-    tb->m_core->mvalid_i = 0;
+-    tb->m_core->mnaccess_i = 0;
+-    tb->tick();
+-    return 0;
+-}
+-
+-int test_wishbone(){
+-    // Write with one master, read with the other and the other way around
+-    for(int i = 0; i < 0x1a; i+=4){
+-        write(0, i, (0xababcd00 + i));
+-        if(read(1, i) != (0xababcd00 + i))
+-            return i+1;
+-        write(1, i, 0xcdcdab00 + i );
+-        if(read(0, i) != 0xcdcdab00 + i)
+-            return i+2;
+-    }
+-    // Write request on both masters at the same time, read crossed
+-    if(simultaneous_write(0, 1, 0x8, 0xc, 0xababcdcd, 0xdedefafa) != 0)
+-        return 1<<6;
+-    tb->tick();
+-
+-    // Read request on both masters at the same time
+-    if(simultaneous_read(1, 0, 0x8, 0xc) != (uint128_t) 0xababcdcddedefafa)
+-        return 1<<7;
+-
+-    tb->tick();
+-    if(simultaneous_read_write(0, 1, 0x10, 0x10, 0x0000ffff) != 0x0000ffff)
+-        return 1000;
+-
+-    tb->tick(); // TODO: This additional tick is currently required in order for the
+-            //       low prio master (1) to free the bus and let the interconnect
+-            //       decide who to access next. Otherwise, in the next simultaneous
+-            //       request, the low prio master remains in ownership of the bus
+-            
+-    if(simultaneous_read_write(1, 0, 0x10, 0x10, 0xffff0000) != 0x0000ffff)
+-        return 1001;
+-
+-    int data[4] = {0x1, 0x2, 0x3, 0x4};
+-    n_write(0, 0x0, data, 4);
+-    if(n_read(0, 0x0, data, 4) != 0)
+-        return 1200;
+-    
+-    return 0;
+-}
+-int main(int argc, char** argv, char** env) {
+-    Verilated::commandArgs(argc, argv);
+-    tb = new TESTBENCH<Vwishbone_tb>();
+-    tb->opentrace("logs/trace.vcd");
+-    int result = 0;
+-
+-    // Initialize inputs
+-    tb->m_core->mvalid_i = 0;
+-    tb->m_core->maddr_i = 0;
+-    tb->m_core->mdata_i = 0;
+-    tb->m_core->mwe_i = 0;
+-    tb->m_core->mnaccess_i = 0;
+-
+-    // Reset
+-    tb->reset();
+-
+-    // Run tests
+-    result = test_wishbone();
+-    
+-    // Cleanup
+-    tb->tick();
+-    tb->m_core->final();
+-
+-    // Evaluate test
+-    if(result == 0)
+-        std::cout << "PASSED" << std::endl;
+-    else
+-        std::cout << "FAILED " << result << std::endl;
+-    
+-    //  Coverage analysis (since test passed)
+-    VerilatedCov::write("logs/coverage.dat");
+-
+-    // Destroy model
+-    delete tb->m_core; tb->m_core = NULL;
+-
+-    exit(0);
+-}
+diff --git a/tests/rtl/tests/wishbone/testbench.h b/tests/rtl/tests/wishbone/testbench.h
+deleted file mode 120000
+index dae1ff5..0000000
+--- a/tests/rtl/tests/wishbone/testbench.h
++++ /dev/null
+@@ -1 +0,0 @@
+-../../common/testbench.h
+\ No newline at end of file
+diff --git a/tests/rtl/tests/wishbone/wishbone_tb.sv b/tests/rtl/tests/wishbone/wishbone_tb.sv
+deleted file mode 100644
+index 67a38a3..0000000
+--- a/tests/rtl/tests/wishbone/wishbone_tb.sv
++++ /dev/null
+@@ -1,154 +0,0 @@
+-// ------------------------ Disclaimer -----------------------
+-// No warranty of correctness, synthesizability or 
+-// functionality of this code is given.
+-// Use this code under your own risk.
+-// When using this code, copy this disclaimer at the top of 
+-// Your file
+-//
+-// (c) Luca Hanel 2020
+-//
+-// ------------------------------------------------------------
+-//
+-// Module name: wishbone_tb
+-// 
+-// Functionality: wishbone testbench
+-//
+-// ------------------------------------------------------------
+-
+-`include "wishbone_interfaces.sv"
+-
+-module wishbone_tb
+-(
+-    input logic         clk,
+-    input logic         rstn_i,
+-    input logic [1:0][31:0]  mdata_i,
+-    output logic [1:0][31:0] mdata_o,
+-    input logic [1:0][31:0]  maddr_i,
+-    input logic [1:0][2:0]   mnaccess_i,
+-    input logic [1:0][3:0]   mwe_i,
+-    input logic [1:0]        mvalid_i,
+-    output logic [1:0]       mvalid_o
+-);
+-/* verilator lint_off PINMISSING */
+-/* verilator lint_off UNDRIVEN */
+-
+-localparam N_MASTER = 2;
+-localparam N_SLAVE = 2;
+-
+-logic [31:0] s0data_i;
+-logic [31:0] s0data_o;
+-logic [31:0] s0addr_o;
+-logic [3:0]  s0sel;
+-logic        s0we;
+-logic [3:0]  s0wes;
+-assign s0wes = (s0we) ? s0sel : 4'b0000;
+-
+-logic [31:0] s1data_i;
+-logic [31:0] s1data_o;
+-logic [31:0] s1addr_o;
+-logic [3:0]  s1sel;
+-logic        s1we;
+-logic [3:0]  s1wes;
+-assign s1wes = (s1we) ? s1sel : 4'b0000;
+-
+-wb_master_bus_t#(.TAGSIZE(1)) wb_master[N_MASTER];
+-wb_slave_bus_t#(.TAGSIZE(1))  wb_slave[N_SLAVE];
+-
+-
+-
+-wishbone_interconnect #(
+-    .TAGSIZE    (1),
+-    .N_SLAVE    ( N_SLAVE ),
+-    .N_MASTER   ( N_MASTER )
+-) intercon (
+-    .clk_i      ( clk ),
+-    .rst_i      ( ~rstn_i ),
+-    .SSTART_ADDR({32'h10, 32'h0}),
+-    .SEND_ADDR  ({32'h1f, 32'hf}),
+-    .wb_master_bus(wb_master),
+-    .wb_slave_bus(wb_slave)
+-);
+-
+-wishbone_master #(
+-    .TAGSIZE    (1)
+-) wbmaster0 (
+-    .clk_i      ( clk       ),
+-    .rst_i      ( ~rstn_i   ),
+-    .data_i     ( mdata_i[0]  ),
+-    .data_o     ( mdata_o[0]  ),
+-    .addr_i     ( maddr_i[0]  ),
+-    .n_access_i ( mnaccess_i[0]),
+-    .we_i       ( mwe_i[0]    ),
+-    .valid_i    ( mvalid_i[0] ),
+-    .valid_o    ( mvalid_o[0] ),
+-    .wb_bus     ( wb_master[0])
+-);
+-
+-wishbone_master #(
+-    .TAGSIZE    (1)
+-) wbmaster1 (
+-    .clk_i      ( clk       ),
+-    .rst_i      ( ~rstn_i   ),
+-    .data_i     ( mdata_i[1]  ),
+-    .data_o     ( mdata_o[1]  ),
+-    .addr_i     ( maddr_i[1]  ),
+-    .n_access_i ( mnaccess_i[1]),
+-    .we_i       ( mwe_i[1]    ),
+-    .valid_i    ( mvalid_i[1] ),
+-    .valid_o    ( mvalid_o[1] ),
+-    .wb_bus     ( wb_master[1])
+-);
+-
+-wishbone_slave #(
+-    .TAGSIZE    (1)
+-) wbslave0 (
+-    .clk_i      ( clk      ),
+-    .rst_i      ( ~rstn_i  ),
+-    .data_i     ( s0data_i ),
+-    .data_o     ( s0data_o ),
+-    .addr_o     ( s0addr_o   ),
+-    .we_o       ( s0we     ),
+-    .sel_o      ( s0sel    ),
+-    .valid_i    ( 1'b1     ),
+-    .wb_bus     ( wb_slave[0])
+-);
+-
+-wishbone_slave #(
+-    .TAGSIZE    (1)
+-) wbslave1 (
+-    .clk_i      ( clk      ),
+-    .rst_i      ( ~rstn_i  ),
+-    .data_i     ( s1data_i ),
+-    .data_o     ( s1data_o ),
+-    .addr_o     ( s1addr_o   ),
+-    .we_o       ( s1we     ),
+-    .sel_o      ( s1sel    ),
+-    .valid_i    ( 1'b1     ),
+-    .wb_bus     ( wb_slave[1])
+-);
+-
+-dual_ram #(
+-    .SIZE ( 32 )
+-) slave0 (
+-    .clk        ( clk       ),
+-    .rstn_i     ( rstn_i    ),
+-    .addrb_i    ( s0addr_o    ),
+-    .enb_i      ( 1'b1      ),
+-    .web_i      ( s0wes     ),
+-    .dinb_i     ( s0data_o  ),
+-    .doutb_o    ( s0data_i  )
+-);
+-
+-dual_ram #(
+-    .SIZE ( 32 )
+-) slave1 (
+-    .clk        ( clk       ),
+-    .rstn_i     ( rstn_i    ),
+-    .addrb_i    ( s1addr_o  ),
+-    .enb_i      ( 1'b1      ),
+-    .web_i      ( s1wes     ),
+-    .dinb_i     ( s1data_o  ),
+-    .doutb_o    ( s1data_i  )
+-);
+-
+-endmodule
+\ No newline at end of file

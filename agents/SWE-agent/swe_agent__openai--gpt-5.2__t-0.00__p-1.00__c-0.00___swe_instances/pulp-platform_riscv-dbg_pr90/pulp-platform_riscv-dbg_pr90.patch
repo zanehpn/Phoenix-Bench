@@ -1,0 +1,34 @@
+diff --git a/src/dm_mem.sv b/src/dm_mem.sv
+index 6f0da5e..ffdbf56 100755
+--- a/src/dm_mem.sv
++++ b/src/dm_mem.sv
+@@ -342,6 +342,7 @@ module dm_mem #(
+     abstract_cmd[2][63:32] = dm::nop();
+     abstract_cmd[3][31:0]  = dm::nop();
+     abstract_cmd[3][63:32] = dm::nop();
++    // Restore a0 from dscratch1 (only if the core implements a second scratch register).
+     abstract_cmd[4][31:0]  = HasSndScratch ? dm::csrr(dm::CSR_DSCRATCH1, 5'd10) : dm::nop();
+     abstract_cmd[4][63:32] = dm::ebreak();
+     abstract_cmd[7:5]      = '0;
+@@ -353,8 +354,8 @@ module dm_mem #(
+       // --------------------
+       dm::AccessRegister: begin
+         if (32'(ac_ar.aarsize) < MaxAar && ac_ar.transfer && ac_ar.write) begin
+-          // store a0 in dscratch1
+-          abstract_cmd[0][31:0] = HasSndScratch ? dm::csrr(dm::CSR_DSCRATCH1, 5'd10) : dm::nop();
++          // a0 is used to form the DM base address; preserve it in dscratch1.
++          abstract_cmd[0][31:0] = HasSndScratch ? dm::csrw(dm::CSR_DSCRATCH1, 5'd10) : dm::nop();
+           // this range is reserved
+           if (ac_ar.regno[15:14] != '0) begin
+             abstract_cmd[0][31:0] = dm::ebreak(); // we leave asap
+@@ -394,8 +395,8 @@ module dm_mem #(
+             abstract_cmd[3][63:32] = dm::csrr(dm::CSR_DSCRATCH0, 5'd8);
+           end
+         end else if (32'(ac_ar.aarsize) < MaxAar && ac_ar.transfer && !ac_ar.write) begin
+-          // store a0 in dscratch1
+-          abstract_cmd[0][31:0]  = HasSndScratch ? dm::csrr(dm::CSR_DSCRATCH1, LoadBaseAddr) : dm::nop();
++          // a0 is used as LoadBaseAddr (DM base address). Preserve it in dscratch1.
++          abstract_cmd[0][31:0]  = HasSndScratch ? dm::csrw(dm::CSR_DSCRATCH1, LoadBaseAddr) : dm::nop();
+           // this range is reserved
+           if (ac_ar.regno[15:14] != '0) begin
+               abstract_cmd[0][31:0] = dm::ebreak(); // we leave asap

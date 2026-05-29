@@ -1,0 +1,22 @@
+diff --git a/src/dm_mem.sv b/src/dm_mem.sv
+index 6f0da5e..ed6da6d 100755
+--- a/src/dm_mem.sv
++++ b/src/dm_mem.sv
+@@ -353,7 +353,7 @@ module dm_mem #(
+       // --------------------
+       dm::AccessRegister: begin
+         if (32'(ac_ar.aarsize) < MaxAar && ac_ar.transfer && ac_ar.write) begin
+-          // store a0 in dscratch1
++          // restore a0 from dscratch1
+           abstract_cmd[0][31:0] = HasSndScratch ? dm::csrr(dm::CSR_DSCRATCH1, 5'd10) : dm::nop();
+           // this range is reserved
+           if (ac_ar.regno[15:14] != '0) begin
+@@ -394,7 +394,7 @@ module dm_mem #(
+             abstract_cmd[3][63:32] = dm::csrr(dm::CSR_DSCRATCH0, 5'd8);
+           end
+         end else if (32'(ac_ar.aarsize) < MaxAar && ac_ar.transfer && !ac_ar.write) begin
+-          // store a0 in dscratch1
++          // restore a0 from dscratch1
+           abstract_cmd[0][31:0]  = HasSndScratch ? dm::csrr(dm::CSR_DSCRATCH1, LoadBaseAddr) : dm::nop();
+           // this range is reserved
+           if (ac_ar.regno[15:14] != '0) begin

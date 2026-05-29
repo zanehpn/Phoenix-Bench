@@ -1,0 +1,35 @@
+# Config file for lint_off/on - selecting rules
+
+- Source URL: https://github.com/verilator/verilator/issues/4185
+
+I am trying to use Verilator with a subset of lint rules. Say I want only WIDTHEXPAND to be flagged. I create a .vlt file as below:
+
+```config
+
+`verilator_config
+lint_off 
+lint_on -rule WIDTHEXPAND 
+```
+But I don't get any warning on a code as below:
+```verilog
+module m;
+  wire [3:0] bits_4;
+  wire [7:0] bits_8;
+  assign bits_8 = bits_4;
+endmodule 
+
+```
+If I add a global lint_on as shown below, it works. 
+```config
+
+`verilator_config
+lint_off 
+lint_on -rule WIDTHEXPAND 
+lint_on
+```
+
+Log:
+```log
+%Warning-WIDTHEXPAND: ../sv_tests/af_sv_mod.sv:6:17: Operator ASSIGNW expects 8 bits on the Assign RHS, but Assign RHS's VARREF 'bits_4' generates 4 bits.
+```
+So my question is - how do I turn-off all rules and selectively enable a few?

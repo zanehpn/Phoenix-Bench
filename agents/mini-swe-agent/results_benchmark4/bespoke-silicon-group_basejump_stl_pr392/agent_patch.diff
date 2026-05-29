@@ -1,0 +1,22 @@
+diff --git a/bsg_tag/bsg_tag_client.v b/bsg_tag/bsg_tag_client.v
+index 41bdb0c..1b6a770 100644
+--- a/bsg_tag/bsg_tag_client.v
++++ b/bsg_tag/bsg_tag_client.v
+@@ -91,7 +91,16 @@ module bsg_tag_client
+    logic               tag_toggle_r;
+ 
+    // shift in new state
+-   assign tag_data_shift = { param_r, tag_data_r[width_p-1:1] };
++   generate
++      if (width_p > 1)
++        begin : gen_tag_data_shift_gt1
++           assign tag_data_shift = { param_r, tag_data_r[width_p-1:1] };
++        end
++      else
++        begin : gen_tag_data_shift_eq1
++           assign tag_data_shift = param_r;
++        end
++   endgenerate
+ 
+    bsg_mux2_gatestack #(.width_p(width_p),.harden_p(harden_p)) tag_data_mux
+      (.i0 (tag_data_r            ) // sel=0

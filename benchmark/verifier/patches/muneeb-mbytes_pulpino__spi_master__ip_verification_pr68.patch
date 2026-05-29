@@ -1,0 +1,740 @@
+From 2494c7b5ae4b546f53310c05b51706aa74ee9496 Mon Sep 17 00:00:00 2001
+From: venkateshthota <venkateshthota@mirafra.com>
+Date: Wed, 16 Mar 2022 17:56:57 +0530
+Subject: [PATCH 1/3] modifed register random sequence and virtual sequence
+
+---
+ .../reg_sequences/apb_master_rand_reg_seq.sv  | 260 +++---------------
+ ...pino_spi_master_ip_virtual_rand_reg_seq.sv |   6 +-
+ 2 files changed, 44 insertions(+), 222 deletions(-)
+
+diff --git a/src/dv/hvl_top/test/sequences/master_sequences/reg_sequences/apb_master_rand_reg_seq.sv b/src/dv/hvl_top/test/sequences/master_sequences/reg_sequences/apb_master_rand_reg_seq.sv
+index 1e62f84..12a550b 100644
+--- a/src/dv/hvl_top/test/sequences/master_sequences/reg_sequences/apb_master_rand_reg_seq.sv
++++ b/src/dv/hvl_top/test/sequences/master_sequences/reg_sequences/apb_master_rand_reg_seq.sv
+@@ -49,37 +49,14 @@ task apb_master_rand_reg_seq::body();
+   //-------------------------------------------------------
+   begin
+     bit [7:0] clkdiv_value;
+-    clkdiv_value = 8'd8;
+-    wdata = 0;
+-    //wdata  = $urandom();
+-    wdata = spi_master_reg_block.CLKDIV.randomize();
++    uvm_reg value;
++    void'(spi_master_reg_block.CLKDIV.randomize() with { this.CLKDIV.value == 16;});
+     spi_master_reg_block.CLKDIV.update(status);
+-
+-    //wdata = spi_master_reg_block.randomize();
+-    //wdata = (wdata & (~ `MASK_CLKDIV_CLKDIV)) | (clkdiv_value << `POS_CLKDIV_CLKDIV);
+-  end
+-
+-  //Writing into the Clockdiv Register
+- // spi_master_reg_block.CLKDIV.write(.status(status)      ,
+- //                                   .value(wdata)        ,
+- //                                   .path(UVM_FRONTDOOR) ,
+- //                                   .map(spi_reg_map)    ,
+- //                                   .parent(this)
+- //                                 );                     
++  end             
+ 
+   `uvm_info("CLOCK_DIV_REG_SEQ",$sformatf("WRITE:: REGISTER : %0s, DATA = 32'h%0h",
+   spi_master_reg_block.CLKDIV.get_full_name(),wdata),UVM_HIGH)
+ 
+-//  // Reading from the Clockdiv Register
+-//  spi_master_reg_block.CLKDIV.read(.status(status)       ,
+-//                                    .value(rdata)        ,
+-//                                    .path(UVM_FRONTDOOR) ,
+-//                                    .map(spi_reg_map)    ,
+-//                                    .parent(this)
+-//                                  );                     
+-//
+-//  `uvm_info("CLOCK_DIV_REG_SEQ",$sformatf("READ:: REGISTER : %0s, DATA = 32'h%0h",
+-//  spi_master_reg_block.CLKDIV.get_full_name(),rdata),UVM_HIGH)
+ 
+   //-------------------------------------------------------
+   // SPI LEN Register                                        
+@@ -96,7 +73,10 @@ task apb_master_rand_reg_seq::body();
+     data_length = 16'hffff;
+ 
+    // wdata  = $urandom();
+-    wdata = spi_master_reg_block.SPILEN.randomize();
++    void'(spi_master_reg_block.SPILEN.randomize() with {this.DATALEN.value == 32 ; 
++                                                        this.ADDRLEN.value == 8  ;
++                                                        this.CMDLEN.value == 8   ;
++                                                      });
+     spi_master_reg_block.SPILEN.update(status);
+ 
+     //wdata = spi_master_reg_block.randomize();
+@@ -104,40 +84,11 @@ task apb_master_rand_reg_seq::body();
+     `uvm_info(get_type_name(), $sformatf("Write :: Register addr_length = %0h",addr_length), UVM_LOW)
+     `uvm_info(get_type_name(), $sformatf("Write :: Register data_length = %0h",data_length), UVM_LOW)
+ 
+-    // Clearing and writing the required feilds
+-    //wdata = (wdata & (~`MASK_SPILEN_DATALEN)) | (data_length << `POS_SPILEN_DATALEN) ;
+-    //wdata = (wdata & (~`MASK_SPILEN_ADDRLEN)) | (addr_length << `POS_SPILEN_ADDRLEN);
+-    //wdata = (wdata & (~`MASK_SPILEN_CMDLEN))  | (cmd_length << `POS_SPILEN_CMDLEN)  ;
+-
+-    //setting the required feilds
+-    //wdata = wdata | (data_length << `POS_SPILEN_CMDLEN) | (addr_length << `POS_SPILEN_ADDRLEN) |
+-    //(cmd_length << `POS_SPILEN_CMDLEN);
+-
+-  end
+-
+-  //Writing into the SPI_LEN Register
+-//  spi_master_reg_block.SPILEN.write(.status(status)      ,
+-//                                    .value(wdata)        ,
+-//                                    .path(UVM_FRONTDOOR) ,
+-//                                    .map(spi_reg_map)    ,
+-//                                    .parent(this)
+-//                                  );                     
++    end  
+ 
+   `uvm_info("SPI_LEN_REG_SEQ",$sformatf("WRITE:: REGISTER : %0s, DATA = 32'h%0h",
+   spi_master_reg_block.SPILEN.get_full_name(),wdata),UVM_HIGH)
+ 
+-//  // Reading from the SPI_LEN Register
+-//  spi_master_reg_block.SPILEN.read(.status(status)       ,
+-//                                    .value(rdata)        ,
+-//                                    .path(UVM_FRONTDOOR) ,
+-//                                    .map(spi_reg_map)    ,
+-//                                    .parent(this)
+-//                                  );                     
+-//
+-//  `uvm_info("SPI_LEN_REG_SEQ",$sformatf("READ:: REGISTER : %0s, DATA = 32'h%0h",
+-//  spi_master_reg_block.SPILEN.get_full_name(),rdata),UVM_HIGH)
+-
+-
+ 
+   //-------------------------------------------------------
+   // SPICMD
+@@ -146,36 +97,13 @@ task apb_master_rand_reg_seq::body();
+   begin
+     bit [31:0] spi_cmd;
+     spi_cmd = 32'hffff_ffff;
+-    wdata = 0;
+-   // wdata  = $urandom();
+-    wdata = spi_master_reg_block.SPICMD.randomize();
++    void'(spi_master_reg_block.SPICMD.randomize() with {this.SPICMD.value == 32'hffff_1234;});
+     spi_master_reg_block.SPICMD.update(status);
+-
+-    //wdata = spi_master_reg_block.randomize();
+-   // wdata = (wdata & (~ `MASK_SPICMD_SPICMD)) | (spi_cmd << `POS_SPICMD_SPICMD);
+   end
+ 
+-  //Writing into the SPICMD Register
+-//  spi_master_reg_block.SPICMD.write(.status(status)      ,
+-//                                    .value(wdata)        ,
+-//                                    .path(UVM_FRONTDOOR) ,
+-//                                    .map(spi_reg_map)    ,
+-//                                    .parent(this)
+-//                                  );                     
+-
+   `uvm_info("SPI_CMD_REG_SEQ",$sformatf("WRITE:: REGISTER : %0s, DATA = 32'h%0h",
+   spi_master_reg_block.SPICMD.get_full_name(),wdata),UVM_HIGH)
+ 
+-//  // Reading from the SPICMD Register
+-//  spi_master_reg_block.SPICMD.read(.status(status)       ,
+-//                                    .value(rdata)        ,
+-//                                    .path(UVM_FRONTDOOR) ,
+-//                                    .map(spi_reg_map)    ,
+-//                                    .parent(this)
+-//                                  );                     
+-//
+-//  `uvm_info("SPI_CMD_REG_SEQ",$sformatf("READ:: REGISTER : %0s, DATA = 32'h%0h",
+-//  spi_master_reg_block.SPICMD.get_full_name(),rdata),UVM_HIGH)
+ 
+   //-------------------------------------------------------
+   // SPIADDR
+@@ -186,40 +114,19 @@ task apb_master_rand_reg_seq::body();
+     spi_adr = 32'hffff_ffff;
+     wdata = 0;
+    // wdata  = $urandom();
+-    wdata = spi_master_reg_block.SPIADR.randomize();
++    void'(spi_master_reg_block.SPIADR.randomize() with {this.SPIADR.value == 32'hf0aa_ffff;});
+     spi_master_reg_block.SPIADR.update(status);
+-
+-    //wdata = spi_master_reg_block.randomize();
+-    //wdata = (wdata & (~ `MASK_SPIADR_SPIADR)) | (spi_adr << `POS_SPIADR_SPIADR);
+   end
+   
+-  //Writing into the SPI_ADDR Register
+- // spi_master_reg_block.SPIADR.write(.status(status)      ,
+- //                                   .value(wdata)        ,
+- //                                   .path(UVM_FRONTDOOR) ,
+- //                                   .map(spi_reg_map)    ,
+- //                                   .parent(this)
+- //                                 );                     
+ 
+   `uvm_info("SPI_ADDR_REG_SEQ",$sformatf("WRITE:: REGISTER : %0s, DATA = 32'h%0h",
+   spi_master_reg_block.SPIADR.get_full_name(),wdata),UVM_HIGH)
+ 
+-//  // Reading from the SPI_ADDR Register
+-//  spi_master_reg_block.SPIADR.read(.status(status)       ,
+-//                                    .value(rdata)        ,
+-//                                    .path(UVM_FRONTDOOR) ,
+-//                                    .map(spi_reg_map)    ,
+-//                                    .parent(this)
+-//                                  );                     
+-//
+-//  `uvm_info("SPI_ADDR_REG_SEQ",$sformatf("READ:: REGISTER : %0s, DATA = 32'h%0h",
+-//  spi_master_reg_block.SPIADR.get_full_name(),rdata),UVM_HIGH)
+-
+ 
+-  //-------------------------------------------------------
++ //-------------------------------------------------------
+  // DUMMY REGISTER
+  //-------------------------------------------------------
+- //
++
+  // Writing into the register
+   begin
+ 
+@@ -228,45 +135,19 @@ task apb_master_rand_reg_seq::body();
+ 
+     wdata = 0;
+    // wdata  = $urandom();
+-    wdata = spi_master_reg_block.SPIDUM.randomize();
++    void'(spi_master_reg_block.SPIDUM.randomize() with { this.DUMMYWR.value == 8;
++                                                         this.DUMMYRD.value == 0;
++                                                        });
+     spi_master_reg_block.SPIDUM.update(status);
+ 
+-    //wdata = spi_master_reg_block.randomize();
+-    dummy_wr = 16'hffff;
+-    dummy_rd = 16'hffff;
+-
+     `uvm_info(get_type_name(), $sformatf("Write :: Register dummy_wr  = %0h",dummy_wr) , UVM_LOW)
+     `uvm_info(get_type_name(), $sformatf("Write :: Register dummy_rd = %0h",dummy_rd)  , UVM_LOW)
+ 
+-    // Clearing the required bits
+-    //wdata = wdata & (~`MASK_SPIDUM_DUMMYWR) & (~`MASK_SPIDUM_DUMMYRD) ;
+-
+-    //setting the required feilds
+-    //wdata = wdata | (dummy_wr << `POS_SPIDUM_DUMMYWR) | (dummy_rd << `POS_SPIDUM_DUMMYRD);
+-
+-  end
+-
+- //Writing into the SPI_DUMMY Register
+- // spi_master_reg_block.SPIDUM.write(.status(status)      ,
+- //                                   .value(wdata)        ,
+- //                                   .path(UVM_FRONTDOOR) ,
+- //                                   .map(spi_reg_map)    ,
+- //                                   .parent(this)
+- //                                 );                     
++  end                 
+ 
+   `uvm_info("DUMMY_REG_SEQ",$sformatf("WRITE:: REGISTER : %0s, DATA = 32'h%0h",
+   spi_master_reg_block.SPIDUM.get_full_name(),wdata),UVM_HIGH)
+ 
+-//  // Reading from the SPI_DUMMY Register
+-//  spi_master_reg_block.SPIDUM.read(.status(status)       ,
+-//                                    .value(rdata)        ,
+-//                                    .path(UVM_FRONTDOOR) ,
+-//                                    .map(spi_reg_map)    ,
+-//                                    .parent(this)
+-//                                  );                     
+-//
+-//  `uvm_info("DUMMY_REG_SEQ",$sformatf("READ:: REGISTER : %0s, DATA = 32'h%0h",
+-//  spi_master_reg_block.SPIDUM.get_full_name(),rdata),UVM_HIGH)
+ 
+   //-------------------------------------------------------
+   // TX FIFO
+@@ -278,29 +159,17 @@ task apb_master_rand_reg_seq::body();
+     tx_fifo = 32'hffff_f01a;
+ 
+     wdata = 0;
+-  //  wdata  = $urandom();
+-    wdata = spi_master_reg_block.TXFIFO.randomize();
++     void'(spi_master_reg_block.TXFIFO.randomize() with { this.TX.value inside {[32'h0000_1000 : 32'h0000_2000]};});
+     spi_master_reg_block.TXFIFO.update(status);
+ 
+-   // wdata = spi_master_reg_block.randomize();
+     `uvm_info(get_type_name(), $sformatf("Write :: Register tx_fifo = %0h",tx_fifo) , UVM_LOW)
+-
+-    // Clearing the required bits
+-    //wdata = (wdata & (~`MASK_TXFIFO_TX)) | (tx_fifo << `POS_TXFIFO_TX) ;
+   
+-  end
+-
+-  //Writing into the TX FIFO
+- // spi_master_reg_block.TXFIFO.write(.status(status)      ,
+- //                                   .value(wdata)        ,
+- //                                   .path(UVM_FRONTDOOR) ,
+- //                                   .map(spi_reg_map)    ,
+- //                                   .parent(this)
+- //                                 );                     
++  end                
+ 
+   `uvm_info("TX_FIFO_SEQ",$sformatf("WRITE:: REGISTER : %0s, DATA = 32'h%0h",
+   spi_master_reg_block.TXFIFO.get_full_name(),wdata),UVM_HIGH)
+ 
++
+   //-------------------------------------------------------
+   // RX FIFO
+   //-------------------------------------------------------
+@@ -324,101 +193,54 @@ task apb_master_rand_reg_seq::body();
+   begin
+     bit [4:0] thtx_value = 5'h1f ;
+     bit [4:0] rhtx_value = 5'h1f ;
+-    bit [4:0] cnttx_value = 5'h4;
+-    bit [4:0] cntrx_value = 5'h4;
+-
+-  //  wdata  = $urandom();
+-    wdata = spi_master_reg_block.INTCFG.randomize();
++    bit [4:0] cnttx_value = 5'h4 ;
++    bit [4:0] cntrx_value = 5'h4 ;
++
++    void'(spi_master_reg_block.INTCFG.randomize() with {this.EN.value ==   1;
++                                                        this.CNTEN.value == 1;
++                                                        this.CNTRX.value == 4;
++                                                        this.CNTTX.value == 4;
++                                                        this.RHTX.value == 4;
++                                                        this.THTX.value == 4;
++                                                      });
+     spi_master_reg_block.INTCFG.update(status);
+ 
+-  //  wdata = spi_master_reg_block.randomize();
+-
+     `uvm_info(get_type_name(), $sformatf("Write :: Register thtx_value = %0h",thtx_value), UVM_LOW)
+     `uvm_info(get_type_name(), $sformatf("Write :: Register rhtx_value = %0h",rhtx_value), UVM_LOW)
+-    `uvm_info(get_type_name(), $sformatf("Write :: Register cnttx_value = %0h",cnttx_value), UVM_LOW)
+-    `uvm_info(get_type_name(), $sformatf("Write :: Register cntrx_value = %0h",cntrx_value), UVM_LOW)
++    `uvm_info(get_type_name(), $sformatf("Write :: Register cnttx_value = %0h",cnttx_value),UVM_LOW)
++    `uvm_info(get_type_name(), $sformatf("Write :: Register cntrx_value = %0h",cntrx_value),UVM_LOW)
+ 
+-    // Setting a value 
+-   // wdata = (wdata & (~ `MASK_INTCFG_THTX))  | (thtx_value   << `POS_INTCFG_THTX);
+-   // wdata = (wdata & (~ `MASK_INTCFG_RHTX))  | (rhtx_value   << `POS_INTCFG_RHTX);
+-   // wdata = (wdata & (~ `MASK_INTCFG_CNTTX)) | (cnttx_value << `POS_INTCFG_CNTTX);
+-   // wdata = (wdata & (~ `MASK_INTCFG_CNTRX)) | (cntrx_value << `POS_INTCFG_CNTRX);
+-
+-   // // Setting the required bits
+-   // wdata = wdata | `MASK_INTCFG_CNTEN | `MASK_INTCFG_EN ; 
+-
+-  end
+- 
+-  
+-  //Writing into the INTERUPT Register
+-  //wdata = 32'hDF1F_1F1F;
+-//  spi_master_reg_block.INTCFG.write(.status(status)      ,
+-//                                    .value(wdata)        ,
+-//                                    .path(UVM_FRONTDOOR) ,
+-//                                    .map(spi_reg_map)    ,
+-//                                    .parent(this)
+-//                                  );                     
++  end                 
+ 
+   `uvm_info("INTERUPT_REG_SEQ",$sformatf("WRITE:: REGISTER : %0s",
+   spi_master_reg_block.INTCFG.get_full_name()),UVM_HIGH)
+ 
+-//  `uvm_info("INTERUPT_REG_SEQ",$sformatf("WRITE:: REGISTER : %0s, DATA = 32'h%0h",
+-//  spi_master_reg_block.INTCFG.get_full_name(),wdata),UVM_HIGH)
+ 
+-//  // Reading from the INTERUPT Register
+-//  spi_master_reg_block.INTCFG.read(.status(status)       ,
+-//                                    .value(rdata)        ,
+-//                                    .path(UVM_FRONTDOOR) ,
+-//                                    .map(spi_reg_map)    ,
+-//                                    .parent(this)
+-//                                  );                     
+-//
+-//  `uvm_info("INTERUPT_REG_SEQ",$sformatf("READ:: REGISTER : %0s, DATA = 32'h%0h",
+-//  spi_master_reg_block.INTCFG.get_full_name(),rdata),UVM_HIGH)
+- 
+   //-------------------------------------------------------
+   // STATUS Register                                        
+   //-------------------------------------------------------
+ 
+   // Writing into the register
+   begin
++
+     bit [3:0] cs_value;
+     cs_value = SLAVE_0;
+     `uvm_info(get_type_name(), $sformatf("Write :: Register cs_value = %0b",cs_value), UVM_LOW)
+     
+-    //wdata  = $urandom();
+-    wdata = spi_master_reg_block.STATUS.randomize();
++    void'(spi_master_reg_block.STATUS.randomize() with { this.CS.value == 1;
++                                                         this.SRST.value == 0;
++                                                         this.QWR.value == 0;
++                                                         this.QRD.value == 0;
++                                                         this.WR.value == 1;
++                                                         this.RD.value == 0;
++                                                       });
+     spi_master_reg_block.STATUS.update(status);
+ 
+- //   // Setting a value 
+- //   wdata = (wdata & (~ `MASK_STATUS_CS)) | (cs_value << `POS_STATUS_CS);
+- //   // Setting the required bits
+- //   wdata = wdata | `MASK_STATUS_WR; 
+- //   // Clearing the required bits
+- //   wdata = wdata & (~`MASK_STATUS_QRD) & (~`MASK_STATUS_QWR) & (~`MASK_STATUS_RD) & (~ `MASK_STATUS_SRST);
+-  end
+-
+- // spi_master_reg_block.STATUS.write(.status(status)      ,
+- //                                   .value(wdata)        ,
+- //                                   .path(UVM_FRONTDOOR) ,
+- //                                   .map(spi_reg_map)    ,
+- //                                   .parent(this)
+- //                                 );                     
++  end      
+ 
+   `uvm_info("STATUS_REG_SEQ",$sformatf("WRITE:: REGISTER : %0s, DATA = 32'h%0h",
+   spi_master_reg_block.STATUS.get_full_name(),wdata),UVM_HIGH)
+ 
+-//  // Reading from the Status Register
+-//  spi_master_reg_block.STATUS.read(.status(status)       ,
+-//                                    .value(rdata)        ,
+-//                                    .path(UVM_FRONTDOOR) ,
+-//                                    .map(spi_reg_map)    ,
+-//                                    .parent(this)
+-//                                  );                     
+-//
+-//  `uvm_info("STATUS_REG_SEQ",$sformatf("READ:: REGISTER : %0s, DATA = 32'h%0h",
+-//  spi_master_reg_block.STATUS.get_full_name(),rdata),UVM_HIGH)
+-
+ endtask : body
+ 
+ `endif
+diff --git a/src/dv/hvl_top/test/virtual_sequences/pulpino_spi_master_ip_virtual_rand_reg_seq.sv b/src/dv/hvl_top/test/virtual_sequences/pulpino_spi_master_ip_virtual_rand_reg_seq.sv
+index b38a251..d72118f 100644
+--- a/src/dv/hvl_top/test/virtual_sequences/pulpino_spi_master_ip_virtual_rand_reg_seq.sv
++++ b/src/dv/hvl_top/test/virtual_sequences/pulpino_spi_master_ip_virtual_rand_reg_seq.sv
+@@ -48,7 +48,7 @@ task pulpino_spi_master_ip_virtual_rand_reg_seq::body();
+       //write_key.get(1);
+       spi_fd_basic_slave_seq_h = spi_fd_basic_slave_seq::type_id::create("spi_fd_basic_slave_seq_h");
+       spi_fd_basic_slave_seq_h.start(p_sequencer.spi_slave_seqr_h);
+-     // -> wr_rd;
++      -> wr_rd;
+      // write_key.put(1);
+       `uvm_info("slave_vseq",$sformatf("ended slave vseq"),UVM_HIGH)
+     end
+@@ -60,9 +60,9 @@ task pulpino_spi_master_ip_virtual_rand_reg_seq::body();
+    apb_master_rand_reg_seq_h = apb_master_rand_reg_seq::type_id::create("apb_master_rand_reg_seq_h");
+    apb_master_rand_reg_seq_h.model = p_sequencer.env_config_h.spi_master_reg_block;
+    apb_master_rand_reg_seq_h.start(p_sequencer.apb_master_seqr_h);
+-  // wait(wr_rd.triggered);
++   wait(wr_rd.triggered);
+   // write_key.put(1);
+-  #10us;
++  //#10us;
+    `uvm_info("master_vseq",$sformatf("ended master vseq"),UVM_HIGH)
+  end
+  endtask : body
+
+From 3e97a605c191f8b73d5be45b1500b552079c1c68 Mon Sep 17 00:00:00 2001
+From: venkateshthota <venkateshthota@mirafra.com>
+Date: Thu, 17 Mar 2022 12:12:43 +0530
+Subject: [PATCH 2/3] modified master collector and scoreboard and regression
+ lists
+
+---
+ src/dv/hvl_top/env/apb_master_collector.sv    | 12 +++--
+ .../env/pulpino_spi_master_ip_scoreboard.sv   |  8 +--
+ .../apb_master_basic_write_seq.sv             |  4 +-
+ ...er_std_mode_write_8_dummy_write_reg_seq.sv | 52 +++++++++----------
+ ...spi_master_ip_verification_regression.list | 50 +++++++++---------
+ 5 files changed, 66 insertions(+), 60 deletions(-)
+
+diff --git a/src/dv/hvl_top/env/apb_master_collector.sv b/src/dv/hvl_top/env/apb_master_collector.sv
+index 3cbddd9..a412c6c 100644
+--- a/src/dv/hvl_top/env/apb_master_collector.sv
++++ b/src/dv/hvl_top/env/apb_master_collector.sv
+@@ -155,6 +155,7 @@ function void apb_master_collector::write(apb_master_tx t);
+     `uvm_info(get_type_name(), $sformatf("dummy_wr_local = %h", dummy_wr_local),UVM_HIGH)
+     `uvm_info(get_type_name(), $sformatf("dummy_local = %h", dummy_local),UVM_HIGH)
+     
++    `uvm_info(get_type_name(),$sformatf("Inside DUMMY_WR--before shifted_data=%h",coll_pkt.data),UVM_HIGH)
+     coll_pkt.data = coll_pkt.data << coll_pkt.dummy_wr_data;
+ 
+     `uvm_info(get_type_name(),$sformatf("Inside DUMMY_WR--shifted_data=%h",coll_pkt.data),UVM_HIGH)
+@@ -171,8 +172,8 @@ function void apb_master_collector::write(apb_master_tx t);
+ 
+     bit [31:0]mosi_data_local;
+ 
+-    //int k;
+-    coll_pkt.j = 0;
++    int k;
++    coll_pkt.j = coll_pkt.mosi_data_len - 'd1;
+     
+     //k = coll_pkt.dummy_wr_data;
+ 
+@@ -183,7 +184,11 @@ function void apb_master_collector::write(apb_master_tx t);
+ 
+     //for(int i=0; i<coll_pkt.spi_length[31:16]; i++) begin
+     foreach(mosi_data_local[i]) begin
+-      coll_pkt.data[coll_pkt.j+i] = mosi_data_local[i];
++      coll_pkt.data[coll_pkt.j-k] = mosi_data_local[i];
++  //    if( k == coll_pkt.spi_length[31:16]) begin
++  //      break;
++  //    end
++      k++;
+     end
+     coll_pkt.flag = coll_pkt.flag + 1;
+     `uvm_info(get_type_name(), $sformatf("mosi_data = %0h", coll_pkt.mosi_data),UVM_HIGH)
+@@ -218,3 +223,4 @@ endfunction : write
+ 
+ `endif
+ 
++
+diff --git a/src/dv/hvl_top/env/pulpino_spi_master_ip_scoreboard.sv b/src/dv/hvl_top/env/pulpino_spi_master_ip_scoreboard.sv
+index 0c0b6ae..2735189 100644
+--- a/src/dv/hvl_top/env/pulpino_spi_master_ip_scoreboard.sv
++++ b/src/dv/hvl_top/env/pulpino_spi_master_ip_scoreboard.sv
+@@ -132,8 +132,8 @@ task pulpino_spi_master_ip_scoreboard::run_phase(uvm_phase phase);
+     end
+ 
+     else begin
+-      `uvm_info(get_type_name(),$sformatf("apb_pwdata from apb_master and master_out_slave_in from slave is not equal"),UVM_HIGH);
+-      `uvm_info("SB_APB_DATA_MATCHED WITH MOSI0", $sformatf("Master APB_DATA = 'h%0x and Slave SPI_DATA = 'h%0x",apb_data,spi_data), UVM_HIGH); 
++      `uvm_error(get_type_name(),$sformatf("apb_pwdata from apb_master and master_out_slave_in from slave is not equal"));
++      `uvm_error("SB_APB_DATA_MATCHED WITH MOSI0", $sformatf("Master APB_DATA = 'h%0x and Slave SPI_DATA = 'h%0x",apb_data,spi_data)); 
+       byte_data_cmp_failed_master_pwdata_slave_mosi_count++;
+     end
+ 
+@@ -143,8 +143,8 @@ task pulpino_spi_master_ip_scoreboard::run_phase(uvm_phase phase);
+       byte_data_cmp_verified_bit_count++;
+     end
+     else begin
+-      `uvm_info(get_type_name(),$sformatf("Number of bits from apb packet and spi packet is not equal"),UVM_HIGH);
+-      `uvm_info("NUMBER_OF_BITS_NOT_MATCHED",$sformatf("apb_data_width=%0d,spi_data_width=%0d",apb_data_width,spi_data_width),UVM_HIGH);
++      `uvm_error(get_type_name(),$sformatf("Number of bits from apb packet and spi packet is not equal"));
++      `uvm_error("NUMBER_OF_BITS_NOT_MATCHED",$sformatf("apb_data_width=%0d,spi_data_width=%0d",apb_data_width,spi_data_width));
+       byte_data_cmp_failed_bit_count++;
+     end
+ 
+diff --git a/src/dv/hvl_top/test/sequences/master_sequences/apb_master_basic_write_seq.sv b/src/dv/hvl_top/test/sequences/master_sequences/apb_master_basic_write_seq.sv
+index a889a70..f692ac9 100644
+--- a/src/dv/hvl_top/test/sequences/master_sequences/apb_master_basic_write_seq.sv
++++ b/src/dv/hvl_top/test/sequences/master_sequences/apb_master_basic_write_seq.sv
+@@ -49,7 +49,7 @@ task apb_master_basic_write_seq::body();
+   start_item(req);
+   if(!req.randomize() with {req.pselx == SLAVE_0;
+                             req.paddr == 32'h1A10_2004;
+-                            req.pwdata == 32'h0000_0000;  
++                            req.pwdata == 32'h0000_0006;  
+                             req.transfer_size == BIT_32;
+                             req.cont_write_read == 0;
+                             req.pwrite == WRITE;}) begin : CLOCK_DIV
+@@ -113,7 +113,7 @@ task apb_master_basic_write_seq::body();
+   start_item(req);
+   if(!req.randomize() with {req.pselx == SLAVE_0;
+                             req.paddr == 32'h1A10_2018;
+-                            req.pwdata == 32'h0000_f01A;  
++                            req.pwdata == 32'hf000_f01A;  
+                             req.transfer_size == BIT_32;
+                             req.cont_write_read == 0;
+                             req.pwrite == WRITE;}) begin : TXFIFO
+diff --git a/src/dv/hvl_top/test/sequences/master_sequences/reg_sequences/apb_master_std_mode_write_8_dummy_write_reg_seq.sv b/src/dv/hvl_top/test/sequences/master_sequences/reg_sequences/apb_master_std_mode_write_8_dummy_write_reg_seq.sv
+index e4e8ce1..5dae38d 100644
+--- a/src/dv/hvl_top/test/sequences/master_sequences/reg_sequences/apb_master_std_mode_write_8_dummy_write_reg_seq.sv
++++ b/src/dv/hvl_top/test/sequences/master_sequences/reg_sequences/apb_master_std_mode_write_8_dummy_write_reg_seq.sv
+@@ -50,7 +50,7 @@ task apb_master_std_mode_write_8_dummy_write_reg_seq::body();
+   //-------------------------------------------------------
+   begin
+     bit [7:0] clkdiv_value;
+-    clkdiv_value = 8'd4;
++    clkdiv_value = 8'd16;
+     wdata = 0;
+     wdata = (wdata & (~ `MASK_CLKDIV_CLKDIV)) | (clkdiv_value << `POS_CLKDIV_CLKDIV);
+   end
+@@ -67,15 +67,15 @@ task apb_master_std_mode_write_8_dummy_write_reg_seq::body();
+   spi_master_reg_block.CLKDIV.get_full_name(),wdata),UVM_HIGH)
+ 
+   // Reading from the Clockdiv Register
+-  spi_master_reg_block.CLKDIV.read(.status(status)       ,
+-                                    .value(rdata)        ,
+-                                    .path(UVM_FRONTDOOR) ,
+-                                    .map(spi_reg_map)    ,
+-                                    .parent(this)
+-                                  );                     
++ // spi_master_reg_block.CLKDIV.read(.status(status)       ,
++ //                                   .value(rdata)        ,
++ //                                   .path(UVM_FRONTDOOR) ,
++ //                                   .map(spi_reg_map)    ,
++ //                                   .parent(this)
++ //                                 );                     
+ 
+-  `uvm_info("CLOCK_DIV_REG_SEQ",$sformatf("READ:: REGISTER : %0s, DATA = 32'h%0h",
+-  spi_master_reg_block.CLKDIV.get_full_name(),rdata),UVM_HIGH)
++ // `uvm_info("CLOCK_DIV_REG_SEQ",$sformatf("READ:: REGISTER : %0s, DATA = 32'h%0h",
++ // spi_master_reg_block.CLKDIV.get_full_name(),rdata),UVM_HIGH)
+ 
+   //-------------------------------------------------------
+   // SPI LEN Register                                        
+@@ -89,7 +89,7 @@ task apb_master_std_mode_write_8_dummy_write_reg_seq::body();
+     bit [15:0] data_length;
+     cmd_length  = 6'h8;  
+     addr_length = 6'h8;
+-    data_length = 16'h8;
++    data_length = 16'h0010;
+ 
+     `uvm_info(get_type_name(), $sformatf("Write :: Register cmd_length  = %0h",cmd_length) , UVM_LOW)
+     `uvm_info(get_type_name(), $sformatf("Write :: Register addr_length = %0h",addr_length), UVM_LOW)
+@@ -151,15 +151,15 @@ task apb_master_std_mode_write_8_dummy_write_reg_seq::body();
+   spi_master_reg_block.SPICMD.get_full_name(),wdata),UVM_HIGH)
+ 
+   // Reading from the SPICMD Register
+-  spi_master_reg_block.SPICMD.read(.status(status)       ,
+-                                    .value(rdata)        ,
+-                                    .path(UVM_FRONTDOOR) ,
+-                                    .map(spi_reg_map)    ,
+-                                    .parent(this)
+-                                  );                     
++ // spi_master_reg_block.SPICMD.read(.status(status)       ,
++ //                                   .value(rdata)        ,
++ //                                   .path(UVM_FRONTDOOR) ,
++ //                                   .map(spi_reg_map)    ,
++ //                                   .parent(this)
++ //                                 );                     
+ 
+-  `uvm_info("SPI_CMD_REG_SEQ",$sformatf("READ:: REGISTER : %0s, DATA = 32'h%0h",
+-  spi_master_reg_block.SPICMD.get_full_name(),rdata),UVM_HIGH)
++ // `uvm_info("SPI_CMD_REG_SEQ",$sformatf("READ:: REGISTER : %0s, DATA = 32'h%0h",
++ // spi_master_reg_block.SPICMD.get_full_name(),rdata),UVM_HIGH)
+ 
+   //-------------------------------------------------------
+   // SPIADDR
+@@ -341,15 +341,15 @@ task apb_master_std_mode_write_8_dummy_write_reg_seq::body();
+   spi_master_reg_block.INTCFG.get_full_name(),wdata),UVM_HIGH)
+ 
+   // Reading from the INTERUPT Register
+-  spi_master_reg_block.INTCFG.read(.status(status)       ,
+-                                    .value(rdata)        ,
+-                                    .path(UVM_FRONTDOOR) ,
+-                                    .map(spi_reg_map)    ,
+-                                    .parent(this)
+-                                  );                     
++ // spi_master_reg_block.INTCFG.read(.status(status)       ,
++ //                                   .value(rdata)        ,
++ //                                   .path(UVM_FRONTDOOR) ,
++ //                                   .map(spi_reg_map)    ,
++ //                                   .parent(this)
++ //                                 );                     
+ 
+-  `uvm_info("INTERUPT_REG_SEQ",$sformatf("READ:: REGISTER : %0s, DATA = 32'h%0h",
+-  spi_master_reg_block.INTCFG.get_full_name(),rdata),UVM_HIGH)
++ // `uvm_info("INTERUPT_REG_SEQ",$sformatf("READ:: REGISTER : %0s, DATA = 32'h%0h",
++ // spi_master_reg_block.INTCFG.get_full_name(),rdata),UVM_HIGH)
+ 
+   //-------------------------------------------------------
+   // STATUS Register                                        
+diff --git a/src/dv/hvl_top/testlists/pulpino_spi_master_ip_verification_regression.list b/src/dv/hvl_top/testlists/pulpino_spi_master_ip_verification_regression.list
+index 1328895..4f60d5b 100644
+--- a/src/dv/hvl_top/testlists/pulpino_spi_master_ip_verification_regression.list
++++ b/src/dv/hvl_top/testlists/pulpino_spi_master_ip_verification_regression.list
+@@ -1,19 +1,19 @@
+ # Regression list for pulpino_spi_master_ip_verification
+ 
+-pulpino_spi_master_ip_basic_read_test 
+-pulpino_spi_master_ip_basic_write_test 
+-pulpino_spi_master_ip_rand_test 
+-pulpino_spi_master_ip_std_mode_write_0_cmd_0_addr_32_data_length_test 
+-pulpino_spi_master_ip_std_mode_write_0_cmd_32_addr_32_data_length_test 
+-pulpino_spi_master_ip_std_mode_write_0_dummy_write_test 
+-pulpino_spi_master_ip_std_mode_write_8_dummy_write_test 
+-pulpino_spi_master_ip_std_mode_write_16_dummy_write_test 
+-pulpino_spi_master_ip_std_mode_write_32_cmd_32_addr_32_data_length_test 
+-pulpino_spi_master_ip_std_mode_write_8_cmd_8_addr_32_data_length_test 
+-pulpino_spi_master_ip_std_mode_write_even_clkdiv_test 
+-pulpino_spi_master_ip_std_mode_write_odd_clkdiv_test 
+-pulpino_spi_master_ip_std_mode_write_thtx_rhtx_cnttx_cntrx_value_2_test 
+-pulpino_spi_master_ip_std_mode_write_thtx_rhtx_cnttx_cntrx_value_4_test 
++#pulpino_spi_master_ip_basic_read_test 
++#pulpino_spi_master_ip_basic_write_test 
++#pulpino_spi_master_ip_rand_test 
++#pulpino_spi_master_ip_std_mode_write_0_cmd_0_addr_32_data_length_test 
++#pulpino_spi_master_ip_std_mode_write_0_cmd_32_addr_32_data_length_test 
++#pulpino_spi_master_ip_std_mode_write_0_dummy_write_test 
++#pulpino_spi_master_ip_std_mode_write_8_dummy_write_test 
++#pulpino_spi_master_ip_std_mode_write_16_dummy_write_test 
++#pulpino_spi_master_ip_std_mode_write_32_cmd_32_addr_32_data_length_test 
++#pulpino_spi_master_ip_std_mode_write_8_cmd_8_addr_32_data_length_test 
++#pulpino_spi_master_ip_std_mode_write_even_clkdiv_test 
++#pulpino_spi_master_ip_std_mode_write_odd_clkdiv_test 
++#pulpino_spi_master_ip_std_mode_write_thtx_rhtx_cnttx_cntrx_value_2_test 
++#pulpino_spi_master_ip_std_mode_write_thtx_rhtx_cnttx_cntrx_value_4_test 
+ 
+ 
+ #Register Access testcases
+@@ -42,16 +42,16 @@ pulpino_spi_master_ip_std_mode_write_8_dummy_write_reg_test
+ pulpino_spi_master_ip_spi_modes_clkdiv_dummy_cycles_cross_reg_test
+ pulpino_spi_master_ip_spi_modes_transfer_length_interupts_cross_reg_test
+ 
+-pulpino_spi_master_ip_std_mode_read_0_cmd_0_addr_16_data_length_reg_test 
+-pulpino_spi_master_ip_std_mode_read_0_cmd_0_addr_32_data_length_reg_test 
+-pulpino_spi_master_ip_std_mode_read_0_cmd_16_addr_16_data_length_reg_test 
+-pulpino_spi_master_ip_std_mode_read_0_cmd_32_addr_32_data_length_reg_test 
+-pulpino_spi_master_ip_std_mode_read_16_cmd_16_addr_16_data_length_reg_test 
+-pulpino_spi_master_ip_std_mode_read_16_cmd_16_addr_32_data_length_reg_test 
+-pulpino_spi_master_ip_std_mode_read_32_cmd_32_addr_32_data_length_reg_test 
+-pulpino_spi_master_ip_std_mode_read_8_cmd_16_addr_32_data_length_reg_test 
+-pulpino_spi_master_ip_std_mode_read_8_cmd_32_addr_32_data_length_reg_test 
+-pulpino_spi_master_ip_std_mode_read_8_cmd_8_addr_32_data_length_reg_test 
+-pulpino_spi_master_ip_std_mode_read_thtx_rhtx_cnttx_cntrx_value_2_reg_test
++#pulpino_spi_master_ip_std_mode_read_0_cmd_0_addr_16_data_length_reg_test 
++#pulpino_spi_master_ip_std_mode_read_0_cmd_0_addr_32_data_length_reg_test 
++#pulpino_spi_master_ip_std_mode_read_0_cmd_16_addr_16_data_length_reg_test 
++#pulpino_spi_master_ip_std_mode_read_0_cmd_32_addr_32_data_length_reg_test 
++#pulpino_spi_master_ip_std_mode_read_16_cmd_16_addr_16_data_length_reg_test 
++#pulpino_spi_master_ip_std_mode_read_16_cmd_16_addr_32_data_length_reg_test 
++#pulpino_spi_master_ip_std_mode_read_32_cmd_32_addr_32_data_length_reg_test 
++#pulpino_spi_master_ip_std_mode_read_8_cmd_16_addr_32_data_length_reg_test 
++#pulpino_spi_master_ip_std_mode_read_8_cmd_32_addr_32_data_length_reg_test 
++#pulpino_spi_master_ip_std_mode_read_8_cmd_8_addr_32_data_length_reg_test 
++#pulpino_spi_master_ip_std_mode_read_thtx_rhtx_cnttx_cntrx_value_2_reg_test
+ 
+ pulpino_spi_master_ip_negitive_reg_test
+
+From 0d1f6360547d1c35c671b3a248353b0a1bef0372 Mon Sep 17 00:00:00 2001
+From: Nadeem-Ahmed <nadeemahmed@mirafra.com>
+Date: Fri, 18 Mar 2022 20:39:52 +0530
+Subject: [PATCH 3/3] Added the comments in collectors
+
+---
+ src/dv/hvl_top/env/apb_master_collector.sv | 9 +++++++++
+ src/dv/hvl_top/env/spi_slave_collector.sv  | 5 +++++
+ 2 files changed, 14 insertions(+)
+
+diff --git a/src/dv/hvl_top/env/apb_master_collector.sv b/src/dv/hvl_top/env/apb_master_collector.sv
+index a412c6c..30e9ae1 100644
+--- a/src/dv/hvl_top/env/apb_master_collector.sv
++++ b/src/dv/hvl_top/env/apb_master_collector.sv
+@@ -8,11 +8,20 @@
+ class apb_master_collector extends uvm_component;
+   `uvm_component_utils(apb_master_collector)
+ 
++  //variable : apb_master_coll_analysis_port
++  //Used to send the data from the apb_master_collector
+   uvm_analysis_port#(collector_packet_s) apb_master_coll_analysis_port;
++
++  //variable : apb_master_coll_imp_port
++  //Used to get the data from the apb_master_monitor_proxy
+   uvm_analysis_imp#(apb_master_tx, apb_master_collector) apb_master_coll_imp_port;
+ 
++  //Variable : map
++  //Used to access the registers
+   uvm_reg_map map;
+ 
++  //Variable : coll_pkt
++  //Used to store the register data values
+   collector_packet_s coll_pkt;
+ 
+   //-------------------------------------------------------
+diff --git a/src/dv/hvl_top/env/spi_slave_collector.sv b/src/dv/hvl_top/env/spi_slave_collector.sv
+index 9354713..7c3e1e6 100644
+--- a/src/dv/hvl_top/env/spi_slave_collector.sv
++++ b/src/dv/hvl_top/env/spi_slave_collector.sv
+@@ -8,7 +8,12 @@
+ class spi_slave_collector extends uvm_component;
+   `uvm_component_utils(spi_slave_collector)
+ 
++  //variable : spi_slave_coll_analysis_port
++  //Used to send the data from the spi_slave_collector
+   uvm_analysis_port#(spi_slave_tx) spi_slave_coll_analysis_port;
++
++  //variable : spi_slave_coll_imp_port
++  //Used to get the data from the spi_slave_monitor_proxy
+   uvm_analysis_imp#(spi_slave_tx, spi_slave_collector) spi_slave_coll_imp_port;
+ 
+   //-------------------------------------------------------

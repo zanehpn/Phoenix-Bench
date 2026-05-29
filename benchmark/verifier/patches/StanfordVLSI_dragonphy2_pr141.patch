@@ -1,0 +1,25 @@
+From 56650a061e26c6ea88e341ba451a92a4f1aba816 Mon Sep 17 00:00:00 2001
+From: CansWang <canswang@stanford.edu>
+Date: Tue, 27 Oct 2020 16:53:54 -0700
+Subject: [PATCH]  Combinational loop removed
+
+---
+ vlog/chip_src/tx_16t1/qr_4t1_mux_top.sv | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/vlog/chip_src/tx_16t1/qr_4t1_mux_top.sv b/vlog/chip_src/tx_16t1/qr_4t1_mux_top.sv
+index ddac8ed3..12d31597 100644
+--- a/vlog/chip_src/tx_16t1/qr_4t1_mux_top.sv
++++ b/vlog/chip_src/tx_16t1/qr_4t1_mux_top.sv
+@@ -44,7 +44,10 @@ ff_c dff_IB2 (.D(D1DIB), .CP(clk_QB), .Q(D2MIB));
+ // 4 to 1 mux
+ div_b2 div (.clkin(clk_IB), .rst(rst), .clkout(ck_b2));
+ 
+-assign data = (clk_Q && clk_I) ? D1MQ : ((clk_I && clk_QB) ? D1MI : ((clk_QB && clk_IB) ? D2MQB : ((clk_IB && clk_Q) ? D2MIB : data)));
++assign data = ((clk_Q  & clk_I  & D1MQ ) |
++               (clk_I  & clk_QB & D1MI ) |
++               (clk_QB & clk_IB & D2MQB) |
++               (clk_IB & clk_Q  & D2MIB));
+ 
+ endmodule
+ 

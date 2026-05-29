@@ -1,0 +1,34 @@
+# add M extension to big_core
+
+- Source URL: https://github.com/FPGA-MAFIA/fpga_mafia/issues/648
+
+- implement multiplication in HW in straight forward manner.  We do that because FPGA has dedicated multipliers
+- implement division as exception trap
+
+PR Title: add m_extension support
+Status: Merged
+Merged by: amichai-bd on May 21, 2024
+Source Branch: big_core_RV32IM → main
+Commits: 4
+
+Description:
+The contributor successfully implemented RISC-V M extension (multiplication/division) support for the big_core processor. The implementation uses trap-based division handling and includes custom CSR functionality for storing the stack pointer.
+
+Test Command:
+./build.py -dut big_core -test m_extension -app -cfg big_core_rv32im -hw -sim
+
+Results demonstrated: Division, unsigned division, remainder, and unsigned remainder operations with test case 34÷4, plus negative number handling and overflow/division-by-zero edge cases.
+
+Key Comments:
+roman012285 (Author):
+- "it took allot of time to understand the pointers and debug every thing"
+- Acknowledged performance concerns with naive division algorithm
+- Noted potential stability issues with large unsigned number division and memory safety during interrupt handling
+
+amichai-bd (Reviewer):
+- Flagged inefficient division algorithms with comments: "Wow - this is why it takes so long! please change to a better algorithm"
+- Requested terminology clarification (pointer vs. address; register file pointer vs. address)
+- Confirmed test was included: "BIG_CORE -cfg big_core_rv32im with reference model"
+
+Linked Issue:
+#648: add M extension to big_core - marked for closure

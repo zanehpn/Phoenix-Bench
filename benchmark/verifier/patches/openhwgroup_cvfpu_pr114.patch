@@ -1,0 +1,267 @@
+From 22cd466ccb6a93264e1ea41cccee94b4a7a51572 Mon Sep 17 00:00:00 2001
+From: Michael Platzer <michael.platzer@axelera.ai>
+Date: Tue, 7 May 2024 08:37:52 +0000
+Subject: [PATCH 1/4] =?UTF-8?q?=F0=9F=8F=B7=EF=B8=8F=20Add=20new=20operati?=
+ =?UTF-8?q?on=20for=20symmetric=20(same=20src=20fmt)=20add?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ src/fpnew_pkg.sv | 13 +++++++------
+ 1 file changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/src/fpnew_pkg.sv b/src/fpnew_pkg.sv
+index 7addc3e9..deedce0d 100644
+--- a/src/fpnew_pkg.sv
++++ b/src/fpnew_pkg.sv
+@@ -120,7 +120,8 @@ package fpnew_pkg;
+     FMADD, FNMSUB, ADD, MUL,     // ADDMUL operation group
+     DIV, SQRT,                   // DIVSQRT operation group
+     SGNJ, MINMAX, CMP, CLASSIFY, // NONCOMP operation group
+-    F2F, F2I, I2F, CPKAB, CPKCD  // CONV operation group
++    F2F, F2I, I2F, CPKAB, CPKCD, // CONV operation group
++    ADDS                         // ADDMUL operation group (ADDS is added here to preserve bit encoding of operations)
+   } operation_e;
+ 
+   // -------------------
+@@ -367,11 +368,11 @@ package fpnew_pkg;
+   // Returns the operation group of the given operation
+   function automatic opgroup_e get_opgroup(operation_e op);
+     unique case (op)
+-      FMADD, FNMSUB, ADD, MUL:     return ADDMUL;
+-      DIV, SQRT:                   return DIVSQRT;
+-      SGNJ, MINMAX, CMP, CLASSIFY: return NONCOMP;
+-      F2F, F2I, I2F, CPKAB, CPKCD: return CONV;
+-      default:                     return NONCOMP;
++      FMADD, FNMSUB, ADD, ADDS, MUL: return ADDMUL;
++      DIV, SQRT:                     return DIVSQRT;
++      SGNJ, MINMAX, CMP, CLASSIFY:   return NONCOMP;
++      F2F, F2I, I2F, CPKAB, CPKCD:   return CONV;
++      default:                       return NONCOMP;
+     endcase
+   endfunction
+ 
+
+From 87461b5d302cbc5b14a9e4570a83e0b60d674319 Mon Sep 17 00:00:00 2001
+From: Michael Platzer <michael.platzer@axelera.ai>
+Date: Tue, 7 May 2024 08:40:19 +0000
+Subject: [PATCH 2/4] =?UTF-8?q?=E2=9C=A8=20Select=20multi=20FMA=20addend?=
+ =?UTF-8?q?=20fmt=20independently?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ src/fpnew_fma_multi.sv              | 22 ++++++++++++++--------
+ src/fpnew_opgroup_multifmt_slice.sv | 29 +++++++++++++++--------------
+ 2 files changed, 29 insertions(+), 22 deletions(-)
+
+diff --git a/src/fpnew_fma_multi.sv b/src/fpnew_fma_multi.sv
+index 471d966f..064e4897 100644
+--- a/src/fpnew_fma_multi.sv
++++ b/src/fpnew_fma_multi.sv
+@@ -34,8 +34,9 @@ module fpnew_fma_multi #(
+   input  fpnew_pkg::roundmode_e       rnd_mode_i,
+   input  fpnew_pkg::operation_e       op_i,
+   input  logic                        op_mod_i,
+-  input  fpnew_pkg::fp_format_e       src_fmt_i, // format of the multiplicands
+-  input  fpnew_pkg::fp_format_e       dst_fmt_i, // format of the addend and result
++  input  fpnew_pkg::fp_format_e       src_fmt_i,  // format of the multiplicands
++  input  fpnew_pkg::fp_format_e       src2_fmt_i, // format of the addend
++  input  fpnew_pkg::fp_format_e       dst_fmt_i,  // format of the result
+   input  TagType                      tag_i,
+   input  logic                        mask_i,
+   input  AuxType                      aux_i,
+@@ -111,6 +112,7 @@ module fpnew_fma_multi #(
+   // Selected pipeline output signals as non-arrays
+   logic [2:0][WIDTH-1:0] operands_q;
+   fpnew_pkg::fp_format_e src_fmt_q;
++  fpnew_pkg::fp_format_e src2_fmt_q;
+   fpnew_pkg::fp_format_e dst_fmt_q;
+ 
+   // Input pipeline signals, index i holds signal after i register stages
+@@ -120,6 +122,7 @@ module fpnew_fma_multi #(
+   fpnew_pkg::operation_e [0:NUM_INP_REGS]                       inp_pipe_op_q;
+   logic                  [0:NUM_INP_REGS]                       inp_pipe_op_mod_q;
+   fpnew_pkg::fp_format_e [0:NUM_INP_REGS]                       inp_pipe_src_fmt_q;
++  fpnew_pkg::fp_format_e [0:NUM_INP_REGS]                       inp_pipe_src2_fmt_q;
+   fpnew_pkg::fp_format_e [0:NUM_INP_REGS]                       inp_pipe_dst_fmt_q;
+   TagType                [0:NUM_INP_REGS]                       inp_pipe_tag_q;
+   logic                  [0:NUM_INP_REGS]                       inp_pipe_mask_q;
+@@ -135,6 +138,7 @@ module fpnew_fma_multi #(
+   assign inp_pipe_op_q[0]       = op_i;
+   assign inp_pipe_op_mod_q[0]   = op_mod_i;
+   assign inp_pipe_src_fmt_q[0]  = src_fmt_i;
++  assign inp_pipe_src2_fmt_q[0] = src2_fmt_i;
+   assign inp_pipe_dst_fmt_q[0]  = dst_fmt_i;
+   assign inp_pipe_tag_q[0]      = tag_i;
+   assign inp_pipe_mask_q[0]     = mask_i;
+@@ -161,6 +165,7 @@ module fpnew_fma_multi #(
+     `FFL(inp_pipe_op_q[i+1],       inp_pipe_op_q[i],       reg_ena, fpnew_pkg::FMADD)
+     `FFL(inp_pipe_op_mod_q[i+1],   inp_pipe_op_mod_q[i],   reg_ena, '0)
+     `FFL(inp_pipe_src_fmt_q[i+1],  inp_pipe_src_fmt_q[i],  reg_ena, fpnew_pkg::fp_format_e'(0))
++    `FFL(inp_pipe_src2_fmt_q[i+1], inp_pipe_src2_fmt_q[i], reg_ena, fpnew_pkg::fp_format_e'(0))
+     `FFL(inp_pipe_dst_fmt_q[i+1],  inp_pipe_dst_fmt_q[i],  reg_ena, fpnew_pkg::fp_format_e'(0))
+     `FFL(inp_pipe_tag_q[i+1],      inp_pipe_tag_q[i],      reg_ena, TagType'('0))
+     `FFL(inp_pipe_mask_q[i+1],     inp_pipe_mask_q[i],     reg_ena, '0)
+@@ -169,6 +174,7 @@ module fpnew_fma_multi #(
+   // Output stage: assign selected pipe outputs to signals for later use
+   assign operands_q = inp_pipe_operands_q[NUM_INP_REGS];
+   assign src_fmt_q  = inp_pipe_src_fmt_q[NUM_INP_REGS];
++  assign src2_fmt_q = inp_pipe_src2_fmt_q[NUM_INP_REGS];
+   assign dst_fmt_q  = inp_pipe_dst_fmt_q[NUM_INP_REGS];
+ 
+   // -----------------
+@@ -232,12 +238,12 @@ module fpnew_fma_multi #(
+   always_comb begin : op_select
+ 
+     // Default assignments - packing-order-agnostic
+-    operand_a = {fmt_sign[src_fmt_q][0], fmt_exponent[src_fmt_q][0], fmt_mantissa[src_fmt_q][0]};
+-    operand_b = {fmt_sign[src_fmt_q][1], fmt_exponent[src_fmt_q][1], fmt_mantissa[src_fmt_q][1]};
+-    operand_c = {fmt_sign[dst_fmt_q][2], fmt_exponent[dst_fmt_q][2], fmt_mantissa[dst_fmt_q][2]};
+-    info_a    = info_q[src_fmt_q][0];
+-    info_b    = info_q[src_fmt_q][1];
+-    info_c    = info_q[dst_fmt_q][2];
++    operand_a = {fmt_sign[src_fmt_q ][0], fmt_exponent[src_fmt_q ][0], fmt_mantissa[src_fmt_q ][0]};
++    operand_b = {fmt_sign[src_fmt_q ][1], fmt_exponent[src_fmt_q ][1], fmt_mantissa[src_fmt_q ][1]};
++    operand_c = {fmt_sign[src2_fmt_q][2], fmt_exponent[src2_fmt_q][2], fmt_mantissa[src2_fmt_q][2]};
++    info_a    = info_q[src_fmt_q ][0];
++    info_b    = info_q[src_fmt_q ][1];
++    info_c    = info_q[src2_fmt_q][2];
+ 
+     // op_mod_q inverts sign of operand C
+     operand_c.sign = operand_c.sign ^ inp_pipe_op_mod_q[NUM_INP_REGS];
+diff --git a/src/fpnew_opgroup_multifmt_slice.sv b/src/fpnew_opgroup_multifmt_slice.sv
+index 7774b751..71ccb34b 100644
+--- a/src/fpnew_opgroup_multifmt_slice.sv
++++ b/src/fpnew_opgroup_multifmt_slice.sv
+@@ -229,28 +229,29 @@ or set Features.FpFmtMask to support only FP32");
+         ) i_fpnew_fma_multi (
+           .clk_i,
+           .rst_ni,
+-          .operands_i      ( local_operands  ),
++          .operands_i      ( local_operands                                  ),
+           .is_boxed_i,
+           .rnd_mode_i,
+           .op_i,
+           .op_mod_i,
+           .src_fmt_i,
++          .src2_fmt_i      ( op_i == fpnew_pkg::ADDS ? src_fmt_i : dst_fmt_i ),
+           .dst_fmt_i,
+           .tag_i,
+-          .mask_i          ( simd_mask_i[lane]   ),
+-          .aux_i           ( aux_data            ),
+-          .in_valid_i      ( in_valid            ),
+-          .in_ready_o      ( lane_in_ready[lane] ),
++          .mask_i          ( simd_mask_i[lane]                               ),
++          .aux_i           ( aux_data                                        ),
++          .in_valid_i      ( in_valid                                        ),
++          .in_ready_o      ( lane_in_ready[lane]                             ),
+           .flush_i,
+-          .result_o        ( op_result           ),
+-          .status_o        ( op_status           ),
+-          .extension_bit_o ( lane_ext_bit[lane]  ),
+-          .tag_o           ( lane_tags[lane]     ),
+-          .mask_o          ( lane_masks[lane]    ),
+-          .aux_o           ( lane_aux[lane]      ),
+-          .out_valid_o     ( out_valid           ),
+-          .out_ready_i     ( out_ready           ),
+-          .busy_o          ( lane_busy[lane]     ),
++          .result_o        ( op_result                                       ),
++          .status_o        ( op_status                                       ),
++          .extension_bit_o ( lane_ext_bit[lane]                              ),
++          .tag_o           ( lane_tags[lane]                                 ),
++          .mask_o          ( lane_masks[lane]                                ),
++          .aux_o           ( lane_aux[lane]                                  ),
++          .out_valid_o     ( out_valid                                       ),
++          .out_ready_i     ( out_ready                                       ),
++          .busy_o          ( lane_busy[lane]                                 ),
+           .reg_ena_i
+         );
+ 
+
+From 67e9c0cb165e3c186ab240461a932c976b182da8 Mon Sep 17 00:00:00 2001
+From: Michael Platzer <michael.platzer@axelera.ai>
+Date: Tue, 7 May 2024 08:43:57 +0000
+Subject: [PATCH 3/4] =?UTF-8?q?=F0=9F=92=A1=20Add=20new=20operation=20to?=
+ =?UTF-8?q?=20comment=20in=20multi=20FMA=20src?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ src/fpnew_fma_multi.sv | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/fpnew_fma_multi.sv b/src/fpnew_fma_multi.sv
+index 064e4897..d8cab9b3 100644
+--- a/src/fpnew_fma_multi.sv
++++ b/src/fpnew_fma_multi.sv
+@@ -230,8 +230,8 @@ module fpnew_fma_multi #(
+   // | FMADD    | \c 1        | FMSUB: Invert sign of operand C
+   // | FNMSUB   | \c 0        | FNMSUB: Invert sign of operand A
+   // | FNMSUB   | \c 1        | FNMADD: Invert sign of operands A and C
+-  // | ADD      | \c 0        | ADD: Set operand A to +1.0
+-  // | ADD      | \c 1        | SUB: Set operand A to +1.0, invert sign of operand C
++  // | ADD/ADDS | \c 0        | ADD: Set operand A to +1.0
++  // | ADD/ADDS | \c 1        | SUB: Set operand A to +1.0, invert sign of operand C
+   // | MUL      | \c 0        | MUL: Set operand C to +0.0 or -0.0 depending on the rounding mode
+   // | *others* | \c -        | *invalid*
+   // \note \c op_mod_q always inverts the sign of the addend.
+
+From ba48b596ccbd86e7f04a7a028e43c1d5e96da5a5 Mon Sep 17 00:00:00 2001
+From: Michael Platzer <michael.platzer@axelera.ai>
+Date: Tue, 7 May 2024 08:44:34 +0000
+Subject: [PATCH 4/4] =?UTF-8?q?=F0=9F=93=9D=20Document=20new=20symmetric?=
+ =?UTF-8?q?=20add=20operation?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ docs/README.md | 17 +++++++++--------
+ 1 file changed, 9 insertions(+), 8 deletions(-)
+
+diff --git a/docs/README.md b/docs/README.md
+index 7fbb1607..b68d65fd 100644
+--- a/docs/README.md
++++ b/docs/README.md
+@@ -95,6 +95,7 @@ Enumeration of type `logic [2:0]` holding available rounding modes, encoded for
+ Enumeration of type `logic [3:0]` holding the FP operation.
+ The operation modifier `op_mod_i` can change the operation carried out.
+ Unless noted otherwise, the first operand `op[0]` is used for the operation.
++Unless noted otherwise, `op[0]` and `op[1]` are given in source FP format and `op[2]` is given in destination FP format.
+ 
+ | Enumerator | Modifier |                                                                                                    Operation                                                                                                     |
+ |------------|----------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+@@ -102,8 +103,8 @@ Unless noted otherwise, the first operand `op[0]` is used for the operation.
+ | `FMADD`    | `1`      | Fused multiply-subtract (`(op[0] * op[1]) - op[2]`)                                                                                                                                                              |
+ | `FNMSUB`   | `0`      | Negated fused multiply-subtract (`-(op[0] * op[1]) + op[2]`)                                                                                                                                                     |
+ | `FNMSUB`   | `1`      | Negated fused multiply-add (`-(op[0] * op[1]) - op[2]`)                                                                                                                                                          |
+-| `ADD`      | `0`      | Addition (`op[1] + op[2]`) *note the operand indices*                                                                                                                                                            |
+-| `ADD`      | `1`      | Subtraction (`op[1] - op[2]`) *note the operand indices*                                                                                                                                                         |
++| `ADD/ADDS` | `0`      | Addition (`op[1] + op[2]`) *note the operand indices*. For `ADD`, `op[1]` is in source FP format and `op[2]` in destination FP format (default). When `ADDS` is used, both operands are in source FP format.     |
++| `ADD/ADDS` | `1`      | Subtraction (`op[1] - op[2]`) *note the operand indices*. For `ADD`, `op[1]` is in source FP format and `op[2]` in destination FP format (default). When `ADDS` is used, both operands are in source FP format.  |
+ | `MUL`      | `0`      | Multiplication (`op[0] * op[1]`)                                                                                                                                                                                 |
+ | `DIV`      | `0`      | Division (`op[0] / op[1]`)                                                                                                                                                                                       |
+ | `SQRT`     | `0`      | Square root                                                                                                                                                                                                      |
+@@ -394,12 +395,12 @@ The *operation group* is the highest level of grouping within FPnew and signifie
+ 
+ There are currently four operation groups in FPnew which are enumerated in `opgroup_e` as outlined in the following table:
+ 
+-| Enumerator |                  Description                  |         Associated Operations         |
+-|------------|-----------------------------------------------|---------------------------------------|
+-| `ADDMUL`   | Addition and Multiplication                   | `FMADD`, `FNMSUB`, `ADD`, `MUL`       |
+-| `DIVSQRT`  | Division and Square Root                      | `DIV`, `SQRT`                         |
+-| `NONCOMP`  | Non-Computational Operations like Comparisons | `SGNJ`, `MINMAX`, `CMP`, `CLASS`      |
+-| `CONV`     | Conversions                                   | `F2I`, `I2F`, `F2F`, `CPKAB`, `CPKCD` |
++| Enumerator |                  Description                  |         Associated Operations           |
++|------------|-----------------------------------------------|-----------------------------------------|
++| `ADDMUL`   | Addition and Multiplication                   | `FMADD`, `FNMSUB`, `ADD`, `ADDS`, `MUL` |
++| `DIVSQRT`  | Division and Square Root                      | `DIV`, `SQRT`                           |
++| `NONCOMP`  | Non-Computational Operations like Comparisons | `SGNJ`, `MINMAX`, `CMP`, `CLASS`        |
++| `CONV`     | Conversions                                   | `F2I`, `I2F`, `F2F`, `CPKAB`, `CPKCD`   |
+ 
+ Most architectural decisions for FPnew are made at very fine granularity.
+ The big exception to this is the generation of vectorial hardware which is decided at top level through the `EnableVectors` parameter.

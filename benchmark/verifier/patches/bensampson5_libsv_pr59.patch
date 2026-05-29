@@ -1,0 +1,1639 @@
+From 1ff092c465a8d7640d53fd910ee8b940ead587d9 Mon Sep 17 00:00:00 2001
+From: Ben Sampson <bensampson5@gmail.com>
+Date: Sat, 13 Feb 2021 10:39:33 -0600
+Subject: [PATCH 01/11] Remove helper.py
+
+---
+ docs/source/helper.py | 55 -------------------------------------------
+ 1 file changed, 55 deletions(-)
+ delete mode 100644 docs/source/helper.py
+
+diff --git a/docs/source/helper.py b/docs/source/helper.py
+deleted file mode 100644
+index 75b9def..0000000
+--- a/docs/source/helper.py
++++ /dev/null
+@@ -1,55 +0,0 @@
+-from pathlib import Path
+-import subprocess
+-import shutil
+-
+-def run(cmd, cwd=".", check_exit=True):
+-    p = subprocess.Popen(
+-        cmd,
+-        cwd=cwd,
+-        stdout=subprocess.PIPE,
+-        stderr=subprocess.STDOUT,
+-        universal_newlines=True,
+-    )
+-
+-    while True:
+-        stdout = p.stdout.readline()
+-        if stdout == "" and p.poll() is not None:
+-            break
+-        if stdout:
+-            print(stdout, end="", flush=True)
+-
+-    if check_exit and p.returncode != 0:
+-        raise subprocess.CalledProcessError(p.returncode, " ".join(cmd))
+-
+-def gen_hdl_svg():
+-    cwd = Path.cwd()
+-    src_path = Path("../../src").resolve()
+-    svg_path = cwd / "svg"
+-    json_path = cwd / "json"
+-
+-    if not svg_path.exists():
+-        svg_path.mkdir()
+-
+-    if not json_path.exists():
+-        json_path.mkdir()
+-
+-    # Add all SystemVerilog or Verilog files in the src directory
+-    hdl_search_patterns = ["**/*.sv", "**/*.v"]
+-    hdl_files = []
+-    for sp in hdl_search_patterns:
+-        hdl_files += src_path.glob(sp)
+-
+-    svg_files = []
+-    json_files = []
+-    for f in hdl_files:
+-        svg_files += [svg_path / (f.stem + ".svg")]
+-        json_files += [json_path / (f.stem + ".json")]
+-
+-    for i in range(len(hdl_files)):
+-        cmd = ["yosys", "-p", f"read -sv {hdl_files[i]}; proc; opt; clean; json -o {json_files[i]}"]
+-        run(cmd)
+-        cmd = ["netlistsvg", f"{json_files[i]}", "-o", f"{svg_files[i]}"]
+-        run(cmd)
+-
+-    # Remove jsons
+-    shutil.rmtree(json_path)
+
+From 734aa45c3e50adb786b96636877b8246b2ad509c Mon Sep 17 00:00:00 2001
+From: Ben Sampson <bensampson5@gmail.com>
+Date: Fri, 12 Mar 2021 13:03:58 -0600
+Subject: [PATCH 02/11] Move counter and mux into base folder, fix ninja check
+
+---
+ docs/source/counter.rst                    |  2 +-
+ docs/source/index.rst                      |  1 +
+ docs/source/mux.rst                        | 23 ++++++++
+ docs/source/svg/counter.svg                |  8 +--
+ docs/source/svg/mux.svg                    | 67 ++++++++++++++++++++++
+ src/{ => base}/counter/counter.sv          |  0
+ src/base/mux/mux.sv                        | 13 +++++
+ test/CMakeLists.txt                        | 17 +-----
+ test/base/CMakeLists.txt                   |  4 ++
+ test/{ => base}/counter/CMakeLists.txt     |  3 +-
+ test/{ => base}/counter/CounterWrapper.cpp |  0
+ test/{ => base}/counter/CounterWrapper.hpp |  1 -
+ test/{ => base}/counter/test_counter.cpp   |  0
+ test/base/mux/CMakeLists.txt               |  8 +++
+ test/base/mux/MuxWrapper.cpp               | 31 ++++++++++
+ test/base/mux/MuxWrapper.hpp               | 23 ++++++++
+ test/base/mux/test_mux.cpp                 | 20 +++++++
+ 17 files changed, 199 insertions(+), 22 deletions(-)
+ create mode 100644 docs/source/mux.rst
+ create mode 100644 docs/source/svg/mux.svg
+ rename src/{ => base}/counter/counter.sv (100%)
+ create mode 100644 src/base/mux/mux.sv
+ create mode 100644 test/base/CMakeLists.txt
+ rename test/{ => base}/counter/CMakeLists.txt (72%)
+ rename test/{ => base}/counter/CounterWrapper.cpp (100%)
+ rename test/{ => base}/counter/CounterWrapper.hpp (94%)
+ rename test/{ => base}/counter/test_counter.cpp (100%)
+ create mode 100644 test/base/mux/CMakeLists.txt
+ create mode 100644 test/base/mux/MuxWrapper.cpp
+ create mode 100644 test/base/mux/MuxWrapper.hpp
+ create mode 100644 test/base/mux/test_mux.cpp
+
+diff --git a/docs/source/counter.rst b/docs/source/counter.rst
+index 36bdc64..753d2b6 100644
+--- a/docs/source/counter.rst
++++ b/docs/source/counter.rst
+@@ -16,7 +16,7 @@ Parameters
+ 
+ Implementation
+ --------------
+-.. literalinclude:: ../../src/counter/counter.sv
++.. literalinclude:: ../../src/base/counter/counter.sv
+     :language: systemverilog
+     :caption: counter.sv
+ 
+diff --git a/docs/source/index.rst b/docs/source/index.rst
+index e4b9a72..9d02dcf 100644
+--- a/docs/source/index.rst
++++ b/docs/source/index.rst
+@@ -31,6 +31,7 @@ OpenHDL is unique in that it takes advantage of state-of-the-art development bes
+    :caption: Table of Contents:
+ 
+    counter
++   mux
+ 
+ Indices and tables
+ ==================
+diff --git a/docs/source/mux.rst b/docs/source/mux.rst
+new file mode 100644
+index 0000000..0ca2816
+--- /dev/null
++++ b/docs/source/mux.rst
+@@ -0,0 +1,23 @@
++===
++Mux
++===
++
++TBD
++
++Parameters
++----------
++ - ``TBD`` tbd
++
++Implementation
++--------------
++.. literalinclude:: ../../src/base/mux/mux.sv
++    :language: systemverilog
++    :caption: mux.sv
++
++Block Diagram
++-------------
++.. figure:: svg/mux.svg
++    :align: center
++    :width: 100 %
++
++    mux.sv
+diff --git a/docs/source/svg/counter.svg b/docs/source/svg/counter.svg
+index a6eba75..6384e9d 100644
+--- a/docs/source/svg/counter.svg
++++ b/docs/source/svg/counter.svg
+@@ -19,11 +19,11 @@
+   .splitjoinBody {
+     fill:#000;
+   }</style>
+-  <g s:type="add" transform="translate(77,173.5)" s:width="25" s:height="25" id="cell_$add$/code/src/counter/counter.sv:11$3">
++  <g s:type="add" transform="translate(77,173.5)" s:width="25" s:height="25" id="cell_$add$/code/src/base/counter/counter.sv:11$3">
+     <s:alias val="$add"/>
+-    <circle r="12.5" cx="12.5" cy="12.5" class="cell_$add$/code/src/counter/counter.sv:11$3"/>
+-    <line x1="7.5" x2="17.5" y1="12.5" y2="12.5" class="cell_$add$/code/src/counter/counter.sv:11$3"/>
+-    <line x1="12.5" x2="12.5" y1="7.5" y2="17.5" class="cell_$add$/code/src/counter/counter.sv:11$3"/>
++    <circle r="12.5" cx="12.5" cy="12.5" class="cell_$add$/code/src/base/counter/counter.sv:11$3"/>
++    <line x1="7.5" x2="17.5" y1="12.5" y2="12.5" class="cell_$add$/code/src/base/counter/counter.sv:11$3"/>
++    <line x1="12.5" x2="12.5" y1="7.5" y2="17.5" class="cell_$add$/code/src/base/counter/counter.sv:11$3"/>
+     <g s:x="3" s:y="5" s:pid="A"/>
+     <g s:x="3" s:y="20" s:pid="B"/>
+     <g s:x="25" s:y="12.5" s:pid="Y"/>
+diff --git a/docs/source/svg/mux.svg b/docs/source/svg/mux.svg
+new file mode 100644
+index 0000000..8fdb919
+--- /dev/null
++++ b/docs/source/svg/mux.svg
+@@ -0,0 +1,67 @@
++<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:s="https://github.com/nturley/netlistsvg" width="239" height="131">
++  <style>svg {
++    stroke:#000;
++    fill:none;
++  }
++  text {
++    fill:#000;
++    stroke:none;
++    font-size:10px;
++    font-weight: bold;
++    font-family: "Courier New", monospace;
++  }
++  .nodelabel {
++    text-anchor: middle;
++  }
++  .inputPortLabel {
++    text-anchor: end;
++  }
++  .splitjoinBody {
++    fill:#000;
++  }</style>
++  <g s:type="mux" transform="translate(142,14.5)" s:width="20" s:height="40" id="cell_$ternary$/code/src/base/mux/mux.sv:10$2">
++    <s:alias val="$pmux"/>
++    <s:alias val="$mux"/>
++    <s:alias val="$_MUX_"/>
++    <path d="M0,0 L20,10 L20,30 L0,40 Z" class="cell_$ternary$/code/src/base/mux/mux.sv:10$2"/>
++    <g s:x="0" s:y="10" s:pid="A"/>
++    <g s:x="0" s:y="30" s:pid="B"/>
++    <g s:x="10" s:y="35" s:pid="S"/>
++    <g s:x="20" s:y="20" s:pid="Y"/>
++  </g>
++  <g s:type="inputExt" transform="translate(12,24.5)" s:width="30" s:height="20" id="cell_in">
++    <text x="15" y="-4" class="nodelabel cell_in" s:attribute="ref">in</text>
++    <s:alias val="$_inputExt_"/>
++    <path d="M0,0 L0,20 L15,20 L30,10 L15,0 Z" class="cell_in"/>
++    <g s:x="28" s:y="10" s:pid="Y"/>
++  </g>
++  <g s:type="inputExt" transform="translate(77,99)" s:width="30" s:height="20" id="cell_sel">
++    <text x="15" y="-4" class="nodelabel cell_sel" s:attribute="ref">sel</text>
++    <s:alias val="$_inputExt_"/>
++    <path d="M0,0 L0,20 L15,20 L30,10 L15,0 Z" class="cell_sel"/>
++    <g s:x="28" s:y="10" s:pid="Y"/>
++  </g>
++  <g s:type="outputExt" transform="translate(197,24.5)" s:width="30" s:height="20" id="cell_out">
++    <text x="15" y="-4" class="nodelabel cell_out" s:attribute="ref">out</text>
++    <s:alias val="$_outputExt_"/>
++    <path d="M30,0 L30,20 L15,20 L0,10 L15,0 Z" class="cell_out"/>
++    <g s:x="0" s:y="10" s:pid="A"/>
++  </g>
++  <g s:type="split" transform="translate(91.33333333333333,14)" s:width="5" s:height="40" id="cell_$split$,2,3,">
++    <rect width="5" height="40" class="splitjoinBody" s:generic="body"/>
++    <s:alias val="$_split_"/>
++    <g s:x="0" s:y="20" s:pid="in"/>
++    <g transform="translate(4,10)" s:x="4" s:y="10" s:pid="out0">
++      <text x="5" y="-4">1</text>
++    </g>
++    <g transform="translate(4,30)" s:x="4" s:y="10" s:pid="out0">
++      <text x="5" y="-4">0</text>
++    </g>
++  </g>
++  <line x1="96.33333333333333" x2="142" y1="24.5" y2="24.5" class="net_3"/>
++  <line x1="96.33333333333333" x2="142" y1="44.5" y2="44.5" class="net_2"/>
++  <line x1="105" x2="152" y1="109" y2="109" class="net_4"/>
++  <line x1="152" x2="152" y1="109" y2="49.5" class="net_4"/>
++  <line x1="162" x2="197" y1="34.5" y2="34.5" class="net_5"/>
++  <line x1="40" x2="91.33333333333333" y1="34.5" y2="34.5" class="net_2,3"/>
++</svg>
+diff --git a/src/counter/counter.sv b/src/base/counter/counter.sv
+similarity index 100%
+rename from src/counter/counter.sv
+rename to src/base/counter/counter.sv
+diff --git a/src/base/mux/mux.sv b/src/base/mux/mux.sv
+new file mode 100644
+index 0000000..ec72565
+--- /dev/null
++++ b/src/base/mux/mux.sv
+@@ -0,0 +1,13 @@
++module mux #(
++    parameter N  /* verilator public_flat_rd */ = 2
++) (
++    input  logic [1:0] in,
++    input  logic       sel,
++    output logic       out
++);
++
++  always_comb begin : blockName
++    out = sel ? in[0] : in[1];
++  end
++
++endmodule
+diff --git a/test/CMakeLists.txt b/test/CMakeLists.txt
+index 2d01bb3..b739a4d 100644
+--- a/test/CMakeLists.txt
++++ b/test/CMakeLists.txt
+@@ -1,21 +1,8 @@
+ project(test)
+ 
+-# Get all test source files
+-file(GLOB_RECURSE TEST_SOURCE_FILES CONFIGURE_DEPENDS *.cpp)
+-
+-add_executable(test_main ${TEST_SOURCE_FILES})
+-target_include_directories(test_main PRIVATE ${TEST_DIR})
+-target_link_libraries(test_main PRIVATE Catch2::Catch2)
+-verilate(test_main SOURCES ${SRC_DIR}/counter/counter.sv TRACE VERILATOR_ARGS
+-         --vpi)
+-
+ include(CTest)
+ include(Catch)
+-catch_discover_tests(test_main)
+ 
+-add_custom_target(
+-  check
+-  COMMAND ${CMAKE_CTEST_COMMAND}
+-  DEPENDS test_main)
++add_subdirectory(base)
+ 
+-add_subdirectory(counter)
++add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND})
+diff --git a/test/base/CMakeLists.txt b/test/base/CMakeLists.txt
+new file mode 100644
+index 0000000..b5b90f4
+--- /dev/null
++++ b/test/base/CMakeLists.txt
+@@ -0,0 +1,4 @@
++project(base)
++
++add_subdirectory(counter)
++add_subdirectory(mux)
+\ No newline at end of file
+diff --git a/test/counter/CMakeLists.txt b/test/base/counter/CMakeLists.txt
+similarity index 72%
+rename from test/counter/CMakeLists.txt
+rename to test/base/counter/CMakeLists.txt
+index 444f003..a92d7f2 100644
+--- a/test/counter/CMakeLists.txt
++++ b/test/base/counter/CMakeLists.txt
+@@ -4,5 +4,6 @@ add_executable(test_counter ${TEST_DIR}/test.cpp test_counter.cpp
+                             CounterWrapper.cpp)
+ target_include_directories(test_counter PRIVATE ${TEST_DIR})
+ target_link_libraries(test_counter PRIVATE Catch2::Catch2)
+-verilate(test_counter SOURCES ${SRC_DIR}/counter/counter.sv TRACE
++verilate(test_counter SOURCES ${SRC_DIR}/base/counter/counter.sv TRACE
+          VERILATOR_ARGS --vpi)
++catch_discover_tests(test_counter)
+diff --git a/test/counter/CounterWrapper.cpp b/test/base/counter/CounterWrapper.cpp
+similarity index 100%
+rename from test/counter/CounterWrapper.cpp
+rename to test/base/counter/CounterWrapper.cpp
+diff --git a/test/counter/CounterWrapper.hpp b/test/base/counter/CounterWrapper.hpp
+similarity index 94%
+rename from test/counter/CounterWrapper.hpp
+rename to test/base/counter/CounterWrapper.hpp
+index d36b7b8..ad09deb 100644
+--- a/test/counter/CounterWrapper.hpp
++++ b/test/base/counter/CounterWrapper.hpp
+@@ -20,7 +20,6 @@ class CounterWrapper {
+     ~CounterWrapper();
+     void reset();
+     void tick(bool clock = true, uint64_t tickCount = 1);
+-    void setQ(int value);
+ };
+ 
+ #endif // COUNTER_WRAPPER_HPP
+\ No newline at end of file
+diff --git a/test/counter/test_counter.cpp b/test/base/counter/test_counter.cpp
+similarity index 100%
+rename from test/counter/test_counter.cpp
+rename to test/base/counter/test_counter.cpp
+diff --git a/test/base/mux/CMakeLists.txt b/test/base/mux/CMakeLists.txt
+new file mode 100644
+index 0000000..246e21f
+--- /dev/null
++++ b/test/base/mux/CMakeLists.txt
+@@ -0,0 +1,8 @@
++project(mux)
++
++add_executable(test_mux ${TEST_DIR}/test.cpp test_mux.cpp MuxWrapper.cpp)
++target_include_directories(test_mux PRIVATE ${TEST_DIR})
++target_link_libraries(test_mux PRIVATE Catch2::Catch2)
++verilate(test_mux SOURCES ${SRC_DIR}/base/mux/mux.sv TRACE
++         VERILATOR_ARGS --vpi)
++catch_discover_tests(test_mux)
+\ No newline at end of file
+diff --git a/test/base/mux/MuxWrapper.cpp b/test/base/mux/MuxWrapper.cpp
+new file mode 100644
+index 0000000..f635424
+--- /dev/null
++++ b/test/base/mux/MuxWrapper.cpp
+@@ -0,0 +1,31 @@
++#include "MuxWrapper.hpp"
++#include "Vmux.h"
++#include "test.hpp"
++#include "verilated.h"
++#include "verilated_vcd_c.h"
++#include <cstdint>
++#include <string>
++
++MuxWrapper::MuxWrapper(std::string scenarioName)
++{
++    m_scenarioName = scenarioName;
++    m_mux = new Vmux;
++    m_simTime = 0;
++
++    // setup trace
++    Verilated::traceEverOn(true);
++    m_trace = new VerilatedVcdC;
++    m_mux->trace(m_trace, 99);
++    m_trace->open(scenarioNameToVcdFilename(m_scenarioName).c_str());
++
++    // Save parameter 'N' to class member variable
++    m_N = getModuleParameter("TOP.mux.N");
++}
++
++MuxWrapper::~MuxWrapper()
++{
++    m_trace->close();
++    m_trace = nullptr;
++    delete m_mux;
++    m_mux = nullptr;
++}
+diff --git a/test/base/mux/MuxWrapper.hpp b/test/base/mux/MuxWrapper.hpp
+new file mode 100644
+index 0000000..0ffe488
+--- /dev/null
++++ b/test/base/mux/MuxWrapper.hpp
+@@ -0,0 +1,23 @@
++#ifndef MUX_WRAPPER_HPP
++#define MUX_WRAPPER_HPP
++
++#include "Vmux.h"
++#include "verilated_vcd_c.h"
++#include <cstdint>
++#include <string>
++
++class MuxWrapper {
++private:
++    uint64_t m_simTime;
++    VerilatedVcdC* m_trace;
++
++public:
++    std::string m_scenarioName;
++    Vmux* m_mux;
++    uint32_t m_N;
++
++    MuxWrapper(std::string scenarioName);
++    ~MuxWrapper();
++};
++
++#endif // MUX_WRAPPER_HPP
+\ No newline at end of file
+diff --git a/test/base/mux/test_mux.cpp b/test/base/mux/test_mux.cpp
+new file mode 100644
+index 0000000..294b1e2
+--- /dev/null
++++ b/test/base/mux/test_mux.cpp
+@@ -0,0 +1,20 @@
++#include "MuxWrapper.hpp"
++#include "catch2/catch.hpp"
++#include <string>
++
++const std::string S1 = "Mux works";
++SCENARIO("" + S1)
++{
++    GIVEN("A mux")
++    {
++        MuxWrapper* mw = new MuxWrapper(S1);
++
++        WHEN("Something is done to the mux")
++        {
++            THEN("The mux behaves like expected")
++            {
++                REQUIRE(1);
++            }
++        }
++    }
++}
+\ No newline at end of file
+
+From 3ed6b88bda5169c4a090d67485ff9bb1858c2067 Mon Sep 17 00:00:00 2001
+From: Ben Sampson <bensampson5@gmail.com>
+Date: Fri, 12 Mar 2021 13:06:42 -0600
+Subject: [PATCH 03/11] Fix cmake format failure
+
+---
+ test/base/CMakeLists.txt     | 2 +-
+ test/base/mux/CMakeLists.txt | 5 ++---
+ 2 files changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/test/base/CMakeLists.txt b/test/base/CMakeLists.txt
+index b5b90f4..95b39f0 100644
+--- a/test/base/CMakeLists.txt
++++ b/test/base/CMakeLists.txt
+@@ -1,4 +1,4 @@
+ project(base)
+ 
+ add_subdirectory(counter)
+-add_subdirectory(mux)
+\ No newline at end of file
++add_subdirectory(mux)
+diff --git a/test/base/mux/CMakeLists.txt b/test/base/mux/CMakeLists.txt
+index 246e21f..988f12b 100644
+--- a/test/base/mux/CMakeLists.txt
++++ b/test/base/mux/CMakeLists.txt
+@@ -3,6 +3,5 @@ project(mux)
+ add_executable(test_mux ${TEST_DIR}/test.cpp test_mux.cpp MuxWrapper.cpp)
+ target_include_directories(test_mux PRIVATE ${TEST_DIR})
+ target_link_libraries(test_mux PRIVATE Catch2::Catch2)
+-verilate(test_mux SOURCES ${SRC_DIR}/base/mux/mux.sv TRACE
+-         VERILATOR_ARGS --vpi)
+-catch_discover_tests(test_mux)
+\ No newline at end of file
++verilate(test_mux SOURCES ${SRC_DIR}/base/mux/mux.sv TRACE VERILATOR_ARGS --vpi)
++catch_discover_tests(test_mux)
+
+From 64326c26edc8aed36144e0915e3a606b59f8d088 Mon Sep 17 00:00:00 2001
+From: Ben Sampson <bensampson5@gmail.com>
+Date: Sat, 13 Mar 2021 06:36:05 -0600
+Subject: [PATCH 04/11] Push interim progress on mux
+
+---
+ CMakeLists.txt               |  1 +
+ docs/source/base.rst         | 10 ++++
+ docs/source/index.rst        |  3 +-
+ docs/source/modules.rst      |  9 ++++
+ docs/source/svg/counter.svg  | 96 ------------------------------------
+ docs/source/svg/mux.svg      | 67 -------------------------
+ include/functions.svh        | 12 +++++
+ src/base/mux/mux.sv          | 19 ++++---
+ test/base/mux/CMakeLists.txt | 12 ++++-
+ test/base/mux/MuxWrapper.cpp |  1 +
+ test/base/mux/MuxWrapper.hpp |  1 +
+ tools/precommit.py           |  3 +-
+ 12 files changed, 60 insertions(+), 174 deletions(-)
+ create mode 100644 docs/source/base.rst
+ create mode 100644 docs/source/modules.rst
+ delete mode 100644 docs/source/svg/counter.svg
+ delete mode 100644 docs/source/svg/mux.svg
+ create mode 100644 include/functions.svh
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index eb9172a..c8b64bd 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -21,6 +21,7 @@ cpmaddpackage(
+ 
+ get_filename_component(SRC_DIR src ABSOLUTE)
+ get_filename_component(TEST_DIR test ABSOLUTE)
++get_filename_component(INCLUDE_DIR include ABSOLUTE)
+ 
+ find_package(verilator REQUIRED)
+ find_package(Catch2 REQUIRED)
+diff --git a/docs/source/base.rst b/docs/source/base.rst
+new file mode 100644
+index 0000000..9b57801
+--- /dev/null
++++ b/docs/source/base.rst
+@@ -0,0 +1,10 @@
++====
++Base
++====
++
++.. toctree::
++    :maxdepth: 1
++    :caption: Modules:
++ 
++    counter
++    mux
+\ No newline at end of file
+diff --git a/docs/source/index.rst b/docs/source/index.rst
+index 9d02dcf..fc3305e 100644
+--- a/docs/source/index.rst
++++ b/docs/source/index.rst
+@@ -30,8 +30,7 @@ OpenHDL is unique in that it takes advantage of state-of-the-art development bes
+    :maxdepth: 1
+    :caption: Table of Contents:
+ 
+-   counter
+-   mux
++   modules
+ 
+ Indices and tables
+ ==================
+diff --git a/docs/source/modules.rst b/docs/source/modules.rst
+new file mode 100644
+index 0000000..7665f0f
+--- /dev/null
++++ b/docs/source/modules.rst
+@@ -0,0 +1,9 @@
++=======
++Modules
++=======
++
++.. toctree::
++    :maxdepth: 2
++    :caption: Module Categories:
++ 
++    base
+\ No newline at end of file
+diff --git a/docs/source/svg/counter.svg b/docs/source/svg/counter.svg
+deleted file mode 100644
+index 6384e9d..0000000
+--- a/docs/source/svg/counter.svg
++++ /dev/null
+@@ -1,96 +0,0 @@
+-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:s="https://github.com/nturley/netlistsvg" width="376" height="215.5">
+-  <style>svg {
+-    stroke:#000;
+-    fill:none;
+-  }
+-  text {
+-    fill:#000;
+-    stroke:none;
+-    font-size:10px;
+-    font-weight: bold;
+-    font-family: "Courier New", monospace;
+-  }
+-  .nodelabel {
+-    text-anchor: middle;
+-  }
+-  .inputPortLabel {
+-    text-anchor: end;
+-  }
+-  .splitjoinBody {
+-    fill:#000;
+-  }</style>
+-  <g s:type="add" transform="translate(77,173.5)" s:width="25" s:height="25" id="cell_$add$/code/src/base/counter/counter.sv:11$3">
+-    <s:alias val="$add"/>
+-    <circle r="12.5" cx="12.5" cy="12.5" class="cell_$add$/code/src/base/counter/counter.sv:11$3"/>
+-    <line x1="7.5" x2="17.5" y1="12.5" y2="12.5" class="cell_$add$/code/src/base/counter/counter.sv:11$3"/>
+-    <line x1="12.5" x2="12.5" y1="7.5" y2="17.5" class="cell_$add$/code/src/base/counter/counter.sv:11$3"/>
+-    <g s:x="3" s:y="5" s:pid="A"/>
+-    <g s:x="3" s:y="20" s:pid="B"/>
+-    <g s:x="25" s:y="12.5" s:pid="Y"/>
+-  </g>
+-  <g s:type="generic" transform="translate(239,77.5)" s:width="30" s:height="40" id="cell_$procdff$4">
+-    <text x="15" y="-4" class="nodelabel cell_$procdff$4" s:attribute="ref">$adff</text>
+-    <rect width="30" height="60" s:generic="body" class="cell_$procdff$4"/>
+-    <g transform="translate(0,10)" s:x="0" s:y="10" s:pid="in0" id="port_$procdff$4~ARST">
+-      <text x="-3" y="-4" class="inputPortLabel cell_$procdff$4">ARST</text>
+-    </g>
+-    <g transform="translate(0,30)" s:x="0" s:y="10" s:pid="in0" id="port_$procdff$4~CLK">
+-      <text x="-3" y="-4" class="inputPortLabel cell_$procdff$4">CLK</text>
+-    </g>
+-    <g transform="translate(0,50)" s:x="0" s:y="10" s:pid="in0" id="port_$procdff$4~D">
+-      <text x="-3" y="-4" class="inputPortLabel cell_$procdff$4">D</text>
+-    </g>
+-    <g transform="translate(30,10)" s:x="30" s:y="10" s:pid="out0" id="port_$procdff$4~Q">
+-      <text x="5" y="-4" style="fill:#000; stroke:none" class="cell_$procdff$4">Q</text>
+-    </g>
+-  </g>
+-  <g s:type="inputExt" transform="translate(137,98)" s:width="30" s:height="20" id="cell_clk">
+-    <text x="15" y="-4" class="nodelabel cell_clk" s:attribute="ref">clk</text>
+-    <s:alias val="$_inputExt_"/>
+-    <path d="M0,0 L0,20 L15,20 L30,10 L15,0 Z" class="cell_clk"/>
+-    <g s:x="28" s:y="10" s:pid="Y"/>
+-  </g>
+-  <g s:type="inputExt" transform="translate(137,33)" s:width="30" s:height="20" id="cell_aresetn">
+-    <text x="15" y="-4" class="nodelabel cell_aresetn" s:attribute="ref">aresetn</text>
+-    <s:alias val="$_inputExt_"/>
+-    <path d="M0,0 L0,20 L15,20 L30,10 L15,0 Z" class="cell_aresetn"/>
+-    <g s:x="28" s:y="10" s:pid="Y"/>
+-  </g>
+-  <g s:type="outputExt" transform="translate(334,78)" s:width="30" s:height="20" id="cell_q">
+-    <text x="15" y="-4" class="nodelabel cell_q" s:attribute="ref">q</text>
+-    <s:alias val="$_outputExt_"/>
+-    <path d="M30,0 L30,20 L15,20 L0,10 L15,0 Z" class="cell_q"/>
+-    <g s:x="0" s:y="10" s:pid="A"/>
+-  </g>
+-  <g s:type="constant" transform="translate(12,183.5)" s:width="30" s:height="20" id="cell_00000000000000000000000000000001">
+-    <text x="15" y="-4" class="nodelabel cell_00000000000000000000000000000001" s:attribute="ref">0x1</text>
+-    <s:alias val="$_constant_"/>
+-    <rect width="30" height="20" class="cell_00000000000000000000000000000001"/>
+-    <g s:x="30" s:y="10" s:pid="Y"/>
+-  </g>
+-  <g s:type="split" transform="translate(149,153)" s:width="5" s:height="40" id="cell_$split$,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,">
+-    <rect width="5" height="20" class="splitjoinBody" s:generic="body"/>
+-    <s:alias val="$_split_"/>
+-    <g s:x="0" s:y="20" s:pid="in"/>
+-    <g transform="translate(4,10)" s:x="4" s:y="10" s:pid="out0">
+-      <text x="5" y="-4">0:15</text>
+-    </g>
+-  </g>
+-  <line x1="270" x2="309" y1="88" y2="88" class="net_4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19"/>
+-  <line x1="309" x2="309" y1="88" y2="12" class="net_4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19"/>
+-  <line x1="309" x2="52" y1="12" y2="12" class="net_4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19"/>
+-  <line x1="52" x2="52" y1="12" y2="178.5" class="net_4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19"/>
+-  <circle cx="309" cy="88" r="2" style="fill:#000" class="net_4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19"/>
+-  <line x1="52" x2="80" y1="178.5" y2="178.5" class="net_4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19"/>
+-  <line x1="270" x2="334" y1="88" y2="88" class="net_4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19"/>
+-  <line x1="42" x2="80" y1="193.5" y2="193.5" class="net_52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83"/>
+-  <line x1="165" x2="189" y1="43" y2="43" class="net_3"/>
+-  <line x1="189" x2="189" y1="43" y2="88" class="net_3"/>
+-  <line x1="189" x2="239" y1="88" y2="88" class="net_3"/>
+-  <line x1="165" x2="239" y1="108" y2="108" class="net_2"/>
+-  <line x1="154" x2="189" y1="163.5" y2="163.5" class="net_20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35"/>
+-  <line x1="189" x2="189" y1="163.5" y2="128" class="net_20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35"/>
+-  <line x1="189" x2="239" y1="128" y2="128" class="net_20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35"/>
+-  <line x1="102" x2="149.5" y1="186" y2="186" class="net_20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51"/>
+-  <line x1="149.5" x2="149.5" y1="186" y2="174" class="net_20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51"/>
+-</svg>
+diff --git a/docs/source/svg/mux.svg b/docs/source/svg/mux.svg
+deleted file mode 100644
+index 8fdb919..0000000
+--- a/docs/source/svg/mux.svg
++++ /dev/null
+@@ -1,67 +0,0 @@
+-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:s="https://github.com/nturley/netlistsvg" width="239" height="131">
+-  <style>svg {
+-    stroke:#000;
+-    fill:none;
+-  }
+-  text {
+-    fill:#000;
+-    stroke:none;
+-    font-size:10px;
+-    font-weight: bold;
+-    font-family: "Courier New", monospace;
+-  }
+-  .nodelabel {
+-    text-anchor: middle;
+-  }
+-  .inputPortLabel {
+-    text-anchor: end;
+-  }
+-  .splitjoinBody {
+-    fill:#000;
+-  }</style>
+-  <g s:type="mux" transform="translate(142,14.5)" s:width="20" s:height="40" id="cell_$ternary$/code/src/base/mux/mux.sv:10$2">
+-    <s:alias val="$pmux"/>
+-    <s:alias val="$mux"/>
+-    <s:alias val="$_MUX_"/>
+-    <path d="M0,0 L20,10 L20,30 L0,40 Z" class="cell_$ternary$/code/src/base/mux/mux.sv:10$2"/>
+-    <g s:x="0" s:y="10" s:pid="A"/>
+-    <g s:x="0" s:y="30" s:pid="B"/>
+-    <g s:x="10" s:y="35" s:pid="S"/>
+-    <g s:x="20" s:y="20" s:pid="Y"/>
+-  </g>
+-  <g s:type="inputExt" transform="translate(12,24.5)" s:width="30" s:height="20" id="cell_in">
+-    <text x="15" y="-4" class="nodelabel cell_in" s:attribute="ref">in</text>
+-    <s:alias val="$_inputExt_"/>
+-    <path d="M0,0 L0,20 L15,20 L30,10 L15,0 Z" class="cell_in"/>
+-    <g s:x="28" s:y="10" s:pid="Y"/>
+-  </g>
+-  <g s:type="inputExt" transform="translate(77,99)" s:width="30" s:height="20" id="cell_sel">
+-    <text x="15" y="-4" class="nodelabel cell_sel" s:attribute="ref">sel</text>
+-    <s:alias val="$_inputExt_"/>
+-    <path d="M0,0 L0,20 L15,20 L30,10 L15,0 Z" class="cell_sel"/>
+-    <g s:x="28" s:y="10" s:pid="Y"/>
+-  </g>
+-  <g s:type="outputExt" transform="translate(197,24.5)" s:width="30" s:height="20" id="cell_out">
+-    <text x="15" y="-4" class="nodelabel cell_out" s:attribute="ref">out</text>
+-    <s:alias val="$_outputExt_"/>
+-    <path d="M30,0 L30,20 L15,20 L0,10 L15,0 Z" class="cell_out"/>
+-    <g s:x="0" s:y="10" s:pid="A"/>
+-  </g>
+-  <g s:type="split" transform="translate(91.33333333333333,14)" s:width="5" s:height="40" id="cell_$split$,2,3,">
+-    <rect width="5" height="40" class="splitjoinBody" s:generic="body"/>
+-    <s:alias val="$_split_"/>
+-    <g s:x="0" s:y="20" s:pid="in"/>
+-    <g transform="translate(4,10)" s:x="4" s:y="10" s:pid="out0">
+-      <text x="5" y="-4">1</text>
+-    </g>
+-    <g transform="translate(4,30)" s:x="4" s:y="10" s:pid="out0">
+-      <text x="5" y="-4">0</text>
+-    </g>
+-  </g>
+-  <line x1="96.33333333333333" x2="142" y1="24.5" y2="24.5" class="net_3"/>
+-  <line x1="96.33333333333333" x2="142" y1="44.5" y2="44.5" class="net_2"/>
+-  <line x1="105" x2="152" y1="109" y2="109" class="net_4"/>
+-  <line x1="152" x2="152" y1="109" y2="49.5" class="net_4"/>
+-  <line x1="162" x2="197" y1="34.5" y2="34.5" class="net_5"/>
+-  <line x1="40" x2="91.33333333333333" y1="34.5" y2="34.5" class="net_2,3"/>
+-</svg>
+diff --git a/include/functions.svh b/include/functions.svh
+new file mode 100644
+index 0000000..f87de7a
+--- /dev/null
++++ b/include/functions.svh
+@@ -0,0 +1,12 @@
++`ifndef _OPENHDL_FUNCTIONS_SVH_
++`define _OPENHDL_FUNCTIONS_SVH_
++
++function integer clog2;
++  input integer value;
++  begin
++    value = value - 1;
++    for (clog2 = 0; value > 0; clog2 = clog2 + 1) value = value >> 1;
++  end
++endfunction
++
++`endif // _OPENHDL_FUNCTIONS_SVH_
+\ No newline at end of file
+diff --git a/src/base/mux/mux.sv b/src/base/mux/mux.sv
+index ec72565..86e28a3 100644
+--- a/src/base/mux/mux.sv
++++ b/src/base/mux/mux.sv
+@@ -1,13 +1,18 @@
++`include "functions.svh"
++
+ module mux #(
+-    parameter N  /* verilator public_flat_rd */ = 2
++    parameter DW  /* verilator public_flat_rd */ = 1,  // width of data inputs
++    parameter N  /* verilator public_flat_rd */  = 2  // number of inputs
+ ) (
+-    input  logic [1:0] in,
+-    input  logic       sel,
+-    output logic       out
++    input  logic [   N-1:0] sel,  // select vector
++    input  logic [N*DW-1:0] in,  // concatenated input {..,in1[DW-1:0],in0[DW-1:0]
++    output logic [  DW-1:0] out  // output
+ );
+ 
+-  always_comb begin : blockName
+-    out = sel ? in[0] : in[1];
++  integer i;
++  always_comb begin
++    out[DW-1:0] = 'b0;
++    for (i = 0; i < N; i = i + 1) out[DW-1:0] |= {(DW) {sel[i]}} & in[((i+1)*DW-1)-:DW];
+   end
+ 
+-endmodule
++endmodule  // mux
+diff --git a/test/base/mux/CMakeLists.txt b/test/base/mux/CMakeLists.txt
+index 988f12b..f8bc88f 100644
+--- a/test/base/mux/CMakeLists.txt
++++ b/test/base/mux/CMakeLists.txt
+@@ -1,7 +1,17 @@
+ project(mux)
+ 
++set(MUX_DIR ${SRC_DIR}/base/mux)
++
+ add_executable(test_mux ${TEST_DIR}/test.cpp test_mux.cpp MuxWrapper.cpp)
+ target_include_directories(test_mux PRIVATE ${TEST_DIR})
+ target_link_libraries(test_mux PRIVATE Catch2::Catch2)
+-verilate(test_mux SOURCES ${SRC_DIR}/base/mux/mux.sv TRACE VERILATOR_ARGS --vpi)
++verilate(
++  test_mux
++  SOURCES
++  ${MUX_DIR}/mux.sv
++  INCLUDE_DIRS
++  ${INCLUDE_DIR}
++  TRACE
++  VERILATOR_ARGS
++  --vpi)
+ catch_discover_tests(test_mux)
+diff --git a/test/base/mux/MuxWrapper.cpp b/test/base/mux/MuxWrapper.cpp
+index f635424..c097902 100644
+--- a/test/base/mux/MuxWrapper.cpp
++++ b/test/base/mux/MuxWrapper.cpp
+@@ -20,6 +20,7 @@ MuxWrapper::MuxWrapper(std::string scenarioName)
+ 
+     // Save parameter 'N' to class member variable
+     m_N = getModuleParameter("TOP.mux.N");
++    m_DW = getModuleParameter("TOP.mux.DW");
+ }
+ 
+ MuxWrapper::~MuxWrapper()
+diff --git a/test/base/mux/MuxWrapper.hpp b/test/base/mux/MuxWrapper.hpp
+index 0ffe488..14aeb19 100644
+--- a/test/base/mux/MuxWrapper.hpp
++++ b/test/base/mux/MuxWrapper.hpp
+@@ -15,6 +15,7 @@ class MuxWrapper {
+     std::string m_scenarioName;
+     Vmux* m_mux;
+     uint32_t m_N;
++    uint64_t m_DW;
+ 
+     MuxWrapper(std::string scenarioName);
+     ~MuxWrapper();
+diff --git a/tools/precommit.py b/tools/precommit.py
+index 0736cf3..0e0a48c 100755
+--- a/tools/precommit.py
++++ b/tools/precommit.py
+@@ -12,6 +12,7 @@
+ BUILD_DIR = PROJECT_ROOT / "build"
+ SRC_DIR = PROJECT_ROOT / "src"
+ DOCS_DIR = PROJECT_ROOT / "docs"
++INCLUDE_DIR = PROJECT_ROOT / "include"
+ FLUSH = True
+ 
+ 
+@@ -171,7 +172,7 @@ def generate_hdl_svgs():
+ 
+     # Run yosys to output jsons and then use netlistsvg to create svgs for each module
+     for i in range(len(hdl_files)):
+-        cmd = ["yosys", "-p", f"read -sv {hdl_files[i]}; proc; clean; json -o {json_files[i]}"]
++        cmd = ["yosys", "-p", f"read -sv -I{INCLUDE_DIR} {hdl_files[i]}; proc; clean; json -o {json_files[i]}"]
+         run(cmd, cwd=DOCS_DIR)
+         cmd = ["netlistsvg", f"{json_files[i]}", "-o", f"{svg_files[i]}"]
+         run(cmd, cwd=DOCS_DIR)
+
+From 2baf788bce2b1b665d9b0f6b011c70eed90ef09e Mon Sep 17 00:00:00 2001
+From: Ben Sampson <bensampson5@gmail.com>
+Date: Sat, 13 Mar 2021 15:37:41 -0600
+Subject: [PATCH 05/11] Rename to onehot_mux and ignore svg build because yosys
+ fails to read
+
+---
+ docs/source/base.rst                          |  2 +-
+ docs/source/{mux.rst => onehot_mux.rst}       | 12 +--
+ docs/source/svg/counter.svg                   | 96 +++++++++++++++++++
+ include/functions.svh                         | 12 ---
+ src/base/mux/mux.sv                           | 18 ----
+ src/base/mux/onehot_mux.sv                    | 16 ++++
+ test/base/mux/CMakeLists.txt                  | 13 +--
+ .../{MuxWrapper.cpp => OneHotMuxWrapper.cpp}  | 20 ++--
+ .../{MuxWrapper.hpp => OneHotMuxWrapper.hpp}  | 14 +--
+ .../mux/{test_mux.cpp => test_onehot_mux.cpp} |  4 +-
+ tools/precommit.py                            |  9 ++
+ 11 files changed, 154 insertions(+), 62 deletions(-)
+ rename docs/source/{mux.rst => onehot_mux.rst} (55%)
+ create mode 100644 docs/source/svg/counter.svg
+ delete mode 100644 include/functions.svh
+ delete mode 100644 src/base/mux/mux.sv
+ create mode 100644 src/base/mux/onehot_mux.sv
+ rename test/base/mux/{MuxWrapper.cpp => OneHotMuxWrapper.cpp} (52%)
+ rename test/base/mux/{MuxWrapper.hpp => OneHotMuxWrapper.hpp} (52%)
+ rename test/base/mux/{test_mux.cpp => test_onehot_mux.cpp} (77%)
+
+diff --git a/docs/source/base.rst b/docs/source/base.rst
+index 9b57801..85b1ffd 100644
+--- a/docs/source/base.rst
++++ b/docs/source/base.rst
+@@ -7,4 +7,4 @@ Base
+     :caption: Modules:
+  
+     counter
+-    mux
+\ No newline at end of file
++    onehot_mux
+\ No newline at end of file
+diff --git a/docs/source/mux.rst b/docs/source/onehot_mux.rst
+similarity index 55%
+rename from docs/source/mux.rst
+rename to docs/source/onehot_mux.rst
+index 0ca2816..65e51e3 100644
+--- a/docs/source/mux.rst
++++ b/docs/source/onehot_mux.rst
+@@ -1,6 +1,6 @@
+-===
+-Mux
+-===
++===========
++One-Hot Mux
++===========
+ 
+ TBD
+ 
+@@ -10,13 +10,13 @@ Parameters
+ 
+ Implementation
+ --------------
+-.. literalinclude:: ../../src/base/mux/mux.sv
++.. literalinclude:: ../../src/base/mux/onehot_mux.sv
+     :language: systemverilog
+-    :caption: mux.sv
++    :caption: onehot_mux.sv
+ 
+ Block Diagram
+ -------------
+-.. figure:: svg/mux.svg
++.. figure:: svg/onehot_mux.svg
+     :align: center
+     :width: 100 %
+ 
+diff --git a/docs/source/svg/counter.svg b/docs/source/svg/counter.svg
+new file mode 100644
+index 0000000..6384e9d
+--- /dev/null
++++ b/docs/source/svg/counter.svg
+@@ -0,0 +1,96 @@
++<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:s="https://github.com/nturley/netlistsvg" width="376" height="215.5">
++  <style>svg {
++    stroke:#000;
++    fill:none;
++  }
++  text {
++    fill:#000;
++    stroke:none;
++    font-size:10px;
++    font-weight: bold;
++    font-family: "Courier New", monospace;
++  }
++  .nodelabel {
++    text-anchor: middle;
++  }
++  .inputPortLabel {
++    text-anchor: end;
++  }
++  .splitjoinBody {
++    fill:#000;
++  }</style>
++  <g s:type="add" transform="translate(77,173.5)" s:width="25" s:height="25" id="cell_$add$/code/src/base/counter/counter.sv:11$3">
++    <s:alias val="$add"/>
++    <circle r="12.5" cx="12.5" cy="12.5" class="cell_$add$/code/src/base/counter/counter.sv:11$3"/>
++    <line x1="7.5" x2="17.5" y1="12.5" y2="12.5" class="cell_$add$/code/src/base/counter/counter.sv:11$3"/>
++    <line x1="12.5" x2="12.5" y1="7.5" y2="17.5" class="cell_$add$/code/src/base/counter/counter.sv:11$3"/>
++    <g s:x="3" s:y="5" s:pid="A"/>
++    <g s:x="3" s:y="20" s:pid="B"/>
++    <g s:x="25" s:y="12.5" s:pid="Y"/>
++  </g>
++  <g s:type="generic" transform="translate(239,77.5)" s:width="30" s:height="40" id="cell_$procdff$4">
++    <text x="15" y="-4" class="nodelabel cell_$procdff$4" s:attribute="ref">$adff</text>
++    <rect width="30" height="60" s:generic="body" class="cell_$procdff$4"/>
++    <g transform="translate(0,10)" s:x="0" s:y="10" s:pid="in0" id="port_$procdff$4~ARST">
++      <text x="-3" y="-4" class="inputPortLabel cell_$procdff$4">ARST</text>
++    </g>
++    <g transform="translate(0,30)" s:x="0" s:y="10" s:pid="in0" id="port_$procdff$4~CLK">
++      <text x="-3" y="-4" class="inputPortLabel cell_$procdff$4">CLK</text>
++    </g>
++    <g transform="translate(0,50)" s:x="0" s:y="10" s:pid="in0" id="port_$procdff$4~D">
++      <text x="-3" y="-4" class="inputPortLabel cell_$procdff$4">D</text>
++    </g>
++    <g transform="translate(30,10)" s:x="30" s:y="10" s:pid="out0" id="port_$procdff$4~Q">
++      <text x="5" y="-4" style="fill:#000; stroke:none" class="cell_$procdff$4">Q</text>
++    </g>
++  </g>
++  <g s:type="inputExt" transform="translate(137,98)" s:width="30" s:height="20" id="cell_clk">
++    <text x="15" y="-4" class="nodelabel cell_clk" s:attribute="ref">clk</text>
++    <s:alias val="$_inputExt_"/>
++    <path d="M0,0 L0,20 L15,20 L30,10 L15,0 Z" class="cell_clk"/>
++    <g s:x="28" s:y="10" s:pid="Y"/>
++  </g>
++  <g s:type="inputExt" transform="translate(137,33)" s:width="30" s:height="20" id="cell_aresetn">
++    <text x="15" y="-4" class="nodelabel cell_aresetn" s:attribute="ref">aresetn</text>
++    <s:alias val="$_inputExt_"/>
++    <path d="M0,0 L0,20 L15,20 L30,10 L15,0 Z" class="cell_aresetn"/>
++    <g s:x="28" s:y="10" s:pid="Y"/>
++  </g>
++  <g s:type="outputExt" transform="translate(334,78)" s:width="30" s:height="20" id="cell_q">
++    <text x="15" y="-4" class="nodelabel cell_q" s:attribute="ref">q</text>
++    <s:alias val="$_outputExt_"/>
++    <path d="M30,0 L30,20 L15,20 L0,10 L15,0 Z" class="cell_q"/>
++    <g s:x="0" s:y="10" s:pid="A"/>
++  </g>
++  <g s:type="constant" transform="translate(12,183.5)" s:width="30" s:height="20" id="cell_00000000000000000000000000000001">
++    <text x="15" y="-4" class="nodelabel cell_00000000000000000000000000000001" s:attribute="ref">0x1</text>
++    <s:alias val="$_constant_"/>
++    <rect width="30" height="20" class="cell_00000000000000000000000000000001"/>
++    <g s:x="30" s:y="10" s:pid="Y"/>
++  </g>
++  <g s:type="split" transform="translate(149,153)" s:width="5" s:height="40" id="cell_$split$,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,">
++    <rect width="5" height="20" class="splitjoinBody" s:generic="body"/>
++    <s:alias val="$_split_"/>
++    <g s:x="0" s:y="20" s:pid="in"/>
++    <g transform="translate(4,10)" s:x="4" s:y="10" s:pid="out0">
++      <text x="5" y="-4">0:15</text>
++    </g>
++  </g>
++  <line x1="270" x2="309" y1="88" y2="88" class="net_4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19"/>
++  <line x1="309" x2="309" y1="88" y2="12" class="net_4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19"/>
++  <line x1="309" x2="52" y1="12" y2="12" class="net_4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19"/>
++  <line x1="52" x2="52" y1="12" y2="178.5" class="net_4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19"/>
++  <circle cx="309" cy="88" r="2" style="fill:#000" class="net_4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19"/>
++  <line x1="52" x2="80" y1="178.5" y2="178.5" class="net_4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19"/>
++  <line x1="270" x2="334" y1="88" y2="88" class="net_4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19"/>
++  <line x1="42" x2="80" y1="193.5" y2="193.5" class="net_52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83"/>
++  <line x1="165" x2="189" y1="43" y2="43" class="net_3"/>
++  <line x1="189" x2="189" y1="43" y2="88" class="net_3"/>
++  <line x1="189" x2="239" y1="88" y2="88" class="net_3"/>
++  <line x1="165" x2="239" y1="108" y2="108" class="net_2"/>
++  <line x1="154" x2="189" y1="163.5" y2="163.5" class="net_20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35"/>
++  <line x1="189" x2="189" y1="163.5" y2="128" class="net_20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35"/>
++  <line x1="189" x2="239" y1="128" y2="128" class="net_20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35"/>
++  <line x1="102" x2="149.5" y1="186" y2="186" class="net_20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51"/>
++  <line x1="149.5" x2="149.5" y1="186" y2="174" class="net_20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51"/>
++</svg>
+diff --git a/include/functions.svh b/include/functions.svh
+deleted file mode 100644
+index f87de7a..0000000
+--- a/include/functions.svh
++++ /dev/null
+@@ -1,12 +0,0 @@
+-`ifndef _OPENHDL_FUNCTIONS_SVH_
+-`define _OPENHDL_FUNCTIONS_SVH_
+-
+-function integer clog2;
+-  input integer value;
+-  begin
+-    value = value - 1;
+-    for (clog2 = 0; value > 0; clog2 = clog2 + 1) value = value >> 1;
+-  end
+-endfunction
+-
+-`endif // _OPENHDL_FUNCTIONS_SVH_
+\ No newline at end of file
+diff --git a/src/base/mux/mux.sv b/src/base/mux/mux.sv
+deleted file mode 100644
+index 86e28a3..0000000
+--- a/src/base/mux/mux.sv
++++ /dev/null
+@@ -1,18 +0,0 @@
+-`include "functions.svh"
+-
+-module mux #(
+-    parameter DW  /* verilator public_flat_rd */ = 1,  // width of data inputs
+-    parameter N  /* verilator public_flat_rd */  = 2  // number of inputs
+-) (
+-    input  logic [   N-1:0] sel,  // select vector
+-    input  logic [N*DW-1:0] in,  // concatenated input {..,in1[DW-1:0],in0[DW-1:0]
+-    output logic [  DW-1:0] out  // output
+-);
+-
+-  integer i;
+-  always_comb begin
+-    out[DW-1:0] = 'b0;
+-    for (i = 0; i < N; i = i + 1) out[DW-1:0] |= {(DW) {sel[i]}} & in[((i+1)*DW-1)-:DW];
+-  end
+-
+-endmodule  // mux
+diff --git a/src/base/mux/onehot_mux.sv b/src/base/mux/onehot_mux.sv
+new file mode 100644
+index 0000000..172dc8b
+--- /dev/null
++++ b/src/base/mux/onehot_mux.sv
+@@ -0,0 +1,16 @@
++module onehot_mux #(
++    parameter DW  /* verilator public_flat_rd */ = 8,
++    parameter N  /* verilator public_flat_rd */  = 4
++) (
++    input  logic [   N-1:0] sel,
++    input  logic [N*DW-1:0] in,
++    output logic [  DW-1:0] out
++);
++
++  integer i;
++  always_comb begin
++    out[DW-1:0] = 'b0;
++    for (i = 0; i < N; i = i + 1) out[DW-1:0] |= {(DW) {sel[i]}} & in[((i+1)*DW-1)-:DW];
++  end
++
++endmodule  // onehot_mux
+diff --git a/test/base/mux/CMakeLists.txt b/test/base/mux/CMakeLists.txt
+index f8bc88f..688d62b 100644
+--- a/test/base/mux/CMakeLists.txt
++++ b/test/base/mux/CMakeLists.txt
+@@ -2,16 +2,17 @@ project(mux)
+ 
+ set(MUX_DIR ${SRC_DIR}/base/mux)
+ 
+-add_executable(test_mux ${TEST_DIR}/test.cpp test_mux.cpp MuxWrapper.cpp)
+-target_include_directories(test_mux PRIVATE ${TEST_DIR})
+-target_link_libraries(test_mux PRIVATE Catch2::Catch2)
++add_executable(test_onehot_mux ${TEST_DIR}/test.cpp test_onehot_mux.cpp
++                               OneHotMuxWrapper.cpp)
++target_include_directories(test_onehot_mux PRIVATE ${TEST_DIR})
++target_link_libraries(test_onehot_mux PRIVATE Catch2::Catch2)
+ verilate(
+-  test_mux
++  test_onehot_mux
+   SOURCES
+-  ${MUX_DIR}/mux.sv
++  ${MUX_DIR}/onehot_mux.sv
+   INCLUDE_DIRS
+   ${INCLUDE_DIR}
+   TRACE
+   VERILATOR_ARGS
+   --vpi)
+-catch_discover_tests(test_mux)
++catch_discover_tests(test_onehot_mux)
+diff --git a/test/base/mux/MuxWrapper.cpp b/test/base/mux/OneHotMuxWrapper.cpp
+similarity index 52%
+rename from test/base/mux/MuxWrapper.cpp
+rename to test/base/mux/OneHotMuxWrapper.cpp
+index c097902..e2d8410 100644
+--- a/test/base/mux/MuxWrapper.cpp
++++ b/test/base/mux/OneHotMuxWrapper.cpp
+@@ -1,32 +1,32 @@
+-#include "MuxWrapper.hpp"
+-#include "Vmux.h"
++#include "OneHotMuxWrapper.hpp"
++#include "Vonehot_mux.h"
+ #include "test.hpp"
+ #include "verilated.h"
+ #include "verilated_vcd_c.h"
+ #include <cstdint>
+ #include <string>
+ 
+-MuxWrapper::MuxWrapper(std::string scenarioName)
++OneHotMuxWrapper::OneHotMuxWrapper(std::string scenarioName)
+ {
+     m_scenarioName = scenarioName;
+-    m_mux = new Vmux;
++    m_onehot_mux = new Vonehot_mux;
+     m_simTime = 0;
+ 
+     // setup trace
+     Verilated::traceEverOn(true);
+     m_trace = new VerilatedVcdC;
+-    m_mux->trace(m_trace, 99);
++    m_onehot_mux->trace(m_trace, 99);
+     m_trace->open(scenarioNameToVcdFilename(m_scenarioName).c_str());
+ 
+     // Save parameter 'N' to class member variable
+-    m_N = getModuleParameter("TOP.mux.N");
+-    m_DW = getModuleParameter("TOP.mux.DW");
++    m_N = getModuleParameter("TOP.onehot_mux.N");
++    m_DW = getModuleParameter("TOP.onehot_mux.DW");
+ }
+ 
+-MuxWrapper::~MuxWrapper()
++OneHotMuxWrapper::~OneHotMuxWrapper()
+ {
+     m_trace->close();
+     m_trace = nullptr;
+-    delete m_mux;
+-    m_mux = nullptr;
++    delete m_onehot_mux;
++    m_onehot_mux = nullptr;
+ }
+diff --git a/test/base/mux/MuxWrapper.hpp b/test/base/mux/OneHotMuxWrapper.hpp
+similarity index 52%
+rename from test/base/mux/MuxWrapper.hpp
+rename to test/base/mux/OneHotMuxWrapper.hpp
+index 14aeb19..32c9780 100644
+--- a/test/base/mux/MuxWrapper.hpp
++++ b/test/base/mux/OneHotMuxWrapper.hpp
+@@ -1,24 +1,24 @@
+-#ifndef MUX_WRAPPER_HPP
+-#define MUX_WRAPPER_HPP
++#ifndef ONEHOT_MUX_WRAPPER_HPP
++#define ONEHOT_MUX_WRAPPER_HPP
+ 
+-#include "Vmux.h"
++#include "Vonehot_mux.h"
+ #include "verilated_vcd_c.h"
+ #include <cstdint>
+ #include <string>
+ 
+-class MuxWrapper {
++class OneHotMuxWrapper {
+ private:
+     uint64_t m_simTime;
+     VerilatedVcdC* m_trace;
+ 
+ public:
+     std::string m_scenarioName;
+-    Vmux* m_mux;
++    Vonehot_mux* m_onehot_mux;
+     uint32_t m_N;
+     uint64_t m_DW;
+ 
+-    MuxWrapper(std::string scenarioName);
+-    ~MuxWrapper();
++    OneHotMuxWrapper(std::string scenarioName);
++    ~OneHotMuxWrapper();
+ };
+ 
+ #endif // MUX_WRAPPER_HPP
+\ No newline at end of file
+diff --git a/test/base/mux/test_mux.cpp b/test/base/mux/test_onehot_mux.cpp
+similarity index 77%
+rename from test/base/mux/test_mux.cpp
+rename to test/base/mux/test_onehot_mux.cpp
+index 294b1e2..dcd03b2 100644
+--- a/test/base/mux/test_mux.cpp
++++ b/test/base/mux/test_onehot_mux.cpp
+@@ -1,4 +1,4 @@
+-#include "MuxWrapper.hpp"
++#include "OneHotMuxWrapper.hpp"
+ #include "catch2/catch.hpp"
+ #include <string>
+ 
+@@ -7,7 +7,7 @@ SCENARIO("" + S1)
+ {
+     GIVEN("A mux")
+     {
+-        MuxWrapper* mw = new MuxWrapper(S1);
++        OneHotMuxWrapper* mw = new OneHotMuxWrapper(S1);
+ 
+         WHEN("Something is done to the mux")
+         {
+diff --git a/tools/precommit.py b/tools/precommit.py
+index 0e0a48c..82aef2c 100755
+--- a/tools/precommit.py
++++ b/tools/precommit.py
+@@ -163,6 +163,15 @@ def generate_hdl_svgs():
+     hdl_files = []
+     for sp in hdl_search_patterns:
+         hdl_files += SRC_DIR.glob(sp)
++
++    print(hdl_files)
++
++    # Ignore certain hdl files that fails svg generation despite
++    # being synthesizable
++    ignore_hdl_files = ["onehot_mux.sv"]
++    hdl_files = [f for f in hdl_files if f.name not in ignore_hdl_files]
++
++    print(hdl_files)
+     
+     svg_files = []
+     json_files = []
+
+From b5eda03c3889bb7ddb2efdf5d757ebc5a317cbcc Mon Sep 17 00:00:00 2001
+From: Ben Sampson <bensampson5@gmail.com>
+Date: Sat, 13 Mar 2021 15:50:58 -0600
+Subject: [PATCH 06/11] Initial progress on onehot mux test scenarios
+
+---
+ test/base/mux/OneHotMuxWrapper.cpp |  4 ++++
+ test/base/mux/OneHotMuxWrapper.hpp |  2 ++
+ test/base/mux/test_onehot_mux.cpp  | 18 +++++++++++++-----
+ 3 files changed, 19 insertions(+), 5 deletions(-)
+
+diff --git a/test/base/mux/OneHotMuxWrapper.cpp b/test/base/mux/OneHotMuxWrapper.cpp
+index e2d8410..54d4223 100644
+--- a/test/base/mux/OneHotMuxWrapper.cpp
++++ b/test/base/mux/OneHotMuxWrapper.cpp
+@@ -30,3 +30,7 @@ OneHotMuxWrapper::~OneHotMuxWrapper()
+     delete m_onehot_mux;
+     m_onehot_mux = nullptr;
+ }
++
++void OneHotMuxWrapper::select(uint64_t sel) {
++    return;
++}
+diff --git a/test/base/mux/OneHotMuxWrapper.hpp b/test/base/mux/OneHotMuxWrapper.hpp
+index 32c9780..46d4b40 100644
+--- a/test/base/mux/OneHotMuxWrapper.hpp
++++ b/test/base/mux/OneHotMuxWrapper.hpp
+@@ -19,6 +19,8 @@ class OneHotMuxWrapper {
+ 
+     OneHotMuxWrapper(std::string scenarioName);
+     ~OneHotMuxWrapper();
++
++    void select(uint64_t sel);
+ };
+ 
+ #endif // MUX_WRAPPER_HPP
+\ No newline at end of file
+diff --git a/test/base/mux/test_onehot_mux.cpp b/test/base/mux/test_onehot_mux.cpp
+index dcd03b2..14b7737 100644
+--- a/test/base/mux/test_onehot_mux.cpp
++++ b/test/base/mux/test_onehot_mux.cpp
+@@ -1,18 +1,26 @@
+ #include "OneHotMuxWrapper.hpp"
+ #include "catch2/catch.hpp"
+ #include <string>
++#include <iostream>
+ 
+-const std::string S1 = "Mux works";
++const std::string S1 = "One-hot mux states";
+ SCENARIO("" + S1)
+ {
+-    GIVEN("A mux")
++    GIVEN("A one-hot mux")
+     {
+-        OneHotMuxWrapper* mw = new OneHotMuxWrapper(S1);
++        OneHotMuxWrapper* ohmw = new OneHotMuxWrapper(S1);
+ 
+-        WHEN("Something is done to the mux")
++        std::cout << "DW = " << ohmw->m_DW << std::endl;
++        std::cout << "N = " << ohmw->m_N << std::endl;
++
++        // TODO: Figure out how to initialize a bus in verilator and pass to
++        // input
++
++        WHEN("One-hot mux is set to a certain state using the select line")
+         {
+-            THEN("The mux behaves like expected")
++            THEN("The correct input is passed to the output")
+             {
++                ohmw->select(0);
+                 REQUIRE(1);
+             }
+         }
+
+From 21e83d631645fc0cba5af662f8bdd4353111565c Mon Sep 17 00:00:00 2001
+From: Ben Sampson <bensampson5@gmail.com>
+Date: Fri, 19 Mar 2021 10:54:47 -0500
+Subject: [PATCH 07/11] Write simple testbench for onehotmux
+
+---
+ test/base/mux/OneHotMuxWrapper.cpp | 10 ++++++++--
+ test/base/mux/OneHotMuxWrapper.hpp |  2 +-
+ test/base/mux/test_onehot_mux.cpp  | 31 +++++++++++++++++++-----------
+ 3 files changed, 29 insertions(+), 14 deletions(-)
+
+diff --git a/test/base/mux/OneHotMuxWrapper.cpp b/test/base/mux/OneHotMuxWrapper.cpp
+index 54d4223..5b47aaf 100644
+--- a/test/base/mux/OneHotMuxWrapper.cpp
++++ b/test/base/mux/OneHotMuxWrapper.cpp
+@@ -31,6 +31,12 @@ OneHotMuxWrapper::~OneHotMuxWrapper()
+     m_onehot_mux = nullptr;
+ }
+ 
+-void OneHotMuxWrapper::select(uint64_t sel) {
+-    return;
++void OneHotMuxWrapper::tick(uint64_t tickCount)
++{
++    m_simTime += tickCount;
++    m_onehot_mux->eval();
++    if (m_trace)
++        m_trace->dump(m_simTime);
++
++    m_trace->flush();
+ }
+diff --git a/test/base/mux/OneHotMuxWrapper.hpp b/test/base/mux/OneHotMuxWrapper.hpp
+index 46d4b40..a8fbb3f 100644
+--- a/test/base/mux/OneHotMuxWrapper.hpp
++++ b/test/base/mux/OneHotMuxWrapper.hpp
+@@ -20,7 +20,7 @@ class OneHotMuxWrapper {
+     OneHotMuxWrapper(std::string scenarioName);
+     ~OneHotMuxWrapper();
+ 
+-    void select(uint64_t sel);
++    void tick(uint64_t tickCount = 1);
+ };
+ 
+ #endif // MUX_WRAPPER_HPP
+\ No newline at end of file
+diff --git a/test/base/mux/test_onehot_mux.cpp b/test/base/mux/test_onehot_mux.cpp
+index 14b7737..caa3549 100644
+--- a/test/base/mux/test_onehot_mux.cpp
++++ b/test/base/mux/test_onehot_mux.cpp
+@@ -1,7 +1,6 @@
+ #include "OneHotMuxWrapper.hpp"
+ #include "catch2/catch.hpp"
+ #include <string>
+-#include <iostream>
+ 
+ const std::string S1 = "One-hot mux states";
+ SCENARIO("" + S1)
+@@ -10,18 +9,28 @@ SCENARIO("" + S1)
+     {
+         OneHotMuxWrapper* ohmw = new OneHotMuxWrapper(S1);
+ 
+-        std::cout << "DW = " << ohmw->m_DW << std::endl;
+-        std::cout << "N = " << ohmw->m_N << std::endl;
+-
+-        // TODO: Figure out how to initialize a bus in verilator and pass to
+-        // input
+-
+-        WHEN("One-hot mux is set to a certain state using the select line")
++        WHEN("One-hot mux is configured using select")
+         {
+-            THEN("The correct input is passed to the output")
++            THEN("The output is set to the selected input")
+             {
+-                ohmw->select(0);
+-                REQUIRE(1);
++                // Reset input and sel to 0
++                ohmw->m_onehot_mux->in = 0;
++                ohmw->m_onehot_mux->sel = 0;
++                ohmw->tick();
++
++                // Generate counting pattern in input vector starting with 0
++                ohmw->m_onehot_mux->in = 0;
++                for (auto i = 0; i < ohmw->m_N; ++i) {
++                    ohmw->m_onehot_mux->in |= (i % ohmw->m_DW) << (i * ohmw->m_DW);
++                }
++
++                for (auto i = 0; i < ohmw->m_N; ++i) {
++                    ohmw->m_onehot_mux->sel = 1 << i;
++                    ohmw->tick();
++
++                    REQUIRE(i % ohmw->m_DW == ohmw->m_onehot_mux->out);
++                }
++                ohmw->tick();
+             }
+         }
+     }
+
+From 21776a7e6f1d7958ce3a0e1fff615ac282d96f9c Mon Sep 17 00:00:00 2001
+From: Ben Sampson <bensampson5@gmail.com>
+Date: Fri, 19 Mar 2021 11:09:48 -0500
+Subject: [PATCH 08/11] Fix README
+
+---
+ README.md                         | 26 +++++++++++++++++++-------
+ test/base/mux/test_onehot_mux.cpp |  2 +-
+ 2 files changed, 20 insertions(+), 8 deletions(-)
+
+diff --git a/README.md b/README.md
+index a3684e6..6a4a624 100644
+--- a/README.md
++++ b/README.md
+@@ -61,28 +61,40 @@ ninja
+ 
+ After building, unit test executables are available for running all or specific unit tests.
+ 
+-A `test_main` executable is provided for running all unit tests for all designs in OpenHDL. It can be run using:
++All unit tests can be run using the `ctest` command which is linked to the Catch2 unit testing framework. All tests can be run in the build directory using:
+ 
+ ```bash
+-./test/test_main
++ctest
+ ```
+ 
+-To run all unit tests for a specific design in OpenHDL, run the specific test executable for that design. As an example, for [counter.sv](https://github.com/bensampson5/openhdl/blob/main/src/counter/counter.sv) this would be:
++To list all available tests, run:
+ 
+ ```bash
+-./test/counter/test_counter
++ctest -N
++```
++
++To run a specific test, use the `-R` flag:
++```bash
++ctest -R "Scenario: Counter can reset"
++```
++
++To run all unit tests for a specific design, run the test executable for that design. For example, for [counter.sv](https://github.com/bensampson5/openhdl/blob/main/src/base/counter/counter.sv) this would be:
++
++```bash
++cd ./test/base/counter
++./test_counter
+ ```
+ 
+ Most designs in OpenHDL have more then one unit test scenario, to see all the unit test scenarios for a specific design, use the `-l` flag:
+ 
+ ```bash
+-./test/counter/test_counter -l
++./test_counter -l
+ ```
+ 
+-Then a specific unit test scenario for a specific OpenHDL design can be run with:
++Then a specific unit test scenario for a specific OpenHDL design can be run using the module-specific executable with:
+ 
+ ```bash
+-./test/counter/test_counter "Scenario: Counter can be reset"
++./test_counter "Scenario: Counter can be reset"
+ ```
+ 
+ ### Viewing the Simulation Waveform Output
+diff --git a/test/base/mux/test_onehot_mux.cpp b/test/base/mux/test_onehot_mux.cpp
+index caa3549..fc205b4 100644
+--- a/test/base/mux/test_onehot_mux.cpp
++++ b/test/base/mux/test_onehot_mux.cpp
+@@ -2,7 +2,7 @@
+ #include "catch2/catch.hpp"
+ #include <string>
+ 
+-const std::string S1 = "One-hot mux states";
++const std::string S1 = "One-hot mux can mux";
+ SCENARIO("" + S1)
+ {
+     GIVEN("A one-hot mux")
+
+From f9cf576d01d966264163f729a9089eecbe02ebda Mon Sep 17 00:00:00 2001
+From: Ben Sampson <bensampson5@gmail.com>
+Date: Fri, 19 Mar 2021 11:12:39 -0500
+Subject: [PATCH 09/11] Fix README
+
+---
+ README.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/README.md b/README.md
+index 6a4a624..a080d40 100644
+--- a/README.md
++++ b/README.md
+@@ -73,7 +73,7 @@ To list all available tests, run:
+ ctest -N
+ ```
+ 
+-To run a specific test, use the `-R` flag:
++To run a specific test, use ctest's `-R` (test regex) flag:
+ ```bash
+ ctest -R "Scenario: Counter can reset"
+ ```
+
+From 00b232236cf641abd07c841c4f5cd36df4b43360 Mon Sep 17 00:00:00 2001
+From: Ben Sampson <bensampson5@gmail.com>
+Date: Fri, 19 Mar 2021 11:19:10 -0500
+Subject: [PATCH 10/11] Fix documentation
+
+---
+ docs/source/counter.rst    | 11 +++++++----
+ docs/source/onehot_mux.rst | 14 +++++++++-----
+ 2 files changed, 16 insertions(+), 9 deletions(-)
+
+diff --git a/docs/source/counter.rst b/docs/source/counter.rst
+index 753d2b6..cdccd13 100644
+--- a/docs/source/counter.rst
++++ b/docs/source/counter.rst
+@@ -9,10 +9,13 @@ assertion of the active-low reset, ``aresetn``, ``q`` is set to 0.
+ 
+ Parameters
+ ----------
+- - ``N`` number of bits
+- - ``clk`` clock
+- - ``aresetn`` asynchoronous active-low reset
+- - ``q`` count
++- ``N`` number of bits
++
++Inputs/Outputs
++--------------
++- ``clk`` clock
++- ``aresetn`` asynchoronous active-low reset
++- ``q`` count (N bits)
+ 
+ Implementation
+ --------------
+diff --git a/docs/source/onehot_mux.rst b/docs/source/onehot_mux.rst
+index 65e51e3..8de7f93 100644
+--- a/docs/source/onehot_mux.rst
++++ b/docs/source/onehot_mux.rst
+@@ -6,7 +6,14 @@ TBD
+ 
+ Parameters
+ ----------
+- - ``TBD`` tbd
++- ``DW`` data width (per input vector)
++- ``N`` number of inputs
++
++Inputs/Outputs
++--------------
++- ``sel`` select (N bits)
++- ``in`` concatenated input vector (DW*N bits)
++- ``out`` output vector (DW bits)
+ 
+ Implementation
+ --------------
+@@ -16,8 +23,5 @@ Implementation
+ 
+ Block Diagram
+ -------------
+-.. figure:: svg/onehot_mux.svg
+-    :align: center
+-    :width: 100 %
+ 
+-    mux.sv
++Not available.
+\ No newline at end of file
+
+From 408c3764c4a76e46d2cd024bebb4a26590a669a0 Mon Sep 17 00:00:00 2001
+From: Ben Sampson <bensampson5@gmail.com>
+Date: Fri, 19 Mar 2021 11:22:12 -0500
+Subject: [PATCH 11/11] Finish docs for onehot_mux
+
+---
+ docs/source/onehot_mux.rst | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/docs/source/onehot_mux.rst b/docs/source/onehot_mux.rst
+index 8de7f93..2a48f1c 100644
+--- a/docs/source/onehot_mux.rst
++++ b/docs/source/onehot_mux.rst
+@@ -2,7 +2,8 @@
+ One-Hot Mux
+ ===========
+ 
+-TBD
++A parameterized implementation of a one-hot mux. Takes ``N`` inputs each of width ``DW`` as a concatenated input vector ``in``
++and given a one-hot ``sel`` input, routes the selected input vector to the output vector ``out``.
+ 
+ Parameters
+ ----------

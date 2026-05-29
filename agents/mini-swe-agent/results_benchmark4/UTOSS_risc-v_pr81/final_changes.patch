@@ -1,0 +1,90 @@
+diff --git a/src/ControlFSM.sv b/src/ControlFSM.sv
+index 37c1eda..a8f1fbb 100644
+--- a/src/ControlFSM.sv
++++ b/src/ControlFSM.sv
+@@ -14,7 +14,7 @@ module ControlFSM
+   , output reg RegWrite
+   , output reg PCUpdate
+   , output pc_src_t pc_src
+-  , output reg MemWrite
++  , output reg [3:0] MemWrite
+   , output reg Branch
+   , output alu_src_a_t ALUSrcA
+   , output alu_src_b_t ALUSrcB
+@@ -122,7 +122,7 @@ module ControlFSM
+     pc_src <= PC_SRC__INCREMENT;
+     PCUpdate <= 1'b0;
+     IRWrite <= 1'b0;
+-    MemWrite <= 1'b0;
++    MemWrite <= 4'b0000;
+   RegWrite <= 1'b0;
+ 
+     FSMState <= current_state;
+@@ -236,7 +236,7 @@ module ControlFSM
+ 
+         ResultSrc <= RESULT_SRC__ALU_OUT;
+         AdrSrc <= ADR_SRC__RESULT;
+-        MemWrite <= 1'b1;
++        MemWrite <= 4'b1111;
+ 
+       end
+ 
+diff --git a/src/Instruction_Decode/MemoryLoader.sv b/src/Instruction_Decode/MemoryLoader.sv
+index 578de14..321b8b9 100644
+--- a/src/Instruction_Decode/MemoryLoader.sv
++++ b/src/Instruction_Decode/MemoryLoader.sv
+@@ -2,13 +2,16 @@ module MemoryLoader
+   ( input  data_t memory_data
+   , input  addr_t memory_address
+   , input  logic [2:0]  funct3
++  , input  data_t dataB
+   , output data_t mem_load_result
+   );
+ 
+-    integer byteindex;
++    logic [1:0] byteindex;
+     assign byteindex = memory_address[1:0];
++    logic [31:0] store_data;
+ 
+-    always_comb
++    always_comb begin
++      store_data = dataB;
+       case (funct3)
+         3'b000: // lb
+           case (byteindex)
+@@ -48,5 +51,6 @@ module MemoryLoader
+ 
+         default: mem_load_result = 32'hX;
+       endcase
++    end
+ 
+ endmodule
+diff --git a/src/top.v b/src/top.v
+index 20a0ff8..b6157b6 100644
+--- a/src/top.v
++++ b/src/top.v
+@@ -8,6 +8,7 @@ module top #( parameter MEM_SIZE = 1024 )
+   wire         cfsm__pc_update;
+   wire         cfsm__reg_write;
+   wire         cfsm__ir_write;
++  wire [3:0]   cfsm__mem_write;
+   pc_src_t     cfsm__pc_src;
+   result_src_t cfsm__result_src;
+ 
+@@ -38,7 +39,7 @@ module top #( parameter MEM_SIZE = 1024 )
+   wire alu__zero_flag;
+ 
+   adr_src_t cfsm__adr_src;
+-  wire __tmp_MemWrite, __tmp_Branch;
++  wire [3:0] __tmp_MemWrite; wire __tmp_Branch;
+   wire [1:0] __tmp_ALUSrcA, __tmp_ALUSrcB;
+   wire [2:0] __tmp_ALUOp;
+   wire [3:0] __tmp_ALUControl;
+@@ -109,6 +110,7 @@ module top #( parameter MEM_SIZE = 1024 )
+   , .memory_address    ( memory_address  )
+   , .mem_load_result   ( mem_load_result )
+   , .funct3            ( funct3          )
++  , .dataB             ( dataB           )
+   );
+ 
+   always @(posedge clk) begin

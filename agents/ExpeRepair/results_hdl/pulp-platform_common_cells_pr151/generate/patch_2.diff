@@ -1,0 +1,105 @@
+diff --git a/README.md b/README.md
+index 388a003..c44be05 100755
+--- a/README.md
++++ b/README.md
+@@ -89,6 +89,7 @@ Please note that cells with status *deprecated* are not to be used for new desig
+ | `stream_demux`             | Ready/valid interface demultiplexer                                                                       | active       |               |
+ | `lossy_valid_to_stream`    | Convert Valid-only to ready/valid by updating in-flight transaction                                       | active       |               |
+ | `stream_join`              | Ready/valid handshake join multiple to one common                                                         | active       |               |
++| `stream_join_dynamic`      | Ready/valid join with selection mask and independent input handshakes                                     | active       |               |
+ | `stream_mux`               | Ready/valid interface multiplexer                                                                         | active       |               |
+ | `stream_register`          | Register with ready/valid interface                                                                       | active       |               |
+ | `stream_fork`              | Ready/valid fork                                                                                          | active       |               |
+diff --git a/src/stream_fork.sv b/src/stream_fork.sv
+index 650038d..6502bec 100755
+--- a/src/stream_fork.sv
++++ b/src/stream_fork.sv
+@@ -129,5 +129,88 @@ module stream_fork #(
+     end
+ `endif
+ // pragma translate_on
++endmodule
++
++// Stream join dynamic: Joins a dynamically selected subset of `N_INP` input streams into one
++// output stream. Each selected input stream handshakes exactly once per output handshake and can
++// do so independently of all other selected inputs.
++//
++// This module has no data ports because stream data is handled externally.
++module stream_join_dynamic #(
++    parameter int unsigned N_INP = 0    // Synopsys DC requires a default value for parameters.
++) (
++    input  logic             clk_i,
++    input  logic             rst_ni,
++    input  logic [N_INP-1:0] sel_i,
++    input  logic [N_INP-1:0] valid_i,
++    output logic [N_INP-1:0] ready_o,
++    output logic             valid_o,
++    input  logic             ready_i
++);
++
++    logic [N_INP-1:0] sel_d, sel_q;
++    logic [N_INP-1:0] pending_d, pending_q;
++    logic             active_d, active_q;
++    logic [N_INP-1:0] ready_mask, handshake;
++
++    always_comb begin
++        sel_d      = sel_q;
++        pending_d  = pending_q;
++        active_d   = active_q;
++
++        // Selected inputs that have not yet handshaked in the current transaction.
++        ready_mask = active_q ? pending_q : sel_i;
++        ready_o    = ready_mask;
++
++        // Independent input handshakes.
++        handshake  = valid_i & ready_mask;
++
++        // Output is valid once all selected inputs of the current transaction have handshaked.
++        valid_o    = active_q && (pending_q == '0) && (sel_q != '0);
++
++        if (!active_q) begin
++            // Track the currently requested subset before a transaction starts.
++            sel_d     = sel_i;
++            pending_d = sel_i & ~handshake;
++
++            // Start a transaction once at least one selected input has handshaked.
++            if (sel_i == '0) begin
++                active_d  = 1'b0;
++                pending_d = '0;
++            end else begin
++                active_d = (handshake != '0);
++            end
++        end else begin
++            // Keep collecting remaining selected inputs.
++            pending_d = pending_q & ~handshake;
++
++            // Transaction completes on output handshake.
++            if (valid_o && ready_i) begin
++                active_d  = 1'b0;
++                sel_d     = '0;
++                pending_d = '0;
++            end
++        end
++    end
++
++    always_ff @(posedge clk_i, negedge rst_ni) begin
++        if (!rst_ni) begin
++            sel_q     <= '0;
++            pending_q <= '0;
++            active_q  <= 1'b0;
++        end else begin
++            sel_q     <= sel_d;
++            pending_q <= pending_d;
++            active_q  <= active_d;
++        end
++    end
++
++// pragma translate_off
++`ifndef VERILATOR
++    initial begin: p_assertions
++        assert (N_INP >= 1) else $fatal(1, "Number of inputs must be at least 1!");
++    end
++`endif
++// pragma translate_on
+ 
+ endmodule

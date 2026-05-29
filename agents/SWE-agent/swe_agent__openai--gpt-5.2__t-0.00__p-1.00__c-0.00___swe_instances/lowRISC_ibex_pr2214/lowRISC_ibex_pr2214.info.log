@@ -1,0 +1,904 @@
+2026-01-19 20:40:30,492 - INFO - rex-deploy - Pulling image 'hwebench/lowrisc_ibex:pr2214'
+2026-01-19 20:40:38,514 - INFO - rex-deploy - Building image hwebench/lowrisc_ibex:pr2214 to install a standalone python to /root. This might take a while (but you only have to do it once). To skip this step, set `python_standalone_dir` to None.
+2026-01-19 20:41:19,405 - INFO - rex-deploy - Starting container hwebenchlowrisc_ibexpr2214-3e57fece-d461-4312-a56d-acd27cefca6a with image hwebench/lowrisc_ibex:pr2214 serving on port 51097
+2026-01-19 20:41:19,410 - INFO - rex-deploy - Starting runtime at 51097
+2026-01-19 20:41:20,180 - INFO - rex-deploy - Runtime started in 0.77s
+2026-01-19 20:41:20,965 - INFO - swea-env - Environment Initialized
+2026-01-19 20:41:25,539 - INFO - swea-agent - Setting up agent for instance lowRISC_ibex_pr2214
+2026-01-19 20:41:25,544 - INFO - swea-agent - Trajectory will be saved to /workspace/phoenix-bench/agents/SWE-agent/trajectories/anon/swe_agent__openai--gpt-5.2__t-0.00__p-1.00__c-0.00___swe_instances/lowRISC_ibex_pr2214/lowRISC_ibex_pr2214.traj
+2026-01-19 20:41:28,231 - INFO - swea-tools - Resetting tools
+2026-01-19 20:41:28,586 - INFO - swea-agent - SYSTEM (main)
+You are an expert agent that can interact with a computer to debug SystemVerilog/Verilog repositories. You are in an environment
+with Verilator, Make, Python3 and Spike RISC-V ISA Simulator.
+2026-01-19 20:41:28,729 - INFO - swea-agent - 🤖 MODEL INPUT
+<uploaded_files>
+/testbed
+</uploaded_files>
+I've uploaded a HDL code repository in the directory /testbed. Consider the following PR description:
+
+<pr_description>
+# Pipeline not being flushed on PMP register clears
+
+In [this commit](https://github.com/lowRISC/ibex/commit/46404cf86f60f72fb84a2bc693d2ab08011bdb37) the pipeline was made to flush on changes to PMP registers, changes made via `CSR_OP_CLEAR` however are missed.
+
+This is likely because prior to this commit only mstatus and mie were listed, and clearing is safe for those.
+
+This meant that instructions being fetched were passing PMP checks which they should not have been.
+
+</pr_description>
+
+Implement the necessary changes to the repository so that the issue specified in the <pr_description> are resolved.
+Your task is to make the minimal changes to files in the /testbed directory to ensure the <pr_description> is fixed.
+Follow these steps to resolve the issue:
+1. As a first step, it might be a good idea to find and read code relevant to the <pr_description>.
+2. Edit the sourcecode of the repo to resolve the issue.
+3. Think about edgecases and make sure your fix handles them as well.
+
+You can use the tools Verilog debugging tools if needed.
+Your thinking should be thorough and so it's fine if it's very long.
+2026-01-19 20:41:28,735 - INFO - swea-agent - ========================= STEP 1 =========================
+2026-01-19 20:41:32,601 - WARNING - swea-agent - Requerying model after FunctionCallingFormatError (1th requery)
+2026-01-19 20:41:32,608 - WARNING - swea-agent - Your last output included multiple tool calls!
+Please make sure your output includes a thought and exactly _ONE_ function call.
+2026-01-19 20:41:36,902 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && ls
+2026-01-19 20:41:37,154 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+CONTRIBUTING.md               dv                     lint
+CREDITS.md                    examples               python-requirements.txt
+LICENSE                       formal                 rtl
+Makefile                      ibex_configs.yaml      shared
+NOTICE                        ibex_core.core         src_files.yml
+README.md                     ibex_icache.core       syn
+SECURITY.md                   ibex_multdiv.core      tool_requirements.py
+__init__.py                   ibex_pkg.core          util
+check_tool_requirements.core  ibex_top.core          vendor
+ci                            ibex_top_tracing.core
+doc                           ibex_tracer.core
+
+2026-01-19 20:41:37,158 - INFO - swea-agent - ========================= STEP 3 =========================
+2026-01-19 20:41:39,526 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && rg -n "CSR_OP_CLEAR"
+2026-01-19 20:41:39,783 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+bash: rg: command not found
+
+2026-01-19 20:41:39,789 - INFO - swea-agent - ========================= STEP 4 =========================
+2026-01-19 20:41:42,233 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && grep -RIn "CSR_OP_CLEAR" rtl | head
+2026-01-19 20:41:42,495 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+rtl/ibex_decoder.sv:195:    if ((csr_op == CSR_OP_SET || csr_op == CSR_OP_CLEAR) &&
+rtl/ibex_decoder.sv:633:            2'b11:   csr_op = CSR_OP_CLEAR;
+rtl/ibex_cs_registers.sv:828:      CSR_OP_CLEAR: csr_wdata_int = ~csr_wdata_i & csr_rdata_o;
+rtl/ibex_cs_registers.sv:834:  assign csr_wr = (csr_op_i inside {CSR_OP_WRITE, CSR_OP_SET, CSR_OP_CLEAR});
+rtl/ibex_pkg.sv:205:    CSR_OP_CLEAR
+rtl/ibex_core.sv:1166:      CSR_OP_CLEAR
+
+2026-01-19 20:41:42,502 - INFO - swea-agent - ========================= STEP 5 =========================
+2026-01-19 20:41:44,685 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && grep -RIn "pmp" rtl/ibex_cs_registers.sv | head -n 50
+2026-01-19 20:41:44,945 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+24:  parameter ibex_pkg::pmp_cfg_t     PMPRstCfg[16]     = ibex_pkg::PmpCfgRst,
+26:  parameter ibex_pkg::pmp_mseccfg_t PMPRstMsecCfg     = ibex_pkg::PmpMseccfgRst,
+69:  output ibex_pkg::pmp_cfg_t     csr_pmp_cfg_o  [PMPNumRegions],
+70:  output logic [33:0]            csr_pmp_addr_o [PMPNumRegions],
+71:  output ibex_pkg::pmp_mseccfg_t csr_pmp_mseccfg_o,
+131:  function automatic logic is_mml_m_exec_cfg(ibex_pkg::pmp_cfg_t pmp_cfg);
+132:    logic unused_cfg = ^{pmp_cfg.mode};
+135:    if (pmp_cfg.lock) begin
+136:      unique case ({pmp_cfg.read, pmp_cfg.write, pmp_cfg.exec})
+248:  logic [31:0]                 pmp_addr_rdata  [PMP_MAX_REGIONS];
+249:  logic [PMP_CFG_W-1:0]        pmp_cfg_rdata   [PMP_MAX_REGIONS];
+250:  logic                        pmp_csr_err;
+251:  pmp_mseccfg_t                pmp_mseccfg;
+407:          csr_rdata_int[CSR_MSECCFG_MML_BIT]  = pmp_mseccfg.mml;
+408:          csr_rdata_int[CSR_MSECCFG_MMWP_BIT] = pmp_mseccfg.mmwp;
+409:          csr_rdata_int[CSR_MSECCFG_RLB_BIT]  = pmp_mseccfg.rlb;
+424:      CSR_PMPCFG0:   csr_rdata_int = {pmp_cfg_rdata[3],  pmp_cfg_rdata[2],
+425:                                      pmp_cfg_rdata[1],  pmp_cfg_rdata[0]};
+426:      CSR_PMPCFG1:   csr_rdata_int = {pmp_cfg_rdata[7],  pmp_cfg_rdata[6],
+427:                                      pmp_cfg_rdata[5],  pmp_cfg_rdata[4]};
+428:      CSR_PMPCFG2:   csr_rdata_int = {pmp_cfg_rdata[11], pmp_cfg_rdata[10],
+429:                                      pmp_cfg_rdata[9],  pmp_cfg_rdata[8]};
+430:      CSR_PMPCFG3:   csr_rdata_int = {pmp_cfg_rdata[15], pmp_cfg_rdata[14],
+431:                                      pmp_cfg_rdata[13], pmp_cfg_rdata[12]};
+432:      CSR_PMPADDR0:  csr_rdata_int = pmp_addr_rdata[0];
+433:      CSR_PMPADDR1:  csr_rdata_int = pmp_addr_rdata[1];
+434:      CSR_PMPADDR2:  csr_rdata_int = pmp_addr_rdata[2];
+435:      CSR_PMPADDR3:  csr_rdata_int = pmp_addr_rdata[3];
+436:      CSR_PMPADDR4:  csr_rdata_int = pmp_addr_rdata[4];
+437:      CSR_PMPADDR5:  csr_rdata_int = pmp_addr_rdata[5];
+438:      CSR_PMPADDR6:  csr_rdata_int = pmp_addr_rdata[6];
+439:      CSR_PMPADDR7:  csr_rdata_int = pmp_addr_rdata[7];
+440:      CSR_PMPADDR8:  csr_rdata_int = pmp_addr_rdata[8];
+441:      CSR_PMPADDR9:  csr_rdata_int = pmp_addr_rdata[9];
+442:      CSR_PMPADDR10: csr_rdata_int = pmp_addr_rdata[10];
+443:      CSR_PMPADDR11: csr_rdata_int = pmp_addr_rdata[11];
+444:      CSR_PMPADDR12: csr_rdata_int = pmp_addr_rdata[12];
+445:      CSR_PMPADDR13: csr_rdata_int = pmp_addr_rdata[13];
+446:      CSR_PMPADDR14: csr_rdata_int = pmp_addr_rdata[14];
+447:      CSR_PMPADDR15: csr_rdata_int = pmp_addr_rdata[15];
+1078:  if (PMPEnable) begin : g_pmp_registers
+1079:    pmp_mseccfg_t                pmp_mseccfg_q, pmp_mseccfg_d;
+1080:    logic                        pmp_mseccfg_we;
+1081:    logic                        pmp_mseccfg_err;
+1082:    pmp_cfg_t                    pmp_cfg         [PMPNumRegions];
+1083:    logic [PMPNumRegions-1:0]    pmp_cfg_locked;
+1084:    logic [PMPNumRegions-1:0]    pmp_cfg_wr_suppress;
+1085:    pmp_cfg_t                    pmp_cfg_wdata   [PMPNumRegions];
+1086:    logic [PMPAddrWidth-1:0]     pmp_addr        [PMPNumRegions];
+1087:    logic [PMPNumRegions-1:0]    pmp_cfg_we;
+
+2026-01-19 20:41:44,955 - INFO - swea-agent - ========================= STEP 6 =========================
+2026-01-19 20:41:49,807 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && sed -n '1120,1205p' rtl/ibex_core.sv
+2026-01-19 20:41:50,066 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+    .pc_if_i(pc_if),
+    .pc_id_i(pc_id),
+    .pc_wb_i(pc_wb),
+
+    .data_ind_timing_o    (data_ind_timing),
+    .dummy_instr_en_o     (dummy_instr_en),
+    .dummy_instr_mask_o   (dummy_instr_mask),
+    .dummy_instr_seed_en_o(dummy_instr_seed_en),
+    .dummy_instr_seed_o   (dummy_instr_seed),
+    .icache_enable_o      (icache_enable),
+    .csr_shadow_err_o     (csr_shadow_err),
+    .ic_scr_key_valid_i   (ic_scr_key_valid_i),
+
+    .csr_save_if_i     (csr_save_if),
+    .csr_save_id_i     (csr_save_id),
+    .csr_save_wb_i     (csr_save_wb),
+    .csr_restore_mret_i(csr_restore_mret_id),
+    .csr_restore_dret_i(csr_restore_dret_id),
+    .csr_save_cause_i  (csr_save_cause),
+    .csr_mcause_i      (exc_cause),
+    .csr_mtval_i       (csr_mtval),
+    .illegal_csr_insn_o(illegal_csr_insn_id),
+
+    .double_fault_seen_o,
+
+    // performance counter related signals
+    .instr_ret_i                (perf_instr_ret_wb),
+    .instr_ret_compressed_i     (perf_instr_ret_compressed_wb),
+    .instr_ret_spec_i           (perf_instr_ret_wb_spec),
+    .instr_ret_compressed_spec_i(perf_instr_ret_compressed_wb_spec),
+    .iside_wait_i               (perf_iside_wait),
+    .jump_i                     (perf_jump),
+    .branch_i                   (perf_branch),
+    .branch_taken_i             (perf_tbranch),
+    .mem_load_i                 (perf_load),
+    .mem_store_i                (perf_store),
+    .dside_wait_i               (perf_dside_wait),
+    .mul_wait_i                 (perf_mul_wait),
+    .div_wait_i                 (perf_div_wait)
+  );
+
+  // These assertions are in top-level as instr_valid_id required as the enable term
+  `ASSERT(IbexCsrOpValid, instr_valid_id |-> csr_op inside {
+      CSR_OP_READ,
+      CSR_OP_WRITE,
+      CSR_OP_SET,
+      CSR_OP_CLEAR
+      })
+  `ASSERT_KNOWN_IF(IbexCsrWdataIntKnown, cs_registers_i.csr_wdata_int, csr_op_en)
+
+  if (PMPEnable) begin : g_pmp
+    logic [31:0] pc_if_inc;
+    logic [33:0] pmp_req_addr [PMPNumChan];
+    pmp_req_e    pmp_req_type [PMPNumChan];
+    priv_lvl_e   pmp_priv_lvl [PMPNumChan];
+
+    assign pc_if_inc            = pc_if + 32'd2;
+    assign pmp_req_addr[PMP_I]  = {2'b00, pc_if};
+    assign pmp_req_type[PMP_I]  = PMP_ACC_EXEC;
+    assign pmp_priv_lvl[PMP_I]  = priv_mode_id;
+    assign pmp_req_addr[PMP_I2] = {2'b00, pc_if_inc};
+    assign pmp_req_type[PMP_I2] = PMP_ACC_EXEC;
+    assign pmp_priv_lvl[PMP_I2] = priv_mode_id;
+    assign pmp_req_addr[PMP_D]  = {2'b00, data_addr_o[31:0]};
+    assign pmp_req_type[PMP_D]  = data_we_o ? PMP_ACC_WRITE : PMP_ACC_READ;
+    assign pmp_priv_lvl[PMP_D]  = priv_mode_lsu;
+
+    ibex_pmp #(
+      .DmBaseAddr    (DmBaseAddr),
+      .DmAddrMask    (DmAddrMask),
+      .PMPGranularity(PMPGranularity),
+      .PMPNumChan    (PMPNumChan),
+      .PMPNumRegions (PMPNumRegions)
+    ) pmp_i (
+      // Interface to CSRs
+      .csr_pmp_cfg_i    (csr_pmp_cfg),
+      .csr_pmp_addr_i   (csr_pmp_addr),
+      .csr_pmp_mseccfg_i(csr_pmp_mseccfg),
+      .debug_mode_i     (debug_mode),
+      .priv_mode_i      (pmp_priv_lvl),
+      // Access checking channels
+      .pmp_req_addr_i   (pmp_req_addr),
+      .pmp_req_type_i   (pmp_req_type),
+      .pmp_req_err_o    (pmp_req_err)
+    );
+  end else begin : g_no_pmp
+
+2026-01-19 20:41:50,077 - INFO - swea-agent - ========================= STEP 7 =========================
+2026-01-19 20:41:53,376 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && grep -RIn "flush" rtl/ibex_decoder.sv | head -n 80
+2026-01-19 20:41:53,630 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+572:            // FENCE.I is implemented as a jump to the next PC, this gives the required flushing
+573:            // behaviour (iside prefetch buffer flushed and response to any outstanding iside
+575:            // If present, the ICache will also be flushed.
+1149:            // FENCE.I will flush the IF stage, prefetch buffer and ICache if present.
+
+2026-01-19 20:41:53,637 - INFO - swea-agent - ========================= STEP 8 =========================
+2026-01-19 20:41:57,320 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && grep -RIn "pmp.*flush|flush.*pmp|csr.*flush" rtl | head -n 50
+2026-01-19 20:41:57,576 - INFO - swea-agent - 🤖 MODEL INPUT
+Your command ran successfully and did not produce any output.
+2026-01-19 20:41:57,584 - INFO - swea-agent - ========================= STEP 9 =========================
+2026-01-19 20:42:01,717 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && grep -RIn "pipeline.*flush" rtl/ibex_cs_registers.sv rtl/ibex_core.sv rtl/ibex_controller.sv | head -n 50
+2026-01-19 20:42:01,981 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+rtl/ibex_core.sv:1379:  // pipeline is kept going for flushed instructions that trapped so they are still visible on the
+rtl/ibex_controller.sv:30:  input  logic                  csr_pipe_flush_i,        // do CSR-related pipeline flush
+rtl/ibex_controller.sv:222:  // special requests: special instructions, pipeline flushes, exceptions...
+rtl/ibex_controller.sv:226:  // These special requests only cause a pipeline flush and in particular don't cause a PC change
+rtl/ibex_controller.sv:576:        // Get ready for special instructions, exceptions, pipeline flushes
+rtl/ibex_controller.sv:797:          // special instructions and pipeline flushes
+rtl/ibex_controller.sv:1001:    // If entering or exiting debug mode, the pipeline must be flushed. This is because Ibex
+rtl/ibex_controller.sv:1003:    // none of the pipeline stages must be in debug mode. As `flush_id_o` only affects the ID/EX
+
+2026-01-19 20:42:01,990 - INFO - swea-agent - ========================= STEP 10 =========================
+2026-01-19 20:42:05,776 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && sed -n '1,120p' rtl/ibex_controller.sv
+2026-01-19 20:42:06,030 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+// Copyright lowRISC contributors.
+// Copyright 2018 ETH Zurich and University of Bologna, see also CREDITS.md.
+// Licensed under the Apache License, Version 2.0, see LICENSE for details.
+// SPDX-License-Identifier: Apache-2.0
+
+/**
+ * Main controller of the processor
+ */
+
+`include "prim_assert.sv"
+`include "dv_fcov_macros.svh"
+
+module ibex_controller #(
+  parameter bit WritebackStage  = 1'b0,
+  parameter bit BranchPredictor = 1'b0,
+  parameter bit MemECC          = 1'b0
+ ) (
+  input  logic                  clk_i,
+  input  logic                  rst_ni,
+
+  output logic                  ctrl_busy_o,             // core is busy processing instrs
+
+  // decoder related signals
+  input  logic                  illegal_insn_i,          // decoder has an invalid instr
+  input  logic                  ecall_insn_i,            // decoder has ECALL instr
+  input  logic                  mret_insn_i,             // decoder has MRET instr
+  input  logic                  dret_insn_i,             // decoder has DRET instr
+  input  logic                  wfi_insn_i,              // decoder has WFI instr
+  input  logic                  ebrk_insn_i,             // decoder has EBREAK instr
+  input  logic                  csr_pipe_flush_i,        // do CSR-related pipeline flush
+
+  // instr from IF-ID pipeline stage
+  input  logic                  instr_valid_i,           // instr is valid
+  input  logic [31:0]           instr_i,                 // uncompressed instr data for mtval
+  input  logic [15:0]           instr_compressed_i,      // instr compressed data for mtval
+  input  logic                  instr_is_compressed_i,   // instr is compressed
+  input  logic                  instr_bp_taken_i,        // instr was predicted taken branch
+  input  logic                  instr_fetch_err_i,       // instr has error
+  input  logic                  instr_fetch_err_plus2_i, // instr error is x32
+  input  logic [31:0]           pc_id_i,                 // instr address
+
+  // to IF-ID pipeline stage
+  output logic                  instr_valid_clear_o,     // kill instr in IF-ID reg
+  output logic                  id_in_ready_o,           // ID stage is ready for new instr
+  output logic                  controller_run_o,        // Controller is in standard instruction
+                                                         // run mode
+  input  logic                  instr_exec_i,            // Execution control, when clear ID/EX
+                                                         // stage stops accepting instructions from
+                                                         // IF
+  // to prefetcher
+  output logic                  instr_req_o,             // start fetching instructions
+  output logic                  pc_set_o,                // jump to address set by pc_mux
+  output ibex_pkg::pc_sel_e     pc_mux_o,                // IF stage fetch address selector
+                                                         // (boot, normal, exception...)
+  output logic                  nt_branch_mispredict_o,  // Not-taken branch in ID/EX was
+                                                         // mispredicted (predicted taken)
+  output ibex_pkg::exc_pc_sel_e exc_pc_mux_o,            // IF stage selector for exception PC
+  output ibex_pkg::exc_cause_t  exc_cause_o,             // for IF stage, CSRs
+
+  // LSU
+  input  logic [31:0]           lsu_addr_last_i,         // for mtval
+  input  logic                  load_err_i,
+  input  logic                  store_err_i,
+  input  logic                  mem_resp_intg_err_i,
+  output logic                  wb_exception_o,          // Instruction in WB taking an exception
+  output logic                  id_exception_o,          // Instruction in ID taking an exception
+
+  // jump/branch signals
+  input  logic                  branch_set_i,            // branch set signal (branch definitely
+                                                         // taken)
+  input  logic                  branch_not_set_i,        // branch is definitely not taken
+  input  logic                  jump_set_i,              // jump taken set signal
+
+  // interrupt signals
+  input  logic                  csr_mstatus_mie_i,       // M-mode interrupt enable bit
+  input  logic                  irq_pending_i,           // interrupt request pending
+  input  ibex_pkg::irqs_t       irqs_i,                  // interrupt requests qualified with
+                                                         // mie CSR
+  input  logic                  irq_nm_ext_i,            // non-maskeable interrupt
+  output logic                  nmi_mode_o,              // core executing NMI handler
+
+  // debug signals
+  input  logic                  debug_req_i,
+  output ibex_pkg::dbg_cause_e  debug_cause_o,
+  output logic                  debug_csr_save_o,
+  output logic                  debug_mode_o,
+  output logic                  debug_mode_entering_o,
+  input  logic                  debug_single_step_i,
+  input  logic                  debug_ebreakm_i,
+  input  logic                  debug_ebreaku_i,
+  input  logic                  trigger_match_i,
+
+  output logic                  csr_save_if_o,
+  output logic                  csr_save_id_o,
+  output logic                  csr_save_wb_o,
+  output logic                  csr_restore_mret_id_o,
+  output logic                  csr_restore_dret_id_o,
+  output logic                  csr_save_cause_o,
+  output logic [31:0]           csr_mtval_o,
+  input  ibex_pkg::priv_lvl_e   priv_mode_i,
+
+  // stall & flush signals
+  input  logic                  stall_id_i,
+  input  logic                  stall_wb_i,
+  output logic                  flush_id_o,
+  input  logic                  ready_wb_i,
+
+  // performance monitors
+  output logic                  perf_jump_o,             // we are executing a jump
+                                                         // instruction (j, jr, jal, jalr)
+  output logic                  perf_tbranch_o           // we are executing a taken branch
+                                                         // instruction
+);
+  import ibex_pkg::*;
+
+  ctrl_fsm_e ctrl_fsm_cs, ctrl_fsm_ns;
+
+  logic nmi_mode_q, nmi_mode_d;
+  logic debug_mode_q, debug_mode_d;
+  dbg_cause_e debug_cause_d, debug_cause_q;
+
+2026-01-19 20:42:06,038 - INFO - swea-agent - ========================= STEP 11 =========================
+2026-01-19 20:42:13,323 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && grep -RIn "csr_pipe_flush_i" -n rtl/ibex_controller.sv
+2026-01-19 20:42:13,579 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+30:  input  logic                  csr_pipe_flush_i,        // do CSR-related pipeline flush
+197:  assign csr_pipe_flush  = csr_pipe_flush_i  & instr_valid_i;
+
+2026-01-19 20:42:13,589 - INFO - swea-agent - ========================= STEP 12 =========================
+2026-01-19 20:42:19,246 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && sed -n '180,260p' rtl/ibex_controller.sv
+2026-01-19 20:42:19,504 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+  end
+  // synopsys translate_on
+`endif
+
+  ////////////////
+  // Exceptions //
+  ////////////////
+
+  assign load_err_d  = load_err_i;
+  assign store_err_d = store_err_i;
+
+  // Decoder doesn't take instr_valid into account, factor it in here.
+  assign ecall_insn      = ecall_insn_i      & instr_valid_i;
+  assign mret_insn       = mret_insn_i       & instr_valid_i;
+  assign dret_insn       = dret_insn_i       & instr_valid_i;
+  assign wfi_insn        = wfi_insn_i        & instr_valid_i;
+  assign ebrk_insn       = ebrk_insn_i       & instr_valid_i;
+  assign csr_pipe_flush  = csr_pipe_flush_i  & instr_valid_i;
+  assign instr_fetch_err = instr_fetch_err_i & instr_valid_i;
+
+  // This is recorded in the illegal_insn_q flop to help timing.  Specifically
+  // it is needed to break the path from ibex_cs_registers/illegal_csr_insn_o
+  // to pc_set_o.  Clear when controller is in FLUSH so it won't remain set
+  // once illegal instruction is handled.
+  // illegal_insn_i only set when instr_valid_i is set.
+  assign illegal_insn_d = illegal_insn_i & (ctrl_fsm_cs != FLUSH);
+
+  `ASSERT(IllegalInsnOnlyIfInsnValid, illegal_insn_i |-> instr_valid_i)
+
+  // exception requests
+  // requests are flopped in exc_req_q.  This is cleared when controller is in
+  // the FLUSH state so the cycle following exc_req_q won't remain set for an
+  // exception request that has just been handled.
+  // All terms in this expression are qualified by instr_valid_i
+  assign exc_req_d = (ecall_insn | ebrk_insn | illegal_insn_d | instr_fetch_err) &
+                     (ctrl_fsm_cs != FLUSH);
+
+  // LSU exception requests
+  assign exc_req_lsu = store_err_i | load_err_i;
+
+  assign id_exception_o = exc_req_d & ~wb_exception_o;
+
+  // special requests: special instructions, pipeline flushes, exceptions...
+  // All terms in these expressions are qualified by instr_valid_i except exc_req_lsu which can come
+  // from the Writeback stage with no instr_valid_i from the ID stage
+
+  // These special requests only cause a pipeline flush and in particular don't cause a PC change
+  // that is outside the normal execution flow
+  assign special_req_flush_only = wfi_insn | csr_pipe_flush;
+
+  // These special requests cause a change in PC
+  assign special_req_pc_change = mret_insn | dret_insn | exc_req_d | exc_req_lsu;
+
+  // generic special request signal, applies to all instructions
+  assign special_req = special_req_pc_change | special_req_flush_only;
+
+  // Is there an instruction in ID or WB that has yet to complete?
+  assign id_wb_pending = instr_valid_i | ~ready_wb_i;
+
+  // Logic to determine which exception takes priority where multiple are possible.
+  if (WritebackStage) begin : g_wb_exceptions
+    always_comb begin
+      instr_fetch_err_prio = 0;
+      illegal_insn_prio    = 0;
+      ecall_insn_prio      = 0;
+      ebrk_insn_prio       = 0;
+      store_err_prio       = 0;
+      load_err_prio        = 0;
+
+      // Note that with the writeback stage store/load errors occur on the instruction in writeback,
+      // all other exception/faults occur on the instruction in ID/EX. The faults from writeback
+      // must take priority as that instruction is architecurally ordered before the one in ID/EX.
+      if (store_err_q) begin
+        store_err_prio = 1'b1;
+      end else if (load_err_q) begin
+        load_err_prio  = 1'b1;
+      end else if (instr_fetch_err) begin
+        instr_fetch_err_prio = 1'b1;
+      end else if (illegal_insn_q) begin
+        illegal_insn_prio = 1'b1;
+      end else if (ecall_insn) begin
+
+2026-01-19 20:42:19,520 - INFO - swea-agent - ========================= STEP 13 =========================
+2026-01-19 20:42:26,598 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && grep -RIn "csr_pipe_flush" rtl/ibex_cs_registers.sv rtl/ibex_core.sv | head -n 50
+2026-01-19 20:42:26,853 - INFO - swea-agent - 🤖 MODEL INPUT
+Your command ran successfully and did not produce any output.
+2026-01-19 20:42:26,864 - INFO - swea-agent - ========================= STEP 14 =========================
+2026-01-19 20:42:31,953 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && grep -RIn "pipe_flush" rtl/ibex_cs_registers.sv rtl/ibex_core.sv | head -n 50
+2026-01-19 20:42:32,209 - INFO - swea-agent - 🤖 MODEL INPUT
+Your command ran successfully and did not produce any output.
+2026-01-19 20:42:32,221 - INFO - swea-agent - ========================= STEP 15 =========================
+2026-01-19 20:42:36,229 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && grep -RIn "csr_pipe_flush" rtl | head -n 50
+2026-01-19 20:42:36,489 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+rtl/ibex_controller.sv:30:  input  logic                  csr_pipe_flush_i,        // do CSR-related pipeline flush
+rtl/ibex_controller.sv:167:  logic csr_pipe_flush;
+rtl/ibex_controller.sv:197:  assign csr_pipe_flush  = csr_pipe_flush_i  & instr_valid_i;
+rtl/ibex_controller.sv:228:  assign special_req_flush_only = wfi_insn | csr_pipe_flush;
+rtl/ibex_id_stage.sv:293:  logic        csr_pipe_flush;
+rtl/ibex_id_stage.sv:516:    csr_pipe_flush = 1'b0;
+rtl/ibex_id_stage.sv:531:        csr_pipe_flush = 1'b1;
+rtl/ibex_id_stage.sv:538:        csr_pipe_flush = 1'b1;
+rtl/ibex_id_stage.sv:576:    .csr_pipe_flush_i(csr_pipe_flush),
+
+2026-01-19 20:42:36,504 - INFO - swea-agent - ========================= STEP 16 =========================
+2026-01-19 20:42:40,242 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && sed -n '480,560p' rtl/ibex_id_stage.sv
+2026-01-19 20:42:40,508 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+    .rf_ren_a_o  (rf_ren_a_dec),
+    .rf_ren_b_o  (rf_ren_b_dec),
+
+    // ALU
+    .alu_operator_o    (alu_operator),
+    .alu_op_a_mux_sel_o(alu_op_a_mux_sel_dec),
+    .alu_op_b_mux_sel_o(alu_op_b_mux_sel_dec),
+    .alu_multicycle_o  (alu_multicycle_dec),
+
+    // MULT & DIV
+    .mult_en_o            (mult_en_dec),
+    .div_en_o             (div_en_dec),
+    .mult_sel_o           (mult_sel_ex_o),
+    .div_sel_o            (div_sel_ex_o),
+    .multdiv_operator_o   (multdiv_operator),
+    .multdiv_signed_mode_o(multdiv_signed_mode),
+
+    // CSRs
+    .csr_access_o(csr_access_o),
+    .csr_op_o    (csr_op_o),
+
+    // LSU
+    .data_req_o           (lsu_req_dec),
+    .data_we_o            (lsu_we),
+    .data_type_o          (lsu_type),
+    .data_sign_extension_o(lsu_sign_ext),
+
+    // jump/branches
+    .jump_in_dec_o  (jump_in_dec),
+    .branch_in_dec_o(branch_in_dec)
+  );
+
+  /////////////////////////////////
+  // CSR-related pipeline flushes //
+  /////////////////////////////////
+  always_comb begin : csr_pipeline_flushes
+    csr_pipe_flush = 1'b0;
+
+    // A pipeline flush is needed to let the controller react after modifying certain CSRs:
+    // - When enabling interrupts, pending IRQs become visible to the controller only during
+    //   the next cycle. If during that cycle the core disables interrupts again, it does not
+    //   see any pending IRQs and consequently does not start to handle interrupts.
+    // - When modifying any PMP CSR, PMP check of the next instruction might get invalidated.
+    //   Hence, a pipeline flush is needed to instantiate another PMP check with the updated CSRs.
+    // - When modifying debug CSRs.
+    if (csr_op_en_o == 1'b1 && (csr_op_o == CSR_OP_WRITE || csr_op_o == CSR_OP_SET)) begin
+      if (csr_num_e'(instr_rdata_i[31:20]) == CSR_MSTATUS ||
+          csr_num_e'(instr_rdata_i[31:20]) == CSR_MIE     ||
+          csr_num_e'(instr_rdata_i[31:20]) == CSR_MSECCFG ||
+          // To catch all PMPCFG/PMPADDR registers, get the shared top most 7 bits.
+          instr_rdata_i[31:25] == 7'h1D) begin
+        csr_pipe_flush = 1'b1;
+      end
+    end else if (csr_op_en_o == 1'b1 && csr_op_o != CSR_OP_READ) begin
+      if (csr_num_e'(instr_rdata_i[31:20]) == CSR_DCSR      ||
+          csr_num_e'(instr_rdata_i[31:20]) == CSR_DPC       ||
+          csr_num_e'(instr_rdata_i[31:20]) == CSR_DSCRATCH0 ||
+          csr_num_e'(instr_rdata_i[31:20]) == CSR_DSCRATCH1) begin
+        csr_pipe_flush = 1'b1;
+      end
+    end
+  end
+
+  ////////////////
+  // Controller //
+  ////////////////
+
+  // Executing DRET outside of Debug Mode causes an illegal instruction exception.
+  assign illegal_dret_insn  = dret_insn_dec & ~debug_mode_o;
+  // Some instructions can only be executed in M-Mode
+  assign illegal_umode_insn = (priv_mode_i != PRIV_LVL_M) &
+                              // MRET must be in M-Mode. TW means trap WFI to M-Mode.
+                              (mret_insn_dec | (csr_mstatus_tw_i & wfi_insn_dec));
+
+  assign illegal_insn_o = instr_valid_i &
+      (illegal_insn_dec | illegal_csr_insn_i | illegal_dret_insn | illegal_umode_insn);
+
+  assign mem_resp_intg_err = lsu_load_resp_intg_err_i | lsu_store_resp_intg_err_i;
+
+  ibex_controller #(
+    .WritebackStage (WritebackStage),
+
+2026-01-19 20:42:40,527 - INFO - swea-agent - ========================= STEP 17 =========================
+2026-01-19 20:42:47,669 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+str_replace_editor str_replace /testbed/rtl/ibex_id_stage.sv   --old_str '    if (csr_op_en_o == 1'"'"'b1 && (csr_op_o == CSR_OP_WRITE || csr_op_o == CSR_OP_SET)) begin' --new_str '    // WRITE/SET/CLEAR can all change the effective value of the CSR.
+    // For MSTATUS/MIE, CLEAR was historically treated as safe, but for PMP CSRs a CLEAR can
+    // relax permissions and invalidate an in-flight PMP check. Therefore include CLEAR here.
+    if (csr_op_en_o == 1'"'"'b1 && (csr_op_o == CSR_OP_WRITE || csr_op_o == CSR_OP_SET ||
+                               csr_op_o == CSR_OP_CLEAR)) begin'
+2026-01-19 20:42:47,956 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+The file /testbed/rtl/ibex_id_stage.sv has been edited. Here's the result of running `cat -n` on a snippet of /testbed/rtl/ibex_id_stage.sv:
+   520	    //   the next cycle. If during that cycle the core disables interrupts again, it does not
+   521	    //   see any pending IRQs and consequently does not start to handle interrupts.
+   522	    // - When modifying any PMP CSR, PMP check of the next instruction might get invalidated.
+   523	    //   Hence, a pipeline flush is needed to instantiate another PMP check with the updated CSRs.
+   524	    // - When modifying debug CSRs.
+   525	    // WRITE/SET/CLEAR can all change the effective value of the CSR.
+   526	    // For MSTATUS/MIE, CLEAR was historically treated as safe, but for PMP CSRs a CLEAR can
+   527	    // relax permissions and invalidate an in-flight PMP check. Therefore include CLEAR here.
+   528	    if (csr_op_en_o == 1'b1 && (csr_op_o == CSR_OP_WRITE || csr_op_o == CSR_OP_SET ||
+   529	                               csr_op_o == CSR_OP_CLEAR)) begin
+   530	      if (csr_num_e'(instr_rdata_i[31:20]) == CSR_MSTATUS ||
+   531	          csr_num_e'(instr_rdata_i[31:20]) == CSR_MIE     ||
+   532	          csr_num_e'(instr_rdata_i[31:20]) == CSR_MSECCFG ||
+Review the changes and make sure they are as expected. Edit the file again if necessary.
+
+2026-01-19 20:42:47,974 - INFO - swea-agent - ========================= STEP 18 =========================
+2026-01-19 20:42:53,723 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && make -j4 verilate >build.log 2>&1 || (tail -n 60 build.log && exit 1)
+2026-01-19 20:42:53,985 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+make: *** No rule to make target 'verilate'.  Stop.
+
+2026-01-19 20:42:54,002 - INFO - swea-agent - ========================= STEP 19 =========================
+2026-01-19 20:43:00,291 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && make -j4 >build.log 2>&1 || (tail -n 60 build.log && exit 1)
+2026-01-19 20:43:00,549 - INFO - swea-agent - 🤖 MODEL INPUT
+Your command ran successfully and did not produce any output.
+2026-01-19 20:43:00,568 - INFO - swea-agent - ========================= STEP 20 =========================
+2026-01-19 20:43:08,576 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && echo $?
+2026-01-19 20:43:08,829 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+0
+
+2026-01-19 20:43:08,849 - INFO - swea-agent - ========================= STEP 21 =========================
+2026-01-19 20:43:16,505 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && python3 - <<'PY'
+import re
+p='/testbed/rtl/ibex_id_stage.sv'
+text=open(p).read().splitlines()
+for i,l in enumerate(text,1):
+    if 'CSR-related pipeline flushes' in l:
+        start=i
+    if 'end : csr_pipeline_flushes' in l:
+        end=i
+        break
+print('flush block',start,end)
+print('\n'.join(f'{j:4d}: {text[j-1]}' for j in range(start,end+1)))
+PY
+2026-01-19 20:43:16,885 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+Traceback (most recent call last):
+  File "<stdin>", line 10, in <module>
+NameError: name 'end' is not defined
+
+2026-01-19 20:43:16,907 - INFO - swea-agent - ========================= STEP 22 =========================
+2026-01-19 20:43:25,163 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && python3 - <<'PY'
+text=open('rtl/ibex_id_stage.sv').read().splitlines()
+start=None; end=None
+for i,l in enumerate(text,1):
+    if start is None and 'CSR-related pipeline flushes' in l:
+        start=i
+    if start is not None and 'end : csr_pipeline_flushes' in l:
+        end=i
+        break
+print('start',start,'end',end)
+PY
+2026-01-19 20:43:25,617 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+start 513 end None
+
+2026-01-19 20:43:25,644 - INFO - swea-agent - ========================= STEP 23 =========================
+2026-01-19 20:43:32,402 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && grep -n "csr_pipeline_flushes" -n rtl/ibex_id_stage.sv
+2026-01-19 20:43:32,659 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+515:  always_comb begin : csr_pipeline_flushes
+
+2026-01-19 20:43:32,683 - INFO - swea-agent - ========================= STEP 24 =========================
+2026-01-19 20:43:38,834 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && sed -n '510,555p' rtl/ibex_id_stage.sv
+2026-01-19 20:43:39,094 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+  );
+
+  /////////////////////////////////
+  // CSR-related pipeline flushes //
+  /////////////////////////////////
+  always_comb begin : csr_pipeline_flushes
+    csr_pipe_flush = 1'b0;
+
+    // A pipeline flush is needed to let the controller react after modifying certain CSRs:
+    // - When enabling interrupts, pending IRQs become visible to the controller only during
+    //   the next cycle. If during that cycle the core disables interrupts again, it does not
+    //   see any pending IRQs and consequently does not start to handle interrupts.
+    // - When modifying any PMP CSR, PMP check of the next instruction might get invalidated.
+    //   Hence, a pipeline flush is needed to instantiate another PMP check with the updated CSRs.
+    // - When modifying debug CSRs.
+    // WRITE/SET/CLEAR can all change the effective value of the CSR.
+    // For MSTATUS/MIE, CLEAR was historically treated as safe, but for PMP CSRs a CLEAR can
+    // relax permissions and invalidate an in-flight PMP check. Therefore include CLEAR here.
+    if (csr_op_en_o == 1'b1 && (csr_op_o == CSR_OP_WRITE || csr_op_o == CSR_OP_SET ||
+                               csr_op_o == CSR_OP_CLEAR)) begin
+      if (csr_num_e'(instr_rdata_i[31:20]) == CSR_MSTATUS ||
+          csr_num_e'(instr_rdata_i[31:20]) == CSR_MIE     ||
+          csr_num_e'(instr_rdata_i[31:20]) == CSR_MSECCFG ||
+          // To catch all PMPCFG/PMPADDR registers, get the shared top most 7 bits.
+          instr_rdata_i[31:25] == 7'h1D) begin
+        csr_pipe_flush = 1'b1;
+      end
+    end else if (csr_op_en_o == 1'b1 && csr_op_o != CSR_OP_READ) begin
+      if (csr_num_e'(instr_rdata_i[31:20]) == CSR_DCSR      ||
+          csr_num_e'(instr_rdata_i[31:20]) == CSR_DPC       ||
+          csr_num_e'(instr_rdata_i[31:20]) == CSR_DSCRATCH0 ||
+          csr_num_e'(instr_rdata_i[31:20]) == CSR_DSCRATCH1) begin
+        csr_pipe_flush = 1'b1;
+      end
+    end
+  end
+
+  ////////////////
+  // Controller //
+  ////////////////
+
+  // Executing DRET outside of Debug Mode causes an illegal instruction exception.
+  assign illegal_dret_insn  = dret_insn_dec & ~debug_mode_o;
+  // Some instructions can only be executed in M-Mode
+  assign illegal_umode_insn = (priv_mode_i != PRIV_LVL_M) &
+                              // MRET must be in M-Mode. TW means trap WFI to M-Mode.
+
+2026-01-19 20:43:39,122 - INFO - swea-agent - ========================= STEP 25 =========================
+2026-01-19 20:43:44,351 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+submit
+2026-01-19 20:43:44,654 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+Thank you for your work on this issue. Please review your changes and run the submit command again to confirm.
+
+Here is a list of all of your changes:
+
+<diff>
+diff --git a/build.log b/build.log
+new file mode 100644
+index 00000000..c685b8b5
+--- /dev/null
++++ b/build.log
+@@ -0,0 +1,3 @@
++This is a short hand for running popular tasks.
++Please check the documentation on how to get started
++or how to set-up the different environments.
+diff --git a/rtl/ibex_id_stage.sv b/rtl/ibex_id_stage.sv
+index 647e648b..c2f244e6 100644
+--- a/rtl/ibex_id_stage.sv
++++ b/rtl/ibex_id_stage.sv
+@@ -522,7 +522,11 @@ module ibex_id_stage #(
+     // - When modifying any PMP CSR, PMP check of the next instruction might get invalidated.
+     //   Hence, a pipeline flush is needed to instantiate another PMP check with the updated CSRs.
+     // - When modifying debug CSRs.
+-    if (csr_op_en_o == 1'b1 && (csr_op_o == CSR_OP_WRITE || csr_op_o == CSR_OP_SET)) begin
++    // WRITE/SET/CLEAR can all change the effective value of the CSR.
++    // For MSTATUS/MIE, CLEAR was historically treated as safe, but for PMP CSRs a CLEAR can
++    // relax permissions and invalidate an in-flight PMP check. Therefore include CLEAR here.
++    if (csr_op_en_o == 1'b1 && (csr_op_o == CSR_OP_WRITE || csr_op_o == CSR_OP_SET ||
++                               csr_op_o == CSR_OP_CLEAR)) begin
+       if (csr_num_e'(instr_rdata_i[31:20]) == CSR_MSTATUS ||
+           csr_num_e'(instr_rdata_i[31:20]) == CSR_MIE     ||
+           csr_num_e'(instr_rdata_i[31:20]) == CSR_MSECCFG ||
+
+</diff>
+
+
+2026-01-19 20:43:44,687 - INFO - swea-agent - ========================= STEP 26 =========================
+2026-01-19 20:43:48,878 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+str_replace_editor undo_edit /testbed/build.log
+2026-01-19 20:43:49,159 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+No edit history found for /testbed/build.log.
+
+2026-01-19 20:43:49,187 - INFO - swea-agent - ========================= STEP 27 =========================
+2026-01-19 20:43:55,204 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && rm -f build.log
+2026-01-19 20:43:55,572 - INFO - swea-agent - 🤖 MODEL INPUT
+Your command ran successfully and did not produce any output.
+2026-01-19 20:43:55,606 - INFO - swea-agent - ========================= STEP 28 =========================
+2026-01-19 20:44:03,188 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+submit
+2026-01-19 20:44:03,492 - INFO - swea-agent - Found submission: diff --git a/rtl/ibex_id_stage.sv b/rtl/ibex_id_stage.sv
+index 647e648b..c2f244e6 100644
+--- a/rtl/ibex_id_stage.sv
++++ b/rtl/ibex_id_stage.sv
+@@ -522,7 +522,11 @@ module ibex_id_stage #(
+     // - When modifying any PMP CSR, PMP check of the next instruction might get invalidated.
+     //   Hence, a pipeline flush is needed to instantiate another PMP check with the updated CSRs.
+     // - When modifying debug CSRs.
+-    if (csr_op_en_o == 1'b1 && (csr_op_o == CSR_OP_WRITE || csr_op_o == CSR_OP_SET)) begin
++    // WRITE/SET/CLEAR can all change the effective value of the CSR.
++    // For MSTATUS/MIE, CLEAR was historically treated as safe, but for PMP CSRs a CLEAR can
++    // relax permissions and invalidate an in-flight PMP check. Therefore include CLEAR here.
++    if (csr_op_en_o == 1'b1 && (csr_op_o == CSR_OP_WRITE || csr_op_o == CSR_OP_SET ||
++                               csr_op_o == CSR_OP_CLEAR)) begin
+       if (csr_num_e'(instr_rdata_i[31:20]) == CSR_MSTATUS ||
+           csr_num_e'(instr_rdata_i[31:20]) == CSR_MIE     ||
+           csr_num_e'(instr_rdata_i[31:20]) == CSR_MSECCFG ||
+
+2026-01-19 20:44:03,502 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+diff --git a/rtl/ibex_id_stage.sv b/rtl/ibex_id_stage.sv
+index 647e648b..c2f244e6 100644
+--- a/rtl/ibex_id_stage.sv
++++ b/rtl/ibex_id_stage.sv
+@@ -522,7 +522,11 @@ module ibex_id_stage #(
+     // - When modifying any PMP CSR, PMP check of the next instruction might get invalidated.
+     //   Hence, a pipeline flush is needed to instantiate another PMP check with the updated CSRs.
+     // - When modifying debug CSRs.
+-    if (csr_op_en_o == 1'b1 && (csr_op_o == CSR_OP_WRITE || csr_op_o == CSR_OP_SET)) begin
++    // WRITE/SET/CLEAR can all change the effective value of the CSR.
++    // For MSTATUS/MIE, CLEAR was historically treated as safe, but for PMP CSRs a CLEAR can
++    // relax permissions and invalidate an in-flight PMP check. Therefore include CLEAR here.
++    if (csr_op_en_o == 1'b1 && (csr_op_o == CSR_OP_WRITE || csr_op_o == CSR_OP_SET ||
++                               csr_op_o == CSR_OP_CLEAR)) begin
+       if (csr_num_e'(instr_rdata_i[31:20]) == CSR_MSTATUS ||
+           csr_num_e'(instr_rdata_i[31:20]) == CSR_MIE     ||
+           csr_num_e'(instr_rdata_i[31:20]) == CSR_MSECCFG ||
+
+2026-01-19 20:44:03,537 - INFO - swea-agent - Trajectory saved to /workspace/phoenix-bench/agents/SWE-agent/trajectories/anon/swe_agent__openai--gpt-5.2__t-0.00__p-1.00__c-0.00___swe_instances/lowRISC_ibex_pr2214/lowRISC_ibex_pr2214.traj
+2026-01-19 20:44:03,544 - INFO - swea-env - Beginning environment shutdown...

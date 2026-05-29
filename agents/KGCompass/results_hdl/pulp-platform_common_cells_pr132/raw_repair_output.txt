@@ -1,0 +1,47 @@
+The bug is localized in `src/clk_div.sv`: the counter is only incremented when it has **not** reached `RATIO-1`, but it is never reset on the cycle where the output clock toggles. As a result, once `counter_q == RATIO-1`, `clk_q` pulses once and the counter stays stuck, so the divider stops working.
+
+A clean fix is to reset the counter when the terminal count is reached, and to support a proper 50% duty-cycle divider by using a stateful toggle scheme. Since the issue asks for a new `clk_int_div.sv`, the existing `clk_int_div.sv` should be used as the corrected implementation point.
+
+Below is a minimal targeted edit for `src/clk_div.sv`, plus a fix in `src/clk_int_div.sv` if the current implementation has the same terminal-count/stall behavior in its counter logic.
+
+```systemverilog
+### src/clk_div.sv
+<<<<<<< SEARCH
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (~rst_ni) begin
+            clk_q       <= 1'b0;
+            counter_q <= '0;
+        end else begin
+            clk_q <= 1'b0;
+            if (en_i) begin
+                if (counter_q == (RATIO[RATIO-1:0] - 1)) begin
+                    clk_q <= 1'b1;
+                end else begin
+                    counter_q <= counter_q + 1;
+                end
+            end
+        end
+    end
+=======
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (~rst_ni) begin
+            clk_q     <= 1'b0;
+            counter_q <= '0;
+        end else begin
+            clk_q <= 1'b0;
+            if (en_i) begin
+                if (counter_q == (RATIO[RATIO-1:0] - 1)) begin
+                    clk_q     <= 1'b1;
+                    counter_q <= '0;
+                end else begin
+                    counter_q <= counter_q + 1;
+                end
+            end else begin
+                counter_q <= '0;
+            end
+        end
+    end
+>>>>>>> REPLACE
+```
+
+If your repository already uses `src/clk_int_div.sv` as the intended replacement, I can also generate a full `SEARCH/REPLACE` patch for that file once you provide the remaining lower half of the module (the snippet was truncated before the output clock generation logic).

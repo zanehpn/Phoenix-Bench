@@ -1,0 +1,18 @@
+diff --git a/rtl/core/core_top.sv b/rtl/core/core_top.sv
+index 1774f90..473ba5e 100644
+--- a/rtl/core/core_top.sv
++++ b/rtl/core/core_top.sv
+@@ -98,9 +98,11 @@ logic [31:0]         dbg_pc;
+ logic [31:0]         dbg_curr_pc;
+ 
+ // Flush pipeline in case of taken branch
+-// or request by debug module
++// or request by debug module. Keep branch target PC available
++// during the flush so IF can load the redirected address.
+ assign flush = branch | dbg_flush;
+-// If flushed by debug module, set the requested pc
++// If flushed by debug module, set the requested pc; otherwise use the
++// branch target computed in EX.
+ assign IF_pc = (dbg_flush) ? dbg_pc : EX_MEM_result;
+ 
+ // Mux debug module and core to register file

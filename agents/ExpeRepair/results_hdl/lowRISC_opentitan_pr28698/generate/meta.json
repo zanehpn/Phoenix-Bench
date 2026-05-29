@@ -1,0 +1,10 @@
+{
+    "task_info": {
+        "base_commit": "1a3c482b439ad8b181bdf00e3f38d186e632ef58",
+        "problem_statement": "# [otbn,dv] Collecting coverage fails for various tests\n\n### Description\n\nThe current [OTBN Simulation Results page](https://nightly.reports.lowrisc.org/opentitan_weekly_earlgrey/2025_11_02/hw/ip/otbn/dv/uvm/report.html) reports many OTBN tests as failing for the master branch. For example the otbn_smoke or otbn_single test.\n\nWhen I run these tests locally with DV sim but without coverage reporting, they pass (I tested otbn_smoke, otbn_single and otbn_multi_err). I run the tests with:\n```\nutil/dvsim/dvsim.py hw/ip/otbn/dv/uvm/otbn_sim_cfg.hjson -i otbn_smoke\n```\n\nThese tests fail when coverage is enabled (with the `--cov` argument) because illegal values are sampled for the mnemonic coverpoints of the instruction covergroups. An example for such a coverpoint is:\n\nhttps://github.com/lowRISC/opentitan/blob/9baed2bba4eccd325684c27b74049391d865c76f/hw/ip/otbn/dv/uvm/env/otbn_env_cov.sv#L1185-L1200\n\nI pinpointed the error down to the commit e9986ef486. This commit changes the macro `DEF_MNEM_BIN` such that quotes are added around the mnemonic to satisfy Verissimo. As a consequence, the bin is looking for mnemonic values like `\"addi\"` (with the quotes). However, the sample function of the covergroup is always called with the mnemonic without quotes, e.g., the passed value is `addi` (without quotes). The passed value is then handled as an illegal value and thus an error is reported.\n\nWhen I revert the commit, the tests pass again. \n\n@rswarbrick Can you please explain to me why the quotes are required? And if they are, how the setup can be adapted such that mnemonics with quotes are passed/generated?\n",
+        "instance_id": "lowRISC_opentitan_pr28698"
+    },
+    "setup_info": {
+        "repo_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/lowRISC_opentitan_pr28698"
+    }
+}

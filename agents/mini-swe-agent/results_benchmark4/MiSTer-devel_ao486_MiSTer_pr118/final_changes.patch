@@ -1,0 +1,473 @@
+diff --git a/rtl/soc/sound/sound_dsp.v b/rtl/soc/sound/sound_dsp.v
+index 7aac463..6c3dfa7 100644
+--- a/rtl/soc/sound/sound_dsp.v
++++ b/rtl/soc/sound/sound_dsp.v
+@@ -26,12 +26,12 @@
+  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+  */
+ 
+-module sound_dsp
++module sound_dsp
+ (
+ 	input             clk,
+ 	input             rst_n,
+ 
+-	input      [27:0] clock_rate,
++	input      [27:0] clock_rate,
+ 
+ 	output reg        irq8,
+ 	output reg        irq16,
+@@ -46,16 +46,16 @@ module sound_dsp
+ 	//dma
+ 	output            dma_req8,
+ 	output            dma_req16,
+-	input             dma_ack,
+-	input      [15:0] dma_readdata,
++	input             dma_ack,
++	input      [15:0] dma_readdata,
+ 	output     [15:0] dma_writedata,
+ 	input             dma_16_en,
+ 	input             sbp,
+-	input             sbp_stereo,
++	input             sbp_stereo,
+ 
+ 	//audio
+ 	output reg [15:0] sample_value_l,
+-	output reg [15:0] sample_value_r
++	output reg [15:0] sample_value_r
+ );
+ 
+ //------------------------------------------------------------------------------
+@@ -65,13 +65,13 @@ always @(posedge clk) begin if(rst_n == 1'b0) io_read_last <= 1'b0; else if(io_r
+ wire io_read_valid = io_read && io_read_last == 1'b0;
+ 
+ //------------------------------------------------------------------------------
+-
++
+ assign io_readdata =
+ 		(io_address == 4'hA) ? read_buffer[15:8] :
+ 		(io_address == 4'hC) ? {write_buffer_busy, 7'h7F } :
+ 		(io_address == 4'hE) ? {read_ready, 7'h7F } :
+                              8'hFF;
+-
++
+ //------------------------------------------------------------------------------
+ 
+ wire highspeed_start = cmd_high_auto_dma_out || cmd_high_single_dma_out || cmd_high_auto_dma_input || cmd_high_single_dma_input;
+@@ -125,25 +125,25 @@ assign dma_writedata = (dma_id_active) ? {dma_id_value,dma_id_value} : {input_sa
+ 
+ //------------------------------------------------------------------------------
+ 
+-localparam [511:0] dsp_cmd_len = {
+-	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd2, 2'd1, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  // 0xf0
+-	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd1,  2'd0, 2'd1, 2'd0, 2'd1,  // 0xe0
+-	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  // 0xd0
+-	2'd3, 2'd3, 2'd3, 2'd3,  2'd3, 2'd3, 2'd3, 2'd3,  2'd3, 2'd3, 2'd3, 2'd3,  2'd3, 2'd3, 2'd3, 2'd3,  // 0xc0
+-	2'd3, 2'd3, 2'd3, 2'd3,  2'd3, 2'd3, 2'd3, 2'd3,  2'd3, 2'd3, 2'd3, 2'd3,  2'd3, 2'd3, 2'd3, 2'd3,  // 0xb0
+-	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  // 0xa0
+-	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  // 0x90
+-	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd2,  // 0x80
+-	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd2, 2'd2, 2'd2, 2'd2,  2'd0, 2'd0, 2'd0, 2'd0,  // 0x70
+-	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  // 0x60
+-	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  // 0x50
+-	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd2,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd2, 2'd2, 2'd1,  // 0x40
+-	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd1,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  // 0x30
+-	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd2,  2'd0, 2'd0, 2'd0, 2'd0,  // 0x20
+-	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd2, 2'd2, 2'd2, 2'd2,  2'd0, 2'd0, 2'd0, 2'd1,  // 0x10
+-	2'd1, 2'd2, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd1,  2'd0, 2'd0, 2'd2, 2'd1,  2'd0, 2'd0, 2'd0, 2'd0   // 0x00
+-};
+-
++localparam [511:0] dsp_cmd_len = {
++	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd2, 2'd1, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  // 0xf0
++	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd1,  2'd0, 2'd1, 2'd0, 2'd1,  // 0xe0
++	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  // 0xd0
++	2'd3, 2'd3, 2'd3, 2'd3,  2'd3, 2'd3, 2'd3, 2'd3,  2'd3, 2'd3, 2'd3, 2'd3,  2'd3, 2'd3, 2'd3, 2'd3,  // 0xc0
++	2'd3, 2'd3, 2'd3, 2'd3,  2'd3, 2'd3, 2'd3, 2'd3,  2'd3, 2'd3, 2'd3, 2'd3,  2'd3, 2'd3, 2'd3, 2'd3,  // 0xb0
++	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  // 0xa0
++	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  // 0x90
++	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd2,  // 0x80
++	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd2, 2'd2, 2'd2, 2'd2,  2'd0, 2'd0, 2'd0, 2'd0,  // 0x70
++	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  // 0x60
++	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  // 0x50
++	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd2,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd2, 2'd2, 2'd1,  // 0x40
++	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd1,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  // 0x30
++	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd2,  2'd0, 2'd0, 2'd0, 2'd0,  // 0x20
++	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd2, 2'd2, 2'd2, 2'd2,  2'd0, 2'd0, 2'd0, 2'd1,  // 0x10
++	2'd1, 2'd2, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd1,  2'd0, 2'd0, 2'd2, 2'd1,  2'd0, 2'd0, 2'd0, 2'd0   // 0x00
++};
++
+ wire [1:0] cmd_len    = dsp_cmd_len[(io_writedata*2) +:2];
+ 
+ wire       cmd_start  = !write_left && io_write && io_address == 4'hC && (~midi_uart_mode && ~highspeed_mode);
+@@ -221,7 +221,7 @@ wire cmd_set_time_constant      = cmd == 8'h40;
+ wire cmd_set_sample_rate        =(cmd == 8'h41 || cmd == 8'h42) && ~sbp;
+ wire cmd_auto_dma_continue      =(cmd == 8'h45 || cmd == 8'h47) && ~sbp;
+ wire cmd_set_block_size         = cmd == 8'h48;
+-
++
+ wire cmd_single_4_adpcm_out     = cmd == 8'h74;
+ wire cmd_single_4_adpcm_out_ref = cmd == 8'h75;
+ wire cmd_single_3_adpcm_out     = cmd == 8'h76;
+@@ -256,40 +256,40 @@ wire cmd_trigger_irq8           = cmd == 8'hF2;
+ wire cmd_trigger_irq16          =(cmd == 8'hF3 && ~sbp);
+ wire cmd_f8_zero                = cmd == 8'hF8;
+ wire cmd_f9_test                = cmd == 8'hF9;
+-
++
+ wire cmd_new_single_output      = cmd_new_dma & ~cmd[2] & ~cmd[3];
+-wire cmd_new_auto_output        = cmd_new_dma &  cmd[2] & ~cmd[3];
+-wire cmd_new_single_input       = cmd_new_dma & ~cmd[2] &  cmd[3];
+-wire cmd_new_auto_input         = cmd_new_dma &  cmd[2] &  cmd[3];
+-wire cmd_new_block_size         = cmd_new_dma;
+-
+-/*
+- Cx/Bx - Program 8/16-bit DMA mode digitized sound I/O
+-         Command sequence:  Command, Mode, Lo(Length-1), Hi(Length-1)
+-         Command:
+-         ╔════╤════╤════╤══════╤═══════╤══════╤═══════╤════╗
+-         ║ D7 │ D6 │ D5 │  D4  │  D3   │  D2  │  D1   │ D0 ║
+-         ╠════╪════╪════╪══════╪═══════╪══════╪═══════╪════╣
+-         ║  1 │  * │  * │ 16/8 │  A/D  │  A/I │ FIFO  │  0 ║
+-         ╚════╧════╧════┼──────┼───────┼──────┼───────┼════╝
+-                        │ 0=8  │ 0=D/A │ 0=SC │ 0=off │
+-                        │ 1=16 │ 1=A/D │ 1=AI │ 1=on  │
+-                        └──────┴───────┴──────┴───────┘
+-         Common commands:
+-           C8/B8 - single-cycle input
+-           C0/B0 - single-cycle output
+-           CE/BE - auto-initialized input
+-           C6/B6 - auto-initialized output
+-
+-         Mode:
+-         ╔════╤════╤══════════╤════════════╤════╤════╤════╤════╗
+-         ║ D7 │ D6 │    D5    │     D4     │ D3 │ D2 │ D1 │ D0 ║
+-         ╠════╪════╪══════════╪════════════╪════╪════╪════╪════╣
+-         ║  0 │  0 │  Stereo  │   Signed   │  0 │  0 │  0 │  0 ║
+-         ╚════╧════┼──────────┼────────────┼════╧════╧════╧════╝
+-                   │ 0=Mono   │ 0=unsigned │
+-                   │ 1=Stereo │ 1=signed   │
+-                   └──────────┴────────────┘
++wire cmd_new_auto_output        = cmd_new_dma &  cmd[2] & ~cmd[3];
++wire cmd_new_single_input       = cmd_new_dma & ~cmd[2] &  cmd[3];
++wire cmd_new_auto_input         = cmd_new_dma &  cmd[2] &  cmd[3];
++wire cmd_new_block_size         = cmd_new_dma;
++
++/*
++ Cx/Bx - Program 8/16-bit DMA mode digitized sound I/O
++         Command sequence:  Command, Mode, Lo(Length-1), Hi(Length-1)
++         Command:
++         ╔════╤════╤════╤══════╤═══════╤══════╤═══════╤════╗
++         ║ D7 │ D6 │ D5 │  D4  │  D3   │  D2  │  D1   │ D0 ║
++         ╠════╪════╪════╪══════╪═══════╪══════╪═══════╪════╣
++         ║  1 │  * │  * │ 16/8 │  A/D  │  A/I │ FIFO  │  0 ║
++         ╚════╧════╧════┼──────┼───────┼──────┼───────┼════╝
++                        │ 0=8  │ 0=D/A │ 0=SC │ 0=off │
++                        │ 1=16 │ 1=A/D │ 1=AI │ 1=on  │
++                        └──────┴───────┴──────┴───────┘
++         Common commands:
++           C8/B8 - single-cycle input
++           C0/B0 - single-cycle output
++           CE/BE - auto-initialized input
++           C6/B6 - auto-initialized output
++
++         Mode:
++         ╔════╤════╤══════════╤════════════╤════╤════╤════╤════╗
++         ║ D7 │ D6 │    D5    │     D4     │ D3 │ D2 │ D1 │ D0 ║
++         ╠════╪════╪══════════╪════════════╪════╪════╪════╪════╣
++         ║  0 │  0 │  Stereo  │   Signed   │  0 │  0 │  0 │  0 ║
++         ╚════╧════┼──────────┼────────────┼════╧════╧════╧════╝
++                   │ 0=Mono   │ 0=unsigned │
++                   │ 1=Stereo │ 1=signed   │
++                   └──────────┴────────────┘
+ */
+ 
+ //------------------------------------------------------------------------------ reply
+@@ -391,7 +391,7 @@ reg [15:0] block_size;
+ always @(posedge clk) begin
+ 	if(rst_n == 1'b0)                                block_size <= 16'd0;
+ 	else if(sw_reset)                                block_size <= 16'd0;
+-	else if(cmd_set_block_size | cmd_new_block_size) block_size <= { write_buffer[7:0], write_buffer[15:8] };
++	else if(cmd_set_block_size | cmd_new_block_size) block_size <= { write_buffer[7:0], write_buffer[15:8] };
+ end
+ 
+ reg pause_dma;
+@@ -435,30 +435,30 @@ reg [7:0] period;
+ always @(posedge clk) begin
+ 	if(rst_n == 1'b0)                       period <= 128;
+ 	else if(sw_reset)                       period <= 128;
+-	else if(cmd_set_time_constant)          period <= write_buffer[7:0];
++	else if(cmd_set_time_constant)          period <= write_buffer[7:0];
+ 	else if(cmd_set_sample_rate)            period <= 255;
+ end
+-
+-reg ce_smp;
+-always @(posedge clk) begin
+-	reg [27:0] sum = 0;
+-
+-	ce_smp = 0;
+-	sum = sum + clk_smp;
+-	if(sum >= clock_rate) begin
+-		sum = sum - clock_rate;
+-		ce_smp = 1;
+-	end
+-end
+-
+-reg [27:0] clk_smp;
+-always @(posedge clk) begin
+-	if(!rst_n || sw_reset || cmd_set_time_constant) clk_smp <= 1000000;
+-	else if(cmd_set_sample_rate)                    clk_smp <= write_buffer[15:0];
+-end
++
++reg ce_smp;
++always @(posedge clk) begin
++	reg [27:0] sum = 0;
++
++	ce_smp = 0;
++	sum = sum + clk_smp;
++	if(sum >= clock_rate) begin
++		sum = sum - clock_rate;
++		ce_smp = 1;
++	end
++end
++
++reg [27:0] clk_smp;
++always @(posedge clk) begin
++	if(!rst_n || sw_reset || cmd_set_time_constant) clk_smp <= 1000000;
++	else if(cmd_set_sample_rate)                    clk_smp <= write_buffer[15:0];
++end
+ 
+ //------------------------------------------------------------------------------ irq
+-
++
+ always @(posedge clk) begin
+ 	if(~rst_n || sw_reset)                                                        irq8 <= 1'b0;
+ 	else if((dma_finished || dma_auto_restart || pause_interrupt) && ~dma_16_req) irq8 <= 1'b1;
+@@ -478,14 +478,14 @@ always @(posedge clk) begin
+ 	else if(cmd_trigger_irq8)                            cnt <= 8'b1;
+ 	else if(io_read_valid && io_address == 4'hE && irq8) cnt <= 8'b0;
+ end
+-
+-always @(posedge clk) begin
+-	if(~rst_n || sw_reset)                                                        irq16 <= 1'b0;
+-	else if((dma_finished || dma_auto_restart || pause_interrupt) && dma_16_req)  irq16 <= 1'b1;
+-	else if(cmd_trigger_irq16)                                                    irq16 <= 1'b1;
+-	else if(io_read_valid && io_address == 4'hF)                                  irq16 <= 1'b0;
+-end
+-
++
++always @(posedge clk) begin
++	if(~rst_n || sw_reset)                                                        irq16 <= 1'b0;
++	else if((dma_finished || dma_auto_restart || pause_interrupt) && dma_16_req)  irq16 <= 1'b1;
++	else if(cmd_trigger_irq16)                                                    irq16 <= 1'b1;
++	else if(io_read_valid && io_address == 4'hF)                                  irq16 <= 1'b0;
++end
++
+ //------------------------------------------------------------------------------ dma commands
+ 
+ localparam [4:0] S_IDLE                 = 5'd0;
+@@ -506,10 +506,10 @@ localparam [4:0] S_OUT_SINGLE_HIGH      = 5'd14;
+ localparam [4:0] S_OUT_AUTO_HIGH        = 5'd15;
+ localparam [4:0] S_IN_SINGLE_HIGH       = 5'd16;
+ localparam [4:0] S_IN_AUTO_HIGH         = 5'd17;
+-localparam [4:0] S_OUT_SINGLE_NEW       = 5'd18;
+-localparam [4:0] S_OUT_AUTO_NEW         = 5'd19;
+-localparam [4:0] S_IN_SINGLE_NEW        = 5'd20;
+-localparam [4:0] S_IN_AUTO_NEW          = 5'd21;
++localparam [4:0] S_OUT_SINGLE_NEW       = 5'd18;
++localparam [4:0] S_OUT_AUTO_NEW         = 5'd19;
++localparam [4:0] S_IN_SINGLE_NEW        = 5'd20;
++localparam [4:0] S_IN_AUTO_NEW          = 5'd21;
+ 
+ reg [4:0] dma_command;
+ 
+@@ -539,11 +539,11 @@ always @(posedge clk) begin
+ 
+ 	else if(cmd_high_single_dma_input)          dma_command <= S_IN_SINGLE_HIGH;
+ 	else if(cmd_high_auto_dma_input)            dma_command <= S_IN_AUTO_HIGH;
+-
+-	else if(cmd_new_single_output)              dma_command <= S_OUT_SINGLE_NEW;
+-	else if(cmd_new_auto_output)                dma_command <= S_OUT_AUTO_NEW;
+-	else if(cmd_new_single_input)               dma_command <= S_IN_SINGLE_NEW;
+-	else if(cmd_new_auto_input)                 dma_command <= S_IN_AUTO_NEW;
++
++	else if(cmd_new_single_output)              dma_command <= S_OUT_SINGLE_NEW;
++	else if(cmd_new_auto_output)                dma_command <= S_OUT_AUTO_NEW;
++	else if(cmd_new_single_input)               dma_command <= S_IN_SINGLE_NEW;
++	else if(cmd_new_auto_input)                 dma_command <= S_IN_AUTO_NEW;
+ 
+ 	else if(dma_single_start || dma_auto_start) dma_command <= S_IDLE;
+ end
+@@ -554,7 +554,7 @@ wire dma_single_start = dma_restart_possible && (
+     dma_command == S_OUT_SINGLE_8_BIT || dma_command == S_OUT_SINGLE_4_BIT     || dma_command == S_OUT_SINGLE_3_BIT     || dma_command == S_OUT_SINGLE_2_BIT     ||
+                                          dma_command == S_OUT_SINGLE_4_BIT_REF || dma_command == S_OUT_SINGLE_3_BIT_REF || dma_command == S_OUT_SINGLE_2_BIT_REF ||
+     dma_command == S_IN_SINGLE ||
+-    dma_command == S_OUT_SINGLE_HIGH || dma_command == S_IN_SINGLE_HIGH ||
++    dma_command == S_OUT_SINGLE_HIGH || dma_command == S_IN_SINGLE_HIGH ||
+ 	 dma_command == S_OUT_SINGLE_NEW  || dma_command == S_IN_SINGLE_NEW
+ );
+ 
+@@ -562,13 +562,13 @@ wire dma_auto_start = dma_restart_possible && (
+     dma_command == S_OUT_AUTO_8_BIT || dma_command == S_OUT_AUTO_4_BIT_REF || dma_command == S_OUT_AUTO_3_BIT_REF || dma_command == S_OUT_AUTO_2_BIT_REF ||
+     dma_command == S_IN_AUTO ||
+     dma_command == S_OUT_AUTO_HIGH || dma_command == S_IN_AUTO_HIGH ||
+-	 dma_command == S_OUT_AUTO_NEW  || dma_command == S_IN_AUTO_NEW
++	 dma_command == S_OUT_AUTO_NEW  || dma_command == S_IN_AUTO_NEW
++);
++
++wire dma_new_start = dma_restart_possible && (
++	 dma_command == S_OUT_SINGLE_NEW  || dma_command == S_IN_SINGLE_NEW ||
++	 dma_command == S_OUT_AUTO_NEW  || dma_command == S_IN_AUTO_NEW
+ );
+-
+-wire dma_new_start = dma_restart_possible && (
+-	 dma_command == S_OUT_SINGLE_NEW  || dma_command == S_IN_SINGLE_NEW ||
+-	 dma_command == S_OUT_AUTO_NEW  || dma_command == S_IN_AUTO_NEW
+-);
+ 
+ wire dma_normal_req = dma_in_progress && dma_wait == 16'd0 && adpcm_wait == 2'd0 && ~(pause_dma);
+ 
+@@ -596,7 +596,7 @@ always @(posedge clk) begin
+ 	else if(sw_reset)                           dma_left <= 17'd0;
+ 	else if(dma_single_start)                   dma_left <= {1'b0, write_buffer[7:0], write_buffer[15:8] } + 1'd1;
+ 	else if(dma_auto_start || dma_auto_restart) dma_left <= {1'b0, block_size} + 1'd1;
+-	else if(dma_ack_stereo && dma_left > 17'd0) dma_left <= dma_left - 1'd1;
++	else if(dma_ack_stereo && dma_left > 17'd0) dma_left <= dma_left - 1'd1;
+ 	else if(dma_valid && dma_left > 17'd0)      dma_left <= dma_left - 1'd1;
+ 	else if(dma_finished)                       dma_left <= 17'd0;
+ end
+@@ -613,9 +613,9 @@ reg dma_is_input;
+ always @(posedge clk) begin
+ 	if(rst_n == 1'b0)                                                         dma_is_input <= 1'b0;
+ 	else if(sw_reset)                                                         dma_is_input <= 1'b0;
+-	else if((dma_single_start || dma_auto_start) 
+-	 && (   dma_command == S_IN_SINGLE      || dma_command == S_IN_AUTO
+-	     || dma_command == S_IN_SINGLE_HIGH || dma_command == S_IN_AUTO_HIGH
++	else if((dma_single_start || dma_auto_start) 
++	 && (   dma_command == S_IN_SINGLE      || dma_command == S_IN_AUTO
++	     || dma_command == S_IN_SINGLE_HIGH || dma_command == S_IN_AUTO_HIGH
+ 		  || dma_command == S_IN_SINGLE_NEW  || dma_command == S_IN_AUTO_NEW)) dma_is_input <= 1'b1;
+ 	else if(dma_single_start || dma_auto_start)                               dma_is_input <= 1'b0;
+ end
+@@ -626,7 +626,7 @@ always @(posedge clk) begin
+ 	else if(sw_reset)              dma_autoinit <= 1'b0;
+ 	else if(dma_single_start)      dma_autoinit <= 1'b0;
+ 	else if(dma_auto_start)        dma_autoinit <= 1'b1;
+-	else if(cmd_auto_dma_exit)     dma_autoinit <= 1'b0;
++	else if(cmd_auto_dma_exit)     dma_autoinit <= 1'b0;
+ 	else if(cmd_auto_dma_continue) dma_autoinit <= 1'b1;
+ end
+ 
+@@ -653,11 +653,12 @@ end
+ // return idle.
+ localparam [1:0] S_WRITE_PORT_STATUS_IDLE = 2'd0;
+ localparam [1:0] S_WRITE_PORT_STATUS_BUSY = 2'd1;
+-localparam [1:0] S_WRITE_PORT_STATUS_IDLE_UNTIL_TIMER_RESET = 2'd2;
++localparam [1:0] S_WRITE_PORT_STATUS_BUSY_ONCE = 2'd2;
++localparam [1:0] S_WRITE_PORT_STATUS_IDLE_UNTIL_TIMER_RESET = 2'd3;
+ 
+ // The fake busy signal communicates what the software using the sound card expects, and
+ // does not mean the DSP module is actually busy.
+-wire dsp_fake_busy = (dsp_busy_state > S_WRITE_PORT_STATUS_IDLE) && (dsp_busy_state < S_WRITE_PORT_STATUS_IDLE_UNTIL_TIMER_RESET);
++wire dsp_fake_busy = (dsp_busy_state == S_WRITE_PORT_STATUS_BUSY) || (dsp_busy_state == S_WRITE_PORT_STATUS_BUSY_ONCE);
+ wire write_port_status_reply = (io_read_valid && io_address == 4'hC);
+ 
+ reg [1:0] dsp_busy_state;
+@@ -680,12 +681,12 @@ always @(posedge clk) begin
+ 		dsp_busy_state <= S_WRITE_PORT_STATUS_BUSY;
+ 	end
+ end
+-
+-reg [3:0] dma_format; // 16/8, sbp_stereo/mono, sb16_stereo/mono, signed/unsigned
+-always @(posedge clk) begin
+-	if(~rst_n || sw_reset)                     dma_format <= 0;
+-	else if(dma_new_start)                     dma_format <= {cmd_curr[4], 1'b0, write_buffer[21:20]};
+-	else if(dma_single_start | dma_auto_start) dma_format <= {1'b0, sbp_stereo, 2'b00};
++
++reg [3:0] dma_format; // 16/8, sbp_stereo/mono, sb16_stereo/mono, signed/unsigned
++always @(posedge clk) begin
++	if(~rst_n || sw_reset)                     dma_format <= 0;
++	else if(dma_new_start)                     dma_format <= {cmd_curr[4], 1'b0, write_buffer[21:20]};
++	else if(dma_single_start | dma_auto_start) dma_format <= {1'b0, sbp_stereo, 2'b00};
+ end
+ 
+ reg sbp_lr;
+@@ -696,19 +697,19 @@ end
+ 
+ wire   dma_16_req = dma_format[3];
+ wire   dma_16_use = dma_16_req & dma_16_en;
+-
++
+ wire   dma_req   = dma_id_active || dma_normal_req;
+ assign dma_req8  = dma_req & ~dma_16_use;
+ assign dma_req16 = dma_req &  dma_16_use;
+ 
+-wire   dma_ack_w      = dma_ack_f & (~dma_format[1] |  sample_lr);
+-wire   dma_ack_stereo = dma_ack_f & ( dma_format[1] & ~sample_lr);
+-
+-reg        sample_output;
++wire   dma_ack_w      = dma_ack_f & (~dma_format[1] |  sample_lr);
++wire   dma_ack_stereo = dma_ack_f & ( dma_format[1] & ~sample_lr);
++
++reg        sample_output;
+ reg        sample_lr;
+-reg [15:0] sample_dma[2];
+-always @(posedge clk) begin
+-	sample_lr <= dma_req & (sample_lr ^ (dma_ack_f & dma_format[1]));
++reg [15:0] sample_dma[2];
++always @(posedge clk) begin
++	sample_lr <= dma_req & (sample_lr ^ (dma_ack_f & dma_format[1]));
+ 	sample_output <= dma_output;
+ 
+ 	if(dma_ack) begin
+@@ -717,7 +718,7 @@ always @(posedge clk) begin
+ 		else if(~dma_hcnt) sample_dma[sample_lr][7:0]  <= dma_readdata[7:0];
+ 		else               sample_dma[sample_lr][15:8] <= dma_readdata[7:0];
+ 	end
+-end
++end
+ 
+ wire dma_ack_f = dma_ack & (dma_hcnt | dma_16_en | ~dma_16_req);
+ reg  dma_hcnt;
+@@ -899,29 +900,29 @@ wire [2:0] adpcm_4bit_step_next =
+ 
+ //------------------------------------------------------------------------------
+ 
+-wire [15:0] sample =
+-    (adpcm_reference_output)?   {adpcm_sample, adpcm_sample} :
+-    (adpcm_active)?             {adpcm_active_value, adpcm_active_value} :
+-                                {write_buffer[7:0], write_buffer[7:0]};
++wire [15:0] sample =
++    (adpcm_reference_output)?   {adpcm_sample, adpcm_sample} :
++    (adpcm_active)?             {adpcm_active_value, adpcm_active_value} :
++                                {write_buffer[7:0], write_buffer[7:0]};
+ 
+ always @(posedge clk) begin
+-	if((~speaker_on & sbp) | pause_active) begin
+-		sample_value_l <= 0;
+-		sample_value_r <= 0;
+-	end
++	if((~speaker_on & sbp) | pause_active) begin
++		sample_value_l <= 0;
++		sample_value_r <= 0;
++	end
+ 	else if(sample_output && adpcm_type == ADPCM_NONE) begin
+ 		if(dma_format[2]) begin
+ 			if(~sbp_lr) sample_value_l <= {sample_dma[0][15] ^ ~dma_format[0], sample_dma[0][14:0]};
+ 			else        sample_value_r <= {sample_dma[0][15] ^ ~dma_format[0], sample_dma[0][14:0]};
+ 		end
+-		else begin
++		else begin
+ 			sample_value_l <= {            sample_dma[0][15] ^ ~dma_format[0],            sample_dma[0][14:0]};
+ 			sample_value_r <= {sample_dma[dma_format[1]][15] ^ ~dma_format[0], sample_dma[dma_format[1]][14:0]};
+-		end
+-	end
+-	else if(cmd_direct_output | adpcm_active | (~adpcm_reference_awaiting & adpcm_reference_output)) begin
+-		sample_value_l <= {~sample[15], sample[14:0]};
+-		sample_value_r <= {~sample[15], sample[14:0]};
++		end
++	end
++	else if(cmd_direct_output | adpcm_active | (~adpcm_reference_awaiting & adpcm_reference_output)) begin
++		sample_value_l <= {~sample[15], sample[14:0]};
++		sample_value_r <= {~sample[15], sample[14:0]};
+ 	end
+ end

@@ -1,0 +1,3330 @@
+From 6379fd95d81ab21dcf5dab2f67348ba65e4a30b8 Mon Sep 17 00:00:00 2001
+From: Luca Hanel <lhanel@protonmail.com>
+Date: Tue, 4 Aug 2020 09:56:53 +0200
+Subject: [PATCH 01/12] test to be extended
+
+---
+ rtl/core_wrapper.sv                           |   2 +-
+ tests/rtl/tests/simple_c_program/Makefile     |  22 ++
+ tests/rtl/tests/simple_c_program/build/test   | Bin 0 -> 812 bytes
+ .../rtl/tests/simple_c_program/build/test.bin | Bin 0 -> 88 bytes
+ .../tests/simple_c_program/build/test.bin.dmp |   7 +
+ .../tests/simple_c_program/build/test.bin.tcl |  93 ++++++++
+ .../rtl/tests/simple_c_program/build/test.dmp |  31 +++
+ tests/rtl/tests/simple_c_program/crt.s        |   5 +
+ tests/rtl/tests/simple_c_program/hexlify.py   |  19 ++
+ tests/rtl/tests/simple_c_program/main.hex     |  22 ++
+ tests/rtl/tests/simple_c_program/main.hex.dmp |   7 +
+ tests/rtl/tests/simple_c_program/result.txt   |  23 ++
+ tests/rtl/tests/simple_c_program/sim_main.cpp | 210 ++++++++++++++++++
+ tests/rtl/tests/simple_c_program/test.c       |   8 +
+ tests/rtl/tests/simple_c_program/testbench.h  |   1 +
+ tests/rtl/tests/simple_c_program/vrltr.mk     |  71 ++++++
+ 16 files changed, 520 insertions(+), 1 deletion(-)
+ create mode 100644 tests/rtl/tests/simple_c_program/Makefile
+ create mode 100755 tests/rtl/tests/simple_c_program/build/test
+ create mode 100755 tests/rtl/tests/simple_c_program/build/test.bin
+ create mode 100644 tests/rtl/tests/simple_c_program/build/test.bin.dmp
+ create mode 100644 tests/rtl/tests/simple_c_program/build/test.bin.tcl
+ create mode 100644 tests/rtl/tests/simple_c_program/build/test.dmp
+ create mode 100644 tests/rtl/tests/simple_c_program/crt.s
+ create mode 100644 tests/rtl/tests/simple_c_program/hexlify.py
+ create mode 100644 tests/rtl/tests/simple_c_program/main.hex
+ create mode 100644 tests/rtl/tests/simple_c_program/main.hex.dmp
+ create mode 100644 tests/rtl/tests/simple_c_program/result.txt
+ create mode 100644 tests/rtl/tests/simple_c_program/sim_main.cpp
+ create mode 100644 tests/rtl/tests/simple_c_program/test.c
+ create mode 120000 tests/rtl/tests/simple_c_program/testbench.h
+ create mode 100644 tests/rtl/tests/simple_c_program/vrltr.mk
+
+diff --git a/rtl/core_wrapper.sv b/rtl/core_wrapper.sv
+index c6a5b59..a6a7b9f 100644
+--- a/rtl/core_wrapper.sv
++++ b/rtl/core_wrapper.sv
+@@ -74,7 +74,7 @@ dbg_module dbg_module_i (
+ );
+ 
+ wb_ram_wrapper #(
+-  .SIZE (32)
++  .SIZE (1024)
+ ) ram_i (
+   .clk    ( clk       ),
+   .rstn_i ( rstn_i    ),
+diff --git a/tests/rtl/tests/simple_c_program/Makefile b/tests/rtl/tests/simple_c_program/Makefile
+new file mode 100644
+index 0000000..42b0c8e
+--- /dev/null
++++ b/tests/rtl/tests/simple_c_program/Makefile
+@@ -0,0 +1,22 @@
++
++RISCV_GCC_OPTS ?= -DPREALLOCATE=1 -mcmodel=medany -march=rv32i -mabi=ilp32 -static -std=gnu99 -O0 -ffast-math -fno-common -fno-builtin-printf
++RISCV_LINK_OPTS ?= -march=rv32i -mabi=ilp32 -static -nostdlib -nostartfiles -lm -lgcc
++RISCV_OBJDUMP_OPTS ?= -d
++
++all: build
++
++.PHONY: build
++build:
++	@if [ ! -d "./build" ]; then mkdir build; fi
++
++%: %.c build
++	riscv64-unknown-linux-gnu-gcc crt.s $< $(RISCV_GCC_OPTS) -o build/$@ $(RISCV_LINK_OPTS)
++	@riscv64-unknown-linux-gnu-objdump $(RISCV_OBJDUMP_OPTS) build/$@ > build/$@.dmp
++	@riscv64-unknown-linux-gnu-objcopy -O binary build/$@ build/$@.bin
++	@hexdump build/$@.bin > main.hex.dmp
++	@python3 hexlify.py
++	make -f vrltr.mk
++
++.PHONY: clean
++clean:
++	rm -rf build
+\ No newline at end of file
+diff --git a/tests/rtl/tests/simple_c_program/build/test b/tests/rtl/tests/simple_c_program/build/test
+new file mode 100755
+index 0000000000000000000000000000000000000000..36ed6b489d8207e6c5a82357d13143bbbf2cb83d
+GIT binary patch
+literal 812
+zcma)4Jxc>Y5S_imM7uL76m23G{3;FwQBVtw#vn*gqGBV<#T*()a+2FZK~Pb!74irC
+z3H}I63u`Mu#9FkJ(>J*+n5!I^ee>qc4!b*hp5Is#LXb9tK8cyaIs;rZLS=?BWY9Pz
+zsHd%mS*{fHh?TvElP1yDo2qaawFDB7X|A8hqa{iU5m@#mrQ^bAC6^M`=vQE6<AFyP
+z#?{zE5F5J=th;yOxOI~htY0D5x)~rV`_<N4$y<7Te*gB+x3ID@pBXO{cP28^Q}(ny
+z6+J+Q^WE5De{K?Tqbn1qkDp!$kAq>o2|mQ!)LhU4xbA0S_hdw$jqn`!8R|BHDPSR@
+z??(83gp+c8Wgn1~hc&P4)a0>OZ78>yMW(d6yuB=Q`NDcpO7L8%B=g19c3k#-=_{wH
+zsP0r75W8#LilZEoZUcj}{nNT~%0Sf&@kmF?JyB#Ic=fv5P&nEDY#3$yVmyC-E8e*W
+z*B0*tBS5axbK^gi>SzqCY43c?w)%qg3C?}An~3}1F}SvSY%Xg8<X&v}j$L&rH0L>L
+G({;awF>R#)
+
+literal 0
+HcmV?d00001
+
+diff --git a/tests/rtl/tests/simple_c_program/build/test.bin b/tests/rtl/tests/simple_c_program/build/test.bin
+new file mode 100755
+index 0000000000000000000000000000000000000000..fd62dbf8ab7aa414cc2b05b9c0e7b5433eb0ec05
+GIT binary patch
+literal 88
+zcmXpPWMIf=a9|K-Wc;VB*T^8u!pJn4-GNP6?aM!96_$Vb3=K@p>PP-DtGE19Uhtd&
+k#Gc&F&Ipok28vB?7iUmb`2v=o%szqP@vY~7@);Ny0Jl6KQUCw|
+
+literal 0
+HcmV?d00001
+
+diff --git a/tests/rtl/tests/simple_c_program/build/test.bin.dmp b/tests/rtl/tests/simple_c_program/build/test.bin.dmp
+new file mode 100644
+index 0000000..cd2e90d
+--- /dev/null
++++ b/tests/rtl/tests/simple_c_program/build/test.bin.dmp
+@@ -0,0 +1,7 @@
++0000000 1137 0000 006f 0040 0113 fe01 2e23 0081
++0000010 0413 0201 0793 0640 2623 fef4 2423 fe04
++0000020 006f 0280 2783 fec4 2703 fe84 a023 00e7
++0000030 2783 fec4 8793 0107 2623 fef4 2783 fe84
++0000040 8793 0017 2423 fef4 2703 fe84 0793 0090
++0000050 dae3 fce7 006f 0000                    
++0000058
+diff --git a/tests/rtl/tests/simple_c_program/build/test.bin.tcl b/tests/rtl/tests/simple_c_program/build/test.bin.tcl
+new file mode 100644
+index 0000000..eb658ac
+--- /dev/null
++++ b/tests/rtl/tests/simple_c_program/build/test.bin.tcl
+@@ -0,0 +1,93 @@
++# Create new write transaction
++reset_hw_axi [get_hw_axis hw_axi_1]
++create_hw_axi_txn wr_txn [get_hw_axis hw_axi_1] -address 0x0 -data affeaffe -len 1 -type write
++
++# Write instructions to BRAM
++set_property CMD.ADDR 0x0 [get_hw_axi_txns wr_txn]
++set_property DATA 0x00001137 [get_hw_axi_txns wr_txn]
++run_hw_axi [get_hw_axi_txns wr_txn]
++
++set_property CMD.ADDR 0x4 [get_hw_axi_txns wr_txn]
++set_property DATA 0x0040006f [get_hw_axi_txns wr_txn]
++run_hw_axi [get_hw_axi_txns wr_txn]
++
++set_property CMD.ADDR 0x8 [get_hw_axi_txns wr_txn]
++set_property DATA 0xfe010113 [get_hw_axi_txns wr_txn]
++run_hw_axi [get_hw_axi_txns wr_txn]
++
++set_property CMD.ADDR 0xc [get_hw_axi_txns wr_txn]
++set_property DATA 0x00812e23 [get_hw_axi_txns wr_txn]
++run_hw_axi [get_hw_axi_txns wr_txn]
++
++set_property CMD.ADDR 0x10 [get_hw_axi_txns wr_txn]
++set_property DATA 0x02010413 [get_hw_axi_txns wr_txn]
++run_hw_axi [get_hw_axi_txns wr_txn]
++
++set_property CMD.ADDR 0x14 [get_hw_axi_txns wr_txn]
++set_property DATA 0x06400793 [get_hw_axi_txns wr_txn]
++run_hw_axi [get_hw_axi_txns wr_txn]
++
++set_property CMD.ADDR 0x18 [get_hw_axi_txns wr_txn]
++set_property DATA 0xfef42623 [get_hw_axi_txns wr_txn]
++run_hw_axi [get_hw_axi_txns wr_txn]
++
++set_property CMD.ADDR 0x1c [get_hw_axi_txns wr_txn]
++set_property DATA 0xfe042423 [get_hw_axi_txns wr_txn]
++run_hw_axi [get_hw_axi_txns wr_txn]
++
++set_property CMD.ADDR 0x20 [get_hw_axi_txns wr_txn]
++set_property DATA 0x0280006f [get_hw_axi_txns wr_txn]
++run_hw_axi [get_hw_axi_txns wr_txn]
++
++set_property CMD.ADDR 0x24 [get_hw_axi_txns wr_txn]
++set_property DATA 0xfec42783 [get_hw_axi_txns wr_txn]
++run_hw_axi [get_hw_axi_txns wr_txn]
++
++set_property CMD.ADDR 0x28 [get_hw_axi_txns wr_txn]
++set_property DATA 0xfe842703 [get_hw_axi_txns wr_txn]
++run_hw_axi [get_hw_axi_txns wr_txn]
++
++set_property CMD.ADDR 0x2c [get_hw_axi_txns wr_txn]
++set_property DATA 0x00e7a023 [get_hw_axi_txns wr_txn]
++run_hw_axi [get_hw_axi_txns wr_txn]
++
++set_property CMD.ADDR 0x30 [get_hw_axi_txns wr_txn]
++set_property DATA 0xfec42783 [get_hw_axi_txns wr_txn]
++run_hw_axi [get_hw_axi_txns wr_txn]
++
++set_property CMD.ADDR 0x34 [get_hw_axi_txns wr_txn]
++set_property DATA 0x01078793 [get_hw_axi_txns wr_txn]
++run_hw_axi [get_hw_axi_txns wr_txn]
++
++set_property CMD.ADDR 0x38 [get_hw_axi_txns wr_txn]
++set_property DATA 0xfef42623 [get_hw_axi_txns wr_txn]
++run_hw_axi [get_hw_axi_txns wr_txn]
++
++set_property CMD.ADDR 0x3c [get_hw_axi_txns wr_txn]
++set_property DATA 0xfe842783 [get_hw_axi_txns wr_txn]
++run_hw_axi [get_hw_axi_txns wr_txn]
++
++set_property CMD.ADDR 0x40 [get_hw_axi_txns wr_txn]
++set_property DATA 0x00178793 [get_hw_axi_txns wr_txn]
++run_hw_axi [get_hw_axi_txns wr_txn]
++
++set_property CMD.ADDR 0x44 [get_hw_axi_txns wr_txn]
++set_property DATA 0xfef42423 [get_hw_axi_txns wr_txn]
++run_hw_axi [get_hw_axi_txns wr_txn]
++
++set_property CMD.ADDR 0x48 [get_hw_axi_txns wr_txn]
++set_property DATA 0xfe842703 [get_hw_axi_txns wr_txn]
++run_hw_axi [get_hw_axi_txns wr_txn]
++
++set_property CMD.ADDR 0x4c [get_hw_axi_txns wr_txn]
++set_property DATA 0x00900793 [get_hw_axi_txns wr_txn]
++run_hw_axi [get_hw_axi_txns wr_txn]
++
++set_property CMD.ADDR 0x50 [get_hw_axi_txns wr_txn]
++set_property DATA 0xfce7dae3 [get_hw_axi_txns wr_txn]
++run_hw_axi [get_hw_axi_txns wr_txn]
++
++set_property CMD.ADDR 0x54 [get_hw_axi_txns wr_txn]
++set_property DATA 0x0000006f [get_hw_axi_txns wr_txn]
++run_hw_axi [get_hw_axi_txns wr_txn]
++
+diff --git a/tests/rtl/tests/simple_c_program/build/test.dmp b/tests/rtl/tests/simple_c_program/build/test.dmp
+new file mode 100644
+index 0000000..df3a299
+--- /dev/null
++++ b/tests/rtl/tests/simple_c_program/build/test.dmp
+@@ -0,0 +1,31 @@
++
++build/test:     file format elf32-littleriscv
++
++
++Disassembly of section .text:
++
++00010074 <_start>:
++   10074:	00001137          	lui	sp,0x1
++   10078:	0040006f          	j	1007c <main>
++
++0001007c <main>:
++   1007c:	fe010113          	addi	sp,sp,-32 # fe0 <_start-0xf094>
++   10080:	00812e23          	sw	s0,28(sp)
++   10084:	02010413          	addi	s0,sp,32
++   10088:	06400793          	li	a5,100
++   1008c:	fef42623          	sw	a5,-20(s0)
++   10090:	fe042423          	sw	zero,-24(s0)
++   10094:	0280006f          	j	100bc <main+0x40>
++   10098:	fec42783          	lw	a5,-20(s0)
++   1009c:	fe842703          	lw	a4,-24(s0)
++   100a0:	00e7a023          	sw	a4,0(a5)
++   100a4:	fec42783          	lw	a5,-20(s0)
++   100a8:	01078793          	addi	a5,a5,16
++   100ac:	fef42623          	sw	a5,-20(s0)
++   100b0:	fe842783          	lw	a5,-24(s0)
++   100b4:	00178793          	addi	a5,a5,1
++   100b8:	fef42423          	sw	a5,-24(s0)
++   100bc:	fe842703          	lw	a4,-24(s0)
++   100c0:	00900793          	li	a5,9
++   100c4:	fce7dae3          	bge	a5,a4,10098 <main+0x1c>
++   100c8:	0000006f          	j	100c8 <main+0x4c>
+diff --git a/tests/rtl/tests/simple_c_program/crt.s b/tests/rtl/tests/simple_c_program/crt.s
+new file mode 100644
+index 0000000..3f199d6
+--- /dev/null
++++ b/tests/rtl/tests/simple_c_program/crt.s
+@@ -0,0 +1,5 @@
++.globl _start
++_start:
++    li sp,4096
++    j main
++    
+\ No newline at end of file
+diff --git a/tests/rtl/tests/simple_c_program/hexlify.py b/tests/rtl/tests/simple_c_program/hexlify.py
+new file mode 100644
+index 0000000..3b5a562
+--- /dev/null
++++ b/tests/rtl/tests/simple_c_program/hexlify.py
+@@ -0,0 +1,19 @@
++#!/usr/bin/env python3
++
++hexdmp = open("main.hex.dmp", 'r')
++nicehex = open("main.hex", 'w')
++
++newline=''
++for line in hexdmp:
++    line = line[:-1].split(' ')
++    if(len(line) > 2):
++        for i in range(1, len(line), 2):
++            newline = line[i+1] + line[i]
++            if(len(newline) == 8):
++                nicehex.write(newline + '\n')
++                print(newline + '  ' + bin(int(newline,16)))
++
++hexdmp.close()
++nicehex.close()
++
++        
+\ No newline at end of file
+diff --git a/tests/rtl/tests/simple_c_program/main.hex b/tests/rtl/tests/simple_c_program/main.hex
+new file mode 100644
+index 0000000..351cd30
+--- /dev/null
++++ b/tests/rtl/tests/simple_c_program/main.hex
+@@ -0,0 +1,22 @@
++00001137
++0040006f
++fe010113
++00812e23
++02010413
++06400793
++fef42623
++fe042423
++0280006f
++fec42783
++fe842703
++00e7a023
++fec42783
++01078793
++fef42623
++fe842783
++00178793
++fef42423
++fe842703
++00900793
++fce7dae3
++0000006f
+diff --git a/tests/rtl/tests/simple_c_program/main.hex.dmp b/tests/rtl/tests/simple_c_program/main.hex.dmp
+new file mode 100644
+index 0000000..cd2e90d
+--- /dev/null
++++ b/tests/rtl/tests/simple_c_program/main.hex.dmp
+@@ -0,0 +1,7 @@
++0000000 1137 0000 006f 0040 0113 fe01 2e23 0081
++0000010 0413 0201 0793 0640 2623 fef4 2423 fe04
++0000020 006f 0280 2783 fec4 2703 fe84 a023 00e7
++0000030 2783 fec4 8793 0107 2623 fef4 2783 fe84
++0000040 8793 0017 2423 fef4 2703 fe84 0793 0090
++0000050 dae3 fce7 006f 0000                    
++0000058
+diff --git a/tests/rtl/tests/simple_c_program/result.txt b/tests/rtl/tests/simple_c_program/result.txt
+new file mode 100644
+index 0000000..c34c9d0
+--- /dev/null
++++ b/tests/rtl/tests/simple_c_program/result.txt
+@@ -0,0 +1,23 @@
++1137
++40006F
++FE010113
++812E23
++2010413
++6400793
++FEF42623
++FE042423
++280006F
++FEC42783
++FE842703
++E7A023
++FEC42783
++1078793
++FEF42623
++FE842783
++178793
++FEF42423
++FE842703
++900793
++FCE7DAE3
++6F
++FAILED 1
+diff --git a/tests/rtl/tests/simple_c_program/sim_main.cpp b/tests/rtl/tests/simple_c_program/sim_main.cpp
+new file mode 100644
+index 0000000..1db19c7
+--- /dev/null
++++ b/tests/rtl/tests/simple_c_program/sim_main.cpp
+@@ -0,0 +1,210 @@
++#include <verilated.h>
++#include "Vcore_wrapper.h"
++#include "testbench.h"
++
++TESTBENCH<Vcore_wrapper> *tb;
++
++int read_mem(int addr){
++    while(tb->m_core->dbg_ready_o == 0)
++        tb->tick();
++    tb->m_core->dbg_addr_i = addr;
++    tb->m_core->dbg_cmd_i = 0x01;
++    tb->tick();
++    while(tb->m_core->dbg_ready_o == 0)
++        tb->tick();
++    tb->m_core->dbg_cmd_i = 0x0;
++    return (int) tb->m_core->dbg_data_o;
++}
++
++int read_reg(int reg){
++    while(tb->m_core->dbg_ready_o == 0)
++        tb->tick();
++    tb->m_core->dbg_addr_i = reg;
++    tb->m_core->dbg_cmd_i = 0x13;
++    tb->tick();
++    while(tb->m_core->dbg_ready_o == 0)
++        tb->tick();
++    tb->m_core->dbg_cmd_i = 0x0;
++    return (int) tb->m_core->dbg_data_o;
++}
++
++void write_reg(int reg, int data){
++    while(tb->m_core->dbg_ready_o == 0)
++        tb->tick();
++    tb->m_core->dbg_addr_i = reg;
++    tb->m_core->dbg_cmd_i = 0x14;
++    tb->m_core->dbg_data_i = data;
++    tb->tick();
++    while(tb->m_core->dbg_ready_o == 0)
++        tb->tick();
++    tb->m_core->dbg_cmd_i = 0x0;
++    tb->tick();
++}
++
++void write(int addr, int data){
++    while(tb->m_core->dbg_ready_o == 0)
++        tb->tick();
++    tb->m_core->dbg_addr_i = addr;
++    tb->m_core->dbg_data_i = data;
++    tb->m_core->dbg_cmd_i = 0x02;
++    tb->tick();
++    while(tb->m_core->dbg_ready_o == 0)
++        tb->tick();
++    tb->m_core->dbg_cmd_i = 0x0;
++    tb->tick();
++}
++
++void halt_core(){
++    while(tb->m_core->dbg_ready_o == 0)
++        tb->tick();
++    tb->m_core->dbg_cmd_i = 0x11;
++    tb->tick();
++    tb->m_core->dbg_cmd_i = 0x0;
++}
++
++void resume_core(){
++    while(tb->m_core->dbg_ready_o == 0)
++        tb->tick();
++    tb->m_core->dbg_cmd_i = 0x12;
++    tb->tick();
++    tb->m_core->dbg_cmd_i = 0x0;
++}
++
++void reset_core(){
++    while(tb->m_core->dbg_ready_o == 0)
++        tb->tick();
++    tb->m_core->dbg_cmd_i = 0x03;
++    tb->tick();
++    tb->m_core->dbg_cmd_i = 0x0;
++}
++
++int read_pc(){
++    while(tb->m_core->dbg_ready_o == 0)
++        tb->tick();
++    tb->m_core->dbg_cmd_i = 0x15;
++    tb->tick();
++    while(tb->m_core->dbg_ready_o == 0)
++        tb->tick();
++    tb->m_core->dbg_cmd_i = 0x0;
++    return (int) tb->m_core->dbg_data_o;
++}
++
++void set_pc(int pc){
++    while(tb->m_core->dbg_ready_o == 0)
++        tb->tick();
++    tb->m_core->dbg_cmd_i = 0x16;
++    tb->m_core->dbg_data_i = pc;
++    tb->tick();
++    while(tb->m_core->dbg_ready_o == 0)
++        tb->tick();
++    tb->m_core->dbg_cmd_i = 0x0;
++    tb->tick();
++}
++
++void load_program(int program[1024], int len, int startAddr){
++    halt_core();
++    for(int i = 0; i < len; i++){
++        write(startAddr + 4*i, program[i]);
++    }
++}
++
++int test_registers(){
++    // Register 0 should never be changed
++    write_reg(0x0, 0xff);
++    if(read_reg(0x0) != 0x0)
++        return 1;
++    
++    for(int i = 1; i < 32; i++){
++        write_reg(i, 0xf00+i);
++        if(read_reg(i) != (0xf00+i))
++            return i;
++        // Clear register again
++        write_reg(i, 0x0);
++    }
++
++    return 0;
++}
++
++int main(int argc, char** argv, char** env) {
++    int program[1024];
++    int instr_cnt = 0;
++    size_t len = 0;
++    ssize_t read;
++    char * line = NULL;
++    FILE *fp;
++    fp = fopen("main.hex", "r");
++    if(fp){
++        while((read = getline(&line, &len, fp)) != -1){
++            program[instr_cnt] = (int)strtol(line, NULL, 16);;
++            instr_cnt +=1;
++        }
++    } else {
++        std::cout << "Error reading dump" << std::endl;
++        exit(-10);
++    }
++
++    fclose(fp);
++    if(line)
++        free(line);
++
++    for(int i = 0; i < instr_cnt; i++)
++        printf("%X\n", program[i]);
++
++    int exp_mem[10][2];
++    exp_mem[0][0] = 0x18;
++    exp_mem[0][1] = 0x12;
++    
++    Verilated::commandArgs(argc, argv);
++    tb = new TESTBENCH<Vcore_wrapper>();
++    tb->opentrace("logs/trace.vcd");
++
++    int result = 0;
++
++    // Initialize inputs
++
++    // Reset
++    tb->reset();
++
++    // Stop the core
++    halt_core();
++
++    // Test reading and writing to register        
++    // result = test_registers();
++    // if(result != 0){
++    //     std::cout << "regcheck FAILED " << result << std::endl;
++    //     exit(0);
++    // }
++    // Load the program
++    load_program(program, instr_cnt, 0x0);
++    // Resume the core
++    set_pc(0x0);
++    resume_core();
++
++    for(int i = 0; i < 1000; i++){
++        tb->tick();
++    }
++    int data;
++    if(data = read_mem(exp_mem[0][0]*4) != exp_mem[0][1])
++        std::cout << "FAILED " << data << std::endl;
++    else
++        std::cout << "PASSED" << std::endl;
++    
++
++    // Cleanup
++    tb->tick();
++    tb->m_core->final();
++
++    // Evaluate test
++    // if(result == 0)
++    //     std::cout << "PASSED" << std::endl;
++    // else
++    //     std::cout << "FAILED " << result << std::endl;
++    
++    //  Coverage analysis (since test passed)
++    VerilatedCov::write("logs/coverage.dat");
++
++    // Destroy model
++    delete tb->m_core; tb->m_core = NULL;
++
++    exit(0);
++}
+diff --git a/tests/rtl/tests/simple_c_program/test.c b/tests/rtl/tests/simple_c_program/test.c
+new file mode 100644
+index 0000000..24d2c81
+--- /dev/null
++++ b/tests/rtl/tests/simple_c_program/test.c
+@@ -0,0 +1,8 @@
++int main() {
++    int *addr = (int*)100;
++    for(int i = 0; i < 10; i++) {
++        (*addr) = i;
++        addr+=4;
++    }
++    while(1);
++}
+\ No newline at end of file
+diff --git a/tests/rtl/tests/simple_c_program/testbench.h b/tests/rtl/tests/simple_c_program/testbench.h
+new file mode 120000
+index 0000000..dae1ff5
+--- /dev/null
++++ b/tests/rtl/tests/simple_c_program/testbench.h
+@@ -0,0 +1 @@
++../../common/testbench.h
+\ No newline at end of file
+diff --git a/tests/rtl/tests/simple_c_program/vrltr.mk b/tests/rtl/tests/simple_c_program/vrltr.mk
+new file mode 100644
+index 0000000..2399f21
+--- /dev/null
++++ b/tests/rtl/tests/simple_c_program/vrltr.mk
+@@ -0,0 +1,71 @@
++######################################################################
++# Check for sanity to avoid later confusion
++
++ifneq ($(words $(CURDIR)),1)
++ $(error Unsupported: GNU Make cannot build in directories containing spaces, build elsewhere: '$(CURDIR)')
++endif
++
++######################################################################
++# Set up variables
++
++# If $VERILATOR_ROOT isn't in the environment, we assume it is part of a
++# package inatall, and verilator is in your path. Otherwise find the
++# binary relative to $VERILATOR_ROOT (such as when inside the git sources).
++ifeq ($(VERILATOR_ROOT),)
++VERILATOR = verilator
++VERILATOR_COVERAGE = verilator_coverage
++else
++export VERILATOR_ROOT
++VERILATOR = $(VERILATOR_ROOT)/bin/verilator
++VERILATOR_COVERAGE = $(VERILATOR_ROOT)/bin/verilator_coverage
++endif
++
++VERILATOR_FLAGS =
++# Generate C++ in executable form
++VERILATOR_FLAGS += -cc --exe
++# Optimize
++VERILATOR_FLAGS += -O2 -x-assign 0
++# Warn abount lint issues; may not want this on less solid designs
++VERILATOR_FLAGS += -Wall
++# Make waveforms
++VERILATOR_FLAGS += --trace
++# Check SystemVerilog assertions
++VERILATOR_FLAGS += --assert
++# Generate coverage analysis
++VERILATOR_FLAGS += --coverage
++VERILATOR_FLAGS += --trace-structs
++# VERILATOR_FLAGS += --prefix top
++
++INCLUDE := $(shell cat ../../common/sources.txt)
++
++VERILATOR_FLAGS += --top-module core_wrapper
++
++######################################################################
++default: run
++
++run:
++	@echo "-- VERILATE ----------------"
++	$(VERILATOR) $(VERILATOR_FLAGS) $(INCLUDE) sim_main.cpp
++
++	@echo
++	@echo "-- COMPILE -----------------"
++	# $(MAKE) -j 4 -C obj_dir -f top.mk 
++	$(MAKE) -j 4 -C obj_dir -f Vcore_wrapper.mk 
++	
++
++	@echo
++	@echo "-- RUN ---------------------"
++	@mkdir -p logs
++	# obj_dir/top --trace > result.txt
++	obj_dir/Vcore_wrapper --trace > result.txt
++
++	@echo
++	@echo "-- COVERAGE ----------------"
++	$(VERILATOR_COVERAGE) --annotate logs/annotated logs/coverage.dat
++
++	@echo
++	@echo "-- TEST RESULT -------------"
++	@echo "   `cat result.txt`"
++
++clean:
++	-rm -rf obj_dir logs *.log *.dmp *.vpd coverage.dat result.txt
+
+From 69a9d79bb9d44d23b341fd5853c346f7d34288f8 Mon Sep 17 00:00:00 2001
+From: Luca Hanel <lhanel@protonmail.com>
+Date: Tue, 4 Aug 2020 20:47:07 +0200
+Subject: [PATCH 02/12] bugfix in progress
+
+---
+ .gitignore                                    |   3 +-
+ ips/load_store_unit                           |   2 +-
+ rtl/core/pipelineStages/mem/MEM_stage.sv      |   4 +-
+ rtl/core_wrapper.sv                           |   2 +-
+ tests/rtl/tests/simple_c_program/build/test   | Bin 812 -> 0 bytes
+ .../rtl/tests/simple_c_program/build/test.bin | Bin 88 -> 0 bytes
+ .../tests/simple_c_program/build/test.bin.dmp |   7 --
+ .../tests/simple_c_program/build/test.bin.tcl |  93 ------------------
+ .../rtl/tests/simple_c_program/build/test.dmp |  31 ------
+ tests/rtl/tests/simple_c_program/crt.s        |   2 +-
+ tests/rtl/tests/simple_c_program/hexlify.py   |   2 +-
+ tests/rtl/tests/simple_c_program/main.hex     |  22 -----
+ tests/rtl/tests/simple_c_program/main.hex.dmp |   7 --
+ tests/rtl/tests/simple_c_program/result.txt   |  33 ++-----
+ tests/rtl/tests/simple_c_program/sim_main.cpp |  27 +++--
+ tests/rtl/tests/simple_c_program/test.c       |   4 +-
+ 16 files changed, 34 insertions(+), 205 deletions(-)
+ delete mode 100755 tests/rtl/tests/simple_c_program/build/test
+ delete mode 100755 tests/rtl/tests/simple_c_program/build/test.bin
+ delete mode 100644 tests/rtl/tests/simple_c_program/build/test.bin.dmp
+ delete mode 100644 tests/rtl/tests/simple_c_program/build/test.bin.tcl
+ delete mode 100644 tests/rtl/tests/simple_c_program/build/test.dmp
+ delete mode 100644 tests/rtl/tests/simple_c_program/main.hex
+ delete mode 100644 tests/rtl/tests/simple_c_program/main.hex.dmp
+
+diff --git a/.gitignore b/.gitignore
+index 406c131..bd2d8c3 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -1,5 +1,7 @@
+ /**/logs
+ /**/obj_dir
++/**/build
++/**/*.hex*
+ *.sim
+ *.runs
+ *.hbs
+@@ -17,4 +19,3 @@
+ *.xpr
+ .Xil
+ *.zip
+-/ips/*/ip
+\ No newline at end of file
+diff --git a/ips/load_store_unit b/ips/load_store_unit
+index e265efd..08f3f2f 160000
+--- a/ips/load_store_unit
++++ b/ips/load_store_unit
+@@ -1 +1 @@
+-Subproject commit e265efd4d3be2cb78aefa573bc01e74536d539f3
++Subproject commit 08f3f2fdb388dcb7087b86d14a75f29d4e50ecb2
+diff --git a/rtl/core/pipelineStages/mem/MEM_stage.sv b/rtl/core/pipelineStages/mem/MEM_stage.sv
+index 1bb5f69..b4702d7 100644
+--- a/rtl/core/pipelineStages/mem/MEM_stage.sv
++++ b/rtl/core/pipelineStages/mem/MEM_stage.sv
+@@ -85,8 +85,10 @@ begin
+     lsu_we  = 'b0;
+ 
+     // Data is no longer valid if we recieved and ack
+-    if(ack_i)
++    if(ack_i) begin
+         data_n.valid = 1'b0;
++        lsu_valid_n = 1'b0;
++    end
+ 
+     case(instr_i[6:0])
+         // In case of LOAD or STORE, we give the respective signal
+diff --git a/rtl/core_wrapper.sv b/rtl/core_wrapper.sv
+index a6a7b9f..44bb282 100644
+--- a/rtl/core_wrapper.sv
++++ b/rtl/core_wrapper.sv
+@@ -74,7 +74,7 @@ dbg_module dbg_module_i (
+ );
+ 
+ wb_ram_wrapper #(
+-  .SIZE (1024)
++  .SIZE (2048)
+ ) ram_i (
+   .clk    ( clk       ),
+   .rstn_i ( rstn_i    ),
+diff --git a/tests/rtl/tests/simple_c_program/build/test b/tests/rtl/tests/simple_c_program/build/test
+deleted file mode 100755
+index 36ed6b489d8207e6c5a82357d13143bbbf2cb83d..0000000000000000000000000000000000000000
+GIT binary patch
+literal 0
+HcmV?d00001
+
+literal 812
+zcma)4Jxc>Y5S_imM7uL76m23G{3;FwQBVtw#vn*gqGBV<#T*()a+2FZK~Pb!74irC
+z3H}I63u`Mu#9FkJ(>J*+n5!I^ee>qc4!b*hp5Is#LXb9tK8cyaIs;rZLS=?BWY9Pz
+zsHd%mS*{fHh?TvElP1yDo2qaawFDB7X|A8hqa{iU5m@#mrQ^bAC6^M`=vQE6<AFyP
+z#?{zE5F5J=th;yOxOI~htY0D5x)~rV`_<N4$y<7Te*gB+x3ID@pBXO{cP28^Q}(ny
+z6+J+Q^WE5De{K?Tqbn1qkDp!$kAq>o2|mQ!)LhU4xbA0S_hdw$jqn`!8R|BHDPSR@
+z??(83gp+c8Wgn1~hc&P4)a0>OZ78>yMW(d6yuB=Q`NDcpO7L8%B=g19c3k#-=_{wH
+zsP0r75W8#LilZEoZUcj}{nNT~%0Sf&@kmF?JyB#Ic=fv5P&nEDY#3$yVmyC-E8e*W
+z*B0*tBS5axbK^gi>SzqCY43c?w)%qg3C?}An~3}1F}SvSY%Xg8<X&v}j$L&rH0L>L
+G({;awF>R#)
+
+diff --git a/tests/rtl/tests/simple_c_program/build/test.bin b/tests/rtl/tests/simple_c_program/build/test.bin
+deleted file mode 100755
+index fd62dbf8ab7aa414cc2b05b9c0e7b5433eb0ec05..0000000000000000000000000000000000000000
+GIT binary patch
+literal 0
+HcmV?d00001
+
+literal 88
+zcmXpPWMIf=a9|K-Wc;VB*T^8u!pJn4-GNP6?aM!96_$Vb3=K@p>PP-DtGE19Uhtd&
+k#Gc&F&Ipok28vB?7iUmb`2v=o%szqP@vY~7@);Ny0Jl6KQUCw|
+
+diff --git a/tests/rtl/tests/simple_c_program/build/test.bin.dmp b/tests/rtl/tests/simple_c_program/build/test.bin.dmp
+deleted file mode 100644
+index cd2e90d..0000000
+--- a/tests/rtl/tests/simple_c_program/build/test.bin.dmp
++++ /dev/null
+@@ -1,7 +0,0 @@
+-0000000 1137 0000 006f 0040 0113 fe01 2e23 0081
+-0000010 0413 0201 0793 0640 2623 fef4 2423 fe04
+-0000020 006f 0280 2783 fec4 2703 fe84 a023 00e7
+-0000030 2783 fec4 8793 0107 2623 fef4 2783 fe84
+-0000040 8793 0017 2423 fef4 2703 fe84 0793 0090
+-0000050 dae3 fce7 006f 0000                    
+-0000058
+diff --git a/tests/rtl/tests/simple_c_program/build/test.bin.tcl b/tests/rtl/tests/simple_c_program/build/test.bin.tcl
+deleted file mode 100644
+index eb658ac..0000000
+--- a/tests/rtl/tests/simple_c_program/build/test.bin.tcl
++++ /dev/null
+@@ -1,93 +0,0 @@
+-# Create new write transaction
+-reset_hw_axi [get_hw_axis hw_axi_1]
+-create_hw_axi_txn wr_txn [get_hw_axis hw_axi_1] -address 0x0 -data affeaffe -len 1 -type write
+-
+-# Write instructions to BRAM
+-set_property CMD.ADDR 0x0 [get_hw_axi_txns wr_txn]
+-set_property DATA 0x00001137 [get_hw_axi_txns wr_txn]
+-run_hw_axi [get_hw_axi_txns wr_txn]
+-
+-set_property CMD.ADDR 0x4 [get_hw_axi_txns wr_txn]
+-set_property DATA 0x0040006f [get_hw_axi_txns wr_txn]
+-run_hw_axi [get_hw_axi_txns wr_txn]
+-
+-set_property CMD.ADDR 0x8 [get_hw_axi_txns wr_txn]
+-set_property DATA 0xfe010113 [get_hw_axi_txns wr_txn]
+-run_hw_axi [get_hw_axi_txns wr_txn]
+-
+-set_property CMD.ADDR 0xc [get_hw_axi_txns wr_txn]
+-set_property DATA 0x00812e23 [get_hw_axi_txns wr_txn]
+-run_hw_axi [get_hw_axi_txns wr_txn]
+-
+-set_property CMD.ADDR 0x10 [get_hw_axi_txns wr_txn]
+-set_property DATA 0x02010413 [get_hw_axi_txns wr_txn]
+-run_hw_axi [get_hw_axi_txns wr_txn]
+-
+-set_property CMD.ADDR 0x14 [get_hw_axi_txns wr_txn]
+-set_property DATA 0x06400793 [get_hw_axi_txns wr_txn]
+-run_hw_axi [get_hw_axi_txns wr_txn]
+-
+-set_property CMD.ADDR 0x18 [get_hw_axi_txns wr_txn]
+-set_property DATA 0xfef42623 [get_hw_axi_txns wr_txn]
+-run_hw_axi [get_hw_axi_txns wr_txn]
+-
+-set_property CMD.ADDR 0x1c [get_hw_axi_txns wr_txn]
+-set_property DATA 0xfe042423 [get_hw_axi_txns wr_txn]
+-run_hw_axi [get_hw_axi_txns wr_txn]
+-
+-set_property CMD.ADDR 0x20 [get_hw_axi_txns wr_txn]
+-set_property DATA 0x0280006f [get_hw_axi_txns wr_txn]
+-run_hw_axi [get_hw_axi_txns wr_txn]
+-
+-set_property CMD.ADDR 0x24 [get_hw_axi_txns wr_txn]
+-set_property DATA 0xfec42783 [get_hw_axi_txns wr_txn]
+-run_hw_axi [get_hw_axi_txns wr_txn]
+-
+-set_property CMD.ADDR 0x28 [get_hw_axi_txns wr_txn]
+-set_property DATA 0xfe842703 [get_hw_axi_txns wr_txn]
+-run_hw_axi [get_hw_axi_txns wr_txn]
+-
+-set_property CMD.ADDR 0x2c [get_hw_axi_txns wr_txn]
+-set_property DATA 0x00e7a023 [get_hw_axi_txns wr_txn]
+-run_hw_axi [get_hw_axi_txns wr_txn]
+-
+-set_property CMD.ADDR 0x30 [get_hw_axi_txns wr_txn]
+-set_property DATA 0xfec42783 [get_hw_axi_txns wr_txn]
+-run_hw_axi [get_hw_axi_txns wr_txn]
+-
+-set_property CMD.ADDR 0x34 [get_hw_axi_txns wr_txn]
+-set_property DATA 0x01078793 [get_hw_axi_txns wr_txn]
+-run_hw_axi [get_hw_axi_txns wr_txn]
+-
+-set_property CMD.ADDR 0x38 [get_hw_axi_txns wr_txn]
+-set_property DATA 0xfef42623 [get_hw_axi_txns wr_txn]
+-run_hw_axi [get_hw_axi_txns wr_txn]
+-
+-set_property CMD.ADDR 0x3c [get_hw_axi_txns wr_txn]
+-set_property DATA 0xfe842783 [get_hw_axi_txns wr_txn]
+-run_hw_axi [get_hw_axi_txns wr_txn]
+-
+-set_property CMD.ADDR 0x40 [get_hw_axi_txns wr_txn]
+-set_property DATA 0x00178793 [get_hw_axi_txns wr_txn]
+-run_hw_axi [get_hw_axi_txns wr_txn]
+-
+-set_property CMD.ADDR 0x44 [get_hw_axi_txns wr_txn]
+-set_property DATA 0xfef42423 [get_hw_axi_txns wr_txn]
+-run_hw_axi [get_hw_axi_txns wr_txn]
+-
+-set_property CMD.ADDR 0x48 [get_hw_axi_txns wr_txn]
+-set_property DATA 0xfe842703 [get_hw_axi_txns wr_txn]
+-run_hw_axi [get_hw_axi_txns wr_txn]
+-
+-set_property CMD.ADDR 0x4c [get_hw_axi_txns wr_txn]
+-set_property DATA 0x00900793 [get_hw_axi_txns wr_txn]
+-run_hw_axi [get_hw_axi_txns wr_txn]
+-
+-set_property CMD.ADDR 0x50 [get_hw_axi_txns wr_txn]
+-set_property DATA 0xfce7dae3 [get_hw_axi_txns wr_txn]
+-run_hw_axi [get_hw_axi_txns wr_txn]
+-
+-set_property CMD.ADDR 0x54 [get_hw_axi_txns wr_txn]
+-set_property DATA 0x0000006f [get_hw_axi_txns wr_txn]
+-run_hw_axi [get_hw_axi_txns wr_txn]
+-
+diff --git a/tests/rtl/tests/simple_c_program/build/test.dmp b/tests/rtl/tests/simple_c_program/build/test.dmp
+deleted file mode 100644
+index df3a299..0000000
+--- a/tests/rtl/tests/simple_c_program/build/test.dmp
++++ /dev/null
+@@ -1,31 +0,0 @@
+-
+-build/test:     file format elf32-littleriscv
+-
+-
+-Disassembly of section .text:
+-
+-00010074 <_start>:
+-   10074:	00001137          	lui	sp,0x1
+-   10078:	0040006f          	j	1007c <main>
+-
+-0001007c <main>:
+-   1007c:	fe010113          	addi	sp,sp,-32 # fe0 <_start-0xf094>
+-   10080:	00812e23          	sw	s0,28(sp)
+-   10084:	02010413          	addi	s0,sp,32
+-   10088:	06400793          	li	a5,100
+-   1008c:	fef42623          	sw	a5,-20(s0)
+-   10090:	fe042423          	sw	zero,-24(s0)
+-   10094:	0280006f          	j	100bc <main+0x40>
+-   10098:	fec42783          	lw	a5,-20(s0)
+-   1009c:	fe842703          	lw	a4,-24(s0)
+-   100a0:	00e7a023          	sw	a4,0(a5)
+-   100a4:	fec42783          	lw	a5,-20(s0)
+-   100a8:	01078793          	addi	a5,a5,16
+-   100ac:	fef42623          	sw	a5,-20(s0)
+-   100b0:	fe842783          	lw	a5,-24(s0)
+-   100b4:	00178793          	addi	a5,a5,1
+-   100b8:	fef42423          	sw	a5,-24(s0)
+-   100bc:	fe842703          	lw	a4,-24(s0)
+-   100c0:	00900793          	li	a5,9
+-   100c4:	fce7dae3          	bge	a5,a4,10098 <main+0x1c>
+-   100c8:	0000006f          	j	100c8 <main+0x4c>
+diff --git a/tests/rtl/tests/simple_c_program/crt.s b/tests/rtl/tests/simple_c_program/crt.s
+index 3f199d6..37ccdb7 100644
+--- a/tests/rtl/tests/simple_c_program/crt.s
++++ b/tests/rtl/tests/simple_c_program/crt.s
+@@ -1,5 +1,5 @@
+ .globl _start
+ _start:
+-    li sp,4096
++    li sp,1028
+     j main
+     
+\ No newline at end of file
+diff --git a/tests/rtl/tests/simple_c_program/hexlify.py b/tests/rtl/tests/simple_c_program/hexlify.py
+index 3b5a562..7175ae3 100644
+--- a/tests/rtl/tests/simple_c_program/hexlify.py
++++ b/tests/rtl/tests/simple_c_program/hexlify.py
+@@ -11,7 +11,7 @@
+             newline = line[i+1] + line[i]
+             if(len(newline) == 8):
+                 nicehex.write(newline + '\n')
+-                print(newline + '  ' + bin(int(newline,16)))
++                # print(newline + '  ' + bin(int(newline,16)))
+ 
+ hexdmp.close()
+ nicehex.close()
+diff --git a/tests/rtl/tests/simple_c_program/main.hex b/tests/rtl/tests/simple_c_program/main.hex
+deleted file mode 100644
+index 351cd30..0000000
+--- a/tests/rtl/tests/simple_c_program/main.hex
++++ /dev/null
+@@ -1,22 +0,0 @@
+-00001137
+-0040006f
+-fe010113
+-00812e23
+-02010413
+-06400793
+-fef42623
+-fe042423
+-0280006f
+-fec42783
+-fe842703
+-00e7a023
+-fec42783
+-01078793
+-fef42623
+-fe842783
+-00178793
+-fef42423
+-fe842703
+-00900793
+-fce7dae3
+-0000006f
+diff --git a/tests/rtl/tests/simple_c_program/main.hex.dmp b/tests/rtl/tests/simple_c_program/main.hex.dmp
+deleted file mode 100644
+index cd2e90d..0000000
+--- a/tests/rtl/tests/simple_c_program/main.hex.dmp
++++ /dev/null
+@@ -1,7 +0,0 @@
+-0000000 1137 0000 006f 0040 0113 fe01 2e23 0081
+-0000010 0413 0201 0793 0640 2623 fef4 2423 fe04
+-0000020 006f 0280 2783 fec4 2703 fe84 a023 00e7
+-0000030 2783 fec4 8793 0107 2623 fef4 2783 fe84
+-0000040 8793 0017 2423 fef4 2703 fe84 0793 0090
+-0000050 dae3 fce7 006f 0000                    
+-0000058
+diff --git a/tests/rtl/tests/simple_c_program/result.txt b/tests/rtl/tests/simple_c_program/result.txt
+index c34c9d0..ec89976 100644
+--- a/tests/rtl/tests/simple_c_program/result.txt
++++ b/tests/rtl/tests/simple_c_program/result.txt
+@@ -1,23 +1,10 @@
+-1137
+-40006F
+-FE010113
+-812E23
+-2010413
+-6400793
+-FEF42623
+-FE042423
+-280006F
+-FEC42783
+-FE842703
+-E7A023
+-FEC42783
+-1078793
+-FEF42623
+-FE842783
+-178793
+-FEF42423
+-FE842703
+-900793
+-FCE7DAE3
+-6F
+-FAILED 1
++PASSED
++PASSED
++PASSED
++PASSED
++PASSED
++PASSED
++PASSED
++PASSED
++PASSED
++PASSED
+diff --git a/tests/rtl/tests/simple_c_program/sim_main.cpp b/tests/rtl/tests/simple_c_program/sim_main.cpp
+index 1db19c7..9e5bf4c 100644
+--- a/tests/rtl/tests/simple_c_program/sim_main.cpp
++++ b/tests/rtl/tests/simple_c_program/sim_main.cpp
+@@ -131,6 +131,7 @@ int main(int argc, char** argv, char** env) {
+     size_t len = 0;
+     ssize_t read;
+     char * line = NULL;
++    int exp_mem[10][2];
+     FILE *fp;
+     fp = fopen("main.hex", "r");
+     if(fp){
+@@ -143,16 +144,12 @@ int main(int argc, char** argv, char** env) {
+         exit(-10);
+     }
+ 
+-    fclose(fp);
+-    if(line)
+-        free(line);
+-
+-    for(int i = 0; i < instr_cnt; i++)
+-        printf("%X\n", program[i]);
+-
+-    int exp_mem[10][2];
+-    exp_mem[0][0] = 0x18;
+-    exp_mem[0][1] = 0x12;
++    // fclose(fp);
++    // if(line != NULL){free(line);}
++    for(int i = 0; i < 10; i++){
++        exp_mem[i][0] = 100+i;
++        exp_mem[i][1] = 12;
++    }
+     
+     Verilated::commandArgs(argc, argv);
+     tb = new TESTBENCH<Vcore_wrapper>();
+@@ -184,10 +181,12 @@ int main(int argc, char** argv, char** env) {
+         tb->tick();
+     }
+     int data;
+-    if(data = read_mem(exp_mem[0][0]*4) != exp_mem[0][1])
+-        std::cout << "FAILED " << data << std::endl;
+-    else
+-        std::cout << "PASSED" << std::endl;
++    for(int i = 0; i < 10; i++){
++        if(data = read_mem(exp_mem[i][0]) != exp_mem[i][1])
++            std::cout << "FAILED " << data << std::endl;
++        else
++            std::cout << "PASSED" << std::endl;
++    }
+     
+ 
+     // Cleanup
+diff --git a/tests/rtl/tests/simple_c_program/test.c b/tests/rtl/tests/simple_c_program/test.c
+index 24d2c81..a8c0988 100644
+--- a/tests/rtl/tests/simple_c_program/test.c
++++ b/tests/rtl/tests/simple_c_program/test.c
+@@ -1,8 +1,8 @@
+ int main() {
+     int *addr = (int*)100;
+     for(int i = 0; i < 10; i++) {
+-        (*addr) = i;
+-        addr+=4;
++        (*addr) = 12;
++        addr+=1;
+     }
+     while(1);
+ }
+\ No newline at end of file
+
+From 914a5f57366fbc3128020f9e975ca491ecba3df3 Mon Sep 17 00:00:00 2001
+From: Luca Hanel <lhanel@protonmail.com>
+Date: Tue, 4 Aug 2020 21:01:25 +0200
+Subject: [PATCH 03/12] first program successful after memstage fix
+
+---
+ rtl/core/pipelineStages/mem/MEM_stage.sv      | 35 ++++++++++++-------
+ .../Makefile                                  |  0
+ .../crt.s                                     |  0
+ .../hexlify.py                                |  0
+ .../result.txt                                |  0
+ .../sim_main.cpp                              | 14 ++++----
+ .../test.c                                    |  2 +-
+ .../testbench.h                               |  0
+ .../vrltr.mk                                  |  0
+ 9 files changed, 31 insertions(+), 20 deletions(-)
+ rename tests/rtl/tests/{simple_c_program => random_program_0}/Makefile (100%)
+ rename tests/rtl/tests/{simple_c_program => random_program_0}/crt.s (100%)
+ rename tests/rtl/tests/{simple_c_program => random_program_0}/hexlify.py (100%)
+ rename tests/rtl/tests/{simple_c_program => random_program_0}/result.txt (100%)
+ rename tests/rtl/tests/{simple_c_program => random_program_0}/sim_main.cpp (95%)
+ rename tests/rtl/tests/{simple_c_program => random_program_0}/test.c (83%)
+ rename tests/rtl/tests/{simple_c_program => random_program_0}/testbench.h (100%)
+ rename tests/rtl/tests/{simple_c_program => random_program_0}/vrltr.mk (100%)
+
+diff --git a/rtl/core/pipelineStages/mem/MEM_stage.sv b/rtl/core/pipelineStages/mem/MEM_stage.sv
+index b4702d7..796285a 100644
+--- a/rtl/core/pipelineStages/mem/MEM_stage.sv
++++ b/rtl/core/pipelineStages/mem/MEM_stage.sv
+@@ -53,8 +53,8 @@ struct packed {
+ logic load;
+ logic store;
+ logic lsu_valid;
+-logic lsu_valid_n;
+-logic lsu_valid_q;
++logic lsu_rvalid_n, lsu_rvalid_q;
++logic lsu_wvalid_n, lsu_wvalid_q;
+ logic [31:0] lu_data;
+ logic [3:0] lsu_we;
+ 
+@@ -77,7 +77,8 @@ lsu lsu_i(
+ 
+ always_comb
+ begin
+-    lsu_valid_n = lsu_valid_q;
++    lsu_rvalid_n = lsu_rvalid_q;
++    lsu_wvalid_n = lsu_wvalid_q;
+     data_n  = data_q;
+     ack_o   = 1'b0;
+     load    = 1'b0;
+@@ -87,21 +88,24 @@ begin
+     // Data is no longer valid if we recieved and ack
+     if(ack_i) begin
+         data_n.valid = 1'b0;
+-        lsu_valid_n = 1'b0;
++        lsu_rvalid_n = 1'b0;
++        lsu_wvalid_n = 1'b0;
+     end
+ 
+     case(instr_i[6:0])
+         // In case of LOAD or STORE, we give the respective signal
+         // to the memory and wait for the next stage to ack
+         `LOAD: begin
+-            if(!lsu_valid_q) begin
+-                lsu_valid_n = lsu_valid;
++            lsu_wvalid_n   = 1'b0;
++            if(!lsu_rvalid_q) begin
++                lsu_rvalid_n = lsu_valid;
+                 load        = 1'b1;
+             end else if((!data_q.valid || ack_i) && valid_i) begin
+                 ack_o          = 1'b1;
+                 data_n.valid   = 1'b1;
+                 data_n.instr   = instr_i;
+-                lsu_valid_n    = 1'b0;
++                lsu_rvalid_n   = 1'b0;
++                lsu_wvalid_n   = 1'b0;
+                 case(instr_i[13:12])
+                     2'b00:
+                         data_n.data = {{24{lu_data[7]}}, lu_data[7:0]};
+@@ -118,8 +122,9 @@ begin
+         // In case of LOAD or STORE, we give the respective signal
+         // to the memory and wait for the next stage to ack
+         `STORE: begin
+-            if(!lsu_valid_q) begin
+-                lsu_valid_n  = lsu_valid;
++            lsu_rvalid_n   = 1'b0;
++            if(!lsu_wvalid_q) begin
++                lsu_wvalid_n  = lsu_valid;
+                 store        = 1'b1;
+                 // Write the correct amount of bytes
+                 case(instr_i[13:12])
+@@ -135,13 +140,16 @@ begin
+             end else if((!data_q.valid || ack_i) && valid_i)begin
+                 ack_o          = 1'b1;
+                 data_n         = {1'b1, instr_i, 32'b0};
+-                lsu_valid_n    = 1'b0;
++                lsu_rvalid_n   = 1'b0;
++                lsu_wvalid_n    = 1'b0;
+             end
+         end
+ 
+         // In case of these, we can directly give the data to the
+         // following stage, the pointer to the old next instr (pc+4)
+         `AUIPC, `JAL, `JALR: begin
++            lsu_rvalid_n   = 1'b0;
++            lsu_wvalid_n   = 1'b0;
+             if((!data_q.valid || ack_i) && valid_i) begin
+                 ack_o          = 1'b1;
+                 data_n         = {1'b1, instr_i, pc_i + 4};
+@@ -155,7 +163,9 @@ begin
+         // the time per instruction reduces by 1, but the load/store
+         // unit can work in parallel when other instructions are
+         // processed.
+-        default: begin            
++        default: begin   
++            lsu_rvalid_n   = 1'b0;
++            lsu_wvalid_n   = 1'b0;         
+             if((!data_q.valid || ack_i) && valid_i) begin
+                 ack_o          = 1'b1;
+                 data_n         = {1'b1, instr_i, result_i};
+@@ -169,7 +179,8 @@ always_ff @(posedge clk, negedge rstn_i) begin
+         data_q <= 'b0;
+     end else if(!halt_i) begin
+         data_q <= data_n;
+-        lsu_valid_q <= lsu_valid_n;
++        lsu_wvalid_q <= lsu_wvalid_n;
++        lsu_rvalid_q <= lsu_rvalid_n;
+     end
+ end
+ 
+diff --git a/tests/rtl/tests/simple_c_program/Makefile b/tests/rtl/tests/random_program_0/Makefile
+similarity index 100%
+rename from tests/rtl/tests/simple_c_program/Makefile
+rename to tests/rtl/tests/random_program_0/Makefile
+diff --git a/tests/rtl/tests/simple_c_program/crt.s b/tests/rtl/tests/random_program_0/crt.s
+similarity index 100%
+rename from tests/rtl/tests/simple_c_program/crt.s
+rename to tests/rtl/tests/random_program_0/crt.s
+diff --git a/tests/rtl/tests/simple_c_program/hexlify.py b/tests/rtl/tests/random_program_0/hexlify.py
+similarity index 100%
+rename from tests/rtl/tests/simple_c_program/hexlify.py
+rename to tests/rtl/tests/random_program_0/hexlify.py
+diff --git a/tests/rtl/tests/simple_c_program/result.txt b/tests/rtl/tests/random_program_0/result.txt
+similarity index 100%
+rename from tests/rtl/tests/simple_c_program/result.txt
+rename to tests/rtl/tests/random_program_0/result.txt
+diff --git a/tests/rtl/tests/simple_c_program/sim_main.cpp b/tests/rtl/tests/random_program_0/sim_main.cpp
+similarity index 95%
+rename from tests/rtl/tests/simple_c_program/sim_main.cpp
+rename to tests/rtl/tests/random_program_0/sim_main.cpp
+index 9e5bf4c..e43e2bb 100644
+--- a/tests/rtl/tests/simple_c_program/sim_main.cpp
++++ b/tests/rtl/tests/random_program_0/sim_main.cpp
+@@ -147,8 +147,8 @@ int main(int argc, char** argv, char** env) {
+     // fclose(fp);
+     // if(line != NULL){free(line);}
+     for(int i = 0; i < 10; i++){
+-        exp_mem[i][0] = 100+i;
+-        exp_mem[i][1] = 12;
++        exp_mem[i][0] = 100+i*4;
++        exp_mem[i][1] = i;
+     }
+     
+     Verilated::commandArgs(argc, argv);
+@@ -166,11 +166,11 @@ int main(int argc, char** argv, char** env) {
+     halt_core();
+ 
+     // Test reading and writing to register        
+-    // result = test_registers();
+-    // if(result != 0){
+-    //     std::cout << "regcheck FAILED " << result << std::endl;
+-    //     exit(0);
+-    // }
++    result = test_registers();
++    if(result != 0){
++        std::cout << "regcheck FAILED " << result << std::endl;
++        exit(0);
++    }
+     // Load the program
+     load_program(program, instr_cnt, 0x0);
+     // Resume the core
+diff --git a/tests/rtl/tests/simple_c_program/test.c b/tests/rtl/tests/random_program_0/test.c
+similarity index 83%
+rename from tests/rtl/tests/simple_c_program/test.c
+rename to tests/rtl/tests/random_program_0/test.c
+index a8c0988..8310eab 100644
+--- a/tests/rtl/tests/simple_c_program/test.c
++++ b/tests/rtl/tests/random_program_0/test.c
+@@ -1,7 +1,7 @@
+ int main() {
+     int *addr = (int*)100;
+     for(int i = 0; i < 10; i++) {
+-        (*addr) = 12;
++        (*addr) = i;
+         addr+=1;
+     }
+     while(1);
+diff --git a/tests/rtl/tests/simple_c_program/testbench.h b/tests/rtl/tests/random_program_0/testbench.h
+similarity index 100%
+rename from tests/rtl/tests/simple_c_program/testbench.h
+rename to tests/rtl/tests/random_program_0/testbench.h
+diff --git a/tests/rtl/tests/simple_c_program/vrltr.mk b/tests/rtl/tests/random_program_0/vrltr.mk
+similarity index 100%
+rename from tests/rtl/tests/simple_c_program/vrltr.mk
+rename to tests/rtl/tests/random_program_0/vrltr.mk
+
+From 0a54246f7e71d348a36fa9da2cee13409cf16b7f Mon Sep 17 00:00:00 2001
+From: Luca Hanel <lhanel@protonmail.com>
+Date: Tue, 4 Aug 2020 23:04:18 +0200
+Subject: [PATCH 04/12] simplified testing
+
+---
+ tests/rtl/common/testbench.h                  | 168 ++++++++++++++-
+ tests/rtl/tests/random_program_0/result.txt   |   9 -
+ tests/rtl/tests/random_program_0/sim_main.cpp | 191 ++----------------
+ 3 files changed, 179 insertions(+), 189 deletions(-)
+
+diff --git a/tests/rtl/common/testbench.h b/tests/rtl/common/testbench.h
+index 9ced6e3..698bf44 100644
+--- a/tests/rtl/common/testbench.h
++++ b/tests/rtl/common/testbench.h
+@@ -6,8 +6,8 @@ vluint64_t main_time = 0;       // Current simulation time
+ // used in Verilog (or from --timescale-override)
+ 
+ double sc_time_stamp () {       // Called by $time in Verilog
+-		return main_time;           // converts to double, to match
+-																// what SystemC does
++	return main_time;           // converts to double, to match
++								// what SystemC does
+ }
+ 
+ template<class MODULE>	class TESTBENCH {
+@@ -89,4 +89,168 @@ template<class MODULE>	class TESTBENCH {
+ 		}
+ 
+ 		virtual bool	done(void) { return (Verilated::gotFinish()); }
++
++		// -----------------------------------------------------------
++		// Debug interfacing functions
++		// -----------------------------------------------------------
++
++		// Read from memory address (can also be a memory mapped
++		// slave of the wishbone bus)
++		int read_mem(int addr){
++			while(this->m_core->dbg_ready_o == 0)
++				this->tick();
++			this->m_core->dbg_addr_i = addr;
++			this->m_core->dbg_cmd_i = 0x01;
++			this->tick();
++			while(this->m_core->dbg_ready_o == 0)
++				this->tick();
++			this->m_core->dbg_cmd_i = 0x0;
++			return (int) this->m_core->dbg_data_o;
++		}
++
++		// Write to memory address (can also be a memory mapped
++		// slave of the wishbone bus)
++		void write_mem(int addr, int data){
++			while(this->m_core->dbg_ready_o == 0)
++				this->tick();
++			this->m_core->dbg_addr_i = addr;
++			this->m_core->dbg_data_i = data;
++			this->m_core->dbg_cmd_i = 0x02;
++			this->tick();
++			while(this->m_core->dbg_ready_o == 0)
++				this->tick();
++			this->m_core->dbg_cmd_i = 0x0;
++			this->tick();
++		}
++
++		// Read from core registers
++		int read_reg(int reg){
++			while(this->m_core->dbg_ready_o == 0)
++				this->tick();
++			this->m_core->dbg_addr_i = reg;
++			this->m_core->dbg_cmd_i = 0x13;
++			this->tick();
++			while(this->m_core->dbg_ready_o == 0)
++				this->tick();
++			this->m_core->dbg_cmd_i = 0x0;
++			return (int) this->m_core->dbg_data_o;
++		}
++
++		// Write to core registers	
++		void write_reg(int reg, int data){
++			while(this->m_core->dbg_ready_o == 0)
++				this->tick();
++			this->m_core->dbg_addr_i = reg;
++			this->m_core->dbg_cmd_i = 0x14;
++			this->m_core->dbg_data_i = data;
++			this->tick();
++			while(this->m_core->dbg_ready_o == 0)
++				this->tick();
++			this->m_core->dbg_cmd_i = 0x0;
++			this->tick();
++		}
++
++		// Halt the core
++		void halt_core(){
++			while(this->m_core->dbg_ready_o == 0)
++				this->tick();
++			this->m_core->dbg_cmd_i = 0x11;
++			this->tick();
++			this->m_core->dbg_cmd_i = 0x0;
++		}
++
++		// Resume the core
++		void resume_core(){
++			while(this->m_core->dbg_ready_o == 0)
++				this->tick();
++			this->m_core->dbg_cmd_i = 0x12;
++			this->tick();
++			this->m_core->dbg_cmd_i = 0x0;
++		}
++
++		// Reset the core
++		void reset_core(){
++			while(this->m_core->dbg_ready_o == 0)
++				this->tick();
++			this->m_core->dbg_cmd_i = 0x03;
++			this->tick();
++			this->m_core->dbg_cmd_i = 0x0;
++		}
++
++		// Read the program counter
++		int read_pc(){
++			while(this->m_core->dbg_ready_o == 0)
++				this->tick();
++			this->m_core->dbg_cmd_i = 0x15;
++			this->tick();
++			while(this->m_core->dbg_ready_o == 0)
++				this->tick();
++			this->m_core->dbg_cmd_i = 0x0;
++			return (int) this->m_core->dbg_data_o;
++		}
++
++		// Set the program counter
++		void set_pc(int pc){
++			while(this->m_core->dbg_ready_o == 0)
++				this->tick();
++			this->m_core->dbg_cmd_i = 0x16;
++			this->m_core->dbg_data_i = pc;
++			this->tick();
++			while(this->m_core->dbg_ready_o == 0)
++				this->tick();
++			this->m_core->dbg_cmd_i = 0x0;
++			this->tick();
++		}
++
++
++		void load_program(int program[4096], int len, int startAddr){
++			this->halt_core();
++			for(int i = 0; i < len; i++){
++				this->write_mem(startAddr + 4*i, program[i]);
++			}
++		}
++
++		void load_program(char* filename, int startAddr){
++			int program[4096];
++			int instr_cnt = 0;
++			size_t len = 0;
++			ssize_t read;
++			char * line = NULL;
++    		FILE *fp;
++
++			// Read in the program
++			fp = fopen(filename, "r");
++			if(fp){
++				while((read = getline(&line, &len, fp)) != -1){
++					program[instr_cnt] = (int)strtol(line, NULL, 16);;
++					instr_cnt +=1;
++				}
++			} else {
++				std::cout << "Error reading dump" << std::endl;
++				exit(-10);
++			}
++
++			// Rest the core
++			this->reset();
++			// Halt the core
++			this->halt_core();
++			
++			// Load the program into memory
++    		this->load_program(program, instr_cnt, startAddr);
++
++			// Set core to start of program
++    		this->set_pc(0x0);
++
++			// Start the program
++			this->resume_core();
++		}
++
++
++		int check_memory(int *exp_mem, int n_checks){
++			for(int i = 0; i < 10; i++){
++				if(this->read_mem(exp_mem[i*2]) != exp_mem[i*2+1])
++					return i+1;
++			}
++			return 0;
++		}
+ };
+\ No newline at end of file
+diff --git a/tests/rtl/tests/random_program_0/result.txt b/tests/rtl/tests/random_program_0/result.txt
+index ec89976..53cdf1e 100644
+--- a/tests/rtl/tests/random_program_0/result.txt
++++ b/tests/rtl/tests/random_program_0/result.txt
+@@ -1,10 +1 @@
+ PASSED
+-PASSED
+-PASSED
+-PASSED
+-PASSED
+-PASSED
+-PASSED
+-PASSED
+-PASSED
+-PASSED
+diff --git a/tests/rtl/tests/random_program_0/sim_main.cpp b/tests/rtl/tests/random_program_0/sim_main.cpp
+index e43e2bb..1a7f5e3 100644
+--- a/tests/rtl/tests/random_program_0/sim_main.cpp
++++ b/tests/rtl/tests/random_program_0/sim_main.cpp
+@@ -2,202 +2,37 @@
+ #include "Vcore_wrapper.h"
+ #include "testbench.h"
+ 
+-TESTBENCH<Vcore_wrapper> *tb;
+-
+-int read_mem(int addr){
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_addr_i = addr;
+-    tb->m_core->dbg_cmd_i = 0x01;
+-    tb->tick();
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x0;
+-    return (int) tb->m_core->dbg_data_o;
+-}
+-
+-int read_reg(int reg){
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_addr_i = reg;
+-    tb->m_core->dbg_cmd_i = 0x13;
+-    tb->tick();
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x0;
+-    return (int) tb->m_core->dbg_data_o;
+-}
+-
+-void write_reg(int reg, int data){
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_addr_i = reg;
+-    tb->m_core->dbg_cmd_i = 0x14;
+-    tb->m_core->dbg_data_i = data;
+-    tb->tick();
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x0;
+-    tb->tick();
+-}
+-
+-void write(int addr, int data){
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_addr_i = addr;
+-    tb->m_core->dbg_data_i = data;
+-    tb->m_core->dbg_cmd_i = 0x02;
+-    tb->tick();
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x0;
+-    tb->tick();
+-}
+-
+-void halt_core(){
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x11;
+-    tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x0;
+-}
+-
+-void resume_core(){
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x12;
+-    tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x0;
+-}
+-
+-void reset_core(){
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x03;
+-    tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x0;
+-}
+-
+-int read_pc(){
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x15;
+-    tb->tick();
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x0;
+-    return (int) tb->m_core->dbg_data_o;
+-}
+-
+-void set_pc(int pc){
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x16;
+-    tb->m_core->dbg_data_i = pc;
+-    tb->tick();
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x0;
+-    tb->tick();
+-}
+-
+-void load_program(int program[1024], int len, int startAddr){
+-    halt_core();
+-    for(int i = 0; i < len; i++){
+-        write(startAddr + 4*i, program[i]);
+-    }
+-}
+-
+-int test_registers(){
+-    // Register 0 should never be changed
+-    write_reg(0x0, 0xff);
+-    if(read_reg(0x0) != 0x0)
+-        return 1;
+-    
+-    for(int i = 1; i < 32; i++){
+-        write_reg(i, 0xf00+i);
+-        if(read_reg(i) != (0xf00+i))
+-            return i;
+-        // Clear register again
+-        write_reg(i, 0x0);
+-    }
+-
+-    return 0;
+-}
+ 
+ int main(int argc, char** argv, char** env) {
+-    int program[1024];
+-    int instr_cnt = 0;
+-    size_t len = 0;
+-    ssize_t read;
+-    char * line = NULL;
+-    int exp_mem[10][2];
+-    FILE *fp;
+-    fp = fopen("main.hex", "r");
+-    if(fp){
+-        while((read = getline(&line, &len, fp)) != -1){
+-            program[instr_cnt] = (int)strtol(line, NULL, 16);;
+-            instr_cnt +=1;
+-        }
+-    } else {
+-        std::cout << "Error reading dump" << std::endl;
+-        exit(-10);
+-    }
+-
+-    // fclose(fp);
+-    // if(line != NULL){free(line);}
+-    for(int i = 0; i < 10; i++){
+-        exp_mem[i][0] = 100+i*4;
+-        exp_mem[i][1] = i;
+-    }
+-    
++    TESTBENCH<Vcore_wrapper> *tb;
+     Verilated::commandArgs(argc, argv);
+     tb = new TESTBENCH<Vcore_wrapper>();
+     tb->opentrace("logs/trace.vcd");
+ 
+     int result = 0;
+-
+-    // Initialize inputs
+-
+-    // Reset
+-    tb->reset();
+-
+-    // Stop the core
+-    halt_core();
+-
+-    // Test reading and writing to register        
+-    result = test_registers();
+-    if(result != 0){
+-        std::cout << "regcheck FAILED " << result << std::endl;
+-        exit(0);
++    int exp_mem[10][2];    
++    for(int i = 0; i < 10; i++){
++        exp_mem[i][0] = 100+i*4;
++        exp_mem[i][1] = i;
+     }
+-    // Load the program
+-    load_program(program, instr_cnt, 0x0);
+-    // Resume the core
+-    set_pc(0x0);
+-    resume_core();
++
++    tb->load_program("main.hex", 0x0);
+ 
+     for(int i = 0; i < 1000; i++){
+         tb->tick();
+     }
+-    int data;
+-    for(int i = 0; i < 10; i++){
+-        if(data = read_mem(exp_mem[i][0]) != exp_mem[i][1])
+-            std::cout << "FAILED " << data << std::endl;
+-        else
+-            std::cout << "PASSED" << std::endl;
+-    }
+-    
++
++    result = tb->check_memory((int*) exp_mem, 10);
+ 
+     // Cleanup
+     tb->tick();
+     tb->m_core->final();
+ 
+     // Evaluate test
+-    // if(result == 0)
+-    //     std::cout << "PASSED" << std::endl;
+-    // else
+-    //     std::cout << "FAILED " << result << std::endl;
++    if(result == 0)
++        std::cout << "PASSED" << std::endl;
++    else
++        std::cout << "FAILED " << result << std::endl;
+     
+     //  Coverage analysis (since test passed)
+     VerilatedCov::write("logs/coverage.dat");
+
+From 72c910fa138c67fe82dea20b8340a663e980b93c Mon Sep 17 00:00:00 2001
+From: Luca Hanel <lhanel@protonmail.com>
+Date: Tue, 4 Aug 2020 23:31:10 +0200
+Subject: [PATCH 05/12] simplified testing
+
+---
+ tests/rtl/common/Makefile                     | 27 +++++++++++
+ .../{tests/random_program_0 => common}/crt.s  |  0
+ .../random_program_0 => common}/hexlify.py    |  0
+ tests/rtl/common/sim_main.cpp                 | 44 ++++++++++++++++++
+ .../random_program_0 => common}/vrltr.mk      |  2 -
+ tests/rtl/tests/random_program_0/Makefile     | 23 +---------
+ .../tests/random_program_0/{test.c => main.c} |  0
+ tests/rtl/tests/random_program_0/sim_main.cpp | 45 +------------------
+ 8 files changed, 73 insertions(+), 68 deletions(-)
+ create mode 100644 tests/rtl/common/Makefile
+ rename tests/rtl/{tests/random_program_0 => common}/crt.s (100%)
+ rename tests/rtl/{tests/random_program_0 => common}/hexlify.py (100%)
+ create mode 100644 tests/rtl/common/sim_main.cpp
+ rename tests/rtl/{tests/random_program_0 => common}/vrltr.mk (96%)
+ mode change 100644 => 120000 tests/rtl/tests/random_program_0/Makefile
+ rename tests/rtl/tests/random_program_0/{test.c => main.c} (100%)
+ mode change 100644 => 120000 tests/rtl/tests/random_program_0/sim_main.cpp
+
+diff --git a/tests/rtl/common/Makefile b/tests/rtl/common/Makefile
+new file mode 100644
+index 0000000..4c940be
+--- /dev/null
++++ b/tests/rtl/common/Makefile
+@@ -0,0 +1,27 @@
++
++RISCV_GCC_OPTS ?= -DPREALLOCATE=1 -mcmodel=medany -march=rv32i -mabi=ilp32 -static -std=gnu99 -O0 -ffast-math -fno-common -fno-builtin-printf
++RISCV_LINK_OPTS ?= -march=rv32i -mabi=ilp32 -static -nostdlib -nostartfiles -lm -lgcc
++RISCV_OBJDUMP_OPTS ?= -d
++
++default: main
++
++.PHONY: build
++build:
++	@if [ ! -d "./build" ]; then mkdir build; fi
++
++%: %.c build
++	riscv64-unknown-linux-gnu-gcc ../../common/crt.s $< $(RISCV_GCC_OPTS) -o build/$@ $(RISCV_LINK_OPTS)
++	@riscv64-unknown-linux-gnu-objdump $(RISCV_OBJDUMP_OPTS) build/$@ > build/$@.dmp
++	@riscv64-unknown-linux-gnu-objcopy -O binary build/$@ build/$@.bin
++	@hexdump build/$@.bin > main.hex.dmp
++	@python3 ../../common/hexlify.py
++	rm -rf main.hex.dmp
++	make -f ../../common/vrltr.mk
++	
++
++.PHONY: clean
++clean:
++	rm -rf build
++	rm -rf main.hex
++	rm -rf main.hex.dmp
++	make -f ../../common/vrltr.mk clean
+\ No newline at end of file
+diff --git a/tests/rtl/tests/random_program_0/crt.s b/tests/rtl/common/crt.s
+similarity index 100%
+rename from tests/rtl/tests/random_program_0/crt.s
+rename to tests/rtl/common/crt.s
+diff --git a/tests/rtl/tests/random_program_0/hexlify.py b/tests/rtl/common/hexlify.py
+similarity index 100%
+rename from tests/rtl/tests/random_program_0/hexlify.py
+rename to tests/rtl/common/hexlify.py
+diff --git a/tests/rtl/common/sim_main.cpp b/tests/rtl/common/sim_main.cpp
+new file mode 100644
+index 0000000..a8f5e9b
+--- /dev/null
++++ b/tests/rtl/common/sim_main.cpp
+@@ -0,0 +1,44 @@
++#include <verilated.h>
++#include "Vcore_wrapper.h"
++#include "testbench.h"
++
++
++int main(int argc, char** argv, char** env) {
++    TESTBENCH<Vcore_wrapper> *tb;
++    Verilated::commandArgs(argc, argv);
++    tb = new TESTBENCH<Vcore_wrapper>();
++    tb->opentrace("logs/trace.vcd");
++
++    int result = 0;
++    int exp_mem[10][2];    
++    for(int i = 0; i < 10; i++){
++        exp_mem[i][0] = 100+i*4;
++        exp_mem[i][1] = i;
++    }
++
++    tb->load_program((char*) "main.hex", 0x0);
++
++    for(int i = 0; i < 1000; i++){
++        tb->tick();
++    }
++
++    result = tb->check_memory((int*) exp_mem, 10);
++
++    // Cleanup
++    tb->tick();
++    tb->m_core->final();
++
++    // Evaluate test
++    if(result == 0)
++        std::cout << "PASSED" << std::endl;
++    else
++        std::cout << "FAILED " << result << std::endl;
++    
++    //  Coverage analysis (since test passed)
++    VerilatedCov::write("logs/coverage.dat");
++
++    // Destroy model
++    delete tb->m_core; tb->m_core = NULL;
++
++    exit(0);
++}
+diff --git a/tests/rtl/tests/random_program_0/vrltr.mk b/tests/rtl/common/vrltr.mk
+similarity index 96%
+rename from tests/rtl/tests/random_program_0/vrltr.mk
+rename to tests/rtl/common/vrltr.mk
+index 2399f21..5e93b46 100644
+--- a/tests/rtl/tests/random_program_0/vrltr.mk
++++ b/tests/rtl/common/vrltr.mk
+@@ -49,14 +49,12 @@ run:
+ 
+ 	@echo
+ 	@echo "-- COMPILE -----------------"
+-	# $(MAKE) -j 4 -C obj_dir -f top.mk 
+ 	$(MAKE) -j 4 -C obj_dir -f Vcore_wrapper.mk 
+ 	
+ 
+ 	@echo
+ 	@echo "-- RUN ---------------------"
+ 	@mkdir -p logs
+-	# obj_dir/top --trace > result.txt
+ 	obj_dir/Vcore_wrapper --trace > result.txt
+ 
+ 	@echo
+diff --git a/tests/rtl/tests/random_program_0/Makefile b/tests/rtl/tests/random_program_0/Makefile
+deleted file mode 100644
+index 42b0c8e..0000000
+--- a/tests/rtl/tests/random_program_0/Makefile
++++ /dev/null
+@@ -1,22 +0,0 @@
+-
+-RISCV_GCC_OPTS ?= -DPREALLOCATE=1 -mcmodel=medany -march=rv32i -mabi=ilp32 -static -std=gnu99 -O0 -ffast-math -fno-common -fno-builtin-printf
+-RISCV_LINK_OPTS ?= -march=rv32i -mabi=ilp32 -static -nostdlib -nostartfiles -lm -lgcc
+-RISCV_OBJDUMP_OPTS ?= -d
+-
+-all: build
+-
+-.PHONY: build
+-build:
+-	@if [ ! -d "./build" ]; then mkdir build; fi
+-
+-%: %.c build
+-	riscv64-unknown-linux-gnu-gcc crt.s $< $(RISCV_GCC_OPTS) -o build/$@ $(RISCV_LINK_OPTS)
+-	@riscv64-unknown-linux-gnu-objdump $(RISCV_OBJDUMP_OPTS) build/$@ > build/$@.dmp
+-	@riscv64-unknown-linux-gnu-objcopy -O binary build/$@ build/$@.bin
+-	@hexdump build/$@.bin > main.hex.dmp
+-	@python3 hexlify.py
+-	make -f vrltr.mk
+-
+-.PHONY: clean
+-clean:
+-	rm -rf build
+\ No newline at end of file
+diff --git a/tests/rtl/tests/random_program_0/Makefile b/tests/rtl/tests/random_program_0/Makefile
+new file mode 120000
+index 0000000..b070036
+--- /dev/null
++++ b/tests/rtl/tests/random_program_0/Makefile
+@@ -0,0 +1 @@
++../../common/Makefile
+\ No newline at end of file
+diff --git a/tests/rtl/tests/random_program_0/test.c b/tests/rtl/tests/random_program_0/main.c
+similarity index 100%
+rename from tests/rtl/tests/random_program_0/test.c
+rename to tests/rtl/tests/random_program_0/main.c
+diff --git a/tests/rtl/tests/random_program_0/sim_main.cpp b/tests/rtl/tests/random_program_0/sim_main.cpp
+deleted file mode 100644
+index 1a7f5e3..0000000
+--- a/tests/rtl/tests/random_program_0/sim_main.cpp
++++ /dev/null
+@@ -1,44 +0,0 @@
+-#include <verilated.h>
+-#include "Vcore_wrapper.h"
+-#include "testbench.h"
+-
+-
+-int main(int argc, char** argv, char** env) {
+-    TESTBENCH<Vcore_wrapper> *tb;
+-    Verilated::commandArgs(argc, argv);
+-    tb = new TESTBENCH<Vcore_wrapper>();
+-    tb->opentrace("logs/trace.vcd");
+-
+-    int result = 0;
+-    int exp_mem[10][2];    
+-    for(int i = 0; i < 10; i++){
+-        exp_mem[i][0] = 100+i*4;
+-        exp_mem[i][1] = i;
+-    }
+-
+-    tb->load_program("main.hex", 0x0);
+-
+-    for(int i = 0; i < 1000; i++){
+-        tb->tick();
+-    }
+-
+-    result = tb->check_memory((int*) exp_mem, 10);
+-
+-    // Cleanup
+-    tb->tick();
+-    tb->m_core->final();
+-
+-    // Evaluate test
+-    if(result == 0)
+-        std::cout << "PASSED" << std::endl;
+-    else
+-        std::cout << "FAILED " << result << std::endl;
+-    
+-    //  Coverage analysis (since test passed)
+-    VerilatedCov::write("logs/coverage.dat");
+-
+-    // Destroy model
+-    delete tb->m_core; tb->m_core = NULL;
+-
+-    exit(0);
+-}
+diff --git a/tests/rtl/tests/random_program_0/sim_main.cpp b/tests/rtl/tests/random_program_0/sim_main.cpp
+new file mode 120000
+index 0000000..f22cc03
+--- /dev/null
++++ b/tests/rtl/tests/random_program_0/sim_main.cpp
+@@ -0,0 +1 @@
++../../common/sim_main.cpp
+\ No newline at end of file
+
+From fab0c3ad297d21ad8fd09399be63d11077547c4c Mon Sep 17 00:00:00 2001
+From: Luca Hanel <lhanel@protonmail.com>
+Date: Wed, 5 Aug 2020 00:38:18 +0200
+Subject: [PATCH 06/12] modified program to use functions, reveals JAL&JALR etc
+ aren't correct. Fix in progress
+
+---
+ rtl/core_wrapper.sv                           | 27 ++++++++++++++-----
+ tests/rtl/common/Makefile                     |  2 +-
+ tests/rtl/common/crt.s                        |  2 +-
+ tests/rtl/common/sim_main.cpp                 |  8 +++---
+ tests/rtl/common/testbench.h                  |  2 +-
+ .../rtl/tests/random_program_0/address_test.c | 14 ++++++++++
+ .../rtl/tests/random_program_0/address_test.h |  1 +
+ tests/rtl/tests/random_program_0/main.c       | 12 +++++----
+ tests/rtl/tests/random_program_0/result.txt   |  2 +-
+ 9 files changed, 52 insertions(+), 18 deletions(-)
+ create mode 100644 tests/rtl/tests/random_program_0/address_test.c
+ create mode 100644 tests/rtl/tests/random_program_0/address_test.h
+
+diff --git a/rtl/core_wrapper.sv b/rtl/core_wrapper.sv
+index 44bb282..06a7eb2 100644
+--- a/rtl/core_wrapper.sv
++++ b/rtl/core_wrapper.sv
+@@ -40,7 +40,7 @@ logic dbg_periph_rst_req;
+ 
+ // Wishbone busses
+ wb_bus_t#(.TAGSIZE(1)) masters[3];
+-wb_bus_t#(.TAGSIZE(1)) slaves[1];
++wb_bus_t#(.TAGSIZE(1)) slaves[2];
+ 
+ // Debug bus
+ dbg_intf dbg_bus;
+@@ -73,23 +73,38 @@ dbg_module dbg_module_i (
+   .wb_bus           ( masters[0]        )
+ );
+ 
++
++`define ROM_START_ADDR 32'h0
++`define ROM_END_ADDR 32'h3fff
++`define RAM_START_ADDR 32'h4000
++`define RAM_END_ADDR 32'h7fff
++
++// Not really a rom, just the name so far...
+ wb_ram_wrapper #(
+-  .SIZE (2048)
+-) ram_i (
++  .SIZE (16384)
++) rom_i (
+   .clk    ( clk       ),
+   .rstn_i ( rstn_i    ),
+   .wb_bus ( slaves[0] )
+ );
+ 
++wb_ram_wrapper #(
++  .SIZE (16384)
++) ram_i (
++  .clk    ( clk       ),
++  .rstn_i ( rstn_i    ),
++  .wb_bus ( slaves[1] )
++);
++
+ wb_xbar #(
+     .TAGSIZE        ( 1 ),
+-    .N_SLAVE        ( 1 ),
++    .N_SLAVE        ( 2 ),
+     .N_MASTER       ( 3 )
+ ) wb_xbar_i (
+     .clk_i          ( clk       ),
+     .rst_i          ( ~rstn_i   ),
+-    .SSTART_ADDR    ({32'h0}    ),
+-    .SEND_ADDR      ({32'h1000} ),
++    .SSTART_ADDR    ({`RAM_START_ADDR, `ROM_START_ADDR}),
++    .SEND_ADDR      ({`RAM_END_ADDR,   `ROM_END_ADDR}),
+     .wb_slave_port  (masters    ),
+     .wb_master_port (slaves     )
+ );
+diff --git a/tests/rtl/common/Makefile b/tests/rtl/common/Makefile
+index 4c940be..613c930 100644
+--- a/tests/rtl/common/Makefile
++++ b/tests/rtl/common/Makefile
+@@ -10,7 +10,7 @@ build:
+ 	@if [ ! -d "./build" ]; then mkdir build; fi
+ 
+ %: %.c build
+-	riscv64-unknown-linux-gnu-gcc ../../common/crt.s $< $(RISCV_GCC_OPTS) -o build/$@ $(RISCV_LINK_OPTS)
++	riscv64-unknown-linux-gnu-gcc ../../common/crt.s $< address_test.c $(RISCV_GCC_OPTS) -o build/$@ $(RISCV_LINK_OPTS)
+ 	@riscv64-unknown-linux-gnu-objdump $(RISCV_OBJDUMP_OPTS) build/$@ > build/$@.dmp
+ 	@riscv64-unknown-linux-gnu-objcopy -O binary build/$@ build/$@.bin
+ 	@hexdump build/$@.bin > main.hex.dmp
+diff --git a/tests/rtl/common/crt.s b/tests/rtl/common/crt.s
+index 37ccdb7..e90bd00 100644
+--- a/tests/rtl/common/crt.s
++++ b/tests/rtl/common/crt.s
+@@ -1,5 +1,5 @@
+ .globl _start
+ _start:
+-    li sp,1028
++    li sp,0x7000
+     j main
+     
+\ No newline at end of file
+diff --git a/tests/rtl/common/sim_main.cpp b/tests/rtl/common/sim_main.cpp
+index a8f5e9b..bd205cc 100644
+--- a/tests/rtl/common/sim_main.cpp
++++ b/tests/rtl/common/sim_main.cpp
+@@ -10,11 +10,13 @@ int main(int argc, char** argv, char** env) {
+     tb->opentrace("logs/trace.vcd");
+ 
+     int result = 0;
+-    int exp_mem[10][2];    
++    int exp_mem[11][2];    
+     for(int i = 0; i < 10; i++){
+-        exp_mem[i][0] = 100+i*4;
++        exp_mem[i][0] = 200+i*4;
+         exp_mem[i][1] = i;
+     }
++    exp_mem[10][0] = 0x7ff0;
++    exp_mem[10][1] = 1;
+ 
+     tb->load_program((char*) "main.hex", 0x0);
+ 
+@@ -22,7 +24,7 @@ int main(int argc, char** argv, char** env) {
+         tb->tick();
+     }
+ 
+-    result = tb->check_memory((int*) exp_mem, 10);
++    result = tb->check_memory((int*) exp_mem, 11);
+ 
+     // Cleanup
+     tb->tick();
+diff --git a/tests/rtl/common/testbench.h b/tests/rtl/common/testbench.h
+index 698bf44..5e458f1 100644
+--- a/tests/rtl/common/testbench.h
++++ b/tests/rtl/common/testbench.h
+@@ -247,7 +247,7 @@ template<class MODULE>	class TESTBENCH {
+ 
+ 
+ 		int check_memory(int *exp_mem, int n_checks){
+-			for(int i = 0; i < 10; i++){
++			for(int i = 0; i < n_checks; i++){
+ 				if(this->read_mem(exp_mem[i*2]) != exp_mem[i*2+1])
+ 					return i+1;
+ 			}
+diff --git a/tests/rtl/tests/random_program_0/address_test.c b/tests/rtl/tests/random_program_0/address_test.c
+new file mode 100644
+index 0000000..715b2a1
+--- /dev/null
++++ b/tests/rtl/tests/random_program_0/address_test.c
+@@ -0,0 +1,14 @@
++int address_test(){
++    unsigned int *addr = (int*) 0x200;
++
++    for(int i = 0; i < 10; i++){
++        *addr = i;
++        addr++;
++    }
++
++    for(int i = 0; i < 10; i++){
++        if(*addr != i)
++            return i;
++    }
++    return 0;
++}
+\ No newline at end of file
+diff --git a/tests/rtl/tests/random_program_0/address_test.h b/tests/rtl/tests/random_program_0/address_test.h
+new file mode 100644
+index 0000000..7776251
+--- /dev/null
++++ b/tests/rtl/tests/random_program_0/address_test.h
+@@ -0,0 +1 @@
++int address_test();
+\ No newline at end of file
+diff --git a/tests/rtl/tests/random_program_0/main.c b/tests/rtl/tests/random_program_0/main.c
+index 8310eab..8eaa70a 100644
+--- a/tests/rtl/tests/random_program_0/main.c
++++ b/tests/rtl/tests/random_program_0/main.c
+@@ -1,8 +1,10 @@
++#include "address_test.h"
++
+ int main() {
+-    int *addr = (int*)100;
+-    for(int i = 0; i < 10; i++) {
+-        (*addr) = i;
+-        addr+=1;
+-    }
++    unsigned int *magic_addr = (unsigned int*) 0x7ff0;
++    int result = address_test();
++
++    *(magic_addr) = result + 1;
++    
+     while(1);
+ }
+\ No newline at end of file
+diff --git a/tests/rtl/tests/random_program_0/result.txt b/tests/rtl/tests/random_program_0/result.txt
+index 53cdf1e..96f9c32 100644
+--- a/tests/rtl/tests/random_program_0/result.txt
++++ b/tests/rtl/tests/random_program_0/result.txt
+@@ -1 +1 @@
+-PASSED
++FAILED 1
+
+From db0806664721a0371a9ff94777156410bfc1f58d Mon Sep 17 00:00:00 2001
+From: Luca Hanel <lhanel@protonmail.com>
+Date: Wed, 5 Aug 2020 11:20:52 +0200
+Subject: [PATCH 07/12] testing improved alot, fixed pipeline flush
+
+---
+ .gitignore                                  |  1 +
+ rtl/core/pipelineStages/execute/EX_stage.sv |  4 ++--
+ tests/rtl/common/sim_main.cpp               | 12 ++++--------
+ tests/rtl/common/testbench.h                |  2 +-
+ tests/rtl/tests/core/result.txt             |  1 -
+ tests/rtl/tests/random_program_0/main.c     |  3 ++-
+ tests/rtl/tests/random_program_0/result.txt |  1 -
+ 7 files changed, 10 insertions(+), 14 deletions(-)
+ delete mode 100644 tests/rtl/tests/core/result.txt
+ delete mode 100644 tests/rtl/tests/random_program_0/result.txt
+
+diff --git a/.gitignore b/.gitignore
+index bd2d8c3..c116a12 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -19,3 +19,4 @@
+ *.xpr
+ .Xil
+ *.zip
++*result.txt
+diff --git a/rtl/core/pipelineStages/execute/EX_stage.sv b/rtl/core/pipelineStages/execute/EX_stage.sv
+index c5a8b90..4adf191 100644
+--- a/rtl/core/pipelineStages/execute/EX_stage.sv
++++ b/rtl/core/pipelineStages/execute/EX_stage.sv
+@@ -63,7 +63,7 @@ executer executer_i (
+     .branch_taken ( branch  )
+ );
+ 
+-assign valid_o  = (flush_i) ? 1'b0 : data_q.valid;
++assign valid_o  = data_q.valid;
+ assign instr_o  = data_q.instr;
+ assign pc_o     = data_q.pc;
+ assign result_o = data_q.result;
+@@ -82,7 +82,7 @@ begin
+     // If data is not valid or ack received, we wait for the
+     // previous stage to be valid. If this is the case, we set our
+     // data and set valid=1
+-    if((!data_q.valid || ack_i) && valid_i) begin
++    if((!data_q.valid || ack_i) && valid_i && (!flush_i)) begin
+         ack_o          = 1'b1;
+         data_n         = {1'b1, branch, instr_i, pc_i, result, rs2_i};
+     end
+diff --git a/tests/rtl/common/sim_main.cpp b/tests/rtl/common/sim_main.cpp
+index bd205cc..d7603f9 100644
+--- a/tests/rtl/common/sim_main.cpp
++++ b/tests/rtl/common/sim_main.cpp
+@@ -10,13 +10,6 @@ int main(int argc, char** argv, char** env) {
+     tb->opentrace("logs/trace.vcd");
+ 
+     int result = 0;
+-    int exp_mem[11][2];    
+-    for(int i = 0; i < 10; i++){
+-        exp_mem[i][0] = 200+i*4;
+-        exp_mem[i][1] = i;
+-    }
+-    exp_mem[10][0] = 0x7ff0;
+-    exp_mem[10][1] = 1;
+ 
+     tb->load_program((char*) "main.hex", 0x0);
+ 
+@@ -24,7 +17,10 @@ int main(int argc, char** argv, char** env) {
+         tb->tick();
+     }
+ 
+-    result = tb->check_memory((int*) exp_mem, 11);
++    // The test result+1 is written into the magic address
++    // in order to prevent reading a success if the memory was 
++    // uninitialized (e.g. remains 0)
++    result = tb->read_mem(0x7ff0) - 1;
+ 
+     // Cleanup
+     tb->tick();
+diff --git a/tests/rtl/common/testbench.h b/tests/rtl/common/testbench.h
+index 5e458f1..dd8fa6a 100644
+--- a/tests/rtl/common/testbench.h
++++ b/tests/rtl/common/testbench.h
+@@ -245,7 +245,7 @@ template<class MODULE>	class TESTBENCH {
+ 			this->resume_core();
+ 		}
+ 
+-
++		// Check a bunch of memory addresses for the expected results
+ 		int check_memory(int *exp_mem, int n_checks){
+ 			for(int i = 0; i < n_checks; i++){
+ 				if(this->read_mem(exp_mem[i*2]) != exp_mem[i*2+1])
+diff --git a/tests/rtl/tests/core/result.txt b/tests/rtl/tests/core/result.txt
+deleted file mode 100644
+index 53cdf1e..0000000
+--- a/tests/rtl/tests/core/result.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-PASSED
+diff --git a/tests/rtl/tests/random_program_0/main.c b/tests/rtl/tests/random_program_0/main.c
+index 8eaa70a..c1ea926 100644
+--- a/tests/rtl/tests/random_program_0/main.c
++++ b/tests/rtl/tests/random_program_0/main.c
+@@ -2,9 +2,10 @@
+ 
+ int main() {
+     unsigned int *magic_addr = (unsigned int*) 0x7ff0;
++    
+     int result = address_test();
+ 
+     *(magic_addr) = result + 1;
+-    
++
+     while(1);
+ }
+\ No newline at end of file
+diff --git a/tests/rtl/tests/random_program_0/result.txt b/tests/rtl/tests/random_program_0/result.txt
+deleted file mode 100644
+index 96f9c32..0000000
+--- a/tests/rtl/tests/random_program_0/result.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-FAILED 1
+
+From ea9c8a37b3c5e3c09f920e13a670aa1350088560 Mon Sep 17 00:00:00 2001
+From: Luca Hanel <lhanel@protonmail.com>
+Date: Wed, 5 Aug 2020 11:32:53 +0200
+Subject: [PATCH 08/12] test improvement, second program
+
+---
+ tests/rtl/{ => tests}/common/Makefile         |   4 +-
+ tests/rtl/{ => tests}/common/sim_main.cpp     |   0
+ tests/rtl/{ => tests}/common/testbench.h      |   0
+ tests/rtl/tests/core/Makefile                 |  71 ------
+ tests/rtl/tests/core/sim_main.cpp             | 213 ------------------
+ tests/rtl/tests/core/testbench.h              |   1 -
+ tests/rtl/tests/fibonacci/Makefile            |   1 +
+ tests/rtl/tests/fibonacci/fibonacci.c         |  19 ++
+ tests/rtl/tests/fibonacci/fibonacci.h         |   1 +
+ .../{random_program_0 => fibonacci}/main.c    |   4 +-
+ tests/rtl/tests/fibonacci/sim_main.cpp        |   1 +
+ tests/rtl/tests/fibonacci/testbench.h         |   1 +
+ tests/rtl/tests/mem_access/Makefile           |   1 +
+ tests/rtl/tests/mem_access/main.c             |  11 +
+ .../mem_access.c}                             |   2 +-
+ .../mem_access.h}                             |   0
+ tests/rtl/tests/mem_access/sim_main.cpp       |   1 +
+ tests/rtl/tests/mem_access/testbench.h        |   1 +
+ tests/rtl/tests/random_program_0/Makefile     |   1 -
+ tests/rtl/tests/random_program_0/sim_main.cpp |   1 -
+ tests/rtl/tests/random_program_0/testbench.h  |   1 -
+ 21 files changed, 43 insertions(+), 292 deletions(-)
+ rename tests/rtl/{ => tests}/common/Makefile (80%)
+ rename tests/rtl/{ => tests}/common/sim_main.cpp (100%)
+ rename tests/rtl/{ => tests}/common/testbench.h (100%)
+ delete mode 100644 tests/rtl/tests/core/Makefile
+ delete mode 100644 tests/rtl/tests/core/sim_main.cpp
+ delete mode 120000 tests/rtl/tests/core/testbench.h
+ create mode 120000 tests/rtl/tests/fibonacci/Makefile
+ create mode 100644 tests/rtl/tests/fibonacci/fibonacci.c
+ create mode 100644 tests/rtl/tests/fibonacci/fibonacci.h
+ rename tests/rtl/tests/{random_program_0 => fibonacci}/main.c (67%)
+ create mode 120000 tests/rtl/tests/fibonacci/sim_main.cpp
+ create mode 120000 tests/rtl/tests/fibonacci/testbench.h
+ create mode 120000 tests/rtl/tests/mem_access/Makefile
+ create mode 100644 tests/rtl/tests/mem_access/main.c
+ rename tests/rtl/tests/{random_program_0/address_test.c => mem_access/mem_access.c} (91%)
+ rename tests/rtl/tests/{random_program_0/address_test.h => mem_access/mem_access.h} (100%)
+ create mode 120000 tests/rtl/tests/mem_access/sim_main.cpp
+ create mode 120000 tests/rtl/tests/mem_access/testbench.h
+ delete mode 120000 tests/rtl/tests/random_program_0/Makefile
+ delete mode 120000 tests/rtl/tests/random_program_0/sim_main.cpp
+ delete mode 120000 tests/rtl/tests/random_program_0/testbench.h
+
+diff --git a/tests/rtl/common/Makefile b/tests/rtl/tests/common/Makefile
+similarity index 80%
+rename from tests/rtl/common/Makefile
+rename to tests/rtl/tests/common/Makefile
+index 613c930..7ccdfe0 100644
+--- a/tests/rtl/common/Makefile
++++ b/tests/rtl/tests/common/Makefile
+@@ -3,6 +3,8 @@ RISCV_GCC_OPTS ?= -DPREALLOCATE=1 -mcmodel=medany -march=rv32i -mabi=ilp32 -stat
+ RISCV_LINK_OPTS ?= -march=rv32i -mabi=ilp32 -static -nostdlib -nostartfiles -lm -lgcc
+ RISCV_OBJDUMP_OPTS ?= -d
+ 
++CURRENT_TEST = $(addsuffix .c, $(notdir $(shell pwd)))
++
+ default: main
+ 
+ .PHONY: build
+@@ -10,7 +12,7 @@ build:
+ 	@if [ ! -d "./build" ]; then mkdir build; fi
+ 
+ %: %.c build
+-	riscv64-unknown-linux-gnu-gcc ../../common/crt.s $< address_test.c $(RISCV_GCC_OPTS) -o build/$@ $(RISCV_LINK_OPTS)
++	riscv64-unknown-linux-gnu-gcc ../../common/crt.s $< $(CURRENT_TEST) $(RISCV_GCC_OPTS) -o build/$@ $(RISCV_LINK_OPTS)
+ 	@riscv64-unknown-linux-gnu-objdump $(RISCV_OBJDUMP_OPTS) build/$@ > build/$@.dmp
+ 	@riscv64-unknown-linux-gnu-objcopy -O binary build/$@ build/$@.bin
+ 	@hexdump build/$@.bin > main.hex.dmp
+diff --git a/tests/rtl/common/sim_main.cpp b/tests/rtl/tests/common/sim_main.cpp
+similarity index 100%
+rename from tests/rtl/common/sim_main.cpp
+rename to tests/rtl/tests/common/sim_main.cpp
+diff --git a/tests/rtl/common/testbench.h b/tests/rtl/tests/common/testbench.h
+similarity index 100%
+rename from tests/rtl/common/testbench.h
+rename to tests/rtl/tests/common/testbench.h
+diff --git a/tests/rtl/tests/core/Makefile b/tests/rtl/tests/core/Makefile
+deleted file mode 100644
+index 2399f21..0000000
+--- a/tests/rtl/tests/core/Makefile
++++ /dev/null
+@@ -1,71 +0,0 @@
+-######################################################################
+-# Check for sanity to avoid later confusion
+-
+-ifneq ($(words $(CURDIR)),1)
+- $(error Unsupported: GNU Make cannot build in directories containing spaces, build elsewhere: '$(CURDIR)')
+-endif
+-
+-######################################################################
+-# Set up variables
+-
+-# If $VERILATOR_ROOT isn't in the environment, we assume it is part of a
+-# package inatall, and verilator is in your path. Otherwise find the
+-# binary relative to $VERILATOR_ROOT (such as when inside the git sources).
+-ifeq ($(VERILATOR_ROOT),)
+-VERILATOR = verilator
+-VERILATOR_COVERAGE = verilator_coverage
+-else
+-export VERILATOR_ROOT
+-VERILATOR = $(VERILATOR_ROOT)/bin/verilator
+-VERILATOR_COVERAGE = $(VERILATOR_ROOT)/bin/verilator_coverage
+-endif
+-
+-VERILATOR_FLAGS =
+-# Generate C++ in executable form
+-VERILATOR_FLAGS += -cc --exe
+-# Optimize
+-VERILATOR_FLAGS += -O2 -x-assign 0
+-# Warn abount lint issues; may not want this on less solid designs
+-VERILATOR_FLAGS += -Wall
+-# Make waveforms
+-VERILATOR_FLAGS += --trace
+-# Check SystemVerilog assertions
+-VERILATOR_FLAGS += --assert
+-# Generate coverage analysis
+-VERILATOR_FLAGS += --coverage
+-VERILATOR_FLAGS += --trace-structs
+-# VERILATOR_FLAGS += --prefix top
+-
+-INCLUDE := $(shell cat ../../common/sources.txt)
+-
+-VERILATOR_FLAGS += --top-module core_wrapper
+-
+-######################################################################
+-default: run
+-
+-run:
+-	@echo "-- VERILATE ----------------"
+-	$(VERILATOR) $(VERILATOR_FLAGS) $(INCLUDE) sim_main.cpp
+-
+-	@echo
+-	@echo "-- COMPILE -----------------"
+-	# $(MAKE) -j 4 -C obj_dir -f top.mk 
+-	$(MAKE) -j 4 -C obj_dir -f Vcore_wrapper.mk 
+-	
+-
+-	@echo
+-	@echo "-- RUN ---------------------"
+-	@mkdir -p logs
+-	# obj_dir/top --trace > result.txt
+-	obj_dir/Vcore_wrapper --trace > result.txt
+-
+-	@echo
+-	@echo "-- COVERAGE ----------------"
+-	$(VERILATOR_COVERAGE) --annotate logs/annotated logs/coverage.dat
+-
+-	@echo
+-	@echo "-- TEST RESULT -------------"
+-	@echo "   `cat result.txt`"
+-
+-clean:
+-	-rm -rf obj_dir logs *.log *.dmp *.vpd coverage.dat result.txt
+diff --git a/tests/rtl/tests/core/sim_main.cpp b/tests/rtl/tests/core/sim_main.cpp
+deleted file mode 100644
+index fd0146d..0000000
+--- a/tests/rtl/tests/core/sim_main.cpp
++++ /dev/null
+@@ -1,213 +0,0 @@
+-#include <verilated.h>
+-#include "Vcore_wrapper.h"
+-#include "testbench.h"
+-
+-TESTBENCH<Vcore_wrapper> *tb;
+-
+-int read(int addr){
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_addr_i = addr;
+-    tb->m_core->dbg_cmd_i = 0x01;
+-    tb->tick();
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x0;
+-    return (int) tb->m_core->dbg_data_o;
+-}
+-
+-int read_reg(int reg){
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_addr_i = reg;
+-    tb->m_core->dbg_cmd_i = 0x13;
+-    tb->tick();
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x0;
+-    return (int) tb->m_core->dbg_data_o;
+-}
+-
+-void write_reg(int reg, int data){
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_addr_i = reg;
+-    tb->m_core->dbg_cmd_i = 0x14;
+-    tb->m_core->dbg_data_i = data;
+-    tb->tick();
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x0;
+-    tb->tick();
+-}
+-
+-void write(int addr, int data){
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_addr_i = addr;
+-    tb->m_core->dbg_data_i = data;
+-    tb->m_core->dbg_cmd_i = 0x02;
+-    tb->tick();
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x0;
+-    tb->tick();
+-}
+-
+-void halt_core(){
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x11;
+-    tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x0;
+-}
+-
+-void resume_core(){
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x12;
+-    tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x0;
+-}
+-
+-void reset_core(){
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x03;
+-    tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x0;
+-}
+-
+-int read_pc(){
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x15;
+-    tb->tick();
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x0;
+-    return (int) tb->m_core->dbg_data_o;
+-}
+-
+-void set_pc(int pc){
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x16;
+-    tb->m_core->dbg_data_i = pc;
+-    tb->tick();
+-    while(tb->m_core->dbg_ready_o == 0)
+-        tb->tick();
+-    tb->m_core->dbg_cmd_i = 0x0;
+-    tb->tick();
+-}
+-
+-void load_program(int program[1024], int len, int startAddr){
+-    halt_core();
+-    for(int i = 0; i < len; i++){
+-        write(startAddr + 4*i, program[i]);
+-    }
+-}
+-
+-int test_registers(){
+-    // Register 0 should never be changed
+-    write_reg(0x0, 0xff);
+-    if(read_reg(0x0) != 0x0)
+-        return 1;
+-    
+-    for(int i = 1; i < 32; i++){
+-        write_reg(i, 0xf00+i);
+-        if(read_reg(i) != (0xf00+i))
+-            return i;
+-        // Clear register again
+-        write_reg(i, 0x0);
+-    }
+-
+-    return 0;
+-}
+-
+-int main(int argc, char** argv, char** env) {
+-    int program[1024];
+-
+-    program[0x0]      = 0b00000001000000000000000010010011;     // addi 16, x0, x1;
+-    program[0x1]      = 0b00000000000100010000000100010011;     // addi 1, x2, x2;
+-    program[0x2]      = 0b11111110000100010100111011100011;     // blt x2, x1, -2
+-    program[0x3]      = 0b00000110001000000000000000100011;     // sw x2, 64+x0;
+-    program[0x4]      = 0b00000000000100010000000100010011;     // addi 1, x2, x2;
+-    program[0x5]      = 0b00000000000100011000000110010011;     // addi 1, x3, x3;
+-    program[0x6]      = 0b00000000000100100000001000010011;     // addi 1, x4, x4;
+-    program[0x7]      = 0b00000000000100101000001010010011;     // addi 1, x5, x5;
+-    program[0x8]      = 0b00000000000100110000001100010011;     // addi 1, x6, x6;
+-    program[0x9]      = 0b00000110001000000010000000100011;     // sw x2, 64+x0;
+-    program[0xa]      = 0b00000110001100000010001000100011;     // sw x3, 68+x0;
+-    program[0xb]      = 0b00000110010000000010010000100011;     // sw x4, 72+x0;
+-    program[0xc]      = 0b00000110010100000010011000100011;     // sw x5, 76+x0;
+-    program[0xd]      = 0b00000110011000000010100000100011;     // sw x5, 80+x0;
+-    program[0xe]      = 0b00000000000100010000000100010011;     // addi 1, x2, x2;
+-    program[0xf]      = 0b00000000000100011000000110010011;     // addi 1, x3, x3;
+-    program[0x10]     = 0b00000000000100100000001000010011;     // addi 1, x4, x4;
+-    program[0x11]     = 0b00000000000100101000001010010011;     // addi 1, x5, x5;
+-    program[0x12]     = 0b00000000000100110000001100010011;     // addi 1, x6, x6;
+-    program[0x13]     = 0b00000110001000000010000000100011;     // sw x2, 64+x0;
+-    program[0x14]     = 0b00000110001100000010001000100011;     // sw x3, 68+x0;
+-    program[0x15]     = 0b00000110010000000010010000100011;     // sw x4, 72+x0;
+-    program[0x16]     = 0b00000110010100000010011000100011;     // sw x5, 76+x0;
+-    program[0x17]     = 0b00000110011000000010100000100011;     // sw x5, 80+x0;
+-
+-    int exp_mem[10][2];
+-    exp_mem[0][0] = 0x18;
+-    exp_mem[0][1] = 0x12;
+-    
+-    Verilated::commandArgs(argc, argv);
+-    tb = new TESTBENCH<Vcore_wrapper>();
+-    tb->opentrace("logs/trace.vcd");
+-
+-    int result = 0;
+-
+-    // Initialize inputs
+-
+-    // Reset
+-    tb->reset();
+-
+-    // Stop the core
+-    halt_core();
+-
+-    // Test reading and writing to register        
+-    result = test_registers();
+-    if(result != 0){
+-        std::cout << "regcheck FAILED " << result << std::endl;
+-        exit(0);
+-    }
+-    // Load the program
+-    load_program(program, 0x17, 0x4);
+-    // Resume the core
+-    set_pc(0x4);
+-    resume_core();
+-
+-    for(int i = 0; i < 1000; i++){
+-        tb->tick();
+-    }
+-    int data;
+-    if(data = read(exp_mem[0][0]*4) != exp_mem[0][1])
+-        std::cout << "FAILED " << data << std::endl;
+-    else
+-        std::cout << "PASSED" << std::endl;
+-    
+-
+-    // Cleanup
+-    tb->tick();
+-    tb->m_core->final();
+-
+-    // Evaluate test
+-    // if(result == 0)
+-    //     std::cout << "PASSED" << std::endl;
+-    // else
+-    //     std::cout << "FAILED " << result << std::endl;
+-    
+-    //  Coverage analysis (since test passed)
+-    VerilatedCov::write("logs/coverage.dat");
+-
+-    // Destroy model
+-    delete tb->m_core; tb->m_core = NULL;
+-
+-    exit(0);
+-}
+diff --git a/tests/rtl/tests/core/testbench.h b/tests/rtl/tests/core/testbench.h
+deleted file mode 120000
+index dae1ff5..0000000
+--- a/tests/rtl/tests/core/testbench.h
++++ /dev/null
+@@ -1 +0,0 @@
+-../../common/testbench.h
+\ No newline at end of file
+diff --git a/tests/rtl/tests/fibonacci/Makefile b/tests/rtl/tests/fibonacci/Makefile
+new file mode 120000
+index 0000000..d981720
+--- /dev/null
++++ b/tests/rtl/tests/fibonacci/Makefile
+@@ -0,0 +1 @@
++../common/Makefile
+\ No newline at end of file
+diff --git a/tests/rtl/tests/fibonacci/fibonacci.c b/tests/rtl/tests/fibonacci/fibonacci.c
+new file mode 100644
+index 0000000..11273e8
+--- /dev/null
++++ b/tests/rtl/tests/fibonacci/fibonacci.c
+@@ -0,0 +1,19 @@
++#define FIB_N 12
++
++int fibonacci(){
++
++    unsigned int fib_i = 1;
++    unsigned int fib_ii = 1;
++    unsigned int fib = 0;
++
++    int i;
++    for(i = 3; i <= FIB_N; i++) {
++        fib = fib_i + fib_ii;
++        fib_i = fib_ii;
++        fib_ii = fib;
++    }
++    if(fib != 144)
++        return fib;
++
++    return 0;
++}
+\ No newline at end of file
+diff --git a/tests/rtl/tests/fibonacci/fibonacci.h b/tests/rtl/tests/fibonacci/fibonacci.h
+new file mode 100644
+index 0000000..b443a7c
+--- /dev/null
++++ b/tests/rtl/tests/fibonacci/fibonacci.h
+@@ -0,0 +1 @@
++int fibonacci();
+\ No newline at end of file
+diff --git a/tests/rtl/tests/random_program_0/main.c b/tests/rtl/tests/fibonacci/main.c
+similarity index 67%
+rename from tests/rtl/tests/random_program_0/main.c
+rename to tests/rtl/tests/fibonacci/main.c
+index c1ea926..870c191 100644
+--- a/tests/rtl/tests/random_program_0/main.c
++++ b/tests/rtl/tests/fibonacci/main.c
+@@ -1,9 +1,9 @@
+-#include "address_test.h"
++#include "fibonacci.h"
+ 
+ int main() {
+     unsigned int *magic_addr = (unsigned int*) 0x7ff0;
+     
+-    int result = address_test();
++    int result = fibonacci();
+ 
+     *(magic_addr) = result + 1;
+ 
+diff --git a/tests/rtl/tests/fibonacci/sim_main.cpp b/tests/rtl/tests/fibonacci/sim_main.cpp
+new file mode 120000
+index 0000000..e969a20
+--- /dev/null
++++ b/tests/rtl/tests/fibonacci/sim_main.cpp
+@@ -0,0 +1 @@
++../common/sim_main.cpp
+\ No newline at end of file
+diff --git a/tests/rtl/tests/fibonacci/testbench.h b/tests/rtl/tests/fibonacci/testbench.h
+new file mode 120000
+index 0000000..374a296
+--- /dev/null
++++ b/tests/rtl/tests/fibonacci/testbench.h
+@@ -0,0 +1 @@
++../common/testbench.h
+\ No newline at end of file
+diff --git a/tests/rtl/tests/mem_access/Makefile b/tests/rtl/tests/mem_access/Makefile
+new file mode 120000
+index 0000000..d981720
+--- /dev/null
++++ b/tests/rtl/tests/mem_access/Makefile
+@@ -0,0 +1 @@
++../common/Makefile
+\ No newline at end of file
+diff --git a/tests/rtl/tests/mem_access/main.c b/tests/rtl/tests/mem_access/main.c
+new file mode 100644
+index 0000000..96b5ee8
+--- /dev/null
++++ b/tests/rtl/tests/mem_access/main.c
+@@ -0,0 +1,11 @@
++#include "mem_access.h"
++
++int main() {
++    unsigned int *magic_addr = (unsigned int*) 0x7ff0;
++    
++    int result = mem_access();
++
++    *(magic_addr) = result + 1;
++
++    while(1);
++}
+\ No newline at end of file
+diff --git a/tests/rtl/tests/random_program_0/address_test.c b/tests/rtl/tests/mem_access/mem_access.c
+similarity index 91%
+rename from tests/rtl/tests/random_program_0/address_test.c
+rename to tests/rtl/tests/mem_access/mem_access.c
+index 715b2a1..42ebef9 100644
+--- a/tests/rtl/tests/random_program_0/address_test.c
++++ b/tests/rtl/tests/mem_access/mem_access.c
+@@ -1,4 +1,4 @@
+-int address_test(){
++int mem_access(){
+     unsigned int *addr = (int*) 0x200;
+ 
+     for(int i = 0; i < 10; i++){
+diff --git a/tests/rtl/tests/random_program_0/address_test.h b/tests/rtl/tests/mem_access/mem_access.h
+similarity index 100%
+rename from tests/rtl/tests/random_program_0/address_test.h
+rename to tests/rtl/tests/mem_access/mem_access.h
+diff --git a/tests/rtl/tests/mem_access/sim_main.cpp b/tests/rtl/tests/mem_access/sim_main.cpp
+new file mode 120000
+index 0000000..e969a20
+--- /dev/null
++++ b/tests/rtl/tests/mem_access/sim_main.cpp
+@@ -0,0 +1 @@
++../common/sim_main.cpp
+\ No newline at end of file
+diff --git a/tests/rtl/tests/mem_access/testbench.h b/tests/rtl/tests/mem_access/testbench.h
+new file mode 120000
+index 0000000..374a296
+--- /dev/null
++++ b/tests/rtl/tests/mem_access/testbench.h
+@@ -0,0 +1 @@
++../common/testbench.h
+\ No newline at end of file
+diff --git a/tests/rtl/tests/random_program_0/Makefile b/tests/rtl/tests/random_program_0/Makefile
+deleted file mode 120000
+index b070036..0000000
+--- a/tests/rtl/tests/random_program_0/Makefile
++++ /dev/null
+@@ -1 +0,0 @@
+-../../common/Makefile
+\ No newline at end of file
+diff --git a/tests/rtl/tests/random_program_0/sim_main.cpp b/tests/rtl/tests/random_program_0/sim_main.cpp
+deleted file mode 120000
+index f22cc03..0000000
+--- a/tests/rtl/tests/random_program_0/sim_main.cpp
++++ /dev/null
+@@ -1 +0,0 @@
+-../../common/sim_main.cpp
+\ No newline at end of file
+diff --git a/tests/rtl/tests/random_program_0/testbench.h b/tests/rtl/tests/random_program_0/testbench.h
+deleted file mode 120000
+index dae1ff5..0000000
+--- a/tests/rtl/tests/random_program_0/testbench.h
++++ /dev/null
+@@ -1 +0,0 @@
+-../../common/testbench.h
+\ No newline at end of file
+
+From 3f0966cecbcea1c56df6121303660fc76aae366b Mon Sep 17 00:00:00 2001
+From: Luca Hanel <lhanel@protonmail.com>
+Date: Wed, 5 Aug 2020 11:33:47 +0200
+Subject: [PATCH 09/12] missed file in last commit
+
+---
+ tests/rtl/tests/mem_access/mem_access.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tests/rtl/tests/mem_access/mem_access.h b/tests/rtl/tests/mem_access/mem_access.h
+index 7776251..7b55a34 100644
+--- a/tests/rtl/tests/mem_access/mem_access.h
++++ b/tests/rtl/tests/mem_access/mem_access.h
+@@ -1 +1 @@
+-int address_test();
+\ No newline at end of file
++int mem_access();
+\ No newline at end of file
+
+From 4f133ded448ae98045bee285778cef0c4b78f747 Mon Sep 17 00:00:00 2001
+From: Luca Hanel <lhanel@protonmail.com>
+Date: Wed, 5 Aug 2020 13:03:46 +0200
+Subject: [PATCH 10/12] automated tests, added new program
+
+---
+ Makefile                               | 26 +++----------------
+ tests/rtl/Makefile                     | 18 +++++++++++++
+ tests/rtl/common/crt.s                 |  2 +-
+ tests/rtl/common/list_tests.py         | 10 +++++++
+ tests/rtl/tests/common/sim_main.cpp    | 10 ++++---
+ tests/rtl/tests/functions/Makefile     |  1 +
+ tests/rtl/tests/functions/functions.c  | 36 ++++++++++++++++++++++++++
+ tests/rtl/tests/functions/functions.h  |  1 +
+ tests/rtl/tests/functions/main.c       | 11 ++++++++
+ tests/rtl/tests/functions/sim_main.cpp |  1 +
+ tests/rtl/tests/functions/testbench.h  |  1 +
+ 11 files changed, 90 insertions(+), 27 deletions(-)
+ create mode 100644 tests/rtl/Makefile
+ create mode 100755 tests/rtl/common/list_tests.py
+ create mode 120000 tests/rtl/tests/functions/Makefile
+ create mode 100644 tests/rtl/tests/functions/functions.c
+ create mode 100644 tests/rtl/tests/functions/functions.h
+ create mode 100644 tests/rtl/tests/functions/main.c
+ create mode 120000 tests/rtl/tests/functions/sim_main.cpp
+ create mode 120000 tests/rtl/tests/functions/testbench.h
+
+diff --git a/Makefile b/Makefile
+index cb30568..67cb9e9 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1,25 +1,5 @@
+-PRJNAME:=RVMicroController
+-
+-.PHONY: ips
+-
+-ips: xilinx_bram_controller # xilinx_ddr3_controller
+-
+-xilinx_ddr3_controller: 
+-	make -B -C ips/xilinx_ddr3_controller clean all
+-
+-xilinx_bram_controller: 
+-	make -B -C ips/xilinx_bram_controller clean all
+-
+-.PHONY: impl
+-impl:
+-	make -B -C impl
+-	rm vivado.*
+-
+-sim:
+-	make -C sim_verilator
+-	gtkwave -f sim_verilator/logs/vlt_dump.vcd -a sim_verilator/common/waves.gtkw
++rtltest:
++	make -C tests/rtl run
+ 
+ clean:
+-	make -C impl clean
+-	make -C sim_verilator clean
+-	make -C ips/xilinx_ddr3_controller clean
+\ No newline at end of file
++	make -C tests/rtl clean
+\ No newline at end of file
+diff --git a/tests/rtl/Makefile b/tests/rtl/Makefile
+new file mode 100644
+index 0000000..aff0626
+--- /dev/null
++++ b/tests/rtl/Makefile
+@@ -0,0 +1,18 @@
++TESTS = $(shell ./common/list_tests.py)
++
++run:
++	@for test in $(TESTS) ; do \
++		make -C tests/$$test ; \
++	done
++
++	@echo "\n\nRESULTS:"
++
++	@for test in $(TESTS) ; do \
++		echo  -n "tests/$$test: \t"; \
++		cat tests/$$test/result.txt ; \
++	done
++
++clean:
++	@for test in $(TESTS) ; do \
++		make -C tests/$$test clean ; \
++	done
+diff --git a/tests/rtl/common/crt.s b/tests/rtl/common/crt.s
+index e90bd00..fdb24ae 100644
+--- a/tests/rtl/common/crt.s
++++ b/tests/rtl/common/crt.s
+@@ -1,5 +1,5 @@
+ .globl _start
+ _start:
+-    li sp,0x7000
++    li sp,0x6000
+     j main
+     
+\ No newline at end of file
+diff --git a/tests/rtl/common/list_tests.py b/tests/rtl/common/list_tests.py
+new file mode 100755
+index 0000000..e64f68c
+--- /dev/null
++++ b/tests/rtl/common/list_tests.py
+@@ -0,0 +1,10 @@
++#!/usr/bin/env python3
++
++import os
++
++tests = ''
++for filename in os.listdir('tests'):
++    if 'dontrun' not in filename and 'common' not in filename:
++        tests += filename + ' '
++
++print(tests)
+\ No newline at end of file
+diff --git a/tests/rtl/tests/common/sim_main.cpp b/tests/rtl/tests/common/sim_main.cpp
+index d7603f9..15c2ac3 100644
+--- a/tests/rtl/tests/common/sim_main.cpp
++++ b/tests/rtl/tests/common/sim_main.cpp
+@@ -13,14 +13,18 @@ int main(int argc, char** argv, char** env) {
+ 
+     tb->load_program((char*) "main.hex", 0x0);
+ 
+-    for(int i = 0; i < 1000; i++){
+-        tb->tick();
++    for(int i = 0; i < 100; i++){
++        for(int j = 0; j < 200; j++)
++            tb->tick();
++
++        if(result = tb->read_mem(0x7ff0) != 0)
++            break;
+     }
+ 
+     // The test result+1 is written into the magic address
+     // in order to prevent reading a success if the memory was 
+     // uninitialized (e.g. remains 0)
+-    result = tb->read_mem(0x7ff0) - 1;
++    result -= 1;
+ 
+     // Cleanup
+     tb->tick();
+diff --git a/tests/rtl/tests/functions/Makefile b/tests/rtl/tests/functions/Makefile
+new file mode 120000
+index 0000000..d981720
+--- /dev/null
++++ b/tests/rtl/tests/functions/Makefile
+@@ -0,0 +1 @@
++../common/Makefile
+\ No newline at end of file
+diff --git a/tests/rtl/tests/functions/functions.c b/tests/rtl/tests/functions/functions.c
+new file mode 100644
+index 0000000..772a512
+--- /dev/null
++++ b/tests/rtl/tests/functions/functions.c
+@@ -0,0 +1,36 @@
++
++int int_fun(int input){
++    return input;
++}
++
++void void_fun(int input){
++    return;
++}
++
++int add(int test, int input){
++    return test + input;
++}
++
++void pointer_fun(int *test, int input){
++    *(test) = input;
++}
++
++int functions(){
++    int test;
++    test = int_fun(20);
++    if(test != 20) return 1;
++
++    void_fun(10);
++    if(test != 20) return 2;
++
++    test = add(test, 5);
++    if(test != 25) return 3;
++
++    test = add(test, -5);
++    if(test != 20) return 4;
++
++    pointer_fun(&test, -200);
++    if(test != -200) return 5;
++
++    return 0;
++}
+\ No newline at end of file
+diff --git a/tests/rtl/tests/functions/functions.h b/tests/rtl/tests/functions/functions.h
+new file mode 100644
+index 0000000..f416bd9
+--- /dev/null
++++ b/tests/rtl/tests/functions/functions.h
+@@ -0,0 +1 @@
++int functions();
+\ No newline at end of file
+diff --git a/tests/rtl/tests/functions/main.c b/tests/rtl/tests/functions/main.c
+new file mode 100644
+index 0000000..cd2c5fe
+--- /dev/null
++++ b/tests/rtl/tests/functions/main.c
+@@ -0,0 +1,11 @@
++#include "functions.h"
++
++int main() {
++    unsigned int *magic_addr = (unsigned int*) 0x7ff0;
++    
++    int result = functions();
++
++    *(magic_addr) = result + 1;
++
++    while(1);
++}
+\ No newline at end of file
+diff --git a/tests/rtl/tests/functions/sim_main.cpp b/tests/rtl/tests/functions/sim_main.cpp
+new file mode 120000
+index 0000000..e969a20
+--- /dev/null
++++ b/tests/rtl/tests/functions/sim_main.cpp
+@@ -0,0 +1 @@
++../common/sim_main.cpp
+\ No newline at end of file
+diff --git a/tests/rtl/tests/functions/testbench.h b/tests/rtl/tests/functions/testbench.h
+new file mode 120000
+index 0000000..374a296
+--- /dev/null
++++ b/tests/rtl/tests/functions/testbench.h
+@@ -0,0 +1 @@
++../common/testbench.h
+\ No newline at end of file
+
+From 1f559f71621ec764c3cb84fef2dbd66662aa431d Mon Sep 17 00:00:00 2001
+From: Luca Hanel <lhanel@protonmail.com>
+Date: Wed, 5 Aug 2020 16:16:21 +0200
+Subject: [PATCH 11/12] fixed memstage again, fixed tests which had false
+ positives
+
+---
+ ips/load_store_unit                      |  2 +-
+ rtl/core/pipelineStages/mem/MEM_stage.sv | 35 +++++++++---------------
+ tests/rtl/tests/common/sim_main.cpp      |  6 ++--
+ tests/rtl/tests/functions/functions.c    |  1 -
+ tests/rtl/tests/mem_access/mem_access.c  | 10 ++++---
+ 5 files changed, 23 insertions(+), 31 deletions(-)
+
+diff --git a/ips/load_store_unit b/ips/load_store_unit
+index 08f3f2f..85ff9da 160000
+--- a/ips/load_store_unit
++++ b/ips/load_store_unit
+@@ -1 +1 @@
+-Subproject commit 08f3f2fdb388dcb7087b86d14a75f29d4e50ecb2
++Subproject commit 85ff9daa0f344463fb9a97847d5cf6532f1a30af
+diff --git a/rtl/core/pipelineStages/mem/MEM_stage.sv b/rtl/core/pipelineStages/mem/MEM_stage.sv
+index 796285a..8703eda 100644
+--- a/rtl/core/pipelineStages/mem/MEM_stage.sv
++++ b/rtl/core/pipelineStages/mem/MEM_stage.sv
+@@ -53,8 +53,7 @@ struct packed {
+ logic load;
+ logic store;
+ logic lsu_valid;
+-logic lsu_rvalid_n, lsu_rvalid_q;
+-logic lsu_wvalid_n, lsu_wvalid_q;
++logic lsu_valid_n, lsu_valid_q;
+ logic [31:0] lu_data;
+ logic [3:0] lsu_we;
+ 
+@@ -77,8 +76,7 @@ lsu lsu_i(
+ 
+ always_comb
+ begin
+-    lsu_rvalid_n = lsu_rvalid_q;
+-    lsu_wvalid_n = lsu_wvalid_q;
++    lsu_valid_n = lsu_valid_q;
+     data_n  = data_q;
+     ack_o   = 1'b0;
+     load    = 1'b0;
+@@ -88,24 +86,22 @@ begin
+     // Data is no longer valid if we recieved and ack
+     if(ack_i) begin
+         data_n.valid = 1'b0;
+-        lsu_rvalid_n = 1'b0;
+-        lsu_wvalid_n = 1'b0;
++        lsu_valid_n = 1'b0;
+     end
+ 
+     case(instr_i[6:0])
+         // In case of LOAD or STORE, we give the respective signal
+         // to the memory and wait for the next stage to ack
+         `LOAD: begin
+-            lsu_wvalid_n   = 1'b0;
+-            if(!lsu_rvalid_q) begin
+-                lsu_rvalid_n = lsu_valid;
++            if(!lsu_valid_q && valid_i) begin
++                lsu_valid_n = lsu_valid;
+                 load        = 1'b1;
+             end else if((!data_q.valid || ack_i) && valid_i) begin
+                 ack_o          = 1'b1;
+                 data_n.valid   = 1'b1;
+                 data_n.instr   = instr_i;
+-                lsu_rvalid_n   = 1'b0;
+-                lsu_wvalid_n   = 1'b0;
++                lsu_valid_n   = 1'b0;
++                lsu_valid_n   = 1'b0;
+                 case(instr_i[13:12])
+                     2'b00:
+                         data_n.data = {{24{lu_data[7]}}, lu_data[7:0]};
+@@ -122,9 +118,8 @@ begin
+         // In case of LOAD or STORE, we give the respective signal
+         // to the memory and wait for the next stage to ack
+         `STORE: begin
+-            lsu_rvalid_n   = 1'b0;
+-            if(!lsu_wvalid_q) begin
+-                lsu_wvalid_n  = lsu_valid;
++            if(!lsu_valid_q && valid_i) begin
++                lsu_valid_n  = lsu_valid;
+                 store        = 1'b1;
+                 // Write the correct amount of bytes
+                 case(instr_i[13:12])
+@@ -140,16 +135,14 @@ begin
+             end else if((!data_q.valid || ack_i) && valid_i)begin
+                 ack_o          = 1'b1;
+                 data_n         = {1'b1, instr_i, 32'b0};
+-                lsu_rvalid_n   = 1'b0;
+-                lsu_wvalid_n    = 1'b0;
++                lsu_valid_n    = 1'b0;
+             end
+         end
+ 
+         // In case of these, we can directly give the data to the
+         // following stage, the pointer to the old next instr (pc+4)
+         `AUIPC, `JAL, `JALR: begin
+-            lsu_rvalid_n   = 1'b0;
+-            lsu_wvalid_n   = 1'b0;
++            lsu_valid_n   = 1'b0;
+             if((!data_q.valid || ack_i) && valid_i) begin
+                 ack_o          = 1'b1;
+                 data_n         = {1'b1, instr_i, pc_i + 4};
+@@ -164,8 +157,7 @@ begin
+         // unit can work in parallel when other instructions are
+         // processed.
+         default: begin   
+-            lsu_rvalid_n   = 1'b0;
+-            lsu_wvalid_n   = 1'b0;         
++            lsu_valid_n   = 1'b0;         
+             if((!data_q.valid || ack_i) && valid_i) begin
+                 ack_o          = 1'b1;
+                 data_n         = {1'b1, instr_i, result_i};
+@@ -179,8 +171,7 @@ always_ff @(posedge clk, negedge rstn_i) begin
+         data_q <= 'b0;
+     end else if(!halt_i) begin
+         data_q <= data_n;
+-        lsu_wvalid_q <= lsu_wvalid_n;
+-        lsu_rvalid_q <= lsu_rvalid_n;
++        lsu_valid_q <= lsu_valid_n;
+     end
+ end
+ 
+diff --git a/tests/rtl/tests/common/sim_main.cpp b/tests/rtl/tests/common/sim_main.cpp
+index 15c2ac3..897894b 100644
+--- a/tests/rtl/tests/common/sim_main.cpp
++++ b/tests/rtl/tests/common/sim_main.cpp
+@@ -16,15 +16,15 @@ int main(int argc, char** argv, char** env) {
+     for(int i = 0; i < 100; i++){
+         for(int j = 0; j < 200; j++)
+             tb->tick();
+-
+-        if(result = tb->read_mem(0x7ff0) != 0)
++        if(tb->read_mem(0x7ff0) != 0)
+             break;
+     }
+ 
+     // The test result+1 is written into the magic address
+     // in order to prevent reading a success if the memory was 
+     // uninitialized (e.g. remains 0)
+-    result -= 1;
++
++    result = tb->read_mem(0x7ff0) - 1;
+ 
+     // Cleanup
+     tb->tick();
+diff --git a/tests/rtl/tests/functions/functions.c b/tests/rtl/tests/functions/functions.c
+index 772a512..ae09bc8 100644
+--- a/tests/rtl/tests/functions/functions.c
++++ b/tests/rtl/tests/functions/functions.c
+@@ -19,7 +19,6 @@ int functions(){
+     int test;
+     test = int_fun(20);
+     if(test != 20) return 1;
+-
+     void_fun(10);
+     if(test != 20) return 2;
+ 
+diff --git a/tests/rtl/tests/mem_access/mem_access.c b/tests/rtl/tests/mem_access/mem_access.c
+index 42ebef9..c2184f0 100644
+--- a/tests/rtl/tests/mem_access/mem_access.c
++++ b/tests/rtl/tests/mem_access/mem_access.c
+@@ -1,14 +1,16 @@
+ int mem_access(){
+     unsigned int *addr = (int*) 0x200;
+-
++    *addr = 0;
+     for(int i = 0; i < 10; i++){
+-        *addr = i;
++        (*addr) = i;
+         addr++;
+     }
+ 
++    addr = (int*) 0x200;
+     for(int i = 0; i < 10; i++){
+-        if(*addr != i)
+-            return i;
++        if((*addr) != i)
++            return i+1;
++        addr++;
+     }
+     return 0;
+ }
+\ No newline at end of file
+
+From 8fcbc3a4ca6c33f44aeb32ca2222e5487cb440c5 Mon Sep 17 00:00:00 2001
+From: Luca Hanel <lhanel@protonmail.com>
+Date: Wed, 5 Aug 2020 16:19:46 +0200
+Subject: [PATCH 12/12] minor makefile fix
+
+---
+ Makefile | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/Makefile b/Makefile
+index 67cb9e9..dec29db 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1,3 +1,5 @@
++default: rtltest
++
+ rtltest:
+ 	make -C tests/rtl run
+ 

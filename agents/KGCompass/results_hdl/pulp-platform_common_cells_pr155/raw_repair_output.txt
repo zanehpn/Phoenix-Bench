@@ -1,0 +1,44 @@
+The bug is in `src/fall_through_register.sv`: it instantiates the deprecated `fifo_v2` instead of `fifo_v3`.
+
+Here is the minimal fix:
+
+```systemverilog
+### src/fall_through_register.sv
+<<<<<<< SEARCH
+    fifo_v2 #(
+        .FALL_THROUGH   (1'b1),
+        .DATA_WIDTH     ($size(T)),
+        .DEPTH          (1),
+        .dtype          (T)
+    ) i_fifo (
+        .clk_i          (clk_i),
+        .rst_ni         (rst_ni),
+        .flush_i        (clr_i),
+        .testmode_i     (testmode_i),
+        .full_o         (fifo_full),
+        .empty_o        (fifo_empty),
+        .data_i         (data_i),
+        .push_i         (valid_i & ~fifo_full),
+        .data_o         (data_o),
+        .pop_i          (ready_i & ~fifo_empty)
+    );
+=======
+    fifo_v3 #(
+        .FALL_THROUGH   (1'b1),
+        .DATA_WIDTH     ($size(T)),
+        .DEPTH          (1),
+        .dtype          (T)
+    ) i_fifo (
+        .clk_i          (clk_i),
+        .rst_ni         (rst_ni),
+        .flush_i        (clr_i),
+        .testmode_i     (testmode_i),
+        .full_o         (fifo_full),
+        .empty_o        (fifo_empty),
+        .data_i         (data_i),
+        .push_i         (valid_i & ~fifo_full),
+        .data_o         (data_o),
+        .pop_i          (ready_i & ~fifo_empty)
+    );
+>>>>>>> REPLACE
+```

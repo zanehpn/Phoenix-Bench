@@ -1,0 +1,160 @@
+From d9155f16921171aaa234adc648433b42fbb96462 Mon Sep 17 00:00:00 2001
+From: anithasamanthula <anithasamanthula@mirafra.com>
+Date: Mon, 14 Mar 2022 12:02:26 +0530
+Subject: [PATCH] added regression list
+
+---
+ sim/questa_sim/makefile                       | 22 +++++++++----------
+ .../pulpino_spi_master_subsystem_test_pkg.sv  |  2 +-
+ .../reg_sequences/axi4_master_reg_seq_pkg.sv  |  2 +-
+ ...no_spi_master_subsystem_virtual_seq_pkg.sv |  2 +-
+ src/dv/hvl_top/testlists/regression.list      | 19 ++++++++++++++++
+ 5 files changed, 33 insertions(+), 14 deletions(-)
+ create mode 100644 src/dv/hvl_top/testlists/regression.list
+
+diff --git a/sim/questa_sim/makefile b/sim/questa_sim/makefile
+index 620151c..8fb1e2a 100755
+--- a/sim/questa_sim/makefile
++++ b/sim/questa_sim/makefile
+@@ -55,13 +55,13 @@ usage:
+ 	echo "make simulate test=<test_name> uvm_verbosity=<VERBOSITY_LEVEL>";
+ 	echo "";
+ 	echo "Example:":
+-	echo "make simulate test=pulpino_spi_master_subsystem_base_test uvm_verbosity=UVM_HIGH";
++	echo "make simulate test=base_test uvm_verbosity=UVM_HIGH";
+ 	echo "";
+ 	echo "To run regression:"
+ 	echo "make regression testlist_name=<regression_testlist_name.list>";
+ 	echo "";
+ 	echo "Example:":
+-	echo "make regression testlist_name=pulpino_spi_master_subsystem_verification_regression.list";
++	echo "make regression testlist_name=regression.list";
+ 	echo "";
+ 	echo "-----------------------------------------------------------------";
+ 	echo "-----------------------------------------------------------------";
+@@ -80,7 +80,7 @@ compile:
+ 	+acc \
+ 	+cover \
+ 	+fcover \
+-	-l pulpino_spi_master_subsystem_verification_compile.log \
++	-l compile.log \
+ 	-f ../rtl_compile.f \
+ 	-f ../verif_compile.f
+ 
+@@ -93,7 +93,7 @@ compile:
+ 
+ # Setting a default test as base_test
+ ifndef test
+-override test = pulpino_spi_master_subsystem_base_test
++override test = base_test
+ endif
+ 
+ # Setting the default uvm_verbosity to UVM_MEDIUM
+@@ -102,8 +102,8 @@ override uvm_verbosity = UVM_MEDIUM
+ endif
+ 
+ 
+-ifndef pulpino_spi_master_subsystem_verification_type
+-override  pulpino_spi_master_subsystem_verification_type= pulpino_spi_master_subsystem_verification_base_test
++ifndef  type
++override   type=  base_test
+ endif
+ 
+ ## For randomized seed
+@@ -155,7 +155,7 @@ simulate:
+ 	# vsim -view waveform.wlf &
+ 	#
+ 	# To open the wavefrom with saved signals
+-	# vsim -view waveform.wlf -do pulpino_spi_master_subsystem_verification_waves.do &
++	# vsim -view waveform.wlf -do  waves.do &
+ 
+ clean_simulate:
+ 	rm -rf *_test*
+@@ -178,7 +178,7 @@ regression:
+ 	# Run simualtion - regression 
+ 	python regression_handling.py $(testlist_name)
+ 	#	# Get the tests from regression list
+-	#	grep "_test" ../../src/hvl_top/testlists/pulpino_spi_master_subsystem_verification_simple_fd_regression.list | grep -v "\#" > reg_list
++	#	grep "_test" ../../src/hvl_top/testlists/ simple_fd_regression.list | grep -v "\#" > reg_list
+ 	#	make simulate test=value #Get the name from regression list
+ 	#	Merge coverage
+ 	make merge_cov_report
+@@ -203,11 +203,11 @@ compile_war_err:
+ 	echo "-----------------------------------------------------------------";
+ 	echo "------------------- Compilation Report --------------------------";
+ 	echo "";
+-	grep "^** " pulpino_spi_master_subsystem_verification_compile.log;
++	grep "^** "  compile.log;
+ 	echo "";
+-	grep "^Error" pulpino_spi_master_subsystem_verification_compile.log;
++	grep "^Error"  compile.log;
+ 	echo "";
+-	echo "Log file path: pulpino_spi_master_subsystem_verification_compile.log"
++	echo "Log file path:  compile.log"
+ 	echo "";
+ 	echo "-----------------------------------------------------------------";
+ 	echo "-----------------------------------------------------------------";
+diff --git a/src/dv/hvl_top/test/pulpino_spi_master_subsystem_test_pkg.sv b/src/dv/hvl_top/test/pulpino_spi_master_subsystem_test_pkg.sv
+index 9da1205..68d8d3f 100644
+--- a/src/dv/hvl_top/test/pulpino_spi_master_subsystem_test_pkg.sv
++++ b/src/dv/hvl_top/test/pulpino_spi_master_subsystem_test_pkg.sv
+@@ -52,7 +52,7 @@ package pulpino_spi_master_subsystem_test_pkg;
+   `include "spi_modes_clkdiv_dummy_cycles_cross_reg_test.sv"
+   `include "spi_modes_transfer_length_interupts_cross_reg_test.sv"
+ 
+-  `include "rand_reg_test.sv"
++  //`include "rand_reg_test.sv"
+ 
+   //`include "negitive_reg_test.sv"
+ 
+diff --git a/src/dv/hvl_top/test/sequences/master_sequences/reg_sequences/axi4_master_reg_seq_pkg.sv b/src/dv/hvl_top/test/sequences/master_sequences/reg_sequences/axi4_master_reg_seq_pkg.sv
+index 51ea7e7..79f0645 100644
+--- a/src/dv/hvl_top/test/sequences/master_sequences/reg_sequences/axi4_master_reg_seq_pkg.sv
++++ b/src/dv/hvl_top/test/sequences/master_sequences/reg_sequences/axi4_master_reg_seq_pkg.sv
+@@ -41,7 +41,7 @@ package axi4_reg_seq_pkg;
+   `include "axi4_master_spi_modes_clkdiv_dummy_cycles_cross_reg_seq.sv"
+   `include "axi4_master_spi_modes_transfer_length_interupts_cross_reg_seq.sv"
+ 
+-  `include "axi4_master_rand_reg_seq.sv"
++  //`include "axi4_master_rand_reg_seq.sv"
+ 
+   `include "axi4_master_negitive_reg_seq.sv"
+ 
+diff --git a/src/dv/hvl_top/test/virtual_sequences/pulpino_spi_master_subsystem_virtual_seq_pkg.sv b/src/dv/hvl_top/test/virtual_sequences/pulpino_spi_master_subsystem_virtual_seq_pkg.sv
+index 734ef06..f289e53 100644
+--- a/src/dv/hvl_top/test/virtual_sequences/pulpino_spi_master_subsystem_virtual_seq_pkg.sv
++++ b/src/dv/hvl_top/test/virtual_sequences/pulpino_spi_master_subsystem_virtual_seq_pkg.sv
+@@ -46,7 +46,7 @@ package pulpino_spi_master_subsystem_virtual_seq_pkg;
+   `include "virtual_spi_modes_clkdiv_dummy_cycles_cross_reg_seq.sv"
+   `include "virtual_spi_modes_transfer_length_interupts_cross_reg_seq.sv"
+ 
+-  `include "virtual_rand_reg_seq.sv"
++  //`include "virtual_rand_reg_seq.sv"
+ 
+ 
+ endpackage : pulpino_spi_master_subsystem_virtual_seq_pkg
+diff --git a/src/dv/hvl_top/testlists/regression.list b/src/dv/hvl_top/testlists/regression.list
+new file mode 100644
+index 0000000..51cf206
+--- /dev/null
++++ b/src/dv/hvl_top/testlists/regression.list
+@@ -0,0 +1,19 @@
++#Register Access testcases
++
++axi4_simple_reg_test 
++basic_write_read_reg_test 
++basic_write_reg_test 
++rand_reg_test 
++std_mode_write_0_cmd_0_addr_32_data_length_reg_test 
++std_mode_write_0_cmd_0_addr_16_data_length_reg_test 
++std_mode_write_0_cmd_16_addr_16_data_length_reg_test 
++std_mode_write_16_cmd_16_addr_16_data_length_reg_test 
++std_mode_write_8_cmd_8_addr_32_data_length_reg_test 
++std_mode_write_8_cmd_32_addr_32_data_length_reg_test 
++std_mode_write_16_cmd_16_addr_32_data_length_reg_test 
++std_mode_write_8_cmd_16_addr_32_data_length_reg_test 
++std_mode_write_0_cmd_32_addr_32_data_length_reg_test 
++std_mode_write_32_cmd_32_addr_32_data_length_reg_test 
++spi_modes_clkdiv_dummy_cycles_cross_reg_test
++spi_modes_transfer_length_interupts_cross_reg_test
++

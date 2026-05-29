@@ -1,0 +1,275 @@
+From f4469c4aeb0b41cabf3b5ec2452f6b2bcb680c3e Mon Sep 17 00:00:00 2001
+From: DanielTaoHuang123 <danielthuang@outlook.com>
+Date: Fri, 22 Aug 2025 22:56:47 -0400
+Subject: [PATCH 1/6] Create srli_tb.sv
+
+---
+ test/srli_tb.sv | 114 ++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 114 insertions(+)
+ create mode 100644 test/srli_tb.sv
+
+diff --git a/test/srli_tb.sv b/test/srli_tb.sv
+new file mode 100644
+index 0000000..7e08ec8
+--- /dev/null
++++ b/test/srli_tb.sv
+@@ -0,0 +1,114 @@
++`timescale 1ns/1ps
++
++`include "test/utils.svh"
++
++module srli_tb;
++
++  reg clk;
++  reg reset;
++
++  top uut
++    ( .clk   ( clk   )
++    , .reset ( reset )
++    );
++
++  initial begin
++    clk = 0;
++    forever #5 clk = ~clk;
++  end
++
++  task wait_till_next_cfsm_state(input [5:0] expected_state);
++    @(posedge clk); #1;
++    `assert_equal(uut.control_fsm.current_state, expected_state)
++  endtask
++
++  initial begin
++    reset <= `TRUE;
++
++    // set up instructions and data memory
++    uut.memory.M[ 0] = 32'h0010d113; // srli x1, x2, 1
++    uut.memory.M[ 1] = 32'h0020d113; // srli x1, x2, 2
++    uut.memory.M[ 2] = 32'h0030d113; // srli x1, x2, 3
++
++
++    // set up register file
++    uut.instruction_decode.instanceRegFile.RFMem[2] = 42; // x2 = 42; 101010
++
++    wait_till_next_cfsm_state(uut.control_fsm.FETCH);
++
++    reset <= `FALSE;
++
++    wait_till_next_cfsm_state(uut.control_fsm.DECODE);
++
++    `assert_equal(uut.opcode, 7'b0010011)
++    `assert_equal(uut.instruction_decode.rs1, 2)
++    `assert_equal(uut.instruction_decode.imm_ext, 32'h1)
++
++    wait_till_next_cfsm_state(uut.control_fsm.EXEUTEI);
++
++    `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[2], 42)
++    `assert_equal(uut.alu.a, 42)
++    `assert_equal(uut.alu.b, 1)
++    `assert_equal(uut.alu.out, 21)
++
++    wait_till_next_cfsm_state(uut.control_fsm.ALUWB);
++
++    `assert_equal(uut.instruction_decode.rd, 1)
++
++    wait_till_next_cfsm_state(uut.control_fsm.FETCH);
++
++    `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[1], 21)
++    `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[2], 42)
++    `assert_equal(uut.fetch.pc_cur, 4) // starting second instruction already
++
++    wait_till_next_cfsm_state(uut.control_fsm.DECODE);
++
++    `assert_equal(uut.opcode, 7'b0010011)
++    `assert_equal(uut.instruction_decode.rs1, 2)
++    `assert_equal(uut.instruction_decode.imm_ext, 2)
++
++    wait_till_next_cfsm_state(uut.control_fsm.EXEUTEI);
++
++    `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[2], 42)
++    `assert_equal(uut.alu.a, 42)
++    `assert_equal(uut.alu.b, 2)
++    `assert_equal(uut.alu.out, 10)
++
++    wait_till_next_cfsm_state(uut.control_fsm.ALUWB);
++
++    `assert_equal(uut.instruction_decode.rd, 1)
++
++    wait_till_next_cfsm_state(uut.control_fsm.FETCH);
++
++    `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[1], 21)
++    `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[2], 42)
++    `assert_equal(uut.fetch.pc_cur, 8) // starting third instruction already
++
++    wait_till_next_cfsm_state(uut.control_fsm.DECODE);
++
++    `assert_equal(uut.opcode, 7'b0010011)
++    `assert_equal(uut.instruction_decode.rs1, 2)
++    `assert_equal(uut.instruction_decode.imm_ext, 3)
++
++    wait_till_next_cfsm_state(uut.control_fsm.EXEUTEI);
++
++    `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[2], 42)
++    `assert_equal(uut.alu.a, 42)
++    `assert_equal(uut.alu.b, 3)
++    `assert_equal(uut.alu.out, 5)
++
++    wait_till_next_cfsm_state(uut.control_fsm.ALUWB);
++
++    `assert_equal(uut.instruction_decode.rd, 1)
++
++    wait_till_next_cfsm_state(uut.control_fsm.FETCH);
++
++    `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[1], 5)
++    `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[2], 42)
++    `assert_equal(uut.fetch.pc_cur, 12)
++
++  end
++
++  `SETUP_VCD_DUMP(srli_tb)
++
++endmodule
+
+From 09ed557a5f24bfb93e9660482195098e47328641 Mon Sep 17 00:00:00 2001
+From: DanielTaoHuang123 <danielthuang@outlook.com>
+Date: Fri, 22 Aug 2025 23:22:27 -0400
+Subject: [PATCH 2/6] Update srli_tb.sv
+
+---
+ test/srli_tb.sv | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/test/srli_tb.sv b/test/srli_tb.sv
+index 7e08ec8..44e0dd8 100644
+--- a/test/srli_tb.sv
++++ b/test/srli_tb.sv
+@@ -44,7 +44,7 @@ module srli_tb;
+     `assert_equal(uut.instruction_decode.rs1, 2)
+     `assert_equal(uut.instruction_decode.imm_ext, 32'h1)
+ 
+-    wait_till_next_cfsm_state(uut.control_fsm.EXEUTEI);
++    wait_till_next_cfsm_state(uut.control_fsm.EXECUTEI);
+ 
+     `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[2], 42)
+     `assert_equal(uut.alu.a, 42)
+@@ -67,7 +67,7 @@ module srli_tb;
+     `assert_equal(uut.instruction_decode.rs1, 2)
+     `assert_equal(uut.instruction_decode.imm_ext, 2)
+ 
+-    wait_till_next_cfsm_state(uut.control_fsm.EXEUTEI);
++    wait_till_next_cfsm_state(uut.control_fsm.EXECUTEI);
+ 
+     `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[2], 42)
+     `assert_equal(uut.alu.a, 42)
+@@ -90,7 +90,7 @@ module srli_tb;
+     `assert_equal(uut.instruction_decode.rs1, 2)
+     `assert_equal(uut.instruction_decode.imm_ext, 3)
+ 
+-    wait_till_next_cfsm_state(uut.control_fsm.EXEUTEI);
++    wait_till_next_cfsm_state(uut.control_fsm.EXECUTEI);
+ 
+     `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[2], 42)
+     `assert_equal(uut.alu.a, 42)
+
+From fdb309b406941bee21501a3d7d56b583ae40ac9d Mon Sep 17 00:00:00 2001
+From: DanielTaoHuang123 <danielthuang@outlook.com>
+Date: Fri, 22 Aug 2025 23:26:11 -0400
+Subject: [PATCH 3/6] Update srli_tb.sv
+
+---
+ test/srli_tb.sv | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/test/srli_tb.sv b/test/srli_tb.sv
+index 44e0dd8..c14a50a 100644
+--- a/test/srli_tb.sv
++++ b/test/srli_tb.sv
+@@ -26,9 +26,9 @@ module srli_tb;
+     reset <= `TRUE;
+ 
+     // set up instructions and data memory
+-    uut.memory.M[ 0] = 32'h0010d113; // srli x1, x2, 1
+-    uut.memory.M[ 1] = 32'h0020d113; // srli x1, x2, 2
+-    uut.memory.M[ 2] = 32'h0030d113; // srli x1, x2, 3
++    uut.memory.M[ 0] = 32'h00115093; // srli x1, x2, 1
++    uut.memory.M[ 1] = 32'h00215093; // srli x1, x2, 2
++    uut.memory.M[ 2] = 32'h00315093; // srli x1, x2, 3
+ 
+ 
+     // set up register file
+
+From adef2b247982b4901f62b8837acddd7bc8c4aa76 Mon Sep 17 00:00:00 2001
+From: DanielTaoHuang123 <danielthuang@outlook.com>
+Date: Fri, 22 Aug 2025 23:28:47 -0400
+Subject: [PATCH 4/6] Update srli_tb.sv
+
+---
+ test/srli_tb.sv | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/test/srli_tb.sv b/test/srli_tb.sv
+index c14a50a..5ef888c 100644
+--- a/test/srli_tb.sv
++++ b/test/srli_tb.sv
+@@ -80,7 +80,7 @@ module srli_tb;
+ 
+     wait_till_next_cfsm_state(uut.control_fsm.FETCH);
+ 
+-    `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[1], 21)
++    `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[1], 10)
+     `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[2], 42)
+     `assert_equal(uut.fetch.pc_cur, 8) // starting third instruction already
+ 
+
+From a13504745433772e2b7be039e5894207b23e1523 Mon Sep 17 00:00:00 2001
+From: DanielTaoHuang123 <danielthuang@outlook.com>
+Date: Fri, 22 Aug 2025 23:35:52 -0400
+Subject: [PATCH 5/6] Update srli_tb.sv
+
+---
+ test/srli_tb.sv | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/test/srli_tb.sv b/test/srli_tb.sv
+index 5ef888c..621e662 100644
+--- a/test/srli_tb.sv
++++ b/test/srli_tb.sv
+@@ -65,7 +65,7 @@ module srli_tb;
+ 
+     `assert_equal(uut.opcode, 7'b0010011)
+     `assert_equal(uut.instruction_decode.rs1, 2)
+-    `assert_equal(uut.instruction_decode.imm_ext, 2)
++    `assert_equal(uut.instruction_decode.imm_ext, 32'h2)
+ 
+     wait_till_next_cfsm_state(uut.control_fsm.EXECUTEI);
+ 
+@@ -88,7 +88,7 @@ module srli_tb;
+ 
+     `assert_equal(uut.opcode, 7'b0010011)
+     `assert_equal(uut.instruction_decode.rs1, 2)
+-    `assert_equal(uut.instruction_decode.imm_ext, 3)
++    `assert_equal(uut.instruction_decode.imm_ext, 32'h3)
+ 
+     wait_till_next_cfsm_state(uut.control_fsm.EXECUTEI);
+ 
+
+From 4c82d1cf7d685d0cf04ae467cb93f80ef9bc4496 Mon Sep 17 00:00:00 2001
+From: DanielTaoHuang123 <danielthuang@outlook.com>
+Date: Fri, 22 Aug 2025 23:39:34 -0400
+Subject: [PATCH 6/6] Update srli_tb.sv
+
+---
+ test/srli_tb.sv | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/test/srli_tb.sv b/test/srli_tb.sv
+index 621e662..ebb9e68 100644
+--- a/test/srli_tb.sv
++++ b/test/srli_tb.sv
+@@ -107,6 +107,7 @@ module srli_tb;
+     `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[2], 42)
+     `assert_equal(uut.fetch.pc_cur, 12)
+ 
++    $finish;
+   end
+ 
+   `SETUP_VCD_DUMP(srli_tb)

@@ -1,0 +1,108 @@
+diff --git a/rtl/mem/bootrom.sv b/rtl/mem/bootrom.sv
+index e69de29..7c4590b 100644
+--- a/rtl/mem/bootrom.sv
++++ b/rtl/mem/bootrom.sv
+@@ -0,0 +1,23 @@
++module bootrom #(
++    parameter int unsigned ADDR_WIDTH = 12,
++    parameter int unsigned DATA_WIDTH = 32,
++    parameter string MEMFILE = ""
++) (
++    input  logic                     clk,
++    input  logic                     en,
++    input  logic [ADDR_WIDTH-1:0]    addr,
++    output logic [DATA_WIDTH-1:0]    rdata
++);
++    localparam int unsigned DEPTH = 1 << ADDR_WIDTH;
++    logic [DATA_WIDTH-1:0] mem [0:DEPTH-1];
++
++    initial begin
++        integer i;
++        for (i = 0; i < DEPTH; i++) mem[i] = '0;
++        if (MEMFILE != "") $readmemh(MEMFILE, mem);
++    end
++
++    always_ff @(posedge clk) begin
++        if (en) rdata <= mem[addr];
++    end
++endmodule
+diff --git a/rtl/mem/ddr/calib_status_sync.sv b/rtl/mem/ddr/calib_status_sync.sv
+index e69de29..c6bba05 100644
+--- a/rtl/mem/ddr/calib_status_sync.sv
++++ b/rtl/mem/ddr/calib_status_sync.sv
+@@ -0,0 +1,17 @@
++module calib_status_sync (
++    input  logic clk,
++    input  logic rst,
++    input  logic calib_done_async,
++    output logic calib_done_sync
++);
++    logic meta;
++    always_ff @(posedge clk or posedge rst) begin
++        if (rst) begin
++            meta <= 1'b0;
++            calib_done_sync <= 1'b0;
++        end else begin
++            meta <= calib_done_async;
++            calib_done_sync <= meta;
++        end
++    end
++endmodule
+diff --git a/rtl/mem/ddr/mig_axi_wrap.sv b/rtl/mem/ddr/mig_axi_wrap.sv
+index e69de29..72ac6ff 100644
+--- a/rtl/mem/ddr/mig_axi_wrap.sv
++++ b/rtl/mem/ddr/mig_axi_wrap.sv
+@@ -0,0 +1,12 @@
++module mig_axi_wrap (
++    input  logic clk,
++    input  logic rst,
++    output logic calib_done
++);
++    calib_status_sync u_sync (
++        .clk(clk),
++        .rst(rst),
++        .calib_done_async(1'b1),
++        .calib_done_sync(calib_done)
++    );
++endmodule
+diff --git a/rtl/mem/sram_dualport.sv b/rtl/mem/sram_dualport.sv
+index e69de29..c5dc833 100644
+--- a/rtl/mem/sram_dualport.sv
++++ b/rtl/mem/sram_dualport.sv
+@@ -0,0 +1,24 @@
++module sram_dualport #(
++    parameter int unsigned ADDR_WIDTH = 12,
++    parameter int unsigned DATA_WIDTH = 32
++) (
++    input  logic                     clk,
++    input  logic                     we_a,
++    input  logic [ADDR_WIDTH-1:0]    addr_a,
++    input  logic [DATA_WIDTH-1:0]    wdata_a,
++    output logic [DATA_WIDTH-1:0]    rdata_a,
++    input  logic                     we_b,
++    input  logic [ADDR_WIDTH-1:0]    addr_b,
++    input  logic [DATA_WIDTH-1:0]    wdata_b,
++    output logic [DATA_WIDTH-1:0]    rdata_b
++);
++    localparam int unsigned DEPTH = 1 << ADDR_WIDTH;
++    logic [DATA_WIDTH-1:0] mem [0:DEPTH-1];
++
++    always_ff @(posedge clk) begin
++        if (we_a) mem[addr_a] <= wdata_a;
++        rdata_a <= mem[addr_a];
++        if (we_b) mem[addr_b] <= wdata_b;
++        rdata_b <= mem[addr_b];
++    end
++endmodule
+diff --git a/rtl/subsys/dma_subsys.sv b/rtl/subsys/dma_subsys.sv
+index e69de29..3104872 100644
+--- a/rtl/subsys/dma_subsys.sv
++++ b/rtl/subsys/dma_subsys.sv
+@@ -0,0 +1,7 @@
++module dma_subsys (
++    input  logic clk,
++    input  logic rst,
++    output logic busy
++);
++    assign busy = 1'b0;
++endmodule

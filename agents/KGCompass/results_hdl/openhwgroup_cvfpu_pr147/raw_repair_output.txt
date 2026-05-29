@@ -1,0 +1,42 @@
+The bug is in `src/fpnew_cast_multi.sv`, in the integer-input normalization path:
+
+```systemverilog
+assign int_sign     = int_value[INT_MAN_WIDTH-1] & ~op_mod_q;
+assign int_mantissa = int_sign ? unsigned'(-int_value) : int_value;
+```
+
+For `fcvt.w.d` from a negative double to a signed integer, this code computes the magnitude correctly, but later the sign is re-applied incorrectly via a positive unsigned result path, yielding `0x0000000080000000` instead of the properly sign-extended `0xffffffff80000000`.
+
+The statement you asked about:
+
+```systemverilog
+assign rounded_int_res = rounded_sign ? unsigned'(-rounded_abs) : rounded_abs;
+```
+
+is meant to reconstruct the signed integer from the rounded absolute value:
+- if `rounded_sign == 1`, negate the absolute value to produce the signed negative integer,
+- otherwise keep it positive.
+
+The issue is that the result is being cast to `unsigned`, which can suppress proper signed interpretation / sign extension in downstream handling for integer results.
+
+## Fix
+
+We should ensure the signed integer result is produced as a signed value before being packed into the output, so negative results are sign-extended correctly.
+
+### Search/Replace edits
+
+```systemverilog
+### src/fpnew_cast_multi.sv
+<<<<<<< SEARCH
+   assign int_value    = ifmt_input_val[int_fmt_q];
+   assign int_sign     = int_value[INT_MAN_WIDTH-1] & ~op_mod_q; // only signed ints are negative
+   assign int_mantissa = int_sign ? unsigned'(-int_value) : int_value; // get magnitude of negative
+=======
+   assign int_value    = ifmt_input_val[int_fmt_q];
+   assign int_sign     = int_value[INT_MAN_WIDTH-1] & ~op_mod_q; // only signed ints are negative
+   // Preserve signed interpretation for negative integer results so sign-extension is correct.
+   assign int_mantissa = int_sign ? logic signed'(-$signed(int_value)) : int_value; // get magnitude of negative
+>>>>>>> REPLACE
+```
+
+If you want, I can also inspect the later `rounded_int_res` assignment in the same module (not shown in the excerpt) and provide the exact fix there as well, which may be the more direct location of the issue.

@@ -1,0 +1,15 @@
+diff --git a/src/dm_csrs.sv b/src/dm_csrs.sv
+index 78fd32a..40479b0 100755
+--- a/src/dm_csrs.sv
++++ b/src/dm_csrs.sv
+@@ -293,7 +293,9 @@ module dm_csrs #(
+           // logic [$clog2(dm::DataCount)-1:0] resp_queue_idx;
+           // resp_queue_idx = dmi_req_i.addr[4:0] - int'(dm::Data0);
+           resp_queue_data = data_q[$clog2(dm::DataCount)'(autoexecdata_idx)];
+-          if (!cmdbusy_i) begin
++          if (cmdbusy_i && (cmderr_d == dm::CmdErrNone)) begin
++            cmderr_d = dm::CmdErrBusy;
++          end else if (!cmdbusy_i) begin
+             // check whether we need to re-execute the command (just give a cmd_valid)
+             if (autoexecdata_idx < $bits(abstractauto_q.autoexecdata)) begin
+               cmd_valid_d = abstractauto_q.autoexecdata[autoexecdata_idx];

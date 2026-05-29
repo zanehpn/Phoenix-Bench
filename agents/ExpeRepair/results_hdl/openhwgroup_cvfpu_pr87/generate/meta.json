@@ -1,0 +1,10 @@
+{
+    "task_info": {
+        "base_commit": "9b4bd3cd4670ea80ff9f92509cb664fa1af14c0d",
+        "problem_statement": "# Bug report: multifmt slice uses wrong FP width for third operand\n\nHi,\n\nthe `fpnew_opgroup_multifmt_slice` uses the wrong FP width for the third operand.\n\nAFAIK the third operand is only used by the `ADDMUL` opgroup, which expects that `operands_i[0]` and `operands_i[1]` have the FP format specified by `src_fmt_i`  and `operands_i[2]` and the result have the FP format `dst_fmt_i`:\n\nhttps://github.com/openhwgroup/cvfpu/blob/5da3b411f3309d41b39dbc68da7449456f6be444/src/fpnew_fma_multi.sv#L36-L37\n\nAccordingly, the `fpnew_opgroup_multifmt_slice` should use the width of FP format `dst_fmt_i` when assigning the individual elements of `operands_i[2]` to the lane instances. However, the width of `src_fmt_i` is used for all operands:\n\nhttps://github.com/openhwgroup/cvfpu/blob/5da3b411f3309d41b39dbc68da7449456f6be444/src/fpnew_opgroup_multifmt_slice.sv#L181-L183\n\nAs a result, the third operand is incorrect for all lanes (except for the first lane), as shown in the following waveform. The first group of signals shows the `src_fmt_i` (which is `FP16`) and `dst_fmt_i` (which is `FP32`), as well as `operands_i[0]` (for reference) and `operands_i[2]` of the `fpnew_opgroup_multifmt_slice`. The elements of `operands_i[0]` which are 16 bits wide are correctly assigned to the individual `fpnew_fma_multi` instances (as seen in the signal groups below, which show the input operands of the first three instances). However, the elements of `operands_i[2]` which are 32 bits wide are not correctly assigned. The individual elements of these operands are surrounded by rectangles of different colors.\n\n![fpnew_bug_annotated](https://user-images.githubusercontent.com/9446837/232724219-7daa7d8d-765b-4c12-9f0e-a2083a78c041.png)\n",
+        "instance_id": "openhwgroup_cvfpu_pr87"
+    },
+    "setup_info": {
+        "repo_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/openhwgroup_cvfpu_pr87"
+    }
+}

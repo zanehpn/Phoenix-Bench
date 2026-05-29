@@ -1,0 +1,22 @@
+[
+  {
+    "file_path": "src/dm_sba.sv",
+    "reason": "This file most likely implements the System Bus Access (SBA) burst sequencing and the DMI response timing. The bug report specifically suggests delaying dmi_resp_valid_o until master_r_valid_i is asserted, which points directly to SBA read/data-return handshake logic."
+  },
+  {
+    "file_path": "src/dm_mem.sv",
+    "reason": "If SBA requests are routed through a memory-like interface or burst buffer, this module may contain the state machine that issues master transactions and generates DMI responses. It is a likely place for premature response generation or dropped burst data handling."
+  },
+  {
+    "file_path": "src/dm_top.sv",
+    "reason": "Top-level debug module wiring may connect SBA, DMI, and master-side valid/ready signals. If response valid is propagated too early or incorrectly across submodules, the top-level control logic could be involved."
+  },
+  {
+    "file_path": "src/dm_obi_top.sv",
+    "reason": "If the debug module uses an OBI-style master interface for SBA accesses, this wrapper may contain the bridge logic between DMI requests and bus read data valid timing. It is a plausible source of burst/data alignment issues."
+  },
+  {
+    "file_path": "src/dm_csrs.sv",
+    "reason": "This file may handle debug-module CSR access paths and could participate in decoding or sequencing SBA-related DMI requests. Less likely than the SBA implementation itself, but still a candidate if the issue is in request/response control."
+  }
+]

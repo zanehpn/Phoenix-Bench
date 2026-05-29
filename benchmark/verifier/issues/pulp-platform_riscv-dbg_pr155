@@ -1,0 +1,37 @@
+# `sberror` not clearing properly causes OpenOCD interoperability issues
+
+The OpenTitan project uses GDB/OpenOCD to develop top-level debug and manufacturing test cases. We have noticed some test failures when performing unaligned system bus accesses (see [here](https://github.com/lowRISC/opentitan/issues/17729#issuecomment-1488923308)).
+
+In short, when an unaligned read operation is performed, `sberror` is set to 3 (which is correct according to the spec), but after, OpenOCD tries to clear the error with a W1C, by sending 0x7, however, the `sberror` field fails to clear. We believe there is an RTL bug described [here](https://github.com/lowRISC/opentitan/issues/17729#issuecomment-1489076212).
+
+Could someone confirm / fix?
+
+
+
+
+
+
+
+
+
+PR title: dm_csrs: Fix W1C behavior of `sberror`
+
+Source: https://github.com/pulp-platform/riscv-dbg/pull/155
+
+PR description:
+"Prior to this PR, the W1C `sberror` field of the `sbcs` CSR only got cleared when `3b'001` was written to it. When other values, e.g., `3b111`, were written, the field did not get cleared. This is a mismatch to the RISC-V External Debug Support spec, which states 'Writing 1 to every bit clears the field'.
+
+This PR fixes that mismatch in a backwards-compatible way, i.e., now any non-zero write to `sberror`, including `3'b001`, clears it. See issue #154 for further information and discussion.
+
+This resolves #154.
+
+This has been tested in OpenTitan with OpenOCD connected to this debug module instantiated on an FPGA to confirm that this solves the problem described in lowRISC/opentitan#17729."
+
+Comments:
+- timothytrippel (Mar 31, 2023): "Thanks @andreaskurth !"
+- bluewww (Apr 5, 2023): "I ran the tests locally everything seems to be in order. lgtm."
+
+Linked issue:
+- #154 "`sberror` not clearing properly causes OpenOCD interoperability issues"
+
+Status: Merged on April 5, 2023 by bluewww.

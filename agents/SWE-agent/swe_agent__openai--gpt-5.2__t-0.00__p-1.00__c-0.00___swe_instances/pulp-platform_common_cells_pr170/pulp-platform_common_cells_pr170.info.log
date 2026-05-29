@@ -1,0 +1,606 @@
+2026-01-19 23:26:10,312 - INFO - rex-deploy - Pulling image 'hwebench/pulp-platform_common_cells:pr170'
+2026-01-19 23:26:15,147 - INFO - rex-deploy - Building image hwebench/pulp-platform_common_cells:pr170 to install a standalone python to /root. This might take a while (but you only have to do it once). To skip this step, set `python_standalone_dir` to None.
+2026-01-19 23:26:56,381 - INFO - rex-deploy - Starting container hwebenchpulp-platform_common_cellspr170-b1d5d68d-8d1f-4a93-b671-8916b4ff397b with image hwebench/pulp-platform_common_cells:pr170 serving on port 33749
+2026-01-19 23:26:56,386 - INFO - rex-deploy - Starting runtime at 33749
+2026-01-19 23:26:57,152 - INFO - rex-deploy - Runtime started in 0.76s
+2026-01-19 23:26:57,936 - INFO - swea-env - Environment Initialized
+2026-01-19 23:26:59,658 - INFO - swea-agent - Setting up agent for instance pulp-platform_common_cells_pr170
+2026-01-19 23:26:59,663 - INFO - swea-agent - Trajectory will be saved to /workspace/phoenix-bench/agents/SWE-agent/trajectories/anon/swe_agent__openai--gpt-5.2__t-0.00__p-1.00__c-0.00___swe_instances/pulp-platform_common_cells_pr170/pulp-platform_common_cells_pr170.traj
+2026-01-19 23:27:02,303 - INFO - swea-tools - Resetting tools
+2026-01-19 23:27:02,657 - INFO - swea-agent - SYSTEM (main)
+You are an expert agent that can interact with a computer to debug SystemVerilog/Verilog repositories. You are in an environment
+with Verilator, Make, Python3 and Spike RISC-V ISA Simulator.
+2026-01-19 23:27:02,800 - INFO - swea-agent - 🤖 MODEL INPUT
+<uploaded_files>
+/testbed
+</uploaded_files>
+I've uploaded a HDL code repository in the directory /testbed. Consider the following PR description:
+
+<pr_description>
+I have developed a new version of shift_reg which has a valid flag for data to enable DC insert ICG for the internal datapath, the new version shift_reg is backward compatible with the older one and has a better power comuption. Is it welcomed to add it to this library?
+
+
+</pr_description>
+
+Implement the necessary changes to the repository so that the issue specified in the <pr_description> are resolved.
+Your task is to make the minimal changes to files in the /testbed directory to ensure the <pr_description> is fixed.
+Follow these steps to resolve the issue:
+1. As a first step, it might be a good idea to find and read code relevant to the <pr_description>.
+2. Edit the sourcecode of the repo to resolve the issue.
+3. Think about edgecases and make sure your fix handles them as well.
+
+You can use the tools Verilog debugging tools if needed.
+Your thinking should be thorough and so it's fine if it's very long.
+2026-01-19 23:27:02,806 - INFO - swea-agent - ========================= STEP 1 =========================
+2026-01-19 23:27:05,587 - WARNING - swea-agent - Requerying model after FunctionCallingFormatError (1th requery)
+2026-01-19 23:27:05,594 - WARNING - swea-agent - Your last output included multiple tool calls!
+Please make sure your output includes a thought and exactly _ONE_ function call.
+2026-01-19 23:27:07,212 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && ls
+2026-01-19 23:27:07,467 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+Bender.yml    Makefile   common_cells.core  ips_list.yml  src_files.yml
+CHANGELOG.md  README.md  formal             lint          test
+LICENSE       ci         include            src
+
+2026-01-19 23:27:07,473 - INFO - swea-agent - ========================= STEP 3 =========================
+2026-01-19 23:27:09,562 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && grep -R "module shift_reg" -n src include | head
+2026-01-19 23:27:09,820 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+src/shift_reg.sv:16:module shift_reg #(
+
+2026-01-19 23:27:09,826 - INFO - swea-agent - ========================= STEP 4 =========================
+2026-01-19 23:27:13,313 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+str_replace_editor view /testbed/src/shift_reg.sv
+2026-01-19 23:27:13,600 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+Here's the result of running `cat -n` on /testbed/src/shift_reg.sv:
+     1	
+     2	// Copyright 2018 ETH Zurich and University of Bologna.
+     3	// Copyright and related rights are licensed under the Solderpad Hardware
+     4	// License, Version 0.51 (the "License"); you may not use this file except in
+     5	// compliance with the License.  You may obtain a copy of the License at
+     6	// http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
+     7	// or agreed to in writing, software, hardware and materials distributed under
+     8	// this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+     9	// CONDITIONS OF ANY KIND, either express or implied. See the License for the
+    10	// specific language governing permissions and limitations under the License.
+    11	//
+    12	// Author: <zarubaf@iis.ee.ethz.ch>
+    13	//
+    14	// Description: Simple shift register for arbitrary depth and types
+    15	
+    16	module shift_reg #(
+    17	    parameter type dtype         = logic,
+    18	    parameter int unsigned Depth = 1
+    19	)(
+    20	    input  logic clk_i,    // Clock
+    21	    input  logic rst_ni,   // Asynchronous reset active low
+    22	    input  dtype d_i,
+    23	    output dtype d_o
+    24	);
+    25	
+    26	    // register of depth 0 is a wire
+    27	    if (Depth == 0) begin : gen_pass_through
+    28	        assign d_o = d_i;
+    29	    // register of depth 1 is a simple register
+    30	    end else if (Depth == 1) begin : gen_register
+    31	        always_ff @(posedge clk_i or negedge rst_ni) begin
+    32	            if (~rst_ni) begin
+    33	                d_o <= '0;
+    34	            end else begin
+    35	                d_o <= d_i;
+    36	            end
+    37	        end
+    38	    // if depth is greater than 1 it becomes a shift register
+    39	    end else if (Depth > 1) begin : gen_shift_reg
+    40	        dtype [Depth-1:0] reg_d, reg_q;
+    41	        assign d_o = reg_q[Depth-1];
+    42	        assign reg_d = {reg_q[Depth-2:0], d_i};
+    43	
+    44	        always_ff @(posedge clk_i or negedge rst_ni) begin
+    45	            if (~rst_ni) begin
+    46	                reg_q <= '0;
+    47	            end else begin
+    48	                reg_q <= reg_d;
+    49	            end
+    50	        end
+    51	    end
+    52	
+    53	endmodule
+    54	
+
+
+2026-01-19 23:27:13,613 - INFO - swea-agent - ========================= STEP 5 =========================
+2026-01-19 23:27:15,761 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && grep -R "shift_reg" -n src test include | head -n 20
+2026-01-19 23:27:16,016 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+src/shift_reg.sv:16:module shift_reg #(
+src/shift_reg.sv:39:    end else if (Depth > 1) begin : gen_shift_reg
+
+2026-01-19 23:27:16,022 - INFO - swea-agent - ========================= STEP 6 =========================
+2026-01-19 23:27:18,515 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && verilator -Wall --lint-only -sv src/shift_reg.sv
+2026-01-19 23:27:18,809 - INFO - swea-agent - 🤖 MODEL INPUT
+Your command ran successfully and did not produce any output.
+2026-01-19 23:27:18,815 - INFO - swea-agent - ========================= STEP 7 =========================
+2026-01-19 23:27:30,597 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+str_replace_editor str_replace /testbed/src/shift_reg.sv   --old_str 'module shift_reg #(
+    parameter type dtype         = logic,
+    parameter int unsigned Depth = 1
+)(
+    input  logic clk_i,    // Clock
+    input  logic rst_ni,   // Asynchronous reset active low
+    input  dtype d_i,
+    output dtype d_o
+);
+
+    // register of depth 0 is a wire
+    if (Depth == 0) begin : gen_pass_through
+        assign d_o = d_i;
+    // register of depth 1 is a simple register
+    end else if (Depth == 1) begin : gen_register
+        always_ff @(posedge clk_i or negedge rst_ni) begin
+            if (~rst_ni) begin
+                d_o <= '"'"'0;
+            end else begin
+                d_o <= d_i;
+            end
+        end
+    // if depth is greater than 1 it becomes a shift register
+    end else if (Depth > 1) begin : gen_shift_reg
+        dtype [Depth-1:0] reg_d, reg_q;
+        assign d_o = reg_q[Depth-1];
+        assign reg_d = {reg_q[Depth-2:0], d_i};
+
+        always_ff @(posedge clk_i or negedge rst_ni) begin
+            if (~rst_ni) begin
+                reg_q <= '"'"'0;
+            end else begin
+                reg_q <= reg_d;
+            end
+        end
+    end
+
+endmodule' --new_str 'module shift_reg #(
+    parameter type dtype         = logic,
+    parameter int unsigned Depth = 1
+)(
+    input  logic clk_i,    // Clock
+    input  logic rst_ni,   // Asynchronous reset active low
+    // Backward-compatible ports.
+    // If vld_i is tied to 1'"'"'b1 (default usage), behavior matches the original
+    // shift_reg. If vld_i is 0, internal state is held to allow downstream clock
+    // gating (DC insert ICG) and reduce dynamic power.
+    input  logic vld_i,
+    input  dtype d_i,
+    output dtype d_o,
+    output logic vld_o
+);
+
+    // Depth 0: purely combinational pass-through.
+    if (Depth == 0) begin : gen_pass_through
+        assign d_o   = d_i;
+        assign vld_o = vld_i;
+
+    // Depth 1: single register stage.
+    end else if (Depth == 1) begin : gen_register
+        always_ff @(posedge clk_i or negedge rst_ni) begin
+            if (~rst_ni) begin
+                d_o   <= '"'"'0;
+                vld_o <= 1'"'"'b0;
+            end else if (vld_i) begin
+                d_o   <= d_i;
+                vld_o <= 1'"'"'b1;
+            end else begin
+                // Hold state when not valid to avoid unnecessary toggles.
+                vld_o <= 1'"'"'b0;
+            end
+        end
+
+    // Depth > 1: shift register.
+    end else begin : gen_shift_reg
+        dtype [Depth-1:0] reg_q;
+        logic [Depth-1:0] vld_q;
+
+        assign d_o   = reg_q[Depth-1];
+        assign vld_o = vld_q[Depth-1];
+
+        always_ff @(posedge clk_i or negedge rst_ni) begin
+            if (~rst_ni) begin
+                reg_q <= '"'"'0;
+                vld_q <= '"'"'0;
+            end else if (vld_i) begin
+                reg_q <= {reg_q[Depth-2:0], d_i};
+                vld_q <= {vld_q[Depth-2:0], 1'"'"'b1};
+            end else begin
+                // Hold data flops when invalid; only clear valid pipeline.
+                vld_q <= {vld_q[Depth-2:0], 1'"'"'b0};
+            end
+        end
+    end
+
+endmodule'
+2026-01-19 23:27:30,921 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+The file /testbed/src/shift_reg.sv has been edited. Here's the result of running `cat -n` on a snippet of /testbed/src/shift_reg.sv:
+    11	//
+    12	// Author: <zarubaf@iis.ee.ethz.ch>
+    13	//
+    14	// Description: Simple shift register for arbitrary depth and types
+    15	
+    16	module shift_reg #(
+    17	    parameter type dtype         = logic,
+    18	    parameter int unsigned Depth = 1
+    19	)(
+    20	    input  logic clk_i,    // Clock
+    21	    input  logic rst_ni,   // Asynchronous reset active low
+    22	    // Backward-compatible ports.
+    23	    // If vld_i is tied to 1'b1 (default usage), behavior matches the original
+    24	    // shift_reg. If vld_i is 0, internal state is held to allow downstream clock
+    25	    // gating (DC insert ICG) and reduce dynamic power.
+    26	    input  logic vld_i,
+    27	    input  dtype d_i,
+    28	    output dtype d_o,
+    29	    output logic vld_o
+    30	);
+    31	
+    32	    // Depth 0: purely combinational pass-through.
+    33	    if (Depth == 0) begin : gen_pass_through
+    34	        assign d_o   = d_i;
+    35	        assign vld_o = vld_i;
+    36	
+    37	    // Depth 1: single register stage.
+    38	    end else if (Depth == 1) begin : gen_register
+    39	        always_ff @(posedge clk_i or negedge rst_ni) begin
+    40	            if (~rst_ni) begin
+    41	                d_o   <= '0;
+    42	                vld_o <= 1'b0;
+    43	            end else if (vld_i) begin
+    44	                d_o   <= d_i;
+    45	                vld_o <= 1'b1;
+    46	            end else begin
+    47	                // Hold state when not valid to avoid unnecessary toggles.
+    48	                vld_o <= 1'b0;
+    49	            end
+    50	        end
+    51	
+    52	    // Depth > 1: shift register.
+    53	    end else begin : gen_shift_reg
+    54	        dtype [Depth-1:0] reg_q;
+    55	        logic [Depth-1:0] vld_q;
+    56	
+    57	        assign d_o   = reg_q[Depth-1];
+    58	        assign vld_o = vld_q[Depth-1];
+    59	
+    60	        always_ff @(posedge clk_i or negedge rst_ni) begin
+    61	            if (~rst_ni) begin
+    62	                reg_q <= '0;
+    63	                vld_q <= '0;
+    64	            end else if (vld_i) begin
+    65	                reg_q <= {reg_q[Depth-2:0], d_i};
+    66	                vld_q <= {vld_q[Depth-2:0], 1'b1};
+    67	            end else begin
+    68	                // Hold data flops when invalid; only clear valid pipeline.
+    69	                vld_q <= {vld_q[Depth-2:0], 1'b0};
+    70	            end
+    71	        end
+    72	    end
+    73	
+    74	endmodule
+Review the changes and make sure they are as expected. Edit the file again if necessary.
+
+2026-01-19 23:27:30,935 - INFO - swea-agent - ========================= STEP 8 =========================
+2026-01-19 23:27:34,957 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && verilator -Wall --lint-only -sv src/shift_reg.sv
+2026-01-19 23:27:35,249 - INFO - swea-agent - 🤖 MODEL INPUT
+Your command ran successfully and did not produce any output.
+2026-01-19 23:27:35,257 - INFO - swea-agent - ========================= STEP 9 =========================
+2026-01-19 23:27:40,930 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && verilator -Wall --lint-only -sv $(cat src_files.yml | grep -v '^#' | tr -d ' -' | tr '\n' ' ' | sed 's/\.sv$/.sv/g') 2>/dev/null || true
+2026-01-19 23:27:41,233 - INFO - swea-agent - 🤖 MODEL INPUT
+Your command ran successfully and did not produce any output.
+2026-01-19 23:27:41,242 - INFO - swea-agent - ========================= STEP 10 =========================
+2026-01-19 23:27:44,207 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && make -n 2>/dev/null | head
+2026-01-19 23:27:44,463 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+verilator --cc test/ecc/ecc_encode.cpp test/ecc/ecc.cpp src/ecc_pkg.sv src/ecc_encode.sv --top-module ecc_encode --trace --exe
+cd obj_dir && make -f Vecc_encode.mk > /dev/zero
+verilator --cc test/ecc/ecc_decode.cpp test/ecc/ecc.cpp src/ecc_pkg.sv src/ecc_decode.sv --top-module ecc_decode --trace --exe
+cd obj_dir && make -f Vecc_decode.mk > /dev/zero
+
+2026-01-19 23:27:44,473 - INFO - swea-agent - ========================= STEP 11 =========================
+2026-01-19 23:27:48,353 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && make -j4
+2026-01-19 23:27:51,371 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+verilator --cc test/ecc/ecc_encode.cpp test/ecc/ecc.cpp src/ecc_pkg.sv src/ecc_encode.sv --top-module ecc_encode --trace --exe
+verilator --cc test/ecc/ecc_decode.cpp test/ecc/ecc.cpp src/ecc_pkg.sv src/ecc_decode.sv --top-module ecc_decode --trace --exe
+cd obj_dir && make -f Vecc_encode.mk > /dev/zero
+cd obj_dir && make -f Vecc_decode.mk > /dev/zero
+make[1]: warning: jobserver unavailable: using -j1.  Add '+' to parent make rule.
+make[1]: warning: jobserver unavailable: using -j1.  Add '+' to parent make rule.
+../test/ecc/ecc_decode.cpp: In function ‘int main(int, char**, char**)’:
+../test/ecc/ecc_decode.cpp:59:35: warning: format ‘%llx’ expects argument of type ‘long long unsigned int’, but argument 2 has type ‘uint64_t’ {aka ‘long unsigned int’} [-Wformat=]
+   59 |         printf("[DUT] input  = %llx\n", word);
+      |                                ~~~^     ~~~~
+      |                                   |     |
+      |                                   |     uint64_t {aka long unsigned int}
+      |                                   long long unsigned int
+      |                                %lx
+
+2026-01-19 23:27:51,382 - INFO - swea-agent - ========================= STEP 12 =========================
+2026-01-19 23:27:54,590 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+submit
+2026-01-19 23:27:54,876 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+Thank you for your work on this issue. Please review your changes and run the submit command again to confirm.
+
+Here is a list of all of your changes:
+
+<diff>
+diff --git a/src/shift_reg.sv b/src/shift_reg.sv
+index 7193fbc..e9d700c 100644
+--- a/src/shift_reg.sv
++++ b/src/shift_reg.sv
+@@ -19,33 +19,54 @@ module shift_reg #(
+ )(
+     input  logic clk_i,    // Clock
+     input  logic rst_ni,   // Asynchronous reset active low
++    // Backward-compatible ports.
++    // If vld_i is tied to 1'b1 (default usage), behavior matches the original
++    // shift_reg. If vld_i is 0, internal state is held to allow downstream clock
++    // gating (DC insert ICG) and reduce dynamic power.
++    input  logic vld_i,
+     input  dtype d_i,
+-    output dtype d_o
++    output dtype d_o,
++    output logic vld_o
+ );
+ 
+-    // register of depth 0 is a wire
++    // Depth 0: purely combinational pass-through.
+     if (Depth == 0) begin : gen_pass_through
+-        assign d_o = d_i;
+-    // register of depth 1 is a simple register
++        assign d_o   = d_i;
++        assign vld_o = vld_i;
++
++    // Depth 1: single register stage.
+     end else if (Depth == 1) begin : gen_register
+         always_ff @(posedge clk_i or negedge rst_ni) begin
+             if (~rst_ni) begin
+-                d_o <= '0;
++                d_o   <= '0;
++                vld_o <= 1'b0;
++            end else if (vld_i) begin
++                d_o   <= d_i;
++                vld_o <= 1'b1;
+             end else begin
+-                d_o <= d_i;
++                // Hold state when not valid to avoid unnecessary toggles.
++                vld_o <= 1'b0;
+             end
+         end
+-    // if depth is greater than 1 it becomes a shift register
+-    end else if (Depth > 1) begin : gen_shift_reg
+-        dtype [Depth-1:0] reg_d, reg_q;
+-        assign d_o = reg_q[Depth-1];
+-        assign reg_d = {reg_q[Depth-2:0], d_i};
++
++    // Depth > 1: shift register.
++    end else begin : gen_shift_reg
++        dtype [Depth-1:0] reg_q;
++        logic [Depth-1:0] vld_q;
++
++        assign d_o   = reg_q[Depth-1];
++        assign vld_o = vld_q[Depth-1];
+ 
+         always_ff @(posedge clk_i or negedge rst_ni) begin
+             if (~rst_ni) begin
+                 reg_q <= '0;
++                vld_q <= '0;
++            end else if (vld_i) begin
++                reg_q <= {reg_q[Depth-2:0], d_i};
++                vld_q <= {vld_q[Depth-2:0], 1'b1};
+             end else begin
+-                reg_q <= reg_d;
++                // Hold data flops when invalid; only clear valid pipeline.
++                vld_q <= {vld_q[Depth-2:0], 1'b0};
+             end
+         end
+     end
+
+</diff>
+
+
+2026-01-19 23:27:54,891 - INFO - swea-agent - ========================= STEP 13 =========================
+2026-01-19 23:27:58,873 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+submit
+2026-01-19 23:27:59,167 - INFO - swea-agent - Found submission: diff --git a/src/shift_reg.sv b/src/shift_reg.sv
+index 7193fbc..e9d700c 100644
+--- a/src/shift_reg.sv
++++ b/src/shift_reg.sv
+@@ -19,33 +19,54 @@ module shift_reg #(
+ )(
+     input  logic clk_i,    // Clock
+     input  logic rst_ni,   // Asynchronous reset active low
++    // Backward-compatible ports.
++    // If vld_i is tied to 1'b1 (default usage), behavior matches the original
++    // shift_reg. If vld_i is 0, internal state is held to allow downstream clock
++    // gating (DC insert ICG) and reduce dynamic power.
++    input  logic vld_i,
+     input  dtype d_i,
+-    output dtype d_o
++    output dtype d_o,
++    output logic vld_o
+ );
+ 
+-    // register of depth 0 is a wire
++    // Depth 0: purely combinational pass-through.
+     if (Depth == 0) begin : gen_pass_through
+-        assign d_o = d_i;
+-    // register of depth 1 is a simple register
++        assign d_o   = d_i;
++        assign vld_o = vld_i;
++
++    // Depth 1: single register stage.
+     end else if (Depth == 1) begin : gen_register
+         always_ff @(posedge clk_i or negedge rst_ni) begin
+             if (~rst_ni) begin
+-                d_o <= '0;
++                d_o   <= '0;
++                vld_o <= 1'b0;
++            end else if (vld_i) begin
++                d_o   <= d_i;
++                vld_o <= 1'b1;
+             end else begin
+-                d_o <= d_i;
++                // Hold state when not valid to avoid unnecessary toggles.
++                vld_o <= 1'b0;
+             end
+         end
+-    // if depth is greater than 1 it becomes a shift register
+-    end else if (Depth > 1) begin : gen_shift_reg
+-        dtype [Depth-1:0] reg_d, reg_q;
+-        assign d_o = reg_q[Depth-1];
+-        assign reg_d = {reg_q[Depth-2:0], d_i};
++
++    // Depth > 1: shift register.
++    end else begin : gen_shift_reg
++        dtype [Depth-1:0] reg_q;
++        logic [Depth-1:0] vld_q;
++
++        assign d_o   = reg_q[Depth-1];
++        assign vld_o = vld_q[Depth-1];
+ 
+         always_ff @(posedge clk_i or negedge rst_ni) begin
+             if (~rst_ni) begin
+                 reg_q <= '0;
++                vld_q <= '0;
++            end else if (vld_i) begin
++                reg_q <= {reg_q[Depth-2:0], d_i};
++                vld_q <= {vld_q[Depth-2:0], 1'b1};
+             end else begin
+-                reg_q <= reg_d;
++                // Hold data flops when invalid; only clear valid pipeline.
++                vld_q <= {vld_q[Depth-2:0], 1'b0};
+             end
+         end
+     end
+
+2026-01-19 23:27:59,182 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+diff --git a/src/shift_reg.sv b/src/shift_reg.sv
+index 7193fbc..e9d700c 100644
+--- a/src/shift_reg.sv
++++ b/src/shift_reg.sv
+@@ -19,33 +19,54 @@ module shift_reg #(
+ )(
+     input  logic clk_i,    // Clock
+     input  logic rst_ni,   // Asynchronous reset active low
++    // Backward-compatible ports.
++    // If vld_i is tied to 1'b1 (default usage), behavior matches the original
++    // shift_reg. If vld_i is 0, internal state is held to allow downstream clock
++    // gating (DC insert ICG) and reduce dynamic power.
++    input  logic vld_i,
+     input  dtype d_i,
+-    output dtype d_o
++    output dtype d_o,
++    output logic vld_o
+ );
+ 
+-    // register of depth 0 is a wire
++    // Depth 0: purely combinational pass-through.
+     if (Depth == 0) begin : gen_pass_through
+-        assign d_o = d_i;
+-    // register of depth 1 is a simple register
++        assign d_o   = d_i;
++        assign vld_o = vld_i;
++
++    // Depth 1: single register stage.
+     end else if (Depth == 1) begin : gen_register
+         always_ff @(posedge clk_i or negedge rst_ni) begin
+             if (~rst_ni) begin
+-                d_o <= '0;
++                d_o   <= '0;
++                vld_o <= 1'b0;
++            end else if (vld_i) begin
++                d_o   <= d_i;
++                vld_o <= 1'b1;
+             end else begin
+-                d_o <= d_i;
++                // Hold state when not valid to avoid unnecessary toggles.
++                vld_o <= 1'b0;
+             end
+         end
+-    // if depth is greater than 1 it becomes a shift register
+-    end else if (Depth > 1) begin : gen_shift_reg
+-        dtype [Depth-1:0] reg_d, reg_q;
+-        assign d_o = reg_q[Depth-1];
+-        assign reg_d = {reg_q[Depth-2:0], d_i};
++
++    // Depth > 1: shift register.
++    end else begin : gen_shift_reg
++        dtype [Depth-1:0] reg_q;
++        logic [Depth-1:0] vld_q;
++
++        assign d_o   = reg_q[Depth-1];
++        assign vld_o = vld_q[Depth-1];
+ 
+         always_ff @(posedge clk_i or negedge rst_ni) begin
+             if (~rst_ni) begin
+                 reg_q <= '0;
++                vld_q <= '0;
++            end else if (vld_i) begin
++                reg_q <= {reg_q[Depth-2:0], d_i};
++                vld_q <= {vld_q[Depth-2:0], 1'b1};
+             end else begin
+-                reg_q <= reg_d;
++                // Hold data flops when invalid; only clear valid pipeline.
++                vld_q <= {vld_q[Depth-2:0], 1'b0};
+             end
+         end
+     end
+
+2026-01-19 23:27:59,201 - INFO - swea-agent - Trajectory saved to /workspace/phoenix-bench/agents/SWE-agent/trajectories/anon/swe_agent__openai--gpt-5.2__t-0.00__p-1.00__c-0.00___swe_instances/pulp-platform_common_cells_pr170/pulp-platform_common_cells_pr170.traj
+2026-01-19 23:27:59,206 - INFO - swea-env - Beginning environment shutdown...

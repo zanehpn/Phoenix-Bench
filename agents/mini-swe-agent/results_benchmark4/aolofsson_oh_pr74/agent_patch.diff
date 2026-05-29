@@ -1,0 +1,49 @@
+diff --git a/src/gpio/hdl/gpio.v b/src/gpio/hdl/gpio.v
+index a2ccd01..0990dea 100644
+--- a/src/gpio/hdl/gpio.v
++++ b/src/gpio/hdl/gpio.v
+@@ -153,15 +153,19 @@ module gpio #(
+    //################################
+    //# GPIO_ITYPE
+    //################################ 
+-   always @ (posedge clk)
+-     if(itype_write)
++   always @ (posedge clk or negedge nreset)
++     if(!nreset)
++       gpio_itype[N-1:0] <= {N{1'b0}};
++     else if(itype_write)
+        gpio_itype[N-1:0] <= reg_wdata[N-1:0];
+ 
+    //################################
+    //# GPIO_IPOL
+    //################################ 
+-   always @ (posedge clk)
+-     if(ipol_write)
++   always @ (posedge clk or negedge nreset)
++     if(!nreset)
++       gpio_ipol[N-1:0] <= {N{1'b0}};
++     else if(ipol_write)
+        gpio_ipol[N-1:0] <= reg_wdata[N-1:0];
+ 
+    //################################
+@@ -203,13 +207,13 @@ module gpio #(
+    always @ (posedge clk)
+      if(reg_read)
+        case(dstaddr_in[6:3])		 
+-	 `GPIO_IN   : read_data[AW-1:0]  <= gpio_in_sync[N-1:0];
+-	 `GPIO_ILAT : read_data[AW-1:0]  <= gpio_ilat[N-1:0];
+-	 `GPIO_DIR  : read_data[AW-1:0]  <= gpio_dir[N-1:0];
+-	 `GPIO_IMASK: read_data[AW-1:0]  <= gpio_imask[N-1:0];
+-	 `GPIO_IPOL : read_data[AW-1:0]  <= gpio_ipol[N-1:0];
+-	 `GPIO_ITYPE: read_data[AW-1:0]  <= gpio_itype[N-1:0];
+-	 default    : read_data[AW-1:0]  <='b0;
++	 `GPIO_IN   : read_data[AW-1:0]  <= {{(64-AW){1'b0}}, gpio_in_sync[N-1:0]};
++	 `GPIO_ILAT : read_data[AW-1:0]  <= {{(64-AW){1'b0}}, gpio_ilat[N-1:0]};
++	 `GPIO_DIR  : read_data[AW-1:0]  <= {{(64-AW){1'b0}}, gpio_dir[N-1:0]};
++	 `GPIO_IMASK: read_data[AW-1:0]  <= {{(64-AW){1'b0}}, gpio_imask[N-1:0]};
++	 `GPIO_IPOL : read_data[AW-1:0]  <= {{(64-AW){1'b0}}, gpio_ipol[N-1:0]};
++	 `GPIO_ITYPE: read_data[AW-1:0]  <= {{(64-AW){1'b0}}, gpio_itype[N-1:0]};
++	 default    : read_data[AW-1:0]  <= 'b0;
+        endcase // case (dstaddr_in[7:3])
+    
+    emesh_readback #(.AW(AW))

@@ -1,0 +1,739 @@
+From a9ff7c199570c020a21c202d6c5de3a46f7cf9c6 Mon Sep 17 00:00:00 2001
+From: houjingl <jerryhou2005@outlook.com>
+Date: Sun, 10 Aug 2025 15:47:35 -0400
+Subject: [PATCH 01/13] lui tb
+
+---
+ test/lui_tb.sv | 128 +++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 128 insertions(+)
+ create mode 100644 test/lui_tb.sv
+
+diff --git a/test/lui_tb.sv b/test/lui_tb.sv
+new file mode 100644
+index 0000000..dfc04f3
+--- /dev/null
++++ b/test/lui_tb.sv
+@@ -0,0 +1,128 @@
++`timescale 1ns/1ps
++
++`include "utils.svh"
++
++module lui_tb;
++
++  logic clk;
++  logic reset;
++
++  top uut
++    ( .clk ( clk ),
++      .reset( reset )
++    );
++
++  initial begin
++    clk = 0;
++    forever #5 clk = ~clk;
++  end
++
++  task wait_till_next_cfsm_state(input [5:0] expected_state);
++    @(posedge clk); #1;
++    `assert_equal(uut.control_fsm.current_state, expected_state)
++  endtask
++
++  initial begin
++    reset <= `TRUE;
++
++    //Set up memory
++    //lui rd, imm -> machine code: imm[31:12] | 11 rd 7 | 6 op 0
++    uut.memory.M[ 0] = 32'h000140b7; // lui x1, 20
++    uut.memory.M[ 1] = 32'h000c8137; // lui x2, 200
++    // 000c8 | 0001_0 | 011_0111
++    uut.memory.M[ 2] = 32'h003ff1b7; // lui x3, 1023
++    uut.memory.M[40] = 32'hbadab00f; // have some data at address 0xa0
++    uut.memory.M[42] = 32'hdeadbeef; // have some data at address 0xa8
++    uut.memory.M[43] = 32'hcafebabe; // have some data at address 0xac
++
++    wait_till_next_cfsm_state(uut.control_fsm.FETCH);
++
++    reset <= `FALSE;
++
++    wait_till_next_cfsm_state(uut.control_fsm.DECODE);
++
++    //imm ext should be changed to add a new case
++
++    `assert_equal(uut.opcode, 7'b0110111)
++    `assert_equal(uut.instruction_decode.imm_ext, 32'h00014000)
++
++    //This will be a new FSM stage:
++    // 1. set SrcA to hardware 0
++    // 2. set SrcB to immext
++    // 3. set ALU to ADD
++
++    wait_till_next_cfsm_state(uut.control_fsm.LUI);
++
++    `assert_equal(uut.alu_input_a, 32'b0)
++    `assert_equal(uut.alu_input_b, 32'h00014000)
++    `assert_equal(uut.__tem_ALUControl, 4'b0)
++    `assert_equal(uut.alu_result, 32'h00014000)
++
++    //This new state will be connected to ALUWB
++
++    wait_till_next_cfsm_state(uut.control_fsm.ALUWB);
++
++    `assert_equal(uut.instruction_decode.rd, 1)
++
++    //Exe lui x2, 200
++    wait_till_next_cfsm_state(uut.control_fsm.FETCH);
++
++    `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[1], 32'h00014000)
++    //x1 at this moment should be updated
++
++    wait_till_next_cfsm_state(uut.control_fsm.DECODE);
++
++    //imm ext should be changed to add a new case
++
++    `assert_equal(uut.opcode, 7'b0110111)
++    `assert_equal(uut.instruction_decode.imm_ext, 32'h000c8000)
++
++    wait_till_next_cfsm_state(uut.control_fsm.LUI);
++
++    `assert_equal(uut.alu_input_a, 32'b0)
++    `assert_equal(uut.alu_input_b, 32'h000c8000)
++    `assert_equal(uut.__tem_ALUControl, 4'b0)
++    `assert_equal(uut.alu_result, 32'h000c8000)
++
++    wait_till_next_cfsm_state(uut.control_fsm.ALUWB);
++
++    `assert_equal(uut.instruction_decode.rd, 2)
++
++    //Exe lui x3, 1023
++    wait_till_next_cfsm_state(uut.control_fsm.FETCH);
++
++    `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[2], 32'h000c8000)
++
++    wait_till_next_cfsm_state(uut.control_fsm.DECODE);
++
++    //imm ext should be changed to add a new case
++
++    `assert_equal(uut.opcode, 7'b0110111)
++    `assert_equal(uut.instruction_decode.imm_ext, 32'h003ff000)
++
++    wait_till_next_cfsm_state(uut.control_fsm.LUI);
++
++    `assert_equal(uut.alu_input_a, 32'b0)
++    `assert_equal(uut.alu_input_b, 32'h003ff000)
++    `assert_equal(uut.__tem_ALUControl, 4'b0)
++    `assert_equal(uut.alu_result, 32'h003ff000)
++
++    wait_till_next_cfsm_state(uut.control_fsm.ALUWB);
++
++    `assert_equal(uut.instruction_decode.rd, 3)
++
++    wait_till_next_cfsm_state(uut.control_fsm.FETCH);
++
++    `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[3], 32'h003ff000)
++
++    //If the simulation makes to this point, the simulation passed
++
++    $display("lui verified, Test Passed");
++
++  end
++
++  `SETUP_VCD_DUMP(lui_tb)
++
++  $finish;
++
++endmodule
+\ No newline at end of file
+
+From c6f7caeca5d0b6f46ca391b0d7d860a1ae608133 Mon Sep 17 00:00:00 2001
+From: houjingl <jerryhou2005@outlook.com>
+Date: Sat, 6 Sep 2025 11:41:52 -0400
+Subject: [PATCH 02/13] modified lui tb fix
+
+---
+ src/ControlFSM.sv                           |  29 +++++
+ src/Instruction_Decode/Instruction_Decode.v |   3 +
+ src/params.vh                               |   2 +
+ src/top.v                                   |   1 +
+ src/types.svh                               |   1 +
+ test/auipc_tb.sv                            | 129 ++++++++++++++++++++
+ test/lui_tb.sv                              |   3 +-
+ 7 files changed, 167 insertions(+), 1 deletion(-)
+ create mode 100644 test/auipc_tb.sv
+
+diff --git a/src/ControlFSM.sv b/src/ControlFSM.sv
+index de2e467..95b516d 100644
+--- a/src/ControlFSM.sv
++++ b/src/ControlFSM.sv
+@@ -38,6 +38,11 @@ module ControlFSM(
+ 	parameter MEMWB = 4'b1001;
+ 	parameter BRANCHIFEQ = 4'b1010;
+ 
++	//new states for lui and auipc
++	parameter LUI = 4'b1011;
++	parameter AUIPC = 4'b1100;
++
++
+ 	//declare state registers
+ 	reg [3:0] current_state, next_state;
+ 
+@@ -60,10 +65,18 @@ module ControlFSM(
+ 
+ 				else if (opcode == BType) next_state = BRANCHIFEQ;
+ 
++				else if (opcode == UType_auipc) next_state = AUIPC;
++
++				else if (opcode == UType_lui) next_state = LUI;
++
+ 				else next_state = DECODE;
+ 
+ 			end
+ 
++			AUIPC: next_state = ALUWB;
++
++			LUI: next_state = ALUWB;
++
+ 			UNCONDJUMP: next_state = ALUWB;
+ 
+ 			EXECUTER: next_state = ALUWB;
+@@ -123,6 +136,22 @@ module ControlFSM(
+ 
+ 			end
+ 
++			AUIPC: begin
++				
++				ALUSrcA <= ALU_SRC_A__OLD_PC;
++				ALUSrcB <= ALU_SRC_B__IMM_EXT;
++				ALUOp <= 2'b00;
++
++			end
++
++			LUI: begin
++				
++				ALUSrcA <= ALU_SRC_A__ZERO;
++				ALUSrcB <= ALU_SRC_B__IMM_EXT;
++				ALUOp <= 2'b00;
++
++			end
++
+ 			EXECUTER: begin
+ 
+ 				ALUSrcA <= ALU_SRC_A__RD1;
+diff --git a/src/Instruction_Decode/Instruction_Decode.v b/src/Instruction_Decode/Instruction_Decode.v
+index 340183b..c2fa6ad 100644
+--- a/src/Instruction_Decode/Instruction_Decode.v
++++ b/src/Instruction_Decode/Instruction_Decode.v
+@@ -117,6 +117,9 @@ module Instruction_Decode(
+ 			SType       : imm_ext = {{20{instr[31]}}, instr[31:25], instr[11:7]};
+ 			BType       : imm_ext = {{20{instr[31]}}, instr[7], instr[30:25], instr[11:8], 1'b0};
+ 			JType       : imm_ext = {{12{instr[31]}}, instr[19:12], instr[20], instr[30:21], 1'b0};
++			UType_auipc	: imm_ext = {instr[31:12], 12'b0};
++			UType_lui	: imm_ext = {instr[31:12], 12'b0};
++			
+ 		endcase
+ 	end
+ 
+diff --git a/src/params.vh b/src/params.vh
+index f484b69..2c766c2 100644
+--- a/src/params.vh
++++ b/src/params.vh
+@@ -8,6 +8,8 @@ parameter IType_load = 7'b0000011;
+ parameter SType = 7'b0100011;
+ parameter BType = 7'b1100011;
+ parameter JType = 7'b1101111;
++parameter UType_auipc = 7'b0010011;
++parameter UType_lui = 7'b0110011;
+ 
+ //ALU Operation Control Codes
+ parameter ALUAdd = 4'b0000;
+diff --git a/src/top.v b/src/top.v
+index 94488cc..41ea098 100644
+--- a/src/top.v
++++ b/src/top.v
+@@ -131,6 +131,7 @@ module top ( input wire clk
+       ALU_SRC_A__PC:     alu_input_a = pc_cur;
+       ALU_SRC_A__OLD_PC: alu_input_a = pc_old;
+       ALU_SRC_A__RD1:    alu_input_a = rd1;
++      ALU_SRC_A__ZERO:   alu_input_a = 32'b0;
+       default:           alu_input_a = 32'hxxxxxxxx;
+     endcase
+   end
+diff --git a/src/types.svh b/src/types.svh
+index 45f6268..c01890d 100644
+--- a/src/types.svh
++++ b/src/types.svh
+@@ -27,6 +27,7 @@ typedef enum logic [1:0] {
+   ALU_SRC_A__PC     = 2'b00,
+   ALU_SRC_A__OLD_PC = 2'b01,
+   ALU_SRC_A__RD1    = 2'b10,
++  ALU_SRC_A__ZERO   = 2'b11,
+ 
+   ALU_SRC_A__UNSET  = 2'b11
+ } alu_src_a_t;
+diff --git a/test/auipc_tb.sv b/test/auipc_tb.sv
+new file mode 100644
+index 0000000..3b51fbb
+--- /dev/null
++++ b/test/auipc_tb.sv
+@@ -0,0 +1,129 @@
++`timescale 1ns/1ps
++
++`include "test\utils.svh"
++
++module auipc_tb;
++
++  logic clk;
++  logic reset;
++
++  top uut
++    ( .clk ( clk ),
++      .reset( reset )
++    );
++
++  initial begin
++    clk = 0;
++    forever #5 clk = ~clk;
++  end
++
++  task wait_till_next_cfsm_state(input [5:0] expected_state);
++    @(posedge clk); #1;
++    `assert_equal(uut.control_fsm.current_state, expected_state)
++  endtask
++
++  logic[31:0] tb_pc_old;
++
++  initial begin
++    reset <= `TRUE;
++
++    //Set up memory
++    //auipc rd, imm -> machine code: imm[31:12] | 11 rd 7 | 6 op 0
++    uut.memory.M[ 0] = 32'h00014097; // auipc x1, 20
++    uut.memory.M[ 1] = 32'h000c8117; // auipc x2, 200
++    // 000c8 | 0001_0 | 001_0111
++    uut.memory.M[ 2] = 32'h003ff197; // auipc x3, 1023
++    uut.memory.M[40] = 32'hbadab00f; // have some data at address 0xa0
++    uut.memory.M[42] = 32'hdeadbeef; // have some data at address 0xa8
++    uut.memory.M[43] = 32'hcafebabe; // have some data at address 0xac
++
++    wait_till_next_cfsm_state(uut.control_fsm.FETCH);
++
++    reset <= `FALSE;
++
++    wait_till_next_cfsm_state(uut.control_fsm.DECODE);
++
++    //imm ext should be changed to add a new case
++
++    `assert_equal(uut.opcode, 7'b0010111)
++    `assert_equal(uut.instruction_decode.imm_ext, 32'h00014000)
++
++    //This will be a new FSM stage AUIPC:
++    // 1. set SrcA to oldPC
++    // 2. set SrcB to immext
++    // 3. set ALU to ADD
++
++    wait_till_next_cfsm_state(uut.control_fsm.AUIPC);
++    tb_pc_old = uut.pc_old;
++    `assert_equal(uut.alu_input_a, tb_pc_old)
++    `assert_equal(uut.alu_input_b, 32'h00014000)
++    `assert_equal(uut.__tem_ALUControl, 4'b0)
++    `assert_equal(uut.alu_result, 32'h00014000 + tb_pc_old)
++
++    //This new state will be connected to ALUWB
++
++    wait_till_next_cfsm_state(uut.control_fsm.ALUWB);
++
++    `assert_equal(uut.instruction_decode.rd, 1)
++
++    //Exe lui x2, 200
++    wait_till_next_cfsm_state(uut.control_fsm.FETCH);
++
++    `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[1], 32'h00014000 + tb_pc_old)
++    //x1 at this moment should be updated
++
++    wait_till_next_cfsm_state(uut.control_fsm.DECODE);
++
++    //imm ext should be changed to add a new case
++
++    `assert_equal(uut.opcode, 7'b0010111)
++    `assert_equal(uut.instruction_decode.imm_ext, 32'h000c8000)
++
++    wait_till_next_cfsm_state(uut.control_fsm.AUIPC);
++    tb_pc_old = uut.pc_old;
++    `assert_equal(uut.alu_input_a, tb_pc_old)
++    `assert_equal(uut.alu_input_b, 32'h000c8000)
++    `assert_equal(uut.__tem_ALUControl, 4'b0)
++    `assert_equal(uut.alu_result, 32'h000c8000 + tb_pc_old)
++
++    wait_till_next_cfsm_state(uut.control_fsm.ALUWB);
++
++    `assert_equal(uut.instruction_decode.rd, 2)
++
++    //Exe lui x3, 1023
++    wait_till_next_cfsm_state(uut.control_fsm.FETCH);
++
++    `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[2], 32'h000c8000 + tb_pc_old)
++
++    wait_till_next_cfsm_state(uut.control_fsm.DECODE);
++
++    //imm ext should be changed to add a new case
++
++    `assert_equal(uut.opcode, 7'b0010111)
++    `assert_equal(uut.instruction_decode.imm_ext, 32'h003ff000)
++
++    wait_till_next_cfsm_state(uut.control_fsm.AUIPC);
++    tb_pc_old = uut.pc_old;
++    `assert_equal(uut.alu_input_a, tb_pc_old)
++    `assert_equal(uut.alu_input_b, 32'h003ff000)
++    `assert_equal(uut.__tem_ALUControl, 4'b0)
++    `assert_equal(uut.alu_result, 32'h003ff000 + tb_pc_old)
++
++    wait_till_next_cfsm_state(uut.control_fsm.ALUWB);
++
++    `assert_equal(uut.instruction_decode.rd, 3)
++
++    wait_till_next_cfsm_state(uut.control_fsm.FETCH);
++
++    `assert_equal(uut.instruction_decode.instanceRegFile.RFMem[3], 32'h003ff000 + tb_pc_old)
++
++    //If the simulation makes to this point, the simulation passed
++
++    $display("auipc verified, Test Passed");
++    $finish;
++
++  end
++
++  `SETUP_VCD_DUMP(lui_tb)
++
++endmodule
+\ No newline at end of file
+diff --git a/test/lui_tb.sv b/test/lui_tb.sv
+index dfc04f3..33c2652 100644
+--- a/test/lui_tb.sv
++++ b/test/lui_tb.sv
+@@ -119,10 +119,11 @@ module lui_tb;
+ 
+     $display("lui verified, Test Passed");
+ 
++    $finish;
+   end
+ 
+   `SETUP_VCD_DUMP(lui_tb)
+ 
+-  $finish;
++  
+ 
+ endmodule
+\ No newline at end of file
+
+From c4249ab132b25196959715f51704312270140169 Mon Sep 17 00:00:00 2001
+From: houjingl <jerryhou2005@outlook.com>
+Date: Sat, 6 Sep 2025 20:22:29 -0400
+Subject: [PATCH 03/13] change ALU SRC A UNSET to 2'bxx
+
+---
+ src/types.svh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/types.svh b/src/types.svh
+index c01890d..7b12738 100644
+--- a/src/types.svh
++++ b/src/types.svh
+@@ -29,7 +29,7 @@ typedef enum logic [1:0] {
+   ALU_SRC_A__RD1    = 2'b10,
+   ALU_SRC_A__ZERO   = 2'b11,
+ 
+-  ALU_SRC_A__UNSET  = 2'b11
++  ALU_SRC_A__UNSET  = 2'bxx
+ } alu_src_a_t;
+ 
+ // represents the possible input sources for the second operand of the ALU as selected by the
+
+From e7c64894a09e9f7f3036fb27ea2d051465602b9a Mon Sep 17 00:00:00 2001
+From: Jerry Hou <157534392+houjingl@users.noreply.github.com>
+Date: Sat, 6 Sep 2025 20:35:09 -0400
+Subject: [PATCH 04/13] Update test/auipc_tb.sv
+
+Co-authored-by: Boris <boris.potapov@mail.utoronto.ca>
+---
+ test/auipc_tb.sv | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/test/auipc_tb.sv b/test/auipc_tb.sv
+index 3b51fbb..51710da 100644
+--- a/test/auipc_tb.sv
++++ b/test/auipc_tb.sv
+@@ -124,6 +124,6 @@ module auipc_tb;
+ 
+   end
+ 
+-  `SETUP_VCD_DUMP(lui_tb)
++  `SETUP_VCD_DUMP(auipc_tb)
+ 
+ endmodule
+\ No newline at end of file
+
+From 2356aa987e0c5c6d925d5428517ae5c0198f534b Mon Sep 17 00:00:00 2001
+From: houjingl <jerryhou2005@outlook.com>
+Date: Sat, 6 Sep 2025 21:06:10 -0400
+Subject: [PATCH 05/13] redirected lui_tb include path
+
+---
+ test/lui_tb.sv | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/test/lui_tb.sv b/test/lui_tb.sv
+index 33c2652..55582a2 100644
+--- a/test/lui_tb.sv
++++ b/test/lui_tb.sv
+@@ -1,6 +1,6 @@
+ `timescale 1ns/1ps
+ 
+-`include "utils.svh"
++`include "test\utils.svh"
+ 
+ module lui_tb;
+ 
+
+From 657adf5ce4ed2defdd1a38c10764542b9ee3bcdd Mon Sep 17 00:00:00 2001
+From: houjingl <jerryhou2005@outlook.com>
+Date: Sat, 6 Sep 2025 21:07:29 -0400
+Subject: [PATCH 06/13] include path fix v2
+
+---
+ test/auipc_tb.sv | 2 +-
+ test/lui_tb.sv   | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/test/auipc_tb.sv b/test/auipc_tb.sv
+index 51710da..7a2f9ef 100644
+--- a/test/auipc_tb.sv
++++ b/test/auipc_tb.sv
+@@ -1,6 +1,6 @@
+ `timescale 1ns/1ps
+ 
+-`include "test\utils.svh"
++`include "test/utils.svh"
+ 
+ module auipc_tb;
+ 
+diff --git a/test/lui_tb.sv b/test/lui_tb.sv
+index 55582a2..b0d3f23 100644
+--- a/test/lui_tb.sv
++++ b/test/lui_tb.sv
+@@ -1,6 +1,6 @@
+ `timescale 1ns/1ps
+ 
+-`include "test\utils.svh"
++`include "test/utils.svh"
+ 
+ module lui_tb;
+ 
+
+From e5a9f76749d9098d68d78fb54828ceeba0306875 Mon Sep 17 00:00:00 2001
+From: houjingl <jerryhou2005@outlook.com>
+Date: Sat, 6 Sep 2025 21:10:24 -0400
+Subject: [PATCH 07/13] __tmp_ALUControl name fix
+
+---
+ test/auipc_tb.sv | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/test/auipc_tb.sv b/test/auipc_tb.sv
+index 7a2f9ef..939f7a0 100644
+--- a/test/auipc_tb.sv
++++ b/test/auipc_tb.sv
+@@ -57,7 +57,7 @@ module auipc_tb;
+     tb_pc_old = uut.pc_old;
+     `assert_equal(uut.alu_input_a, tb_pc_old)
+     `assert_equal(uut.alu_input_b, 32'h00014000)
+-    `assert_equal(uut.__tem_ALUControl, 4'b0)
++    `assert_equal(uut.__tmp_ALUControl, 4'b0)
+     `assert_equal(uut.alu_result, 32'h00014000 + tb_pc_old)
+ 
+     //This new state will be connected to ALUWB
+
+From a682a72f0fa016adb5e8c55f7af9a63f4d3a3f72 Mon Sep 17 00:00:00 2001
+From: houjingl <jerryhou2005@outlook.com>
+Date: Sat, 6 Sep 2025 21:12:43 -0400
+Subject: [PATCH 08/13] more name fix
+
+---
+ test/auipc_tb.sv | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/test/auipc_tb.sv b/test/auipc_tb.sv
+index 939f7a0..97e8bb1 100644
+--- a/test/auipc_tb.sv
++++ b/test/auipc_tb.sv
+@@ -83,7 +83,7 @@ module auipc_tb;
+     tb_pc_old = uut.pc_old;
+     `assert_equal(uut.alu_input_a, tb_pc_old)
+     `assert_equal(uut.alu_input_b, 32'h000c8000)
+-    `assert_equal(uut.__tem_ALUControl, 4'b0)
++    `assert_equal(uut.__tmp_ALUControl, 4'b0)
+     `assert_equal(uut.alu_result, 32'h000c8000 + tb_pc_old)
+ 
+     wait_till_next_cfsm_state(uut.control_fsm.ALUWB);
+@@ -106,7 +106,7 @@ module auipc_tb;
+     tb_pc_old = uut.pc_old;
+     `assert_equal(uut.alu_input_a, tb_pc_old)
+     `assert_equal(uut.alu_input_b, 32'h003ff000)
+-    `assert_equal(uut.__tem_ALUControl, 4'b0)
++    `assert_equal(uut.__tmp_ALUControl, 4'b0)
+     `assert_equal(uut.alu_result, 32'h003ff000 + tb_pc_old)
+ 
+     wait_till_next_cfsm_state(uut.control_fsm.ALUWB);
+
+From 6a6fa51d3f43fcdad2c90654b567cb308ecddd1c Mon Sep 17 00:00:00 2001
+From: houjingl <jerryhou2005@outlook.com>
+Date: Sat, 6 Sep 2025 21:15:02 -0400
+Subject: [PATCH 09/13] lui_tb name fix
+
+---
+ test/lui_tb.sv | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/test/lui_tb.sv b/test/lui_tb.sv
+index b0d3f23..bff609d 100644
+--- a/test/lui_tb.sv
++++ b/test/lui_tb.sv
+@@ -55,7 +55,7 @@ module lui_tb;
+ 
+     `assert_equal(uut.alu_input_a, 32'b0)
+     `assert_equal(uut.alu_input_b, 32'h00014000)
+-    `assert_equal(uut.__tem_ALUControl, 4'b0)
++    `assert_equal(uut.__tmp_ALUControl, 4'b0)
+     `assert_equal(uut.alu_result, 32'h00014000)
+ 
+     //This new state will be connected to ALUWB
+@@ -81,7 +81,7 @@ module lui_tb;
+ 
+     `assert_equal(uut.alu_input_a, 32'b0)
+     `assert_equal(uut.alu_input_b, 32'h000c8000)
+-    `assert_equal(uut.__tem_ALUControl, 4'b0)
++    `assert_equal(uut.__tmp_ALUControl, 4'b0)
+     `assert_equal(uut.alu_result, 32'h000c8000)
+ 
+     wait_till_next_cfsm_state(uut.control_fsm.ALUWB);
+@@ -104,7 +104,7 @@ module lui_tb;
+ 
+     `assert_equal(uut.alu_input_a, 32'b0)
+     `assert_equal(uut.alu_input_b, 32'h003ff000)
+-    `assert_equal(uut.__tem_ALUControl, 4'b0)
++    `assert_equal(uut.__tmp_ALUControl, 4'b0)
+     `assert_equal(uut.alu_result, 32'h003ff000)
+ 
+     wait_till_next_cfsm_state(uut.control_fsm.ALUWB);
+
+From 436a946766643cd845ade41cb25efd3332c0e5ee Mon Sep 17 00:00:00 2001
+From: houjingl <jerryhou2005@outlook.com>
+Date: Sat, 6 Sep 2025 21:49:08 -0400
+Subject: [PATCH 10/13] fix 1
+
+---
+ test/auipc_tb.sv | 1 +
+ test/lui_tb.sv   | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/test/auipc_tb.sv b/test/auipc_tb.sv
+index 97e8bb1..811911c 100644
+--- a/test/auipc_tb.sv
++++ b/test/auipc_tb.sv
+@@ -1,6 +1,7 @@
+ `timescale 1ns/1ps
+ 
+ `include "test/utils.svh"
++`include "src/utils.svh"
+ 
+ module auipc_tb;
+ 
+diff --git a/test/lui_tb.sv b/test/lui_tb.sv
+index bff609d..cd52a2b 100644
+--- a/test/lui_tb.sv
++++ b/test/lui_tb.sv
+@@ -1,6 +1,7 @@
+ `timescale 1ns/1ps
+ 
+ `include "test/utils.svh"
++`include "src/utils.svh"
+ 
+ module lui_tb;
+ 
+
+From f1d18b34b3fafd0916ed650da4765746eecce85b Mon Sep 17 00:00:00 2001
+From: Jerry Hou <157534392+houjingl@users.noreply.github.com>
+Date: Sat, 6 Sep 2025 22:40:21 -0400
+Subject: [PATCH 11/13] Update src/params.vh
+
+Co-authored-by: Boris <boris.potapov@mail.utoronto.ca>
+---
+ src/params.vh | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/params.vh b/src/params.vh
+index 2c766c2..c7b4b92 100644
+--- a/src/params.vh
++++ b/src/params.vh
+@@ -8,8 +8,8 @@ parameter IType_load = 7'b0000011;
+ parameter SType = 7'b0100011;
+ parameter BType = 7'b1100011;
+ parameter JType = 7'b1101111;
+-parameter UType_auipc = 7'b0010011;
+-parameter UType_lui = 7'b0110011;
++parameter UType_auipc = 7'b0010111;
++parameter UType_lui = 7'b0110111;
+ 
+ //ALU Operation Control Codes
+ parameter ALUAdd = 4'b0000;
+
+From 6c6063debcc480fdcb7d96c3b7e2c6cb3be0142a Mon Sep 17 00:00:00 2001
+From: houjingl <jerryhou2005@outlook.com>
+Date: Sat, 6 Sep 2025 22:44:44 -0400
+Subject: [PATCH 12/13] modified combinational logic that extracts rs1 rs2 and
+ rd
+
+---
+ src/Instruction_Decode/Instruction_Decode.v | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/src/Instruction_Decode/Instruction_Decode.v b/src/Instruction_Decode/Instruction_Decode.v
+index c2fa6ad..2981791 100644
+--- a/src/Instruction_Decode/Instruction_Decode.v
++++ b/src/Instruction_Decode/Instruction_Decode.v
+@@ -98,6 +98,12 @@ module Instruction_Decode(
+ 
+ 		end
+ 
++		else if (opcode == UType_auipc || opcode == UType_lui) begin
++			rd = instr[11:7];
++			rs1 = 5'b00000;
++			rs2 = 5'b00000;
++		end
++
+ 		else begin
+ 
+ 			rd = 5'b00000;
+
+From 6774d68f1c5abb0c9f1c94b4ce98b2a351d68458 Mon Sep 17 00:00:00 2001
+From: houjingl <jerryhou2005@outlook.com>
+Date: Sun, 7 Sep 2025 14:54:08 -0400
+Subject: [PATCH 13/13] ALU Decoder Fix
+
+---
+ src/Instruction_Decode/Instruction_Decode.v | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/src/Instruction_Decode/Instruction_Decode.v b/src/Instruction_Decode/Instruction_Decode.v
+index 2981791..271afab 100644
+--- a/src/Instruction_Decode/Instruction_Decode.v
++++ b/src/Instruction_Decode/Instruction_Decode.v
+@@ -58,7 +58,10 @@ module Instruction_Decode(
+       IType_load: alu_op = ALU_OP__MEMORY_ACCESS;
+       SType:      alu_op = ALU_OP__MEMORY_ACCESS;
+       BType:      alu_op = ALU_OP__BRANCH;
++	  UType_auipc: alu_op = ALU_OP__MEMORY_ACCESS; // used to add 0 to imm ext
++	  UType_lui:   alu_op = ALU_OP__MEMORY_ACCESS; // used to add 0 to imm ext
+       default:    alu_op = ALU_OP__UNSET;
++
+     endcase
+   end
+ 

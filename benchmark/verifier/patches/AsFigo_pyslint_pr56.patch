@@ -1,0 +1,60 @@
+From 1c588ddd577cb083cde2092719f442f8b8fc64ee Mon Sep 17 00:00:00 2001
+From: Srinivasan Venkataramanan <svenka3@gmail.com>
+Date: Sun, 1 Oct 2023 21:51:33 +0100
+Subject: [PATCH] Added new rule to address issue #55 and a test
+
+---
+ py_src/pyslint.py                     | 17 +++++++++++++++++
+ sv_tests/test_sv_enum_inside_mod_f.sv |  8 ++++++++
+ 2 files changed, 25 insertions(+)
+ create mode 100644 sv_tests/test_sv_enum_inside_mod_f.sv
+
+diff --git a/py_src/pyslint.py b/py_src/pyslint.py
+index f04aa6f..f411775 100644
+--- a/py_src/pyslint.py
++++ b/py_src/pyslint.py
+@@ -357,6 +357,22 @@ def chk_dpi_spec_str (lv_dpi_mem):
+     pyslint_msg (lv_rule_id, msg)
+ 
+ 
++def chk_mod_typedef (lv_cu_scope):
++  if (lv_cu_scope.kind.name == 'ModuleDeclaration'):
++    for lv_mod_mem_i in lv_cu_scope.members:
++      if (lv_mod_mem_i.kind.name == 'TypedefDeclaration'):
++        lv_tdef_s = lv_mod_mem_i.__str__() 
++        msg = 'A typedef was found inside a module'
++        msg += ' This prevents reuse as the enum/typedef scope is module only'
++        msg += ' An assertion model that binds to this module'
++        msg += ' and check the states using the typedef will be harder'
++        msg += ' to implement in such cases.'
++        msg += ' Please move the typedef to a package'
++        msg += ' and import that package inside the module'
++        msg += str(lv_tdef_s)
++        lv_rule_id = 'REUSE_NO_TDEF_IN_MOD'
++        pyslint_msg (lv_rule_id, msg)
++
+ def chk_dpi_rules (lv_cu_scope):
+   if (lv_cu_scope.kind.name == 'ModuleDeclaration'):
+     for lv_mod_mem_i in lv_cu_scope.members:
+@@ -403,6 +419,7 @@ def chk_naming (lv_cu_scope):
+   cnst_arr_method_cast (scope_i)
+   cl_endlabel_chk (scope_i)
+   chk_dpi_rules (scope_i)
++  chk_mod_typedef (scope_i)
+ 
+ 
+ cu_scope = tree.root.members[0]
+diff --git a/sv_tests/test_sv_enum_inside_mod_f.sv b/sv_tests/test_sv_enum_inside_mod_f.sv
+new file mode 100644
+index 0000000..f8de1cf
+--- /dev/null
++++ b/sv_tests/test_sv_enum_inside_mod_f.sv
+@@ -0,0 +1,8 @@
++module machine(input wire clk);
++
++  typedef enum logic [1:0] {S0, S1, S2} state_t;
++
++  state_t state;
++
++endmodule
++

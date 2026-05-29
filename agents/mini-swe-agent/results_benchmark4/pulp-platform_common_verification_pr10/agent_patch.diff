@@ -1,0 +1,90 @@
+diff --git a/src/rand_id_queue.sv b/src/rand_id_queue.sv
+index e72e137..7e9ef7f 100644
+--- a/src/rand_id_queue.sv
++++ b/src/rand_id_queue.sv
+@@ -67,7 +67,7 @@ class rand_id_queue #(
+     if (!is_empty()) begin
+       id_t id;
+       do begin
+-        void'(std::randomize(id));
++        id = $urandom_range((1 << ID_WIDTH) - 1, 0);
+       end while (queues[id].size() == 0);
+       return id;
+     end else begin
+diff --git a/src/rand_stream_mst.sv b/src/rand_stream_mst.sv
+index 8de55ee..1c227cc 100644
+--- a/src/rand_stream_mst.sv
++++ b/src/rand_stream_mst.sv
+@@ -32,10 +32,8 @@ module rand_stream_mst #(
+ 
+   function static void randomize_wait_cycles();
+     int unsigned rand_success;
+-    rand_success = std::randomize(rand_wait_cycles) with {
+-      rand_wait_cycles >= MinWaitCycles;
+-      rand_wait_cycles <= MaxWaitCycles;
+-    };
++    rand_wait_cycles = $urandom_range(MaxWaitCycles, MinWaitCycles);
++    rand_success = 1;
+     assert (rand_success) else $error("Failed to randomize wait cycles!");
+   endfunction
+ 
+@@ -54,7 +52,7 @@ module rand_stream_mst #(
+       // Delay application of data and valid output.
+       #(ApplDelay);
+       // Randomize data output and set valid output.
+-      void'(std::randomize(data_o));
++      data_o = $urandom();
+       valid_o = 1'b1;
+       // Delay acquisition of ready signal. AcqDelay is relative to the clock edge, and we have
+       // already waited for ApplDelay in this edge, so we need to subtract ApplDelay.
+@@ -78,7 +76,7 @@ module rand_stream_mst #(
+         @(posedge clk_i);
+         #(ApplDelay);
+         valid_o = 1'b0;
+-        void'(std::randomize(data_o));
++        data_o = $urandom();
+       end
+     end
+   end
+diff --git a/src/rand_synch_holdable_driver.sv b/src/rand_synch_holdable_driver.sv
+index c0c6d39..544e9c0 100644
+--- a/src/rand_synch_holdable_driver.sv
++++ b/src/rand_synch_holdable_driver.sv
+@@ -31,17 +31,15 @@ module rand_synch_holdable_driver #(
+     wait (rst_ni);
+     @(posedge clk_i);
+     forever begin
+-      rand_success = std::randomize(rand_delay) with {
+-        rand_delay >= MinWaitCycles;
+-        rand_delay <= MaxWaitCycles;
+-      };
++      rand_delay = $urandom_range(MaxWaitCycles, MinWaitCycles);
++      rand_success = 1;
+       assert (rand_success) else $error("Failed to randomize wait cycles!");
+       repeat(rand_delay) begin
+         @(posedge clk_i);
+       end
+       #(ApplDelay);
+       if (!hold_i) begin
+-        void'(std::randomize(data_o));
++        data_o = $urandom();
+       end
+     end
+   end
+diff --git a/src/rand_verif_pkg.sv b/src/rand_verif_pkg.sv
+index b86091b..452127e 100644
+--- a/src/rand_verif_pkg.sv
++++ b/src/rand_verif_pkg.sv
+@@ -15,10 +15,8 @@ package rand_verif_pkg;
+   // Pick a random number from the interval [min, max] and wait for that number of clock cyles.
+   task automatic rand_wait(input int unsigned min, max, ref logic clk);
+       int unsigned rand_success, cycles;
+-      rand_success = std::randomize(cycles) with {
+-          cycles >= min;
+-          cycles <= max;
+-      };
++      cycles = $urandom_range(max, min);
++      rand_success = 1;
+       assert (rand_success) else $error("Failed to randomize wait cycles!");
+       repeat (cycles) @(posedge clk);
+   endtask

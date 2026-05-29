@@ -1,0 +1,47 @@
+{
+  "instance_id": "lowRISC_ibex_pr1865",
+  "bug_locs": [
+    [
+      {
+        "rel_file_path": "rtl/ibex_top.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/lowRISC_ibex_pr1865/rtl/ibex_top.sv",
+        "start": 201,
+        "end": 228,
+        "class_name": null,
+        "method_name": null,
+        "code": "201   /////////////////////\n202 \n203   always_ff @(posedge clk_i or negedge rst_ni) begin\n204     if (!rst_ni) begin\n205       core_busy_q <= 1'b0;\n206     end else begin\n207       core_busy_q <= core_busy_d;\n208     end\n209   end\n210 \n211   assign clock_en     = core_busy_q | debug_req_i | irq_pending | irq_nm_i;\n212   assign core_sleep_o = ~clock_en;\n213 \n214   prim_clock_gating core_clock_gate_i (\n215     .clk_i    (clk_i),\n216     .en_i     (clock_en),\n217     .test_en_i(test_en_i),\n218     .clk_o    (clk)\n219   );\n220 \n221   ////////////////////////\n222   // Core instantiation //\n223   ////////////////////////\n224 \n225   // Buffer security critical signals to prevent synthesis optimisation removing them\n226   prim_buf #(.Width($bits(fetch_enable_t))) u_fetch_enable_buf (\n227     .in_i (fetch_enable_i),\n228     .out_o(fetch_enable_buf)\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "rtl/ibex_top.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/lowRISC_ibex_pr1865/rtl/ibex_top.sv",
+        "start": 275,
+        "end": 296,
+        "class_name": null,
+        "method_name": null,
+        "code": "275     .ResetAll         (ResetAll),\n276     .RndCnstLfsrSeed  (RndCnstLfsrSeed),\n277     .RndCnstLfsrPerm  (RndCnstLfsrPerm),\n278     .SecureIbex       (SecureIbex),\n279     .DummyInstructions(DummyInstructions),\n280     .RegFileECC       (RegFileECC),\n281     .RegFileDataWidth (RegFileDataWidth),\n282     .MemECC           (MemECC),\n283     .MemDataWidth     (MemDataWidth),\n284     .DmHaltAddr       (DmHaltAddr),\n285     .DmExceptionAddr  (DmExceptionAddr)\n286   ) u_ibex_core (\n287     .clk_i(clk),\n288     .rst_ni,\n289 \n290     .hart_id_i,\n291     .boot_addr_i,\n292 \n293     .instr_req_o,\n294     .instr_gnt_i,\n295     .instr_rvalid_i,\n296     .instr_addr_o,\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "rtl/ibex_top.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/lowRISC_ibex_pr1865/rtl/ibex_top.sv",
+        "start": 916,
+        "end": 937,
+        "class_name": null,
+        "method_name": null,
+        "code": "916       .WritebackStage   (WritebackStage),\n917       .ResetAll         (ResetAll),\n918       .RndCnstLfsrSeed  (RndCnstLfsrSeed),\n919       .RndCnstLfsrPerm  (RndCnstLfsrPerm),\n920       .SecureIbex       (SecureIbex),\n921       .DummyInstructions(DummyInstructions),\n922       .RegFileECC       (RegFileECC),\n923       .RegFileDataWidth (RegFileDataWidth),\n924       .MemECC           (MemECC),\n925       .DmHaltAddr       (DmHaltAddr),\n926       .DmExceptionAddr  (DmExceptionAddr)\n927     ) u_ibex_lockstep (\n928       .clk_i                  (clk),\n929       .rst_ni                 (rst_ni),\n930 \n931       .hart_id_i              (hart_id_local),\n932       .boot_addr_i            (boot_addr_local),\n933 \n934       .instr_req_i            (instr_req_local),\n935       .instr_gnt_i            (instr_gnt_local),\n936       .instr_rvalid_i         (instr_rvalid_local),\n937       .instr_addr_i           (instr_addr_local),\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "rtl/ibex_lockstep.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/lowRISC_ibex_pr1865/rtl/ibex_lockstep.sv",
+        "start": 420,
+        "end": 457,
+        "class_name": null,
+        "method_name": null,
+        "code": "420     .rvfi_pc_wdata             (),\n421     .rvfi_mem_addr             (),\n422     .rvfi_mem_rmask            (),\n423     .rvfi_mem_wmask            (),\n424     .rvfi_mem_rdata            (),\n425     .rvfi_mem_wdata            (),\n426     .rvfi_ext_mip              (),\n427     .rvfi_ext_nmi              (),\n428     .rvfi_ext_debug_req        (),\n429     .rvfi_ext_mcycle           (),\n430     .rvfi_ext_mhpmcounters     (),\n431     .rvfi_ext_mhpmcountersh    (),\n432     .rvfi_ext_ic_scr_key_valid (),\n433 `endif\n434 \n435     .fetch_enable_i         (shadow_inputs_q[0].fetch_enable),\n436     .alert_minor_o          (shadow_alert_minor),\n437     .alert_major_internal_o (shadow_alert_major_internal),\n438     .alert_major_bus_o      (shadow_alert_major_bus),\n439     .core_busy_o            (shadow_outputs_d.core_busy)\n440   );\n441 \n442   // Register the shadow core outputs\n443   always_ff @(posedge clk_i) begin\n444     shadow_outputs_q <= shadow_outputs_d;\n445   end\n446 \n447   /////////////////////////\n448   // Compare the outputs //\n449   /////////////////////////\n450 \n451   logic outputs_mismatch;\n452 \n453   assign outputs_mismatch       = enable_cmp_q & (shadow_outputs_q != core_outputs_q[0]);\n454   assign alert_major_internal_o = outputs_mismatch | shadow_alert_major_internal;\n455   assign alert_major_bus_o      = shadow_alert_major_bus;\n456   assign alert_minor_o          = shadow_alert_minor;\n457 \n",
+        "intended_behavior": ""
+      }
+    ]
+  ]
+}

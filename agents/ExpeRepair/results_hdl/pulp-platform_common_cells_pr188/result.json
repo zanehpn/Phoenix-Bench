@@ -1,0 +1,59 @@
+{
+  "case_name": "pulp-platform_common_cells_pr188",
+  "status": "completed",
+  "num_patches": 3,
+  "bug_locs": [
+    [
+      {
+        "rel_file_path": "src/popcount.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_common_cells_pr188/src/popcount.sv",
+        "start": 2,
+        "end": 31,
+        "class_name": null,
+        "method_name": null,
+        "code": "2 // Copyright and related rights are licensed under the Solderpad Hardware\n3 // License, Version 0.51 (the \"License\"); you may not use this file except in\n4 // compliance with the License. You may obtain a copy of the License at\n5 // http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law\n6 // or agreed to in writing, software, hardware and materials distributed under\n7 // this License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR\n8 // CONDITIONS OF ANY KIND, either express or implied. See the License for the\n9 // specific language governing permissions and limitations under the License.\n10 \n11 // Author: Manuel Eggimann <meggimann@iis.ee.ethz.ch>\n12 \n13 // Description: This module calculates the hamming weight (number of ones) in\n14 // its input vector using a balanced binary adder tree. Recursive instantiation\n15 // is used to build the tree.  Any unsigned INPUT_WIDTH larger or equal 2 is\n16 // legal.  The module pads the signal internally to the next power of two.  The\n17 // output result width is ceil(log2(INPUT_WIDTH))+1.\n18 \n19 module popcount #(\n20     parameter int unsigned INPUT_WIDTH = 1,\n21     localparam int unsigned PopcountWidth = $clog2(INPUT_WIDTH)+1\n22 ) (\n23     input logic [INPUT_WIDTH-1:0]     data_i,\n24     output logic [PopcountWidth-1:0] popcount_o\n25 );\n26 \n27    localparam int unsigned PaddedWidth = 1 << $clog2(INPUT_WIDTH);\n28 \n29    logic [PaddedWidth-1:0]           padded_input;\n30    logic [PopcountWidth-2:0]         left_child_result, right_child_result;\n31 \n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "src/popcount.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_common_cells_pr188/src/popcount.sv",
+        "start": 16,
+        "end": 39,
+        "class_name": null,
+        "method_name": null,
+        "code": "16 // legal.  The module pads the signal internally to the next power of two.  The\n17 // output result width is ceil(log2(INPUT_WIDTH))+1.\n18 \n19 module popcount #(\n20     parameter int unsigned INPUT_WIDTH = 1,\n21     localparam int unsigned PopcountWidth = $clog2(INPUT_WIDTH)+1\n22 ) (\n23     input logic [INPUT_WIDTH-1:0]     data_i,\n24     output logic [PopcountWidth-1:0] popcount_o\n25 );\n26 \n27    localparam int unsigned PaddedWidth = 1 << $clog2(INPUT_WIDTH);\n28 \n29    logic [PaddedWidth-1:0]           padded_input;\n30    logic [PopcountWidth-2:0]         left_child_result, right_child_result;\n31 \n32    //Zero pad the input to next power of two\n33    always_comb begin\n34      padded_input = '0;\n35      padded_input[INPUT_WIDTH-1:0] = data_i;\n36    end\n37 \n38    //Recursive instantiation to build binary adder tree\n39    if (INPUT_WIDTH == 1) begin : gen_single_node\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "src/popcount.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_common_cells_pr188/src/popcount.sv",
+        "start": 27,
+        "end": 54,
+        "class_name": null,
+        "method_name": null,
+        "code": "27    localparam int unsigned PaddedWidth = 1 << $clog2(INPUT_WIDTH);\n28 \n29    logic [PaddedWidth-1:0]           padded_input;\n30    logic [PopcountWidth-2:0]         left_child_result, right_child_result;\n31 \n32    //Zero pad the input to next power of two\n33    always_comb begin\n34      padded_input = '0;\n35      padded_input[INPUT_WIDTH-1:0] = data_i;\n36    end\n37 \n38    //Recursive instantiation to build binary adder tree\n39    if (INPUT_WIDTH == 1) begin : gen_single_node\n40      assign left_child_result  = 1'b0;\n41      assign right_child_result = padded_input[0];\n42    end else if (INPUT_WIDTH == 2) begin : gen_leaf_node\n43      assign left_child_result  = padded_input[1];\n44      assign right_child_result = padded_input[0];\n45    end else begin : gen_non_leaf_node\n46      popcount #(.INPUT_WIDTH(PaddedWidth / 2))\n47          left_child(\n48                     .data_i(padded_input[PaddedWidth-1:PaddedWidth/2]),\n49                     .popcount_o(left_child_result));\n50 \n51      popcount #(.INPUT_WIDTH(PaddedWidth / 2))\n52          right_child(\n53                      .data_i(padded_input[PaddedWidth/2-1:0]),\n54                      .popcount_o(right_child_result));\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "src/popcount.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_common_cells_pr188/src/popcount.sv",
+        "start": 35,
+        "end": 59,
+        "class_name": null,
+        "method_name": null,
+        "code": "35      padded_input[INPUT_WIDTH-1:0] = data_i;\n36    end\n37 \n38    //Recursive instantiation to build binary adder tree\n39    if (INPUT_WIDTH == 1) begin : gen_single_node\n40      assign left_child_result  = 1'b0;\n41      assign right_child_result = padded_input[0];\n42    end else if (INPUT_WIDTH == 2) begin : gen_leaf_node\n43      assign left_child_result  = padded_input[1];\n44      assign right_child_result = padded_input[0];\n45    end else begin : gen_non_leaf_node\n46      popcount #(.INPUT_WIDTH(PaddedWidth / 2))\n47          left_child(\n48                     .data_i(padded_input[PaddedWidth-1:PaddedWidth/2]),\n49                     .popcount_o(left_child_result));\n50 \n51      popcount #(.INPUT_WIDTH(PaddedWidth / 2))\n52          right_child(\n53                      .data_i(padded_input[PaddedWidth/2-1:0]),\n54                      .popcount_o(right_child_result));\n55    end\n56 \n57    //Output assignment\n58    assign popcount_o = left_child_result + right_child_result;\n59 \n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "src/popcount.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_common_cells_pr188/src/popcount.sv",
+        "start": 46,
+        "end": 59,
+        "class_name": null,
+        "method_name": null,
+        "code": "46      popcount #(.INPUT_WIDTH(PaddedWidth / 2))\n47          left_child(\n48                     .data_i(padded_input[PaddedWidth-1:PaddedWidth/2]),\n49                     .popcount_o(left_child_result));\n50 \n51      popcount #(.INPUT_WIDTH(PaddedWidth / 2))\n52          right_child(\n53                      .data_i(padded_input[PaddedWidth/2-1:0]),\n54                      .popcount_o(right_child_result));\n55    end\n56 \n57    //Output assignment\n58    assign popcount_o = left_child_result + right_child_result;\n59 \n",
+        "intended_behavior": ""
+      }
+    ]
+  ]
+}

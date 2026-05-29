@@ -1,0 +1,60 @@
+Localized bug: `rtl/pulp_soc/l2_ram_multi_bank.sv`
+
+The interleaved-bank SRAM instantiation is using `tc_sram` only under `ifndef PULP_FPGA_EMUL`, while the FPGA-emulation path still uses the older `fpga_interleaved_ram`. Since the issue is to replace generic SRAMs with the new `tc_sram` modules to enable Xilinx parameterized macros on FPGA, this module should use `tc_sram` in both normal and FPGA flows, with FPGA-specific memory macros selected through `tc_sram` configuration rather than a separate RAM model.
+
+Here is the SEARCH/REPLACE edit:
+
+```systemverilog
+### rtl/pulp_soc/l2_ram_multi_bank.sv
+<<<<<<< SEARCH
+      `ifndef PULP_FPGA_EMUL
+          tc_sram #(
+            .NumWords  ( BANK_SIZE_INTL_SRAM ),
+            .DataWidth ( 32                  ),
+            .NumPorts  ( 1                   )
+          ) bank_i (
+            .clk_i,
+            .rst_ni,
+            .req_i   (  mem_slave[i].req                                  ),
+            .we_i    ( ~mem_slave[i].wen                                  ),
+            .addr_i  (  interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+2+$clog2(NB_BANKS)-1:2+$clog2(NB_BANKS)] ), // Remove LSBs for byte addressing (2 bits)
+                                                                                                                 // and bank selection (log2(NB_BANKS) bits)
+            .wdata_i (  mem_slave[i].wdata                                ),
+            .be_i    (  mem_slave[i].be                                   ),
+            .rdata_o (  mem_slave[i].r_rdata                              )
+          );
+
+      `else // !`ifndef PULP_FPGA_EMUL
+          fpga_interleaved_ram #(.ADDR_WIDTH(INTL_MEM_ADDR_WIDTH)) bank_i
+              (
+               .clk_i,
+               .rst_ni,
+               .csn_i   (~mem_slave[i].req                                 ),
+               .wen_i   (mem_slave[i].wen                                  ),
+               .be_i    (mem_slave[i].be                                   ),
+               .addr_i  (interleaved_addresses[i][INTL_MEM_ADDR_WIDTH-1+2+$clog2(NB_BANKS):2+$clog2(NB_BANKS)] ), // Remove LSBs for byte addressing (2 bits)
+                                                                                                                  // and bank selection (log2(NB_BANKS) bits)
+               .wdata_i (mem_slave[i].wdata                                ),
+               .rdata_o (mem_slave[i].r_rdata                              )
+               );
+      `endif
+=======
+      tc_sram #(
+        .NumWords  ( BANK_SIZE_INTL_SRAM ),
+        .DataWidth ( 32                  ),
+        .NumPorts  ( 1                   )
+      ) bank_i (
+        .clk_i,
+        .rst_ni,
+        .req_i   (  mem_slave[i].req                                  ),
+        .we_i    ( ~mem_slave[i].wen                                  ),
+        .addr_i  (  interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+2+$clog2(NB_BANKS)-1:2+$clog2(NB_BANKS)] ), // Remove LSBs for byte addressing (2 bits)
+                                                                                                             // and bank selection (log2(NB_BANKS) bits)
+        .wdata_i (  mem_slave[i].wdata                                ),
+        .be_i    (  mem_slave[i].be                                   ),
+        .rdata_o (  mem_slave[i].r_rdata                              )
+      );
+>>>>>>> REPLACE
+```
+
+If you'd like, I can also inspect the memory-model files for any remaining `generic_memory`/legacy SRAM wrappers that should be migrated in the same pass.

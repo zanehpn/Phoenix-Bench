@@ -1,0 +1,96 @@
+diff --git a/src/fetch.sv b/src/fetch.sv
+index bb17d80..3682b53 100644
+--- a/src/fetch.sv
++++ b/src/fetch.sv
+@@ -12,22 +12,27 @@ module fetch ( input  wire     clk
+              , input  wire     cfsm__pc_update
+              , input  pc_src_t cfsm__pc_src
+              , input  imm_t    imm_ext
++             , output data_t   pc_old
+              , output instr_t  instr
+              );
+ 
+   addr_t pc_cur, pc_next;
+ 
+-  always @ (*) begin
++  always @(*) begin
++    pc_next = pc_cur;
+     if (cfsm__pc_update) begin
+       case (cfsm__pc_src)
+-        PC_SRC__INCREMENT: pc_next <= pc_cur + 32'h4;
+-        PC_SRC__JUMP:      pc_next <= pc_cur + imm_ext;
++        PC_SRC__INCREMENT: pc_next = pc_cur + 32'h4;
++        PC_SRC__JUMP:      pc_next = pc_cur + imm_ext;
++        default:           pc_next = pc_cur;
+       endcase
+-    end else begin
+-      pc_next <= pc_cur;
+     end
+   end
+ 
++  always @(*) begin
++    pc_old = pc_cur;
++  end
++
+   always @ (posedge clk) begin
+     if (reset) pc_cur <= 32'h00000000;
+     else       pc_cur <= pc_next;
+diff --git a/src/top.v b/src/top.v
+index 7fd5382..29c5bb7 100644
+--- a/src/top.v
++++ b/src/top.v
+@@ -18,8 +18,8 @@ module top ( input wire clk
+   data_t alu_input_a;
+   data_t alu_input_b;
+ 
+-  addr_t OldPC; // TODO: this will need to be moved into fetch module
+-  data_t Data; // TODO: this will need to be moved into fetch module
++  data_t OldPC;
++  data_t Data;
+ 
+   wire alu__zero_flag;
+ 
+@@ -35,6 +35,7 @@ module top ( input wire clk
+   wire [1:0] __tmp_ResultSrc;
+   wire [3:0] __tmp_FSMState;
+   data_t __tmp_ALUOut;
++  data_t mem_addr;
+ 
+   ControlFSM control_fsm
+     ( .opcode    ( opcode          )
+@@ -61,6 +62,7 @@ module top ( input wire clk
+     , .cfsm__pc_update ( cfsm__pc_update )
+     , .cfsm__pc_src    ( cfsm__pc_src    )
+     , .imm_ext         ( imm_ext         )
++    , .pc_old          ( OldPC           )
+     , .instr           ( instr           )
+     );
+ 
+@@ -77,8 +79,8 @@ module top ( input wire clk
+     );
+ 
+   ALU alu
+-    ( .a              ( rs1              )
+-    , .b              ( rs2              )
++    ( .a              ( alu_input_a     )
++    , .b              ( alu_input_b     )
+     , .alu_control    ( __tmp_ALUControl )
+     , .out            ( __tmp_ALUOut     )
+     , .zeroE          ( alu__zero_flag   )
+@@ -102,6 +104,16 @@ module top ( input wire clk
+     endcase
+   end
+ 
++  assign mem_addr = __tmp_AdrSrc ? __tmp_ALUOut : OldPC;
++
++  MA data_memory
++    ( .A   ( mem_addr        )
++    , .WD  ( rs2             )
++    , .WE  ( __tmp_MemWrite  )
++    , .CLK ( clk             )
++    , .RD  ( Data            )
++    );
++
+   always @(*) begin
+     case (__tmp_ResultSrc)
+       2'b00: __tmp_ResultData = __tmp_ALUOut;

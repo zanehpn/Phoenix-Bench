@@ -1,0 +1,2561 @@
+From 8c9eabf8fe5ea4687be1852c6573bbc35b29c941 Mon Sep 17 00:00:00 2001
+From: sajjadahmed677 <merledu677@gmail.com>
+Date: Tue, 28 Sep 2021 16:16:11 +0500
+Subject: [PATCH 01/13] top wrapper on ibex_core for bus interface
+
+---
+ hw/azadi/ip/brq_core_top/rtl/brq_core_top.sv | 215 +++++++++++++++++++
+ 1 file changed, 215 insertions(+)
+ create mode 100755 hw/azadi/ip/brq_core_top/rtl/brq_core_top.sv
+
+diff --git a/hw/azadi/ip/brq_core_top/rtl/brq_core_top.sv b/hw/azadi/ip/brq_core_top/rtl/brq_core_top.sv
+new file mode 100755
+index 00000000..fe42116a
+--- /dev/null
++++ b/hw/azadi/ip/brq_core_top/rtl/brq_core_top.sv
+@@ -0,0 +1,215 @@
++//`include "/home/usman/Documents/ibex/rtl/ibex_pkg.sv"
++//`include "/home/merl/Documents/ibex/rtl/prim_pkg.sv"
++
++module brq_core_top #(
++    parameter bit                 PMPEnable        = 1'b0,
++    parameter int unsigned        PMPGranularity   = 0,
++    parameter int unsigned        PMPNumRegions    = 0,
++    parameter int unsigned        MHPMCounterNum   = 0,
++    parameter int unsigned        MHPMCounterWidth = 40,
++    parameter bit                 RV32E            = 1'b0,
++    parameter brq_pkg::rv32m_e    RV32M            = brq_pkg::RV32MFast,
++    parameter brq_pkg::rv32b_e    RV32B            = brq_pkg::RV32BNone,
++    parameter brq_pkg::regfile_e  RegFile          = brq_pkg::RegFileFF,
++    parameter bit                 BranchTargetALU  = 1'b0,
++    parameter bit                 WritebackStage   = 1'b1,
++    parameter bit                 ICache           = 1'b0,
++    parameter bit                 ICacheECC        = 1'b0,
++    parameter bit                 BranchPredictor  = 1'b0,
++    parameter bit                 DbgTriggerEn     = 1'b0,
++    parameter int unsigned        DbgHwBreakNum    = 1,
++    parameter bit                 Securebrq        = 1'b0,
++    parameter int unsigned        DmHaltAddr       = 0,
++    parameter int unsigned        DmExceptionAddr  = 0
++)
++(
++  input clock,
++  input reset,
++
++  // instruction memory interface 
++    input tlul_pkg::tl_d2h_t tl_i_i,
++    output tlul_pkg::tl_h2d_t tl_i_o,
++
++  // data memory interface 
++    input tlul_pkg::tl_d2h_t tl_d_i,
++    output tlul_pkg::tl_h2d_t tl_d_o,
++
++    input  logic        test_en_i,     // enable all clock gates for testing
++
++    input  logic [31:0] hart_id_i,
++    input  logic [31:0] boot_addr_i,
++
++        // Interrupt inputs
++    input  logic        irq_software_i,
++    input  logic        irq_timer_i,
++    input  logic        irq_external_i,
++    input  logic [14:0] irq_fast_i,
++    input  logic        irq_nm_i,       // non-maskeable interrupt
++
++    // Debug Interface
++    input  logic        debug_req_i,
++
++        // CPU Control Signals
++    input  logic        fetch_enable_i,
++    output logic        alert_minor_o,
++    output logic        alert_major_o,
++    output logic        core_sleep_o
++);
++import brq_pkg::*;
++
++  logic rst_ni;
++  assign rst_ni = reset;
++  // Instruction interface (internal)
++  logic        instr_req;
++  logic        instr_gnt;
++  logic        instr_rvalid;
++  logic [31:0] instr_addr;
++  logic [31:0] instr_rdata;
++  logic        instr_err;
++
++  // Data interface (internal)
++  logic        data_req;
++  logic        data_gnt;
++  logic        data_rvalid;
++  logic        data_we;
++  logic [3:0]  data_be;
++  logic [31:0] data_addr;
++  logic [31:0] data_wdata;
++  logic [31:0] data_rdata;
++  logic        data_err;
++
++
++
++brq_core #(
++    .PMPEnable        (PMPEnable),
++    .PMPGranularity   (PMPGranularity), 
++    .PMPNumRegions    (PMPNumRegions), 
++    .MHPMCounterNum   (MHPMCounterNum), 
++    .MHPMCounterWidth (MHPMCounterWidth), 
++    .RV32E            (RV32E), 
++    .RV32M            (RV32M), 
++    .RV32B            (RV32B), 
++    .RegFile          (RegFile), 
++    .BranchTargetALU  (BranchTargetALU), 
++    .WritebackStage   (WritebackStage), 
++    .ICache           (ICache), 
++    .ICacheECC        (ICacheECC), 
++    .BranchPredictor  (BranchPredictor), 
++    .DbgTriggerEn     (DbgTriggerEn), 
++    .DbgHwBreakNum    (DbgHwBreakNum), 
++    .Securebrq        (Securebrq),
++    .DmHaltAddr       (DmHaltAddr), 
++    .DmExceptionAddr  (DmExceptionAddr) 
++) u_core (
++    // Clock and Reset
++    .clk_i (clock),
++    .rst_ni(rst_ni),
++
++    .test_en_i (test_en_i),     // enable all clock gates for testing
++
++    .hart_id_i  (hart_id_i),
++    .boot_addr_i(boot_addr_i),
++
++    // Instruction memory interface
++    .instr_req_o    (instr_req),
++    .instr_gnt_i    (instr_gnt),
++    .instr_rvalid_i (instr_rvalid),
++    .instr_addr_o   (instr_addr),
++    .instr_rdata_i  (instr_rdata),
++    .instr_err_i    (instr_err),
++
++    // Data memory interface
++    .data_req_o     (data_req),
++    .data_gnt_i     (data_gnt),
++    .data_rvalid_i  (data_rvalid),
++    .data_we_o      (data_we),
++    .data_be_o      (data_be),
++    .data_addr_o    (data_addr),
++    .data_wdata_o   (data_wdata),
++    .data_rdata_i   (data_rdata),
++    .data_err_i     (data_err),
++
++    // Interrupt inputs
++    .irq_software_i (irq_software_i),
++    .irq_timer_i    (irq_timer_i),
++    .irq_external_i (irq_external_i),
++    .irq_fast_i     (irq_fast_i),
++    .irq_nm_i       (irq_nm_i),       // non-maskeable interrupt
++
++    // Debug Interface
++    .debug_req_i     (debug_req_i),
++
++    // RISC-V Formal Interface
++    // Does not comply with the coding standards of _i/_o suffixes, but follows
++    // the convention of RISC-V Formal Interface Specification.
++`ifdef RVFI
++    .rvfi_valid (),
++    .rvfi_order (),
++    .rvfi_insn (),
++    .rvfi_trap (),
++    .rvfi_halt (),
++    .rvfi_intr (),
++    .rvfi_mode (),
++    .rvfi_ixl (),
++    .rvfi_rs1_addr (),
++    .rvfi_rs2_addr (),
++    .rvfi_rs3_addr (),
++    .rvfi_rs1_rdata (),
++    .rvfi_rs2_rdata (),
++    .rvfi_rs3_rdata (),
++    .rvfi_rd_addr (),
++    .rvfi_rd_wdata (),
++    .rvfi_pc_rdata (),
++    .rvfi_pc_wdata (),
++    .rvfi_mem_addr (),
++    .rvfi_mem_rmask (),
++    .rvfi_mem_wmask (),
++    .rvfi_mem_rdata (),
++    .rvfi_mem_wdata (),
++`endif
++
++    // CPU Control Signals
++    .fetch_enable_i (fetch_enable_i),
++    .alert_minor_o (alert_minor_o),
++    .alert_major_o (alert_major_o),
++    .core_sleep_o (core_sleep_o)
++);
++
++tlul_host_adapter #(
++  .MAX_REQS(2)
++) intr_interface (
++  .clock (clock),
++  .reset (reset),
++  .req_i (instr_req),
++  .gnt_o (instr_gnt),
++  .addr_i (instr_addr),
++  .we_i (1'b0),
++  .wdata_i (32'b0),
++  .be_i (4'hF),
++  .valid_o (instr_rvalid),
++  .rdata_o (instr_rdata),
++  .err_o (instr_err),
++  .tl_h_c_a (tl_i_o),
++  .tl_h_c_d (tl_i_i)
++);
++
++tlul_host_adapter #(
++  .MAX_REQS (2)
++) data_interface (
++  .clock (clock),
++  .reset (reset),
++  .req_i (data_req),
++  .gnt_o (data_gnt),
++  .addr_i (data_addr),
++  .we_i (data_we),
++  .wdata_i (data_wdata),
++  .be_i (data_be),
++  .valid_o (data_rvalid),
++  .rdata_o (data_rdata),
++  .err_o (data_err),
++  .tl_h_c_a (tl_d_o),
++  .tl_h_c_d (tl_d_i)
++);
++
++
++endmodule
+
+From 2361e95e3df647f3f5c92a2c1a2d1fc363eccb92 Mon Sep 17 00:00:00 2001
+From: sajjadahmed677 <merledu677@gmail.com>
+Date: Tue, 28 Sep 2021 16:22:19 +0500
+Subject: [PATCH 02/13] conteroller module for loading iccm
+
+---
+ .../ip/program_loader/rtl/iccm_controller.v   | 138 ++++++++++++++++++
+ 1 file changed, 138 insertions(+)
+ create mode 100755 hw/azadi/ip/program_loader/rtl/iccm_controller.v
+
+diff --git a/hw/azadi/ip/program_loader/rtl/iccm_controller.v b/hw/azadi/ip/program_loader/rtl/iccm_controller.v
+new file mode 100755
+index 00000000..03d55ba5
+--- /dev/null
++++ b/hw/azadi/ip/program_loader/rtl/iccm_controller.v
+@@ -0,0 +1,138 @@
++
++//////////////////////////////////////////////////////////////////////////////////
++// Company: 
++// Engineer: 
++// 
++// Create Date: 01/20/2021 12:58:25 PM
++// Design Name: 
++// Module Name: iccm_controller
++// Project Name: 
++// Target Devices: 
++// Tool Versions: 
++// Description: 
++// 
++// Dependencies: 
++// 
++// Revision:
++// Revision 0.01 - File Created
++// Additional Comments:
++// 
++//////////////////////////////////////////////////////////////////////////////////
++
++module iccm_controller (
++	clk_i,
++	rst_ni,
++	rx_dv_i,
++	rx_byte_i,
++	we_o,
++	addr_o,
++	wdata_o,
++	reset_o
++);
++	input wire clk_i;
++	input wire rst_ni;
++	input wire rx_dv_i;
++	input wire [7:0] rx_byte_i;
++	output wire we_o;
++	output wire [13:0] addr_o;
++	output wire [31:0] wdata_o;
++	output wire reset_o;
++	reg [1:0] ctrl_fsm_cs;
++	reg [1:0] ctrl_fsm_ns;
++	wire [7:0] rx_byte_d;
++	reg [7:0] rx_byte_q0;
++	reg [7:0] rx_byte_q1;
++	reg [7:0] rx_byte_q2;
++	reg [7:0] rx_byte_q3;
++	reg we_q;
++	reg we_d;
++	reg [13:0] addr_q;
++	reg [13:0] addr_d;
++	reg reset_q;
++	reg reset_d;
++	reg [1:0] byte_count;
++	localparam [1:0] DONE = 3;
++	localparam [1:0] LOAD = 1;
++	localparam [1:0] PROG = 2;
++	localparam [1:0] RESET = 0;
++	always @(*) begin
++		we_d = we_q;
++		addr_d = addr_q;
++		reset_d = reset_q;
++		ctrl_fsm_ns = ctrl_fsm_cs;
++		case (ctrl_fsm_cs)
++			RESET: begin
++				we_d = 1'b0;
++				reset_d = 1'b0;
++				if (rx_dv_i)
++					ctrl_fsm_ns = LOAD;
++				else
++					ctrl_fsm_ns = RESET;
++			end
++			LOAD:
++				if (((byte_count == 2'b11) && (rx_byte_q2 != 8'h0f)) && (rx_byte_d != 8'hff)) begin
++					we_d = 1'b1;
++					ctrl_fsm_ns = PROG;
++				end
++				else
++					ctrl_fsm_ns = DONE;
++			PROG: begin
++				we_d = 1'b0;
++				ctrl_fsm_ns = DONE;
++			end
++			DONE:
++				if (wdata_o == 32'h00000fff) begin
++					ctrl_fsm_ns = DONE;
++					reset_d = 1'b1;
++				end
++				else if (rx_dv_i)
++					ctrl_fsm_ns = LOAD;
++				else
++					ctrl_fsm_ns = DONE;
++			default: ctrl_fsm_ns = RESET;
++		endcase
++	end
++	assign rx_byte_d = rx_byte_i;
++	assign we_o = we_q;
++	assign addr_o = addr_q;
++	assign wdata_o = {rx_byte_q0, rx_byte_q1, rx_byte_q2, rx_byte_q3};
++	assign reset_o = reset_q;
++	always @(posedge clk_i or negedge rst_ni)
++		if (!rst_ni) begin
++			we_q <= 1'b0;
++			addr_q <= 14'b00000000000000;
++			rx_byte_q0 <= 8'b00000000;
++			rx_byte_q1 <= 8'b00000000;
++			rx_byte_q2 <= 8'b00000000;
++			rx_byte_q3 <= 8'b00000000;
++			reset_q <= 1'b0;
++			byte_count <= 2'b00;
++			ctrl_fsm_cs <= RESET;
++		end
++		else begin
++			we_q <= we_d;
++			if (ctrl_fsm_cs == LOAD) begin
++				if (byte_count == 2'b00) begin
++					rx_byte_q0 <= rx_byte_d;
++					byte_count <= 2'b01;
++				end
++				else if (byte_count == 2'b01) begin
++					rx_byte_q1 <= rx_byte_d;
++					byte_count <= 2'b10;
++				end
++				else if (byte_count == 2'b10) begin
++					rx_byte_q2 <= rx_byte_d;
++					byte_count <= 2'b11;
++				end
++				else begin
++					rx_byte_q3 <= rx_byte_d;
++					byte_count <= 2'b00;
++				end
++				addr_q <= addr_d;
++			end
++			if (ctrl_fsm_cs == PROG)
++				addr_q <= addr_d + 1'b1;
++			reset_q <= reset_d;
++			ctrl_fsm_cs <= ctrl_fsm_ns;
++		end
++endmodule
+\ No newline at end of file
+
+From 23a9614d3426ae09ce20165b7620212b622d6b0d Mon Sep 17 00:00:00 2001
+From: sajjadahmed677 <merledu677@gmail.com>
+Date: Tue, 28 Sep 2021 16:26:18 +0500
+Subject: [PATCH 03/13] uart receiver for loading iccm
+
+---
+ hw/azadi/ip/program_loader/rtl/uart_rx_prog.v | 155 ++++++++++++++++++
+ 1 file changed, 155 insertions(+)
+ create mode 100644 hw/azadi/ip/program_loader/rtl/uart_rx_prog.v
+
+diff --git a/hw/azadi/ip/program_loader/rtl/uart_rx_prog.v b/hw/azadi/ip/program_loader/rtl/uart_rx_prog.v
+new file mode 100644
+index 00000000..36c4a4da
+--- /dev/null
++++ b/hw/azadi/ip/program_loader/rtl/uart_rx_prog.v
+@@ -0,0 +1,155 @@
++`timescale 1ns / 1ps
++// Licensed under the Apache License, Version 2.0, see LICENSE for details.
++// SPDX-License-Identifier: Apache-2.0
++
++// Set Parameter CLKS_PER_BIT as follows:
++// CLKS_PER_BIT = (Frequency of i_Clock)/(Frequency of UART)
++// Example: 10 MHz Clock, 115200 baud UART
++// (10000000)/(115200) = 87
++  
++module uart_rx_prog (
++   input  wire       clk_i,
++   input  wire       rst_ni,
++   input  wire       i_Rx_Serial,
++   input  wire [15:0] CLKS_PER_BIT,
++   output wire        o_Rx_DV,
++   output wire  [7:0] o_Rx_Byte
++   );
++    
++  parameter s_IDLE         = 3'b000;
++  parameter s_RX_START_BIT = 3'b001;
++  parameter s_RX_DATA_BITS = 3'b010;
++  parameter s_RX_STOP_BIT  = 3'b011;
++  parameter s_CLEANUP      = 3'b100;
++   
++  reg           r_Rx_Data_R ;
++  reg           r_Rx_Data   ;
++   
++  reg [15:0]     r_Clock_Count ;
++  reg [2:0]     r_Bit_Index  ; //8 bits total
++  reg [7:0]     r_Rx_Byte   ;
++  reg           r_Rx_DV     ;
++  reg [2:0]     r_SM_Main   ;
++   
++  // Purpose: Double-register the incoming data.
++  // This allows it to be used in the UART RX Clock Domain.
++  // (It removes problems caused by metastability)
++  always @(posedge clk_i)
++  begin
++    if (~rst_ni) begin
++      r_Rx_Data_R <= 1'b1;
++      r_Rx_Data   <= 1'b1;
++    end else begin
++      r_Rx_Data_R <= i_Rx_Serial;
++      r_Rx_Data   <= r_Rx_Data_R;
++    end
++  end
++   
++   
++  // Purpose: Control RX state machine
++  always @(posedge clk_i or negedge rst_ni)
++  begin
++    if (~rst_ni) begin
++      r_SM_Main <= s_IDLE;
++      r_Rx_DV       <= 1'b0;
++      r_Clock_Count <= 16'b0;
++      r_Bit_Index   <= 3'b0;
++	    r_Rx_Byte     <= 8'b0;
++    end else begin       
++      case (r_SM_Main)
++        s_IDLE :
++        begin
++          r_Rx_DV       <= 1'b0;
++          r_Clock_Count <= 16'b0;
++          r_Bit_Index   <= 3'b0;
++          r_Rx_Byte     <= 8'b0; 
++          if (r_Rx_Data == 1'b0)          // Start bit detected
++            r_SM_Main <= s_RX_START_BIT;
++          else
++            r_SM_Main <= s_IDLE;
++        end
++         
++        // Check middle of start bit to make sure it's still low
++        s_RX_START_BIT :
++        begin
++          if (r_Clock_Count == ((CLKS_PER_BIT-1)>>1))
++          begin
++            if (r_Rx_Data == 1'b0)
++              begin
++                r_Clock_Count <= 16'b0;  // reset counter, found the middle
++                r_SM_Main     <= s_RX_DATA_BITS;
++              end else
++                r_SM_Main <= s_IDLE;
++              end
++            else begin
++              r_Clock_Count <= r_Clock_Count + 16'b1;
++              r_SM_Main     <= s_RX_START_BIT;
++          end
++        end // case: s_RX_START_BIT
++         
++         
++        // Wait CLKS_PER_BIT-1 clock cycles to sample serial data
++        s_RX_DATA_BITS :
++        begin
++          if (r_Clock_Count < CLKS_PER_BIT-1)
++          begin
++            r_Clock_Count <= r_Clock_Count + 16'b1;
++            r_SM_Main     <= s_RX_DATA_BITS;
++          end
++          else
++          begin
++            r_Clock_Count          <= 16'b0;
++            r_Rx_Byte[r_Bit_Index] <= r_Rx_Data;
++                 
++                // Check if we have received all bits
++            if (r_Bit_Index < 7)
++            begin
++              r_Bit_Index <= r_Bit_Index + 3'b1;
++              r_SM_Main   <= s_RX_DATA_BITS;
++            end
++              else
++              begin
++                r_Bit_Index <= 3'b0;
++                r_SM_Main   <= s_RX_STOP_BIT;
++              end
++            end
++          end // case: s_RX_DATA_BITS
++     
++     
++        // Receive Stop bit.  Stop bit = 1
++        s_RX_STOP_BIT :
++        begin
++            // Wait CLKS_PER_BIT-1 clock cycles for Stop bit to finish
++          if (r_Clock_Count < CLKS_PER_BIT-1)
++          begin
++            r_Clock_Count <= r_Clock_Count + 16'b1;
++            r_SM_Main     <= s_RX_STOP_BIT;
++          end
++          else
++          begin
++            r_Rx_DV       <= 1'b1;
++            r_Clock_Count <= 16'b0;
++            r_SM_Main     <= s_CLEANUP;
++          end
++        end // case: s_RX_STOP_BIT
++     
++         
++        // Stay here 1 clock
++        s_CLEANUP :
++        begin
++          r_SM_Main <= s_IDLE;
++          r_Rx_DV   <= 1'b0;
++        end
++         
++         
++        default :
++          r_SM_Main <= s_IDLE;
++         
++      endcase
++    end
++  end   
++   
++  assign o_Rx_DV   = r_Rx_DV;
++  assign o_Rx_Byte = r_Rx_Byte;
++   
++endmodule // uart_rx
+
+From 2d96f49ad8989566c56dca0f54a6bd1fa375b393 Mon Sep 17 00:00:00 2001
+From: sajjadahmed677 <merledu677@gmail.com>
+Date: Tue, 28 Sep 2021 16:34:01 +0500
+Subject: [PATCH 04/13] reset management module
+
+---
+ hw/azadi/ip/reset_manager/rtl/rstmgr.sv | 48 +++++++++++++++++++++++++
+ 1 file changed, 48 insertions(+)
+ create mode 100644 hw/azadi/ip/reset_manager/rtl/rstmgr.sv
+
+diff --git a/hw/azadi/ip/reset_manager/rtl/rstmgr.sv b/hw/azadi/ip/reset_manager/rtl/rstmgr.sv
+new file mode 100644
+index 00000000..47379db8
+--- /dev/null
++++ b/hw/azadi/ip/reset_manager/rtl/rstmgr.sv
+@@ -0,0 +1,48 @@
++
++// basic reset managemnet logic for azadi
++
++module rstmgr(
++
++    input clk_i, //system clock
++    input rst_ni, // system reset
++    input prog_rst_ni,
++   // input wire prog_i,
++    output logic  sys_rst_ni // reset for system except debug module
++);
++
++  logic rst_d, rst_q;
++  logic rst_fd, rst_fq; // follower flip flop
++  //logic prog_reg;
++  
++  always_comb begin
++    if(!rst_ni) begin
++      rst_d = 1'b0;
++    end else begin
++      if(!prog_rst_ni) begin
++        rst_d = 1'b0;
++      end else begin
++        rst_d = 1'b1;
++      end 
++    end
++  end
++
++  always_ff @(posedge clk_i or negedge rst_ni) begin
++	  if(!rst_ni) begin
++	    rst_q <= 1'b0;
++	  end else begin
++	    rst_q <= rst_d;
++	  end 
++  end
++
++  assign rst_fd = rst_q;
++  always_ff @(posedge clk_i or negedge rst_ni) begin
++    if(!rst_ni) begin
++	    rst_fq <= 1'b0;
++	  end else begin
++	    rst_fq <= rst_fd;
++  	end
++  end
++
++  assign sys_rst_ni = rst_fq;
++
++endmodule
+
+From 4f5eb149a7cd9daa1790d88727b9d97da1b1ba4c Mon Sep 17 00:00:00 2001
+From: sajjadahmed677 <merledu677@gmail.com>
+Date: Tue, 28 Sep 2021 16:42:14 +0500
+Subject: [PATCH 05/13] 1kb sram(openram) module
+
+---
+ .../rtl/sky130_sram_1kbyte_1rw1r_32x256_8.v   | 114 ++++++++++++++++++
+ 1 file changed, 114 insertions(+)
+ create mode 100644 hw/azadi/ip/sram/rtl/sky130_sram_1kbyte_1rw1r_32x256_8.v
+
+diff --git a/hw/azadi/ip/sram/rtl/sky130_sram_1kbyte_1rw1r_32x256_8.v b/hw/azadi/ip/sram/rtl/sky130_sram_1kbyte_1rw1r_32x256_8.v
+new file mode 100644
+index 00000000..fe885ed7
+--- /dev/null
++++ b/hw/azadi/ip/sram/rtl/sky130_sram_1kbyte_1rw1r_32x256_8.v
+@@ -0,0 +1,114 @@
++// OpenRAM SRAM model
++// Words: 256
++// Word size: 32
++// Write size: 8
++
++module sky130_sram_1kbyte_1rw1r_32x256_8(
++`ifdef USE_POWER_PINS
++    vccd1,
++    vssd1,
++`endif
++// Port 0: RW
++    clk0,csb0,web0,wmask0,addr0,din0,dout0,
++// Port 1: R
++    clk1,csb1,addr1,dout1
++  );
++
++  parameter NUM_WMASKS = 4 ;
++  parameter DATA_WIDTH = 32 ;
++  parameter ADDR_WIDTH = 8 ;
++  parameter RAM_DEPTH = 1 << ADDR_WIDTH;
++  // FIXME: This delay is arbitrary.
++  parameter DELAY = 3 ;
++  parameter VERBOSE = 1 ; //Set to 0 to only display warnings
++  parameter T_HOLD = 1 ; //Delay to hold dout value after posedge. Value is arbitrary
++
++`ifdef USE_POWER_PINS
++    inout vccd1;
++    inout vssd1;
++`endif
++  input  clk0; // clock
++  input   csb0; // active low chip select
++  input  web0; // active low write control
++  input [NUM_WMASKS-1:0]   wmask0; // write mask
++  input [ADDR_WIDTH-1:0]  addr0;
++  input [DATA_WIDTH-1:0]  din0;
++  output [DATA_WIDTH-1:0] dout0;
++  input  clk1; // clock
++  input   csb1; // active low chip select
++  input [ADDR_WIDTH-1:0]  addr1;
++  output [DATA_WIDTH-1:0] dout1;
++
++  reg  csb0_reg;
++  reg  web0_reg;
++  reg [NUM_WMASKS-1:0]   wmask0_reg;
++  reg [ADDR_WIDTH-1:0]  addr0_reg;
++  reg [DATA_WIDTH-1:0]  din0_reg;
++  reg [DATA_WIDTH-1:0]  dout0;
++
++  // All inputs are registers
++  always @(posedge clk0)
++  begin
++    csb0_reg = csb0;
++    web0_reg = web0;
++    wmask0_reg = wmask0;
++    addr0_reg = addr0;
++    din0_reg = din0;
++    #(T_HOLD) dout0 = 32'bx;
++    if ( !csb0_reg && web0_reg && VERBOSE ) 
++      $display($time," Reading %m addr0=%b dout0=%b",addr0_reg,mem[addr0_reg]);
++    if ( !csb0_reg && !web0_reg && VERBOSE )
++      $display($time," Writing %m addr0=%b din0=%b wmask0=%b",addr0_reg,din0_reg,wmask0_reg);
++  end
++
++  reg  csb1_reg;
++  reg [ADDR_WIDTH-1:0]  addr1_reg;
++  reg [DATA_WIDTH-1:0]  dout1;
++
++  // All inputs are registers
++  always @(posedge clk1)
++  begin
++    csb1_reg = csb1;
++    addr1_reg = addr1;
++    if (!csb0 && !web0 && !csb1 && (addr0 == addr1))
++         $display($time," WARNING: Writing and reading addr0=%b and addr1=%b simultaneously!",addr0,addr1);
++    #(T_HOLD) dout1 = 32'bx;
++    if ( !csb1_reg && VERBOSE ) 
++      $display($time," Reading %m addr1=%b dout1=%b",addr1_reg,mem[addr1_reg]);
++  end
++
++reg [DATA_WIDTH-1:0]    mem [0:RAM_DEPTH-1];
++
++  // Memory Write Block Port 0
++  // Write Operation : When web0 = 0, csb0 = 0
++  always @ (negedge clk0)
++  begin : MEM_WRITE0
++    if ( !csb0_reg && !web0_reg ) begin
++        if (wmask0_reg[0])
++                mem[addr0_reg][7:0] = din0_reg[7:0];
++        if (wmask0_reg[1])
++                mem[addr0_reg][15:8] = din0_reg[15:8];
++        if (wmask0_reg[2])
++                mem[addr0_reg][23:16] = din0_reg[23:16];
++        if (wmask0_reg[3])
++                mem[addr0_reg][31:24] = din0_reg[31:24];
++    end
++  end
++
++  // Memory Read Block Port 0
++  // Read Operation : When web0 = 1, csb0 = 0
++  always @ (negedge clk0)
++  begin : MEM_READ0
++    if (!csb0_reg && web0_reg)
++       dout0 <= #(DELAY) mem[addr0_reg];
++  end
++
++  // Memory Read Block Port 1
++  // Read Operation : When web1 = 1, csb1 = 0
++  always @ (negedge clk1)
++  begin : MEM_READ1
++    if (!csb1_reg)
++       dout1 <= #(DELAY) mem[addr1_reg];
++  end
++
++endmodule
+
+From 5784cbb93d7bfc5e1cd8142f0711b3cf4bd3673a Mon Sep 17 00:00:00 2001
+From: sajjadahmed677 <merledu677@gmail.com>
+Date: Tue, 28 Sep 2021 16:43:58 +0500
+Subject: [PATCH 06/13] openram compatible iccm interface
+
+---
+ .../ip/sram_interfaces/rtl/instr_mem_top.sv   | 105 ++++++++++++++++++
+ 1 file changed, 105 insertions(+)
+ create mode 100644 hw/azadi/ip/sram_interfaces/rtl/instr_mem_top.sv
+
+diff --git a/hw/azadi/ip/sram_interfaces/rtl/instr_mem_top.sv b/hw/azadi/ip/sram_interfaces/rtl/instr_mem_top.sv
+new file mode 100644
+index 00000000..521ccecc
+--- /dev/null
++++ b/hw/azadi/ip/sram_interfaces/rtl/instr_mem_top.sv
+@@ -0,0 +1,105 @@
++module instr_mem_top
++(
++  input logic clk_i,
++  input logic rst_ni,
++  
++  input  tlul_pkg::tl_h2d_t tl_i,
++  output tlul_pkg::tl_d2h_t tl_o,
++// iccm controller interface 
++  input  [11:0] iccm_ctrl_addr,
++  input  [31:0] iccm_ctrl_wdata,
++  input  logic  iccm_ctrl_we,
++  input  logic  prog_rst_ni,
++    
++
++// sram interface 
++  output  logic        csb,
++  output  logic [11:0] addr_o,
++  output  logic [31:0] wdata_o,
++  output  logic [3:0]  wmask_o,
++  output  logic        we_o,
++  input   logic [31:0] rdata_i
++);
++
++
++  logic rvalid;
++
++  logic        tl_we;
++  logic [31:0] tl_wmask;
++  logic [31:0] tl_wdata;
++  logic [11:0] tl_addr;
++  logic        tl_req;
++  logic [3:0]  mask_sel;
++  
++  logic        instr_csbD;
++  logic [11:0] instr_addrD;
++  logic [3:0]  instr_wmaskD;
++  logic        instr_weD;
++  logic [31:0] instr_wdataD;
++
++  assign mask_sel[0] = (tl_wmask[7:0]   != 8'b0) ? 1'b1: 1'b0;
++  assign mask_sel[1] = (tl_wmask[15:8]  != 8'b0) ? 1'b1: 1'b0;
++  assign mask_sel[2] = (tl_wmask[23:16] != 8'b0) ? 1'b1: 1'b0;
++  assign mask_sel[3] = (tl_wmask[31:24] != 8'b0) ? 1'b1: 1'b0;
++
++  always_ff @(negedge clk_i) begin
++    if(prog_rst_ni) begin
++      instr_csbD  <= tl_req;
++      instr_addrD <= tl_addr;
++      instr_wdataD<= tl_wdata;
++      instr_weD   <= tl_we;
++      instr_wmaskD<= mask_sel;
++    end else begin
++      instr_csbD  <= iccm_ctrl_we;
++      instr_addrD <= iccm_ctrl_addr;
++      instr_wdataD<= iccm_ctrl_wdata;
++      instr_weD   <= iccm_ctrl_we;
++      instr_wmaskD<= 4'b1111;
++    end
++  end
++
++  always @(*) begin
++    wdata_o=   instr_wdataD;
++    addr_o =   instr_addrD;
++    csb    =   ~instr_csbD;
++    we_o   =   ~instr_weD;
++    wmask_o=   instr_wmaskD;
++ 
++  end
++
++
++  tlul_sram_adapter #(
++    .SramAw       (12),
++    .SramDw       (32), 
++    .Outstanding  (2),  
++    .ByteAccess   (1),
++    .ErrOnWrite   (0),  // 1: Writes not allowed, automatically error
++    .ErrOnRead    (0)   // 1: Reads not allowed, automatically error  
++
++  ) inst_mem (
++    .clk_i     (clk_i),
++    .rst_ni    (rst_ni),
++    .tl_i      (tl_i),
++    .tl_o      (tl_o), 
++    .req_o     (tl_req),
++    .gnt_i     (1'b1),
++    .we_o      (tl_we),
++    .addr_o    (tl_addr),
++    .wdata_o   (tl_wdata),
++    .wmask_o   (tl_wmask),
++    .rdata_i   (rdata_i),
++    .rvalid_i  (rvalid),
++    .rerror_i  (2'b0)
++  );
++
++  always_ff @(posedge clk_i or negedge rst_ni) begin
++    if (!rst_ni) begin
++      rvalid <= 1'b0;
++    end else if (iccm_ctrl_we | tl_we) begin
++      rvalid <= 1'b0;
++    end else begin 
++      rvalid <= tl_req;
++    end
++  end
++  
++endmodule
+
+From 23385c670d2eb3f08a54a1ac59a76cf5640f1781 Mon Sep 17 00:00:00 2001
+From: sajjadahmed677 <merledu677@gmail.com>
+Date: Tue, 28 Sep 2021 16:44:11 +0500
+Subject: [PATCH 07/13] openram compatible dccm interface
+
+---
+ .../ip/sram_interfaces/rtl/data_mem_top.sv    | 91 +++++++++++++++++++
+ 1 file changed, 91 insertions(+)
+ create mode 100644 hw/azadi/ip/sram_interfaces/rtl/data_mem_top.sv
+
+diff --git a/hw/azadi/ip/sram_interfaces/rtl/data_mem_top.sv b/hw/azadi/ip/sram_interfaces/rtl/data_mem_top.sv
+new file mode 100644
+index 00000000..ab8aeed0
+--- /dev/null
++++ b/hw/azadi/ip/sram_interfaces/rtl/data_mem_top.sv
+@@ -0,0 +1,91 @@
++module data_mem_top
++(
++  input logic clk_i,
++  input logic rst_ni,
++
++// tl-ul insterface
++  input tlul_pkg::tl_h2d_t tl_d_i,
++  output tlul_pkg::tl_d2h_t tl_d_o,
++  
++// sram interface
++  output  logic        csb,
++  output  logic [11:0] addr_o,
++  output  logic [31:0] wdata_o,
++  output  logic [3:0]  wmask_o,
++  output  logic        we_o,
++  input   logic [31:0] rdata_i
++);
++
++  logic        tl_req;
++  logic [31:0] tl_wmask;
++  logic        we_i;
++  logic        rvalid_o;
++  
++  logic        data_csbD;
++  logic [11:0] data_addrD;
++  logic [3:0]  data_wmaskD;
++  logic        data_weD;
++  logic [31:0] data_wdataD;
++
++  assign data_wmaskD[0] = (tl_wmask[7:0]   != 8'b0) ? 1'b1: 1'b0;
++  assign data_wmaskD[1] = (tl_wmask[15:8]  != 8'b0) ? 1'b1: 1'b0;
++  assign data_wmaskD[2] = (tl_wmask[23:16] != 8'b0) ? 1'b1: 1'b0;
++  assign data_wmaskD[3] = (tl_wmask[31:24] != 8'b0) ? 1'b1: 1'b0; 
++  
++  assign data_weD    = ~we_i;
++  assign data_csbD   = ~tl_req;
++  
++  always_ff @(negedge clk_i or negedge rst_ni) begin
++    if(!rst_ni) begin
++      addr_o =  '0;
++      csb    =  '1;
++      wmask_o=  '0;
++      we_o   =  '0;
++      wdata_o=  '0;
++    end else begin
++      addr_o =  data_addrD;
++      csb    =  data_csbD;
++      wmask_o=  data_wmaskD;
++      we_o   =  data_weD;
++      wdata_o=  data_wdataD;
++    end
++  
++  end
++  
++  tlul_sram_adapter #(
++    .SramAw       (12),
++    .SramDw       (32), 
++    .Outstanding  (4),  
++    .ByteAccess   (1),
++    .ErrOnWrite   (0),  // 1: Writes not allowed, automatically error
++    .ErrOnRead    (0) 
++
++  ) data_mem (
++    .clk_i    (clk_i),
++    .rst_ni   (rst_ni),
++    .tl_i     (tl_d_i),
++    .tl_o     (tl_d_o), 
++    .req_o    (tl_req),
++    .gnt_i    (1'b1),
++    .we_o     (we_i),
++    .addr_o   (data_addrD),
++    .wdata_o  (data_wdataD),
++    .wmask_o  (tl_wmask),
++    .rdata_i  (rdata_i), 
++    .rvalid_i (rvalid_o),
++    .rerror_i (2'b0)
++
++  );
++
++
++  always_ff @(posedge clk_i or negedge rst_ni) begin
++    if (!rst_ni) begin
++      rvalid_o <= 1'b0;
++    end else if (we_i) begin
++      rvalid_o <= 1'b0;
++    end else begin 
++      rvalid_o <= tl_req;
++    end
++  end
++
++endmodule
+
+From d77fdfa55ce517c4a406034316cb2eaf788abc8f Mon Sep 17 00:00:00 2001
+From: sajjadahmed677 <merledu677@gmail.com>
+Date: Tue, 28 Sep 2021 16:46:28 +0500
+Subject: [PATCH 08/13] directory structure modified for custom IPs
+
+---
+ hw/azadi/rtl/brq_core_top.sv   | 215 ---------------------------------
+ hw/azadi/rtl/iccm_controller.v | 138 ---------------------
+ hw/azadi/rtl/rstmgr.sv         |  48 --------
+ hw/azadi/rtl/testbench.v       | 109 -----------------
+ hw/azadi/rtl/uart_rx_prog.v    | 155 ------------------------
+ 5 files changed, 665 deletions(-)
+ delete mode 100755 hw/azadi/rtl/brq_core_top.sv
+ delete mode 100755 hw/azadi/rtl/iccm_controller.v
+ delete mode 100644 hw/azadi/rtl/rstmgr.sv
+ delete mode 100755 hw/azadi/rtl/testbench.v
+ delete mode 100644 hw/azadi/rtl/uart_rx_prog.v
+
+diff --git a/hw/azadi/rtl/brq_core_top.sv b/hw/azadi/rtl/brq_core_top.sv
+deleted file mode 100755
+index fe42116a..00000000
+--- a/hw/azadi/rtl/brq_core_top.sv
++++ /dev/null
+@@ -1,215 +0,0 @@
+-//`include "/home/usman/Documents/ibex/rtl/ibex_pkg.sv"
+-//`include "/home/merl/Documents/ibex/rtl/prim_pkg.sv"
+-
+-module brq_core_top #(
+-    parameter bit                 PMPEnable        = 1'b0,
+-    parameter int unsigned        PMPGranularity   = 0,
+-    parameter int unsigned        PMPNumRegions    = 0,
+-    parameter int unsigned        MHPMCounterNum   = 0,
+-    parameter int unsigned        MHPMCounterWidth = 40,
+-    parameter bit                 RV32E            = 1'b0,
+-    parameter brq_pkg::rv32m_e    RV32M            = brq_pkg::RV32MFast,
+-    parameter brq_pkg::rv32b_e    RV32B            = brq_pkg::RV32BNone,
+-    parameter brq_pkg::regfile_e  RegFile          = brq_pkg::RegFileFF,
+-    parameter bit                 BranchTargetALU  = 1'b0,
+-    parameter bit                 WritebackStage   = 1'b1,
+-    parameter bit                 ICache           = 1'b0,
+-    parameter bit                 ICacheECC        = 1'b0,
+-    parameter bit                 BranchPredictor  = 1'b0,
+-    parameter bit                 DbgTriggerEn     = 1'b0,
+-    parameter int unsigned        DbgHwBreakNum    = 1,
+-    parameter bit                 Securebrq        = 1'b0,
+-    parameter int unsigned        DmHaltAddr       = 0,
+-    parameter int unsigned        DmExceptionAddr  = 0
+-)
+-(
+-  input clock,
+-  input reset,
+-
+-  // instruction memory interface 
+-    input tlul_pkg::tl_d2h_t tl_i_i,
+-    output tlul_pkg::tl_h2d_t tl_i_o,
+-
+-  // data memory interface 
+-    input tlul_pkg::tl_d2h_t tl_d_i,
+-    output tlul_pkg::tl_h2d_t tl_d_o,
+-
+-    input  logic        test_en_i,     // enable all clock gates for testing
+-
+-    input  logic [31:0] hart_id_i,
+-    input  logic [31:0] boot_addr_i,
+-
+-        // Interrupt inputs
+-    input  logic        irq_software_i,
+-    input  logic        irq_timer_i,
+-    input  logic        irq_external_i,
+-    input  logic [14:0] irq_fast_i,
+-    input  logic        irq_nm_i,       // non-maskeable interrupt
+-
+-    // Debug Interface
+-    input  logic        debug_req_i,
+-
+-        // CPU Control Signals
+-    input  logic        fetch_enable_i,
+-    output logic        alert_minor_o,
+-    output logic        alert_major_o,
+-    output logic        core_sleep_o
+-);
+-import brq_pkg::*;
+-
+-  logic rst_ni;
+-  assign rst_ni = reset;
+-  // Instruction interface (internal)
+-  logic        instr_req;
+-  logic        instr_gnt;
+-  logic        instr_rvalid;
+-  logic [31:0] instr_addr;
+-  logic [31:0] instr_rdata;
+-  logic        instr_err;
+-
+-  // Data interface (internal)
+-  logic        data_req;
+-  logic        data_gnt;
+-  logic        data_rvalid;
+-  logic        data_we;
+-  logic [3:0]  data_be;
+-  logic [31:0] data_addr;
+-  logic [31:0] data_wdata;
+-  logic [31:0] data_rdata;
+-  logic        data_err;
+-
+-
+-
+-brq_core #(
+-    .PMPEnable        (PMPEnable),
+-    .PMPGranularity   (PMPGranularity), 
+-    .PMPNumRegions    (PMPNumRegions), 
+-    .MHPMCounterNum   (MHPMCounterNum), 
+-    .MHPMCounterWidth (MHPMCounterWidth), 
+-    .RV32E            (RV32E), 
+-    .RV32M            (RV32M), 
+-    .RV32B            (RV32B), 
+-    .RegFile          (RegFile), 
+-    .BranchTargetALU  (BranchTargetALU), 
+-    .WritebackStage   (WritebackStage), 
+-    .ICache           (ICache), 
+-    .ICacheECC        (ICacheECC), 
+-    .BranchPredictor  (BranchPredictor), 
+-    .DbgTriggerEn     (DbgTriggerEn), 
+-    .DbgHwBreakNum    (DbgHwBreakNum), 
+-    .Securebrq        (Securebrq),
+-    .DmHaltAddr       (DmHaltAddr), 
+-    .DmExceptionAddr  (DmExceptionAddr) 
+-) u_core (
+-    // Clock and Reset
+-    .clk_i (clock),
+-    .rst_ni(rst_ni),
+-
+-    .test_en_i (test_en_i),     // enable all clock gates for testing
+-
+-    .hart_id_i  (hart_id_i),
+-    .boot_addr_i(boot_addr_i),
+-
+-    // Instruction memory interface
+-    .instr_req_o    (instr_req),
+-    .instr_gnt_i    (instr_gnt),
+-    .instr_rvalid_i (instr_rvalid),
+-    .instr_addr_o   (instr_addr),
+-    .instr_rdata_i  (instr_rdata),
+-    .instr_err_i    (instr_err),
+-
+-    // Data memory interface
+-    .data_req_o     (data_req),
+-    .data_gnt_i     (data_gnt),
+-    .data_rvalid_i  (data_rvalid),
+-    .data_we_o      (data_we),
+-    .data_be_o      (data_be),
+-    .data_addr_o    (data_addr),
+-    .data_wdata_o   (data_wdata),
+-    .data_rdata_i   (data_rdata),
+-    .data_err_i     (data_err),
+-
+-    // Interrupt inputs
+-    .irq_software_i (irq_software_i),
+-    .irq_timer_i    (irq_timer_i),
+-    .irq_external_i (irq_external_i),
+-    .irq_fast_i     (irq_fast_i),
+-    .irq_nm_i       (irq_nm_i),       // non-maskeable interrupt
+-
+-    // Debug Interface
+-    .debug_req_i     (debug_req_i),
+-
+-    // RISC-V Formal Interface
+-    // Does not comply with the coding standards of _i/_o suffixes, but follows
+-    // the convention of RISC-V Formal Interface Specification.
+-`ifdef RVFI
+-    .rvfi_valid (),
+-    .rvfi_order (),
+-    .rvfi_insn (),
+-    .rvfi_trap (),
+-    .rvfi_halt (),
+-    .rvfi_intr (),
+-    .rvfi_mode (),
+-    .rvfi_ixl (),
+-    .rvfi_rs1_addr (),
+-    .rvfi_rs2_addr (),
+-    .rvfi_rs3_addr (),
+-    .rvfi_rs1_rdata (),
+-    .rvfi_rs2_rdata (),
+-    .rvfi_rs3_rdata (),
+-    .rvfi_rd_addr (),
+-    .rvfi_rd_wdata (),
+-    .rvfi_pc_rdata (),
+-    .rvfi_pc_wdata (),
+-    .rvfi_mem_addr (),
+-    .rvfi_mem_rmask (),
+-    .rvfi_mem_wmask (),
+-    .rvfi_mem_rdata (),
+-    .rvfi_mem_wdata (),
+-`endif
+-
+-    // CPU Control Signals
+-    .fetch_enable_i (fetch_enable_i),
+-    .alert_minor_o (alert_minor_o),
+-    .alert_major_o (alert_major_o),
+-    .core_sleep_o (core_sleep_o)
+-);
+-
+-tlul_host_adapter #(
+-  .MAX_REQS(2)
+-) intr_interface (
+-  .clock (clock),
+-  .reset (reset),
+-  .req_i (instr_req),
+-  .gnt_o (instr_gnt),
+-  .addr_i (instr_addr),
+-  .we_i (1'b0),
+-  .wdata_i (32'b0),
+-  .be_i (4'hF),
+-  .valid_o (instr_rvalid),
+-  .rdata_o (instr_rdata),
+-  .err_o (instr_err),
+-  .tl_h_c_a (tl_i_o),
+-  .tl_h_c_d (tl_i_i)
+-);
+-
+-tlul_host_adapter #(
+-  .MAX_REQS (2)
+-) data_interface (
+-  .clock (clock),
+-  .reset (reset),
+-  .req_i (data_req),
+-  .gnt_o (data_gnt),
+-  .addr_i (data_addr),
+-  .we_i (data_we),
+-  .wdata_i (data_wdata),
+-  .be_i (data_be),
+-  .valid_o (data_rvalid),
+-  .rdata_o (data_rdata),
+-  .err_o (data_err),
+-  .tl_h_c_a (tl_d_o),
+-  .tl_h_c_d (tl_d_i)
+-);
+-
+-
+-endmodule
+diff --git a/hw/azadi/rtl/iccm_controller.v b/hw/azadi/rtl/iccm_controller.v
+deleted file mode 100755
+index 03d55ba5..00000000
+--- a/hw/azadi/rtl/iccm_controller.v
++++ /dev/null
+@@ -1,138 +0,0 @@
+-
+-//////////////////////////////////////////////////////////////////////////////////
+-// Company: 
+-// Engineer: 
+-// 
+-// Create Date: 01/20/2021 12:58:25 PM
+-// Design Name: 
+-// Module Name: iccm_controller
+-// Project Name: 
+-// Target Devices: 
+-// Tool Versions: 
+-// Description: 
+-// 
+-// Dependencies: 
+-// 
+-// Revision:
+-// Revision 0.01 - File Created
+-// Additional Comments:
+-// 
+-//////////////////////////////////////////////////////////////////////////////////
+-
+-module iccm_controller (
+-	clk_i,
+-	rst_ni,
+-	rx_dv_i,
+-	rx_byte_i,
+-	we_o,
+-	addr_o,
+-	wdata_o,
+-	reset_o
+-);
+-	input wire clk_i;
+-	input wire rst_ni;
+-	input wire rx_dv_i;
+-	input wire [7:0] rx_byte_i;
+-	output wire we_o;
+-	output wire [13:0] addr_o;
+-	output wire [31:0] wdata_o;
+-	output wire reset_o;
+-	reg [1:0] ctrl_fsm_cs;
+-	reg [1:0] ctrl_fsm_ns;
+-	wire [7:0] rx_byte_d;
+-	reg [7:0] rx_byte_q0;
+-	reg [7:0] rx_byte_q1;
+-	reg [7:0] rx_byte_q2;
+-	reg [7:0] rx_byte_q3;
+-	reg we_q;
+-	reg we_d;
+-	reg [13:0] addr_q;
+-	reg [13:0] addr_d;
+-	reg reset_q;
+-	reg reset_d;
+-	reg [1:0] byte_count;
+-	localparam [1:0] DONE = 3;
+-	localparam [1:0] LOAD = 1;
+-	localparam [1:0] PROG = 2;
+-	localparam [1:0] RESET = 0;
+-	always @(*) begin
+-		we_d = we_q;
+-		addr_d = addr_q;
+-		reset_d = reset_q;
+-		ctrl_fsm_ns = ctrl_fsm_cs;
+-		case (ctrl_fsm_cs)
+-			RESET: begin
+-				we_d = 1'b0;
+-				reset_d = 1'b0;
+-				if (rx_dv_i)
+-					ctrl_fsm_ns = LOAD;
+-				else
+-					ctrl_fsm_ns = RESET;
+-			end
+-			LOAD:
+-				if (((byte_count == 2'b11) && (rx_byte_q2 != 8'h0f)) && (rx_byte_d != 8'hff)) begin
+-					we_d = 1'b1;
+-					ctrl_fsm_ns = PROG;
+-				end
+-				else
+-					ctrl_fsm_ns = DONE;
+-			PROG: begin
+-				we_d = 1'b0;
+-				ctrl_fsm_ns = DONE;
+-			end
+-			DONE:
+-				if (wdata_o == 32'h00000fff) begin
+-					ctrl_fsm_ns = DONE;
+-					reset_d = 1'b1;
+-				end
+-				else if (rx_dv_i)
+-					ctrl_fsm_ns = LOAD;
+-				else
+-					ctrl_fsm_ns = DONE;
+-			default: ctrl_fsm_ns = RESET;
+-		endcase
+-	end
+-	assign rx_byte_d = rx_byte_i;
+-	assign we_o = we_q;
+-	assign addr_o = addr_q;
+-	assign wdata_o = {rx_byte_q0, rx_byte_q1, rx_byte_q2, rx_byte_q3};
+-	assign reset_o = reset_q;
+-	always @(posedge clk_i or negedge rst_ni)
+-		if (!rst_ni) begin
+-			we_q <= 1'b0;
+-			addr_q <= 14'b00000000000000;
+-			rx_byte_q0 <= 8'b00000000;
+-			rx_byte_q1 <= 8'b00000000;
+-			rx_byte_q2 <= 8'b00000000;
+-			rx_byte_q3 <= 8'b00000000;
+-			reset_q <= 1'b0;
+-			byte_count <= 2'b00;
+-			ctrl_fsm_cs <= RESET;
+-		end
+-		else begin
+-			we_q <= we_d;
+-			if (ctrl_fsm_cs == LOAD) begin
+-				if (byte_count == 2'b00) begin
+-					rx_byte_q0 <= rx_byte_d;
+-					byte_count <= 2'b01;
+-				end
+-				else if (byte_count == 2'b01) begin
+-					rx_byte_q1 <= rx_byte_d;
+-					byte_count <= 2'b10;
+-				end
+-				else if (byte_count == 2'b10) begin
+-					rx_byte_q2 <= rx_byte_d;
+-					byte_count <= 2'b11;
+-				end
+-				else begin
+-					rx_byte_q3 <= rx_byte_d;
+-					byte_count <= 2'b00;
+-				end
+-				addr_q <= addr_d;
+-			end
+-			if (ctrl_fsm_cs == PROG)
+-				addr_q <= addr_d + 1'b1;
+-			reset_q <= reset_d;
+-			ctrl_fsm_cs <= ctrl_fsm_ns;
+-		end
+-endmodule
+\ No newline at end of file
+diff --git a/hw/azadi/rtl/rstmgr.sv b/hw/azadi/rtl/rstmgr.sv
+deleted file mode 100644
+index 47379db8..00000000
+--- a/hw/azadi/rtl/rstmgr.sv
++++ /dev/null
+@@ -1,48 +0,0 @@
+-
+-// basic reset managemnet logic for azadi
+-
+-module rstmgr(
+-
+-    input clk_i, //system clock
+-    input rst_ni, // system reset
+-    input prog_rst_ni,
+-   // input wire prog_i,
+-    output logic  sys_rst_ni // reset for system except debug module
+-);
+-
+-  logic rst_d, rst_q;
+-  logic rst_fd, rst_fq; // follower flip flop
+-  //logic prog_reg;
+-  
+-  always_comb begin
+-    if(!rst_ni) begin
+-      rst_d = 1'b0;
+-    end else begin
+-      if(!prog_rst_ni) begin
+-        rst_d = 1'b0;
+-      end else begin
+-        rst_d = 1'b1;
+-      end 
+-    end
+-  end
+-
+-  always_ff @(posedge clk_i or negedge rst_ni) begin
+-	  if(!rst_ni) begin
+-	    rst_q <= 1'b0;
+-	  end else begin
+-	    rst_q <= rst_d;
+-	  end 
+-  end
+-
+-  assign rst_fd = rst_q;
+-  always_ff @(posedge clk_i or negedge rst_ni) begin
+-    if(!rst_ni) begin
+-	    rst_fq <= 1'b0;
+-	  end else begin
+-	    rst_fq <= rst_fd;
+-  	end
+-  end
+-
+-  assign sys_rst_ni = rst_fq;
+-
+-endmodule
+diff --git a/hw/azadi/rtl/testbench.v b/hw/azadi/rtl/testbench.v
+deleted file mode 100755
+index 19c79d4d..00000000
+--- a/hw/azadi/rtl/testbench.v
++++ /dev/null
+@@ -1,109 +0,0 @@
+-`timescale 1 ns/1 ps
+-
+-module main();
+-
+-  // Testbench uses a 25 MHz clock (same as Go Board)
+-  // Want to interface to 115200 baud UART
+-  // 25000000 / 115200 = 217 Clocks Per Bit.
+-  parameter c_CLOCK_PERIOD_NS = 100;
+-  parameter c_BIT_PERIOD      = 8600;
+-  parameter FILENAME= "/home/merl/github_repos/azadi/tools/program.hex";
+-  wire [15:0] c_CLKS_PER_BIT = 16'd87;
+-  reg r_Clock = 0;
+-  reg r_Reset = 0;
+-  reg r_RX_Serial = 1;
+-
+-  reg [31:0] INSTR[99:0];
+-  integer instr_count = 0;
+-      
+-      initial begin
+-        $readmemh(FILENAME,INSTR);
+-      end
+-azadi_soc_top Azadi 
+-(
+-  .clock (r_Clock),
+-  .Reset_ni (r_Reset),
+-  .uart_rx_i (r_RX_Serial),
+-  .gpio_i(4'b0000),
+-  .gpio_o()
+-);
+-
+-  // Takes in input byte and serializes it 
+-  task UART_WRITE_BYTE;
+-    input [7:0] i_Data;
+-    integer     ii;
+-    begin
+-      
+-
+-      // Send Start Bit
+-      r_RX_Serial <= 1'b0;
+-      #(c_BIT_PERIOD);
+-      #1000;
+-      
+-      // Send Data Byte
+-      for (ii=0; ii<8; ii=ii+1)
+-        begin
+-          r_RX_Serial <= i_Data[ii];
+-          #(c_BIT_PERIOD);
+-        end
+-      
+-      // Send Stop Bit
+-      r_RX_Serial <= 1'b1;
+-      #(c_BIT_PERIOD);
+-     end
+-  endtask // UART_WRITE_BYTE
+-
+-  
+-  always
+-    #(c_CLOCK_PERIOD_NS/2) r_Clock <= !r_Clock;
+-
+-  
+-  // Main Testing:
+-  initial
+-    begin
+-      @(posedge r_Clock);
+-      r_Reset=1;
+-      #500
+-      r_Reset=0;
+-      // Send a command to the UART (exercise Rx)
+-    while(instr_count<99 && INSTR[instr_count]!=32'h00000FFF)begin
+-        @(posedge r_Clock);
+-        UART_WRITE_BYTE(INSTR[instr_count][7:0]);
+-        @(posedge r_Clock);
+-        UART_WRITE_BYTE(INSTR[instr_count][15:8]);
+-        @(posedge r_Clock);
+-        UART_WRITE_BYTE(INSTR[instr_count][23:16]);
+-        @(posedge r_Clock);
+-        UART_WRITE_BYTE(INSTR[instr_count][31:24]);
+-        @(posedge r_Clock);
+-        instr_count = instr_count + 1'b1;
+-
+-    end      
+-      @(posedge r_Clock);
+-      UART_WRITE_BYTE(8'hff);
+-      @(posedge r_Clock);
+-      UART_WRITE_BYTE(8'h0f);
+-      @(posedge r_Clock);
+-      UART_WRITE_BYTE(8'h00);
+-      @(posedge r_Clock);
+-      UART_WRITE_BYTE(8'h00);
+-      // Check that the correct command was received
+-
+-      $display("Executed");
+-            repeat (6) begin
+-			 repeat (1000) @(posedge r_Clock);
+-			 $display("+1000 cycles");
+-		end
+-
+-    $finish();
+-    end
+-  
+-  initial 
+-  begin
+-    // Required to dump signals to EPWave
+-    $dumpfile("dump.vcd");
+-    $dumpvars(0);
+-  end
+-  
+-endmodule
+-
+diff --git a/hw/azadi/rtl/uart_rx_prog.v b/hw/azadi/rtl/uart_rx_prog.v
+deleted file mode 100644
+index 36c4a4da..00000000
+--- a/hw/azadi/rtl/uart_rx_prog.v
++++ /dev/null
+@@ -1,155 +0,0 @@
+-`timescale 1ns / 1ps
+-// Licensed under the Apache License, Version 2.0, see LICENSE for details.
+-// SPDX-License-Identifier: Apache-2.0
+-
+-// Set Parameter CLKS_PER_BIT as follows:
+-// CLKS_PER_BIT = (Frequency of i_Clock)/(Frequency of UART)
+-// Example: 10 MHz Clock, 115200 baud UART
+-// (10000000)/(115200) = 87
+-  
+-module uart_rx_prog (
+-   input  wire       clk_i,
+-   input  wire       rst_ni,
+-   input  wire       i_Rx_Serial,
+-   input  wire [15:0] CLKS_PER_BIT,
+-   output wire        o_Rx_DV,
+-   output wire  [7:0] o_Rx_Byte
+-   );
+-    
+-  parameter s_IDLE         = 3'b000;
+-  parameter s_RX_START_BIT = 3'b001;
+-  parameter s_RX_DATA_BITS = 3'b010;
+-  parameter s_RX_STOP_BIT  = 3'b011;
+-  parameter s_CLEANUP      = 3'b100;
+-   
+-  reg           r_Rx_Data_R ;
+-  reg           r_Rx_Data   ;
+-   
+-  reg [15:0]     r_Clock_Count ;
+-  reg [2:0]     r_Bit_Index  ; //8 bits total
+-  reg [7:0]     r_Rx_Byte   ;
+-  reg           r_Rx_DV     ;
+-  reg [2:0]     r_SM_Main   ;
+-   
+-  // Purpose: Double-register the incoming data.
+-  // This allows it to be used in the UART RX Clock Domain.
+-  // (It removes problems caused by metastability)
+-  always @(posedge clk_i)
+-  begin
+-    if (~rst_ni) begin
+-      r_Rx_Data_R <= 1'b1;
+-      r_Rx_Data   <= 1'b1;
+-    end else begin
+-      r_Rx_Data_R <= i_Rx_Serial;
+-      r_Rx_Data   <= r_Rx_Data_R;
+-    end
+-  end
+-   
+-   
+-  // Purpose: Control RX state machine
+-  always @(posedge clk_i or negedge rst_ni)
+-  begin
+-    if (~rst_ni) begin
+-      r_SM_Main <= s_IDLE;
+-      r_Rx_DV       <= 1'b0;
+-      r_Clock_Count <= 16'b0;
+-      r_Bit_Index   <= 3'b0;
+-	    r_Rx_Byte     <= 8'b0;
+-    end else begin       
+-      case (r_SM_Main)
+-        s_IDLE :
+-        begin
+-          r_Rx_DV       <= 1'b0;
+-          r_Clock_Count <= 16'b0;
+-          r_Bit_Index   <= 3'b0;
+-          r_Rx_Byte     <= 8'b0; 
+-          if (r_Rx_Data == 1'b0)          // Start bit detected
+-            r_SM_Main <= s_RX_START_BIT;
+-          else
+-            r_SM_Main <= s_IDLE;
+-        end
+-         
+-        // Check middle of start bit to make sure it's still low
+-        s_RX_START_BIT :
+-        begin
+-          if (r_Clock_Count == ((CLKS_PER_BIT-1)>>1))
+-          begin
+-            if (r_Rx_Data == 1'b0)
+-              begin
+-                r_Clock_Count <= 16'b0;  // reset counter, found the middle
+-                r_SM_Main     <= s_RX_DATA_BITS;
+-              end else
+-                r_SM_Main <= s_IDLE;
+-              end
+-            else begin
+-              r_Clock_Count <= r_Clock_Count + 16'b1;
+-              r_SM_Main     <= s_RX_START_BIT;
+-          end
+-        end // case: s_RX_START_BIT
+-         
+-         
+-        // Wait CLKS_PER_BIT-1 clock cycles to sample serial data
+-        s_RX_DATA_BITS :
+-        begin
+-          if (r_Clock_Count < CLKS_PER_BIT-1)
+-          begin
+-            r_Clock_Count <= r_Clock_Count + 16'b1;
+-            r_SM_Main     <= s_RX_DATA_BITS;
+-          end
+-          else
+-          begin
+-            r_Clock_Count          <= 16'b0;
+-            r_Rx_Byte[r_Bit_Index] <= r_Rx_Data;
+-                 
+-                // Check if we have received all bits
+-            if (r_Bit_Index < 7)
+-            begin
+-              r_Bit_Index <= r_Bit_Index + 3'b1;
+-              r_SM_Main   <= s_RX_DATA_BITS;
+-            end
+-              else
+-              begin
+-                r_Bit_Index <= 3'b0;
+-                r_SM_Main   <= s_RX_STOP_BIT;
+-              end
+-            end
+-          end // case: s_RX_DATA_BITS
+-     
+-     
+-        // Receive Stop bit.  Stop bit = 1
+-        s_RX_STOP_BIT :
+-        begin
+-            // Wait CLKS_PER_BIT-1 clock cycles for Stop bit to finish
+-          if (r_Clock_Count < CLKS_PER_BIT-1)
+-          begin
+-            r_Clock_Count <= r_Clock_Count + 16'b1;
+-            r_SM_Main     <= s_RX_STOP_BIT;
+-          end
+-          else
+-          begin
+-            r_Rx_DV       <= 1'b1;
+-            r_Clock_Count <= 16'b0;
+-            r_SM_Main     <= s_CLEANUP;
+-          end
+-        end // case: s_RX_STOP_BIT
+-     
+-         
+-        // Stay here 1 clock
+-        s_CLEANUP :
+-        begin
+-          r_SM_Main <= s_IDLE;
+-          r_Rx_DV   <= 1'b0;
+-        end
+-         
+-         
+-        default :
+-          r_SM_Main <= s_IDLE;
+-         
+-      endcase
+-    end
+-  end   
+-   
+-  assign o_Rx_DV   = r_Rx_DV;
+-  assign o_Rx_Byte = r_Rx_Byte;
+-   
+-endmodule // uart_rx
+
+From 952f435423191137642793f9b4cbae7b5595539c Mon Sep 17 00:00:00 2001
+From: sajjadahmed677 <merledu677@gmail.com>
+Date: Thu, 30 Sep 2021 13:59:40 +0500
+Subject: [PATCH 09/13] ibex top module added
+
+---
+ hw/azadi/rtl/azadi_soc_top.sv | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/azadi/rtl/azadi_soc_top.sv b/hw/azadi/rtl/azadi_soc_top.sv
+index 0f816163..5269c3a6 100644
+--- a/hw/azadi/rtl/azadi_soc_top.sv
++++ b/hw/azadi/rtl/azadi_soc_top.sv
+@@ -122,7 +122,7 @@ module azadi_soc_top (
+   };
+ 
+ 
+-brq_core_top #(
++ibex_core_top #(
+     .PMPEnable        (1'b0),
+     .PMPGranularity   (0), 
+     .PMPNumRegions    (4), 
+
+From cd9971270b11645ba670e178ebed70be0fd93dad Mon Sep 17 00:00:00 2001
+From: sajjadahmed677 <merledu677@gmail.com>
+Date: Thu, 30 Sep 2021 14:00:19 +0500
+Subject: [PATCH 10/13] ibex top wrapper for tilelink bus interface
+
+---
+ hw/azadi/rtl/ibex_core_top.sv | 215 ++++++++++++++++++++++++++++++++++
+ 1 file changed, 215 insertions(+)
+ create mode 100755 hw/azadi/rtl/ibex_core_top.sv
+
+diff --git a/hw/azadi/rtl/ibex_core_top.sv b/hw/azadi/rtl/ibex_core_top.sv
+new file mode 100755
+index 00000000..fe42116a
+--- /dev/null
++++ b/hw/azadi/rtl/ibex_core_top.sv
+@@ -0,0 +1,215 @@
++//`include "/home/usman/Documents/ibex/rtl/ibex_pkg.sv"
++//`include "/home/merl/Documents/ibex/rtl/prim_pkg.sv"
++
++module brq_core_top #(
++    parameter bit                 PMPEnable        = 1'b0,
++    parameter int unsigned        PMPGranularity   = 0,
++    parameter int unsigned        PMPNumRegions    = 0,
++    parameter int unsigned        MHPMCounterNum   = 0,
++    parameter int unsigned        MHPMCounterWidth = 40,
++    parameter bit                 RV32E            = 1'b0,
++    parameter brq_pkg::rv32m_e    RV32M            = brq_pkg::RV32MFast,
++    parameter brq_pkg::rv32b_e    RV32B            = brq_pkg::RV32BNone,
++    parameter brq_pkg::regfile_e  RegFile          = brq_pkg::RegFileFF,
++    parameter bit                 BranchTargetALU  = 1'b0,
++    parameter bit                 WritebackStage   = 1'b1,
++    parameter bit                 ICache           = 1'b0,
++    parameter bit                 ICacheECC        = 1'b0,
++    parameter bit                 BranchPredictor  = 1'b0,
++    parameter bit                 DbgTriggerEn     = 1'b0,
++    parameter int unsigned        DbgHwBreakNum    = 1,
++    parameter bit                 Securebrq        = 1'b0,
++    parameter int unsigned        DmHaltAddr       = 0,
++    parameter int unsigned        DmExceptionAddr  = 0
++)
++(
++  input clock,
++  input reset,
++
++  // instruction memory interface 
++    input tlul_pkg::tl_d2h_t tl_i_i,
++    output tlul_pkg::tl_h2d_t tl_i_o,
++
++  // data memory interface 
++    input tlul_pkg::tl_d2h_t tl_d_i,
++    output tlul_pkg::tl_h2d_t tl_d_o,
++
++    input  logic        test_en_i,     // enable all clock gates for testing
++
++    input  logic [31:0] hart_id_i,
++    input  logic [31:0] boot_addr_i,
++
++        // Interrupt inputs
++    input  logic        irq_software_i,
++    input  logic        irq_timer_i,
++    input  logic        irq_external_i,
++    input  logic [14:0] irq_fast_i,
++    input  logic        irq_nm_i,       // non-maskeable interrupt
++
++    // Debug Interface
++    input  logic        debug_req_i,
++
++        // CPU Control Signals
++    input  logic        fetch_enable_i,
++    output logic        alert_minor_o,
++    output logic        alert_major_o,
++    output logic        core_sleep_o
++);
++import brq_pkg::*;
++
++  logic rst_ni;
++  assign rst_ni = reset;
++  // Instruction interface (internal)
++  logic        instr_req;
++  logic        instr_gnt;
++  logic        instr_rvalid;
++  logic [31:0] instr_addr;
++  logic [31:0] instr_rdata;
++  logic        instr_err;
++
++  // Data interface (internal)
++  logic        data_req;
++  logic        data_gnt;
++  logic        data_rvalid;
++  logic        data_we;
++  logic [3:0]  data_be;
++  logic [31:0] data_addr;
++  logic [31:0] data_wdata;
++  logic [31:0] data_rdata;
++  logic        data_err;
++
++
++
++brq_core #(
++    .PMPEnable        (PMPEnable),
++    .PMPGranularity   (PMPGranularity), 
++    .PMPNumRegions    (PMPNumRegions), 
++    .MHPMCounterNum   (MHPMCounterNum), 
++    .MHPMCounterWidth (MHPMCounterWidth), 
++    .RV32E            (RV32E), 
++    .RV32M            (RV32M), 
++    .RV32B            (RV32B), 
++    .RegFile          (RegFile), 
++    .BranchTargetALU  (BranchTargetALU), 
++    .WritebackStage   (WritebackStage), 
++    .ICache           (ICache), 
++    .ICacheECC        (ICacheECC), 
++    .BranchPredictor  (BranchPredictor), 
++    .DbgTriggerEn     (DbgTriggerEn), 
++    .DbgHwBreakNum    (DbgHwBreakNum), 
++    .Securebrq        (Securebrq),
++    .DmHaltAddr       (DmHaltAddr), 
++    .DmExceptionAddr  (DmExceptionAddr) 
++) u_core (
++    // Clock and Reset
++    .clk_i (clock),
++    .rst_ni(rst_ni),
++
++    .test_en_i (test_en_i),     // enable all clock gates for testing
++
++    .hart_id_i  (hart_id_i),
++    .boot_addr_i(boot_addr_i),
++
++    // Instruction memory interface
++    .instr_req_o    (instr_req),
++    .instr_gnt_i    (instr_gnt),
++    .instr_rvalid_i (instr_rvalid),
++    .instr_addr_o   (instr_addr),
++    .instr_rdata_i  (instr_rdata),
++    .instr_err_i    (instr_err),
++
++    // Data memory interface
++    .data_req_o     (data_req),
++    .data_gnt_i     (data_gnt),
++    .data_rvalid_i  (data_rvalid),
++    .data_we_o      (data_we),
++    .data_be_o      (data_be),
++    .data_addr_o    (data_addr),
++    .data_wdata_o   (data_wdata),
++    .data_rdata_i   (data_rdata),
++    .data_err_i     (data_err),
++
++    // Interrupt inputs
++    .irq_software_i (irq_software_i),
++    .irq_timer_i    (irq_timer_i),
++    .irq_external_i (irq_external_i),
++    .irq_fast_i     (irq_fast_i),
++    .irq_nm_i       (irq_nm_i),       // non-maskeable interrupt
++
++    // Debug Interface
++    .debug_req_i     (debug_req_i),
++
++    // RISC-V Formal Interface
++    // Does not comply with the coding standards of _i/_o suffixes, but follows
++    // the convention of RISC-V Formal Interface Specification.
++`ifdef RVFI
++    .rvfi_valid (),
++    .rvfi_order (),
++    .rvfi_insn (),
++    .rvfi_trap (),
++    .rvfi_halt (),
++    .rvfi_intr (),
++    .rvfi_mode (),
++    .rvfi_ixl (),
++    .rvfi_rs1_addr (),
++    .rvfi_rs2_addr (),
++    .rvfi_rs3_addr (),
++    .rvfi_rs1_rdata (),
++    .rvfi_rs2_rdata (),
++    .rvfi_rs3_rdata (),
++    .rvfi_rd_addr (),
++    .rvfi_rd_wdata (),
++    .rvfi_pc_rdata (),
++    .rvfi_pc_wdata (),
++    .rvfi_mem_addr (),
++    .rvfi_mem_rmask (),
++    .rvfi_mem_wmask (),
++    .rvfi_mem_rdata (),
++    .rvfi_mem_wdata (),
++`endif
++
++    // CPU Control Signals
++    .fetch_enable_i (fetch_enable_i),
++    .alert_minor_o (alert_minor_o),
++    .alert_major_o (alert_major_o),
++    .core_sleep_o (core_sleep_o)
++);
++
++tlul_host_adapter #(
++  .MAX_REQS(2)
++) intr_interface (
++  .clock (clock),
++  .reset (reset),
++  .req_i (instr_req),
++  .gnt_o (instr_gnt),
++  .addr_i (instr_addr),
++  .we_i (1'b0),
++  .wdata_i (32'b0),
++  .be_i (4'hF),
++  .valid_o (instr_rvalid),
++  .rdata_o (instr_rdata),
++  .err_o (instr_err),
++  .tl_h_c_a (tl_i_o),
++  .tl_h_c_d (tl_i_i)
++);
++
++tlul_host_adapter #(
++  .MAX_REQS (2)
++) data_interface (
++  .clock (clock),
++  .reset (reset),
++  .req_i (data_req),
++  .gnt_o (data_gnt),
++  .addr_i (data_addr),
++  .we_i (data_we),
++  .wdata_i (data_wdata),
++  .be_i (data_be),
++  .valid_o (data_rvalid),
++  .rdata_o (data_rdata),
++  .err_o (data_err),
++  .tl_h_c_a (tl_d_o),
++  .tl_h_c_d (tl_d_i)
++);
++
++
++endmodule
+
+From 493df785e051ff00d27be9aad74f8ac13cf837fe Mon Sep 17 00:00:00 2001
+From: sajjadahmed677 <merledu677@gmail.com>
+Date: Thu, 30 Sep 2021 14:01:13 +0500
+Subject: [PATCH 11/13] reset manager's directory modified
+
+---
+ hw/ip/rstmgr/rtl/rstmgr.sv | 48 ++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 48 insertions(+)
+ create mode 100644 hw/ip/rstmgr/rtl/rstmgr.sv
+
+diff --git a/hw/ip/rstmgr/rtl/rstmgr.sv b/hw/ip/rstmgr/rtl/rstmgr.sv
+new file mode 100644
+index 00000000..47379db8
+--- /dev/null
++++ b/hw/ip/rstmgr/rtl/rstmgr.sv
+@@ -0,0 +1,48 @@
++
++// basic reset managemnet logic for azadi
++
++module rstmgr(
++
++    input clk_i, //system clock
++    input rst_ni, // system reset
++    input prog_rst_ni,
++   // input wire prog_i,
++    output logic  sys_rst_ni // reset for system except debug module
++);
++
++  logic rst_d, rst_q;
++  logic rst_fd, rst_fq; // follower flip flop
++  //logic prog_reg;
++  
++  always_comb begin
++    if(!rst_ni) begin
++      rst_d = 1'b0;
++    end else begin
++      if(!prog_rst_ni) begin
++        rst_d = 1'b0;
++      end else begin
++        rst_d = 1'b1;
++      end 
++    end
++  end
++
++  always_ff @(posedge clk_i or negedge rst_ni) begin
++	  if(!rst_ni) begin
++	    rst_q <= 1'b0;
++	  end else begin
++	    rst_q <= rst_d;
++	  end 
++  end
++
++  assign rst_fd = rst_q;
++  always_ff @(posedge clk_i or negedge rst_ni) begin
++    if(!rst_ni) begin
++	    rst_fq <= 1'b0;
++	  end else begin
++	    rst_fq <= rst_fd;
++  	end
++  end
++
++  assign sys_rst_ni = rst_fq;
++
++endmodule
+
+From a4004e8e8c9538bdc81601fbdad9798fd9ef81da Mon Sep 17 00:00:00 2001
+From: sajjadahmed677 <merledu677@gmail.com>
+Date: Thu, 30 Sep 2021 14:02:27 +0500
+Subject: [PATCH 12/13] 1kb openram(sram) module
+
+---
+ .../rtl/sky130_sram_1kbyte_1rw1r_32x256_8.v   | 114 ++++++++++++++++++
+ 1 file changed, 114 insertions(+)
+ create mode 100644 hw/vendor/openram/rtl/sky130_sram_1kbyte_1rw1r_32x256_8.v
+
+diff --git a/hw/vendor/openram/rtl/sky130_sram_1kbyte_1rw1r_32x256_8.v b/hw/vendor/openram/rtl/sky130_sram_1kbyte_1rw1r_32x256_8.v
+new file mode 100644
+index 00000000..fe885ed7
+--- /dev/null
++++ b/hw/vendor/openram/rtl/sky130_sram_1kbyte_1rw1r_32x256_8.v
+@@ -0,0 +1,114 @@
++// OpenRAM SRAM model
++// Words: 256
++// Word size: 32
++// Write size: 8
++
++module sky130_sram_1kbyte_1rw1r_32x256_8(
++`ifdef USE_POWER_PINS
++    vccd1,
++    vssd1,
++`endif
++// Port 0: RW
++    clk0,csb0,web0,wmask0,addr0,din0,dout0,
++// Port 1: R
++    clk1,csb1,addr1,dout1
++  );
++
++  parameter NUM_WMASKS = 4 ;
++  parameter DATA_WIDTH = 32 ;
++  parameter ADDR_WIDTH = 8 ;
++  parameter RAM_DEPTH = 1 << ADDR_WIDTH;
++  // FIXME: This delay is arbitrary.
++  parameter DELAY = 3 ;
++  parameter VERBOSE = 1 ; //Set to 0 to only display warnings
++  parameter T_HOLD = 1 ; //Delay to hold dout value after posedge. Value is arbitrary
++
++`ifdef USE_POWER_PINS
++    inout vccd1;
++    inout vssd1;
++`endif
++  input  clk0; // clock
++  input   csb0; // active low chip select
++  input  web0; // active low write control
++  input [NUM_WMASKS-1:0]   wmask0; // write mask
++  input [ADDR_WIDTH-1:0]  addr0;
++  input [DATA_WIDTH-1:0]  din0;
++  output [DATA_WIDTH-1:0] dout0;
++  input  clk1; // clock
++  input   csb1; // active low chip select
++  input [ADDR_WIDTH-1:0]  addr1;
++  output [DATA_WIDTH-1:0] dout1;
++
++  reg  csb0_reg;
++  reg  web0_reg;
++  reg [NUM_WMASKS-1:0]   wmask0_reg;
++  reg [ADDR_WIDTH-1:0]  addr0_reg;
++  reg [DATA_WIDTH-1:0]  din0_reg;
++  reg [DATA_WIDTH-1:0]  dout0;
++
++  // All inputs are registers
++  always @(posedge clk0)
++  begin
++    csb0_reg = csb0;
++    web0_reg = web0;
++    wmask0_reg = wmask0;
++    addr0_reg = addr0;
++    din0_reg = din0;
++    #(T_HOLD) dout0 = 32'bx;
++    if ( !csb0_reg && web0_reg && VERBOSE ) 
++      $display($time," Reading %m addr0=%b dout0=%b",addr0_reg,mem[addr0_reg]);
++    if ( !csb0_reg && !web0_reg && VERBOSE )
++      $display($time," Writing %m addr0=%b din0=%b wmask0=%b",addr0_reg,din0_reg,wmask0_reg);
++  end
++
++  reg  csb1_reg;
++  reg [ADDR_WIDTH-1:0]  addr1_reg;
++  reg [DATA_WIDTH-1:0]  dout1;
++
++  // All inputs are registers
++  always @(posedge clk1)
++  begin
++    csb1_reg = csb1;
++    addr1_reg = addr1;
++    if (!csb0 && !web0 && !csb1 && (addr0 == addr1))
++         $display($time," WARNING: Writing and reading addr0=%b and addr1=%b simultaneously!",addr0,addr1);
++    #(T_HOLD) dout1 = 32'bx;
++    if ( !csb1_reg && VERBOSE ) 
++      $display($time," Reading %m addr1=%b dout1=%b",addr1_reg,mem[addr1_reg]);
++  end
++
++reg [DATA_WIDTH-1:0]    mem [0:RAM_DEPTH-1];
++
++  // Memory Write Block Port 0
++  // Write Operation : When web0 = 0, csb0 = 0
++  always @ (negedge clk0)
++  begin : MEM_WRITE0
++    if ( !csb0_reg && !web0_reg ) begin
++        if (wmask0_reg[0])
++                mem[addr0_reg][7:0] = din0_reg[7:0];
++        if (wmask0_reg[1])
++                mem[addr0_reg][15:8] = din0_reg[15:8];
++        if (wmask0_reg[2])
++                mem[addr0_reg][23:16] = din0_reg[23:16];
++        if (wmask0_reg[3])
++                mem[addr0_reg][31:24] = din0_reg[31:24];
++    end
++  end
++
++  // Memory Read Block Port 0
++  // Read Operation : When web0 = 1, csb0 = 0
++  always @ (negedge clk0)
++  begin : MEM_READ0
++    if (!csb0_reg && web0_reg)
++       dout0 <= #(DELAY) mem[addr0_reg];
++  end
++
++  // Memory Read Block Port 1
++  // Read Operation : When web1 = 1, csb1 = 0
++  always @ (negedge clk1)
++  begin : MEM_READ1
++    if (!csb1_reg)
++       dout1 <= #(DELAY) mem[addr1_reg];
++  end
++
++endmodule
+
+From 525004969c331ab5a2adc0f9957fe4b4280b6566 Mon Sep 17 00:00:00 2001
+From: sajjadahmed677 <merledu677@gmail.com>
+Date: Thu, 30 Sep 2021 14:03:43 +0500
+Subject: [PATCH 13/13] directory structure chnaged as required
+
+---
+ hw/azadi/ip/brq_core_top/rtl/brq_core_top.sv  | 215 ------------------
+ hw/azadi/ip/reset_manager/rtl/rstmgr.sv       |  48 ----
+ .../rtl/sky130_sram_1kbyte_1rw1r_32x256_8.v   | 114 ----------
+ 3 files changed, 377 deletions(-)
+ delete mode 100755 hw/azadi/ip/brq_core_top/rtl/brq_core_top.sv
+ delete mode 100644 hw/azadi/ip/reset_manager/rtl/rstmgr.sv
+ delete mode 100644 hw/azadi/ip/sram/rtl/sky130_sram_1kbyte_1rw1r_32x256_8.v
+
+diff --git a/hw/azadi/ip/brq_core_top/rtl/brq_core_top.sv b/hw/azadi/ip/brq_core_top/rtl/brq_core_top.sv
+deleted file mode 100755
+index fe42116a..00000000
+--- a/hw/azadi/ip/brq_core_top/rtl/brq_core_top.sv
++++ /dev/null
+@@ -1,215 +0,0 @@
+-//`include "/home/usman/Documents/ibex/rtl/ibex_pkg.sv"
+-//`include "/home/merl/Documents/ibex/rtl/prim_pkg.sv"
+-
+-module brq_core_top #(
+-    parameter bit                 PMPEnable        = 1'b0,
+-    parameter int unsigned        PMPGranularity   = 0,
+-    parameter int unsigned        PMPNumRegions    = 0,
+-    parameter int unsigned        MHPMCounterNum   = 0,
+-    parameter int unsigned        MHPMCounterWidth = 40,
+-    parameter bit                 RV32E            = 1'b0,
+-    parameter brq_pkg::rv32m_e    RV32M            = brq_pkg::RV32MFast,
+-    parameter brq_pkg::rv32b_e    RV32B            = brq_pkg::RV32BNone,
+-    parameter brq_pkg::regfile_e  RegFile          = brq_pkg::RegFileFF,
+-    parameter bit                 BranchTargetALU  = 1'b0,
+-    parameter bit                 WritebackStage   = 1'b1,
+-    parameter bit                 ICache           = 1'b0,
+-    parameter bit                 ICacheECC        = 1'b0,
+-    parameter bit                 BranchPredictor  = 1'b0,
+-    parameter bit                 DbgTriggerEn     = 1'b0,
+-    parameter int unsigned        DbgHwBreakNum    = 1,
+-    parameter bit                 Securebrq        = 1'b0,
+-    parameter int unsigned        DmHaltAddr       = 0,
+-    parameter int unsigned        DmExceptionAddr  = 0
+-)
+-(
+-  input clock,
+-  input reset,
+-
+-  // instruction memory interface 
+-    input tlul_pkg::tl_d2h_t tl_i_i,
+-    output tlul_pkg::tl_h2d_t tl_i_o,
+-
+-  // data memory interface 
+-    input tlul_pkg::tl_d2h_t tl_d_i,
+-    output tlul_pkg::tl_h2d_t tl_d_o,
+-
+-    input  logic        test_en_i,     // enable all clock gates for testing
+-
+-    input  logic [31:0] hart_id_i,
+-    input  logic [31:0] boot_addr_i,
+-
+-        // Interrupt inputs
+-    input  logic        irq_software_i,
+-    input  logic        irq_timer_i,
+-    input  logic        irq_external_i,
+-    input  logic [14:0] irq_fast_i,
+-    input  logic        irq_nm_i,       // non-maskeable interrupt
+-
+-    // Debug Interface
+-    input  logic        debug_req_i,
+-
+-        // CPU Control Signals
+-    input  logic        fetch_enable_i,
+-    output logic        alert_minor_o,
+-    output logic        alert_major_o,
+-    output logic        core_sleep_o
+-);
+-import brq_pkg::*;
+-
+-  logic rst_ni;
+-  assign rst_ni = reset;
+-  // Instruction interface (internal)
+-  logic        instr_req;
+-  logic        instr_gnt;
+-  logic        instr_rvalid;
+-  logic [31:0] instr_addr;
+-  logic [31:0] instr_rdata;
+-  logic        instr_err;
+-
+-  // Data interface (internal)
+-  logic        data_req;
+-  logic        data_gnt;
+-  logic        data_rvalid;
+-  logic        data_we;
+-  logic [3:0]  data_be;
+-  logic [31:0] data_addr;
+-  logic [31:0] data_wdata;
+-  logic [31:0] data_rdata;
+-  logic        data_err;
+-
+-
+-
+-brq_core #(
+-    .PMPEnable        (PMPEnable),
+-    .PMPGranularity   (PMPGranularity), 
+-    .PMPNumRegions    (PMPNumRegions), 
+-    .MHPMCounterNum   (MHPMCounterNum), 
+-    .MHPMCounterWidth (MHPMCounterWidth), 
+-    .RV32E            (RV32E), 
+-    .RV32M            (RV32M), 
+-    .RV32B            (RV32B), 
+-    .RegFile          (RegFile), 
+-    .BranchTargetALU  (BranchTargetALU), 
+-    .WritebackStage   (WritebackStage), 
+-    .ICache           (ICache), 
+-    .ICacheECC        (ICacheECC), 
+-    .BranchPredictor  (BranchPredictor), 
+-    .DbgTriggerEn     (DbgTriggerEn), 
+-    .DbgHwBreakNum    (DbgHwBreakNum), 
+-    .Securebrq        (Securebrq),
+-    .DmHaltAddr       (DmHaltAddr), 
+-    .DmExceptionAddr  (DmExceptionAddr) 
+-) u_core (
+-    // Clock and Reset
+-    .clk_i (clock),
+-    .rst_ni(rst_ni),
+-
+-    .test_en_i (test_en_i),     // enable all clock gates for testing
+-
+-    .hart_id_i  (hart_id_i),
+-    .boot_addr_i(boot_addr_i),
+-
+-    // Instruction memory interface
+-    .instr_req_o    (instr_req),
+-    .instr_gnt_i    (instr_gnt),
+-    .instr_rvalid_i (instr_rvalid),
+-    .instr_addr_o   (instr_addr),
+-    .instr_rdata_i  (instr_rdata),
+-    .instr_err_i    (instr_err),
+-
+-    // Data memory interface
+-    .data_req_o     (data_req),
+-    .data_gnt_i     (data_gnt),
+-    .data_rvalid_i  (data_rvalid),
+-    .data_we_o      (data_we),
+-    .data_be_o      (data_be),
+-    .data_addr_o    (data_addr),
+-    .data_wdata_o   (data_wdata),
+-    .data_rdata_i   (data_rdata),
+-    .data_err_i     (data_err),
+-
+-    // Interrupt inputs
+-    .irq_software_i (irq_software_i),
+-    .irq_timer_i    (irq_timer_i),
+-    .irq_external_i (irq_external_i),
+-    .irq_fast_i     (irq_fast_i),
+-    .irq_nm_i       (irq_nm_i),       // non-maskeable interrupt
+-
+-    // Debug Interface
+-    .debug_req_i     (debug_req_i),
+-
+-    // RISC-V Formal Interface
+-    // Does not comply with the coding standards of _i/_o suffixes, but follows
+-    // the convention of RISC-V Formal Interface Specification.
+-`ifdef RVFI
+-    .rvfi_valid (),
+-    .rvfi_order (),
+-    .rvfi_insn (),
+-    .rvfi_trap (),
+-    .rvfi_halt (),
+-    .rvfi_intr (),
+-    .rvfi_mode (),
+-    .rvfi_ixl (),
+-    .rvfi_rs1_addr (),
+-    .rvfi_rs2_addr (),
+-    .rvfi_rs3_addr (),
+-    .rvfi_rs1_rdata (),
+-    .rvfi_rs2_rdata (),
+-    .rvfi_rs3_rdata (),
+-    .rvfi_rd_addr (),
+-    .rvfi_rd_wdata (),
+-    .rvfi_pc_rdata (),
+-    .rvfi_pc_wdata (),
+-    .rvfi_mem_addr (),
+-    .rvfi_mem_rmask (),
+-    .rvfi_mem_wmask (),
+-    .rvfi_mem_rdata (),
+-    .rvfi_mem_wdata (),
+-`endif
+-
+-    // CPU Control Signals
+-    .fetch_enable_i (fetch_enable_i),
+-    .alert_minor_o (alert_minor_o),
+-    .alert_major_o (alert_major_o),
+-    .core_sleep_o (core_sleep_o)
+-);
+-
+-tlul_host_adapter #(
+-  .MAX_REQS(2)
+-) intr_interface (
+-  .clock (clock),
+-  .reset (reset),
+-  .req_i (instr_req),
+-  .gnt_o (instr_gnt),
+-  .addr_i (instr_addr),
+-  .we_i (1'b0),
+-  .wdata_i (32'b0),
+-  .be_i (4'hF),
+-  .valid_o (instr_rvalid),
+-  .rdata_o (instr_rdata),
+-  .err_o (instr_err),
+-  .tl_h_c_a (tl_i_o),
+-  .tl_h_c_d (tl_i_i)
+-);
+-
+-tlul_host_adapter #(
+-  .MAX_REQS (2)
+-) data_interface (
+-  .clock (clock),
+-  .reset (reset),
+-  .req_i (data_req),
+-  .gnt_o (data_gnt),
+-  .addr_i (data_addr),
+-  .we_i (data_we),
+-  .wdata_i (data_wdata),
+-  .be_i (data_be),
+-  .valid_o (data_rvalid),
+-  .rdata_o (data_rdata),
+-  .err_o (data_err),
+-  .tl_h_c_a (tl_d_o),
+-  .tl_h_c_d (tl_d_i)
+-);
+-
+-
+-endmodule
+diff --git a/hw/azadi/ip/reset_manager/rtl/rstmgr.sv b/hw/azadi/ip/reset_manager/rtl/rstmgr.sv
+deleted file mode 100644
+index 47379db8..00000000
+--- a/hw/azadi/ip/reset_manager/rtl/rstmgr.sv
++++ /dev/null
+@@ -1,48 +0,0 @@
+-
+-// basic reset managemnet logic for azadi
+-
+-module rstmgr(
+-
+-    input clk_i, //system clock
+-    input rst_ni, // system reset
+-    input prog_rst_ni,
+-   // input wire prog_i,
+-    output logic  sys_rst_ni // reset for system except debug module
+-);
+-
+-  logic rst_d, rst_q;
+-  logic rst_fd, rst_fq; // follower flip flop
+-  //logic prog_reg;
+-  
+-  always_comb begin
+-    if(!rst_ni) begin
+-      rst_d = 1'b0;
+-    end else begin
+-      if(!prog_rst_ni) begin
+-        rst_d = 1'b0;
+-      end else begin
+-        rst_d = 1'b1;
+-      end 
+-    end
+-  end
+-
+-  always_ff @(posedge clk_i or negedge rst_ni) begin
+-	  if(!rst_ni) begin
+-	    rst_q <= 1'b0;
+-	  end else begin
+-	    rst_q <= rst_d;
+-	  end 
+-  end
+-
+-  assign rst_fd = rst_q;
+-  always_ff @(posedge clk_i or negedge rst_ni) begin
+-    if(!rst_ni) begin
+-	    rst_fq <= 1'b0;
+-	  end else begin
+-	    rst_fq <= rst_fd;
+-  	end
+-  end
+-
+-  assign sys_rst_ni = rst_fq;
+-
+-endmodule
+diff --git a/hw/azadi/ip/sram/rtl/sky130_sram_1kbyte_1rw1r_32x256_8.v b/hw/azadi/ip/sram/rtl/sky130_sram_1kbyte_1rw1r_32x256_8.v
+deleted file mode 100644
+index fe885ed7..00000000
+--- a/hw/azadi/ip/sram/rtl/sky130_sram_1kbyte_1rw1r_32x256_8.v
++++ /dev/null
+@@ -1,114 +0,0 @@
+-// OpenRAM SRAM model
+-// Words: 256
+-// Word size: 32
+-// Write size: 8
+-
+-module sky130_sram_1kbyte_1rw1r_32x256_8(
+-`ifdef USE_POWER_PINS
+-    vccd1,
+-    vssd1,
+-`endif
+-// Port 0: RW
+-    clk0,csb0,web0,wmask0,addr0,din0,dout0,
+-// Port 1: R
+-    clk1,csb1,addr1,dout1
+-  );
+-
+-  parameter NUM_WMASKS = 4 ;
+-  parameter DATA_WIDTH = 32 ;
+-  parameter ADDR_WIDTH = 8 ;
+-  parameter RAM_DEPTH = 1 << ADDR_WIDTH;
+-  // FIXME: This delay is arbitrary.
+-  parameter DELAY = 3 ;
+-  parameter VERBOSE = 1 ; //Set to 0 to only display warnings
+-  parameter T_HOLD = 1 ; //Delay to hold dout value after posedge. Value is arbitrary
+-
+-`ifdef USE_POWER_PINS
+-    inout vccd1;
+-    inout vssd1;
+-`endif
+-  input  clk0; // clock
+-  input   csb0; // active low chip select
+-  input  web0; // active low write control
+-  input [NUM_WMASKS-1:0]   wmask0; // write mask
+-  input [ADDR_WIDTH-1:0]  addr0;
+-  input [DATA_WIDTH-1:0]  din0;
+-  output [DATA_WIDTH-1:0] dout0;
+-  input  clk1; // clock
+-  input   csb1; // active low chip select
+-  input [ADDR_WIDTH-1:0]  addr1;
+-  output [DATA_WIDTH-1:0] dout1;
+-
+-  reg  csb0_reg;
+-  reg  web0_reg;
+-  reg [NUM_WMASKS-1:0]   wmask0_reg;
+-  reg [ADDR_WIDTH-1:0]  addr0_reg;
+-  reg [DATA_WIDTH-1:0]  din0_reg;
+-  reg [DATA_WIDTH-1:0]  dout0;
+-
+-  // All inputs are registers
+-  always @(posedge clk0)
+-  begin
+-    csb0_reg = csb0;
+-    web0_reg = web0;
+-    wmask0_reg = wmask0;
+-    addr0_reg = addr0;
+-    din0_reg = din0;
+-    #(T_HOLD) dout0 = 32'bx;
+-    if ( !csb0_reg && web0_reg && VERBOSE ) 
+-      $display($time," Reading %m addr0=%b dout0=%b",addr0_reg,mem[addr0_reg]);
+-    if ( !csb0_reg && !web0_reg && VERBOSE )
+-      $display($time," Writing %m addr0=%b din0=%b wmask0=%b",addr0_reg,din0_reg,wmask0_reg);
+-  end
+-
+-  reg  csb1_reg;
+-  reg [ADDR_WIDTH-1:0]  addr1_reg;
+-  reg [DATA_WIDTH-1:0]  dout1;
+-
+-  // All inputs are registers
+-  always @(posedge clk1)
+-  begin
+-    csb1_reg = csb1;
+-    addr1_reg = addr1;
+-    if (!csb0 && !web0 && !csb1 && (addr0 == addr1))
+-         $display($time," WARNING: Writing and reading addr0=%b and addr1=%b simultaneously!",addr0,addr1);
+-    #(T_HOLD) dout1 = 32'bx;
+-    if ( !csb1_reg && VERBOSE ) 
+-      $display($time," Reading %m addr1=%b dout1=%b",addr1_reg,mem[addr1_reg]);
+-  end
+-
+-reg [DATA_WIDTH-1:0]    mem [0:RAM_DEPTH-1];
+-
+-  // Memory Write Block Port 0
+-  // Write Operation : When web0 = 0, csb0 = 0
+-  always @ (negedge clk0)
+-  begin : MEM_WRITE0
+-    if ( !csb0_reg && !web0_reg ) begin
+-        if (wmask0_reg[0])
+-                mem[addr0_reg][7:0] = din0_reg[7:0];
+-        if (wmask0_reg[1])
+-                mem[addr0_reg][15:8] = din0_reg[15:8];
+-        if (wmask0_reg[2])
+-                mem[addr0_reg][23:16] = din0_reg[23:16];
+-        if (wmask0_reg[3])
+-                mem[addr0_reg][31:24] = din0_reg[31:24];
+-    end
+-  end
+-
+-  // Memory Read Block Port 0
+-  // Read Operation : When web0 = 1, csb0 = 0
+-  always @ (negedge clk0)
+-  begin : MEM_READ0
+-    if (!csb0_reg && web0_reg)
+-       dout0 <= #(DELAY) mem[addr0_reg];
+-  end
+-
+-  // Memory Read Block Port 1
+-  // Read Operation : When web1 = 1, csb1 = 0
+-  always @ (negedge clk1)
+-  begin : MEM_READ1
+-    if (!csb1_reg)
+-       dout1 <= #(DELAY) mem[addr1_reg];
+-  end
+-
+-endmodule

@@ -1,0 +1,419 @@
+From 90890f808df0bbb2c493dce0857769adb7368c4a Mon Sep 17 00:00:00 2001
+From: Liam Beguin <liambeguin@gmail.com>
+Date: Thu, 28 Dec 2023 22:46:29 -0500
+Subject: [PATCH 1/3] servant: ice: rename service clock gen source
+
+Make it more explicit that this clock generator is for the ICE FPGA
+family.
+
+Signed-off-by: Liam Beguin <liambeguin@gmail.com>
+---
+ servant.core                                         | 6 ++++--
+ servant/service.v                                    | 2 +-
+ servant/{servant_clock_gen.v => service_clock_gen.v} | 2 +-
+ 3 files changed, 6 insertions(+), 4 deletions(-)
+ rename servant/{servant_clock_gen.v => service_clock_gen.v} (95%)
+
+diff --git a/servant.core b/servant.core
+index ea73c1da..e4e482a0 100644
+--- a/servant.core
++++ b/servant.core
+@@ -19,13 +19,15 @@ filesets:
+     depend : [vlog_tb_utils]
+ 
+   service:
+-    files: [servant/ice40_pll.v, servant/service.v]
++    files:
++      - servant/ice40_pll.v
++      - servant/service_clock_gen.v
++      - servant/service.v
+     file_type : verilogSource
+     depend : ["fusesoc:utils:generators"]
+ 
+   soc:
+     files:
+-      - servant/servant_clock_gen.v
+       - servant/servant_timer.v
+       - servant/servant_gpio.v
+       - servant/servant_arbiter.v
+diff --git a/servant/service.v b/servant/service.v
+index 0f60a99f..ced09753 100644
+--- a/servant/service.v
++++ b/servant/service.v
+@@ -11,7 +11,7 @@ module service
+    wire      wb_clk;
+    wire      wb_rst;
+ 
+-   servant_clock_gen #(.PLL (PLL))
++   service_clock_gen #(.PLL (PLL))
+    clock_gen
+      (.i_clk (i_clk),
+       .o_clk (wb_clk),
+diff --git a/servant/servant_clock_gen.v b/servant/service_clock_gen.v
+similarity index 95%
+rename from servant/servant_clock_gen.v
+rename to servant/service_clock_gen.v
+index c430de85..c67f6174 100644
+--- a/servant/servant_clock_gen.v
++++ b/servant/service_clock_gen.v
+@@ -1,5 +1,5 @@
+ `default_nettype none
+-module servant_clock_gen
++module service_clock_gen
+   (
+    input wire  i_clk,
+    output wire o_clk,
+
+From 9e26232ebbf79d598f41be258634b95bcedee1c5 Mon Sep 17 00:00:00 2001
+From: Liam Beguin <liambeguin@gmail.com>
+Date: Thu, 28 Dec 2023 22:48:05 -0500
+Subject: [PATCH 2/3] servant: parameters: specify frequency is to be in MHz
+
+Signed-off-by: Liam Beguin <liambeguin@gmail.com>
+---
+ servant.core | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/servant.core b/servant.core
+index e4e482a0..4b0e4f9f 100644
+--- a/servant.core
++++ b/servant.core
+@@ -550,7 +550,7 @@ parameters:
+ 
+   frequency:
+     datatype    : int
+-    description : PLL output frequency
++    description : PLL output frequency in MHz
+     paramtype   : vlogparam
+ 
+   MDU:
+
+From 6c004719fb5f5e96f7a86250cf88b6232ec7206a Mon Sep 17 00:00:00 2001
+From: Liam Beguin <liambeguin@gmail.com>
+Date: Fri, 29 Dec 2023 12:05:31 -0500
+Subject: [PATCH 3/3] add PolarFire Splash Kit support
+
+Signed-off-by: Liam Beguin <liambeguin@gmail.com>
+---
+ data/polarfire_splashkit.pdc   |  11 +++
+ doc/servant.rst                |  13 +++
+ servant.core                   |  18 ++++
+ servant/servant_pf.v           |  66 ++++++++++++++
+ servant/servant_pf_clock_gen.v | 157 +++++++++++++++++++++++++++++++++
+ 5 files changed, 265 insertions(+)
+ create mode 100644 data/polarfire_splashkit.pdc
+ create mode 100644 servant/servant_pf.v
+ create mode 100644 servant/servant_pf_clock_gen.v
+
+diff --git a/data/polarfire_splashkit.pdc b/data/polarfire_splashkit.pdc
+new file mode 100644
+index 00000000..00ede93e
+--- /dev/null
++++ b/data/polarfire_splashkit.pdc
+@@ -0,0 +1,11 @@
++set_io -port_name {i_clk}	-DIRECTION INPUT	-pin_name H7 -io_std LVCMOS18 -fixed true
++set_io -port_name {resetb}	-DIRECTION INPUT	-pin_name N4 -io_std LVCMOS18 -fixed true
++set_io -port_name {o_led1}	-DIRECTION OUTPUT	-pin_name P7 -io_std LVCMOS18 -fixed true
++set_io -port_name {o_led2}	-DIRECTION OUTPUT	-pin_name P8 -io_std LVCMOS18 -fixed true
++set_io -port_name {o_led3}	-DIRECTION OUTPUT	-pin_name N7 -io_std LVCMOS18 -fixed true
++set_io -port_name {o_led4}	-DIRECTION OUTPUT	-pin_name N8 -io_std LVCMOS18 -fixed true
++set_io -port_name {o_led5}	-DIRECTION OUTPUT	-pin_name N6 -io_std LVCMOS18 -fixed true
++set_io -port_name {o_led6}	-DIRECTION OUTPUT	-pin_name N5 -io_std LVCMOS18 -fixed true
++set_io -port_name {o_led7}	-DIRECTION OUTPUT	-pin_name M8 -io_std LVCMOS18 -fixed true
++set_io -port_name {o_led8}	-DIRECTION OUTPUT	-pin_name M9 -io_std LVCMOS18 -fixed true
++set_io -port_name {o_uart_tx}	-DIRECTION OUTPUT	-pin_name R4 -io_std LVCMOS18 -fixed true
+diff --git a/doc/servant.rst b/doc/servant.rst
+index ee85c9a4..26fe40d3 100644
+--- a/doc/servant.rst
++++ b/doc/servant.rst
+@@ -158,6 +158,19 @@ Pin D1 is used for UART output with 115200 baud rate.
+     fusesoc run --target=orangecrab_r0.2 servant
+     dfu-util -d 1209:5af0 -D build/servant_1.2.1/orangecrab_r0.2-trellis/servant_1.2.1.bit
+ 
++PolarFire Splash Kit
++^^^^^^^^^^^^^^^^^^^^
++
++Pin R5 is used for UART output with a 115200 baud rate, this is routed through
++the onboard FTDI transceiver. LED1 (Pin P7) serves as the generic GPIO.
++
++Pin P8 is used as the GPIO heartbeat with a 1Hz frequency and is connected to
++the board's LED2.
++
++Pin N4 (user reset) is used for the reset
++
++    fusesoc run --target=polarfire_splashkit servant --memfile=$SERV/sw/zephyr_hello.hex
++
+ Saanlima Pipistrello (Spartan6 LX45)
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 
+diff --git a/servant.core b/servant.core
+index 4b0e4f9f..9a2a9ce1 100644
+--- a/servant.core
++++ b/servant.core
+@@ -166,6 +166,12 @@ filesets:
+       - servant/servis.v : {file_type : verilogSource}
+       - data/pipistrello.ucf : {file_type : UCF}
+ 
++  polarfire_splashkit:
++    files:
++      - servant/servant_pf.v : {file_type : verilogSource}
++      - servant/servant_pf_clock_gen.v : {file_type : verilogSource}
++      - data/polarfire_splashkit.pdc : {file_type : PDC}
++
+   sockit:
+     files:
+       - data/sockit.sdc : {file_type : SDC}
+@@ -448,6 +454,18 @@ targets:
+         speed   : -3
+     toplevel : servis
+ 
++  polarfire_splashkit:
++    default_tool: libero
++    description : Microsemi Polarfire Splash Kit
++    filesets : [mem_files, soc, polarfire_splashkit]
++    parameters : [memfile, memsize]
++    tools:
++      libero:
++        family : PolarFire
++        die : MPF300TS
++        package : FCG484
++    toplevel : servant_pf
++
+   sim:
+     default_tool: icarus
+     filesets : [soc, servant_tb]
+diff --git a/servant/servant_pf.v b/servant/servant_pf.v
+new file mode 100644
+index 00000000..ae3858bf
+--- /dev/null
++++ b/servant/servant_pf.v
+@@ -0,0 +1,66 @@
++`default_nettype none
++
++module servant_pf (
++	input  wire i_clk,
++	input  wire resetb,
++	output wire o_led1,
++	output wire o_led2,
++	output wire o_led3 = 1'b0,
++	output wire o_led4 = 1'b0,
++	output wire o_led5 = 1'b0,
++	output wire o_led6 = 1'b0,
++	output wire o_led7 = 1'b0,
++	output wire o_led8 = 1'b0,
++	output wire o_uart_tx);
++
++	parameter memfile = "zephyr_hello.hex";
++	parameter memsize = 8192;
++
++	wire	clk;
++	wire	rst;
++	wire	q;
++	wire	CLKINT_0_Y;
++	reg		heartbeat;
++
++	CLKINT CLKINT_0(
++		.A (i_clk),
++		.Y (CLKINT_0_Y)
++	);
++
++	servant_pf_clock_gen #(
++		.refclk(50),
++		.frequency(32)
++	) clock_gen (
++		.i_clk (CLKINT_0_Y),
++		.o_clk (clk)
++	);
++
++	servant #(
++		.memfile (memfile),
++		.memsize (memsize)
++	) servant (
++		.wb_clk	(clk),
++		.wb_rst	(rst),
++		.q		(q)
++	);
++
++	// heartbeat LED
++	reg [$clog2(32000000)-1:0] count = 0;
++	always @(posedge clk) begin
++		if (rst) begin
++			count <= 0;
++			heartbeat <= 0;
++		end else
++			count <= count + 1;
++		if (count == 32000000-1) begin
++			heartbeat <= !heartbeat;
++			count <= 0;
++		end
++	end
++
++	assign rst = ~resetb;
++	assign o_led1 = q;
++	assign o_led2 = heartbeat;
++	assign o_uart_tx = q;
++
++endmodule
+diff --git a/servant/servant_pf_clock_gen.v b/servant/servant_pf_clock_gen.v
+new file mode 100644
+index 00000000..87237256
+--- /dev/null
++++ b/servant/servant_pf_clock_gen.v
+@@ -0,0 +1,157 @@
++`timescale 1 ns/100 ps
++
++module servant_pf_clock_gen(
++	input	wire	i_clk,
++	output	wire	o_clk,
++	output	reg		o_lock);
++
++	// for documentation
++	parameter refclk = 50;
++	parameter frequency = 32;
++
++	// PLL in internal Post-VCO Feedback mode
++	localparam [11:0]	fbdiv = 12'b100111000000;	// 2496
++	localparam [5:0]	rfdiv = 6'b011001;			// 25;
++	localparam			vco = 4992;					// refclk * fbdiv / rfdiv;
++	localparam [6:0]	odiv = 7'b0100111;			// vco / (4 * frequency);
++
++	wire	gnd_net, vcc_net, pll_inst_0_clkint_0;
++	wire nc0, nc1, nc2, nc3, nc4, nc5, nc6, nc7, nc8, nc9, nc10, nc11, nc12,
++		nc13, nc14, nc15, nc16, nc17, nc18, nc19, nc20, nc21, nc22, nc23,
++		nc24, nc25, nc26, nc27, nc28, nc29, nc30, nc31, nc32, nc33, nc34,
++		nc35, nc36, nc37, nc38, nc39, nc40;
++
++	VCC vcc_inst (.Y(vcc_net));
++	GND gnd_inst (.Y(gnd_net));
++
++	PLL #(
++		.VCOFREQUENCY(vco),
++		.DELAY_LINE_SIMULATION_MODE(""),
++		.DATA_RATE(0.0),
++		.FORMAL_NAME(""),
++		.INTERFACE_NAME(""),
++		.INTERFACE_LEVEL(3'b0),
++		.SOFTRESET(1'b0),
++		.SOFT_POWERDOWN_N(1'b1),
++		.RFDIV_EN(1'b1),
++		.OUT0_DIV_EN(1'b1),
++		.OUT1_DIV_EN(1'b0),
++		.OUT2_DIV_EN(1'b0),
++		.OUT3_DIV_EN(1'b0),
++		.SOFT_REF_CLK_SEL(1'b0),
++		.RESET_ON_LOCK(1'b1),
++		.BYPASS_CLK_SEL(4'b0),
++		.BYPASS_GO_EN_N(1'b1),
++		.BYPASS_PLL(4'b0),
++		.BYPASS_OUT_DIVIDER(4'b0),
++		.FF_REQUIRES_LOCK(1'b0),
++		.FSE_N(1'b0),
++		.FB_CLK_SEL_0(2'b00),
++		.FB_CLK_SEL_1(1'b0),
++		.RFDIV(rfdiv),
++		.FRAC_EN(1'b0),
++		.FRAC_DAC_EN(1'b0),
++		.DIV0_RST_DELAY(3'b000),
++		.DIV0_VAL(odiv),
++		.DIV1_RST_DELAY(3'b0),
++		.DIV1_VAL(7'b1),
++		.DIV2_RST_DELAY(3'b0),
++		.DIV2_VAL(7'b1),
++		.DIV3_RST_DELAY(3'b0),
++		.DIV3_VAL(7'b1),
++		.DIV3_CLK_SEL(1'b0),
++		.BW_INT_CTRL(2'b0),
++		.BW_PROP_CTRL(2'b01),
++		.IREF_EN(1'b1),
++		.IREF_TOGGLE(1'b0),
++		.LOCK_CNT(4'b1000),
++		.DESKEW_CAL_CNT(3'b110),
++		.DESKEW_CAL_EN(1'b1),
++		.DESKEW_CAL_BYPASS(1'b0),
++		.SYNC_REF_DIV_EN(1'b0),
++		.SYNC_REF_DIV_EN_2(1'b0),
++		.OUT0_PHASE_SEL(3'b000),
++		.OUT1_PHASE_SEL(3'b0),
++		.OUT2_PHASE_SEL(3'b0),
++		.OUT3_PHASE_SEL(3'b0),
++		.SOFT_LOAD_PHASE_N(1'b1),
++		.SSM_DIV_VAL(6'b1),
++		.FB_FRAC_VAL(24'b0),
++		.SSM_SPREAD_MODE(1'b0),
++		.SSM_MODULATION(5'b00101),
++		.FB_INT_VAL(fbdiv),
++		.SSM_EN_N(1'b1),
++		.SSM_EXT_WAVE_EN(2'b0),
++		.SSM_EXT_WAVE_MAX_ADDR(8'b0),
++		.SSM_RANDOM_EN(1'b0),
++		.SSM_RANDOM_PATTERN_SEL(3'b0),
++		.CDMUX0_SEL(2'b0),
++		.CDMUX1_SEL(1'b1),
++		.CDMUX2_SEL(1'b0),
++		.CDELAY0_SEL(8'b0),
++		.CDELAY0_EN(1'b0),
++		.DRI_EN(1'b1)
++	) pll_inst_0 (
++		.LOCK(o_lock),
++		.SSCG_WAVE_TABLE_ADDR({
++			nc0, nc1, nc2, nc3, nc4, nc5, nc6, nc7
++		}),
++		.DELAY_LINE_OUT_OF_RANGE(),
++		.POWERDOWN_N(vcc_net),
++		.OUT0_EN(vcc_net),
++		.OUT1_EN(gnd_net),
++		.OUT2_EN(gnd_net),
++		.OUT3_EN(gnd_net),
++		.REF_CLK_SEL(gnd_net),
++		.BYPASS_EN_N(vcc_net),
++		.LOAD_PHASE_N(vcc_net),
++		.SSCG_WAVE_TABLE({
++			gnd_net, gnd_net, gnd_net, gnd_net, gnd_net, gnd_net, gnd_net,
++			gnd_net
++		}),
++		.PHASE_DIRECTION(gnd_net),
++		.PHASE_ROTATE(gnd_net),
++		.PHASE_OUT0_SEL(gnd_net),
++		.PHASE_OUT1_SEL(gnd_net),
++		.PHASE_OUT2_SEL(gnd_net),
++		.PHASE_OUT3_SEL(gnd_net),
++		.DELAY_LINE_MOVE(gnd_net),
++		.DELAY_LINE_DIRECTION(gnd_net),
++		.DELAY_LINE_WIDE(gnd_net),
++		.DELAY_LINE_LOAD(vcc_net),
++		.REFCLK_SYNC_EN(gnd_net),
++		.REF_CLK_0(i_clk),
++		.REF_CLK_1(gnd_net),
++		.FB_CLK(gnd_net),
++		.OUT0(pll_inst_0_clkint_0),
++		.OUT1(),
++		.OUT2(),
++		.OUT3(),
++		.DRI_CLK(gnd_net),
++		.DRI_CTRL({
++			gnd_net, gnd_net, gnd_net, gnd_net, gnd_net, gnd_net, gnd_net,
++			gnd_net, gnd_net, gnd_net, gnd_net
++		}),
++		.DRI_WDATA({
++			gnd_net, gnd_net, gnd_net, gnd_net, gnd_net, gnd_net, gnd_net,
++			gnd_net, gnd_net, gnd_net, gnd_net, gnd_net, gnd_net, gnd_net,
++			gnd_net, gnd_net, gnd_net, gnd_net, gnd_net, gnd_net, gnd_net,
++			gnd_net, gnd_net, gnd_net, gnd_net, gnd_net, gnd_net, gnd_net,
++			gnd_net, gnd_net, gnd_net, gnd_net, gnd_net
++		}),
++		.DRI_ARST_N(vcc_net),
++		.DRI_RDATA({
++			nc8, nc9, nc10, nc11, nc12, nc13, nc14, nc15, nc16, nc17, nc18,
++			nc19, nc20, nc21, nc22, nc23, nc24, nc25, nc26, nc27, nc28, nc29,
++			nc30, nc31, nc32, nc33, nc34, nc35, nc36, nc37, nc38, nc39,
++			nc40
++		}),
++		.DRI_INTERRUPT()
++	);
++
++	CLKINT clkint_0 (
++		.A(pll_inst_0_clkint_0),
++		.Y(o_clk)
++	);
++
++  endmodule

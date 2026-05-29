@@ -1,0 +1,10 @@
+{
+    "task_info": {
+        "base_commit": "2d18a16404a5478e9fe6ac7354b335ab710ea17e",
+        "problem_statement": "# Compilation error of axi_lite_mux_intf with XSim\n\nI get errors when trying to simulate the axi_lite_mux_intf module with XSim, these are some of them:\nERROR: [VRFC 10-2991] 'aw' is not declared under prefix 'slv_reqs_i' [axi_lite_mux.sv:129]\nERROR: [VRFC 10-2991] 'aw_valid' is not declared under prefix 'slv_reqs_i' [axi_lite_mux.sv:130]\nERROR: [VRFC 10-2991] 'aw_ready' is not declared under prefix 'slv_resps_o' [axi_lite_mux.sv:131]\nERROR: [VRFC 10-2991] 'w' is not declared under prefix 'slv_reqs_i' [axi_lite_mux.sv:222]\nERROR: [VRFC 10-2991] 'w_valid' is not declared under prefix 'slv_reqs_i' [axi_lite_mux.sv:223]\n\nI realized that the `axi_lite_mux` instantiation lacks the definition of the `axi_req_t` and `axi_resp_t` types, which are `logic` by default. I added these two lines and it works as expected:\n``` \naxi_lite_mux #(\n    .aw_chan_t     ( aw_chan_t     ), // AW Channel Type\n    .w_chan_t      (  w_chan_t     ), //  W Channel Type\n    .b_chan_t      (  b_chan_t     ), //  B Channel Type\n    .ar_chan_t     ( ar_chan_t     ), // AR Channel Type\n    .r_chan_t      (  r_chan_t     ), //  R Channel Type\n+   .axi_req_t     ( axi_req_t     ),\n+   .axi_resp_t    ( axi_resp_t    ),\n    .NoSlvPorts    ( NoSlvPorts    ), // Number of slave ports\n    .MaxTrans      ( MaxTrans      ),\n    .FallThrough   ( FallThrough   ),\n    .SpillAw       ( SpillAw       ),\n    .SpillW        ( SpillW        ),\n    .SpillB        ( SpillB        ),\n    .SpillAr       ( SpillAr       ),\n    .SpillR        ( SpillR        )\n) \n```\nSo probably this is just it, or am I doing something wrong?\n",
+        "instance_id": "pulp-platform_axi_pr224"
+    },
+    "setup_info": {
+        "repo_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_axi_pr224"
+    }
+}

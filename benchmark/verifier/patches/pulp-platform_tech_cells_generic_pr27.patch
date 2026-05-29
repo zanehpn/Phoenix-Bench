@@ -1,0 +1,133 @@
+From b970419121b3925da62e4f6e584605a0185f603b Mon Sep 17 00:00:00 2001
+From: Manuel Eggimann <meggimann@iis.ee.ethz.ch>
+Date: Sun, 11 Dec 2022 11:56:18 +0100
+Subject: [PATCH 1/3] Add clk OR cell
+
+---
+ README.md                 |  3 ++-
+ src/fpga/tc_clk_xilinx.sv | 11 +++++++++++
+ src/rtl/tc_clk.sv         | 12 ++++++++++--
+ 3 files changed, 23 insertions(+), 3 deletions(-)
+
+diff --git a/README.md b/README.md
+index fd10adb..55583a9 100644
+--- a/README.md
++++ b/README.md
+@@ -19,7 +19,7 @@ If you want to get started in your own technology (either an unsupported FPGA or
+ 
+ Clock cells usually are care-fully designed cells which do not exhibit any glitches. Therefore they need to be manually instantiated in ASIC designs. All clock cells can be found in `tc_clk.sv`.
+ 
+-|        Name       |         Description          | Status |       Xilinx       |
++| Name              | Description                  | Status | Xilinx             |
+ |-------------------|------------------------------|--------|--------------------|
+ | `tc_clk_and2`     | Clock and gate               | active | :white_check_mark: |
+ | `tc_clk_buffer`   | Clock buffer                 | active | :white_check_mark: |
+@@ -27,6 +27,7 @@ Clock cells usually are care-fully designed cells which do not exhibit any glitc
+ | `tc_clk_inverter` | Clock inverter               | active | :white_check_mark: |
+ | `tc_clk_mux2`     | Clock Mux with two inputs    | active | :white_check_mark: |
+ | `tc_clk_xor2`     | Clock Xor                    | active | :white_check_mark: |
++| `tc_clk_or2`      | Clock Or                     | active | :white_check_mark: |
+ | `tc_clk_delay`    | Programmable clock-delay     | active |                    |
+ 
+ ### Memory
+diff --git a/src/fpga/tc_clk_xilinx.sv b/src/fpga/tc_clk_xilinx.sv
+index cb94cf1..e45885b 100644
+--- a/src/fpga/tc_clk_xilinx.sv
++++ b/src/fpga/tc_clk_xilinx.sv
+@@ -83,3 +83,14 @@ module tc_clk_xor2 (
+ 
+ endmodule
+ 
++module tc_clk_or2 (
++  input logic clk0_i,
++  input logic clk1_i,
++  output logic clk_o
++);
++
++  assign clk_o = clk0_i | clk1_i;
++
++endmodule
++
++
+diff --git a/src/rtl/tc_clk.sv b/src/rtl/tc_clk.sv
+index e6aa1fd..3a6a7d6 100644
+--- a/src/rtl/tc_clk.sv
++++ b/src/rtl/tc_clk.sv
+@@ -82,6 +82,16 @@ module tc_clk_xor2 (
+ 
+ endmodule
+ 
++module tc_clk_or2 (
++  input logic clk0_i,
++  input logic clk1_i,
++  output logic clk_o
++);
++
++  assign clk_o = clk0_i | clk1_i;
++
++endmodule
++
+ `ifndef SYNTHESIS
+ module tc_clk_delay #(
+   parameter int unsigned Delay = 300ps
+@@ -98,5 +108,3 @@ module tc_clk_delay #(
+ 
+ endmodule
+ `endif
+-
+-
+
+From 7a0f09da39eff2deefe49a812533542b9cb69388 Mon Sep 17 00:00:00 2001
+From: Manuel Eggimann <meggimann@iis.ee.ethz.ch>
+Date: Sun, 11 Dec 2022 12:15:32 +0100
+Subject: [PATCH 2/3] Add usage warning to clock mux cell
+
+---
+ src/rtl/tc_clk.sv | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/src/rtl/tc_clk.sv b/src/rtl/tc_clk.sv
+index 3a6a7d6..3ab329e 100644
+--- a/src/rtl/tc_clk.sv
++++ b/src/rtl/tc_clk.sv
+@@ -61,6 +61,16 @@ module tc_clk_inverter (
+ 
+ endmodule
+ 
++// Warning: Typical clock mux cells of a technologies std cell library ARE NOT
++// GLITCH FREE!! The only difference to a regular multiplexer cell is that they
++// feature balanced rise- and fall-times. In other words: SWITCHING FROM ONE
++// CLOCK TO THE OTHER CAN INTRODUCE GLITCHES. ALSO, GLITCHES ON THE SELECT LINE
++// DIRECTLY TRANSLATE TO GLITCHES ON THE OUTPUT CLOCK!! This cell is only
++// intended to be used for quasi-static switching between clocks when one of the
++// clocks is anyway inactive or if the downstream logic remains gated or in
++// reset state during the transition phase. If you need dynamic switching
++// between arbitrary input clocks without introducing glitches, have a look at
++// the clk_mux_glitch_free cell in the pulp-platform/common_cells repository.
+ module tc_clk_mux2 (
+   input  logic clk0_i,
+   input  logic clk1_i,
+
+From ef99266fb0c58f897d2ff9237f45cf2df98d8def Mon Sep 17 00:00:00 2001
+From: Manuel Eggimann <meggimann@iis.ee.ethz.ch>
+Date: Sun, 11 Dec 2022 12:17:16 +0100
+Subject: [PATCH 3/3] Update changelog
+
+---
+ CHANGELOG.md | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index ad8fdf1..8532adb 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
+ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
+ 
+ ## Unreleased
++### Added
++- `tc_clk_or2`: A new generic tech cell for balanced clock OR-gates.
++- Added warning about misusing `tc_clk_mux2` cells.
+ 
+ ## 0.2.10 - 2022-11-20
+ ### Added

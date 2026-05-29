@@ -1,0 +1,22 @@
+[
+  {
+    "file_path": "src/dm_sba.sv",
+    "reason": "This is the System Bus Access logic where read/write bus cycles and byte-enable handling (_be) are typically generated; the issue description specifically suggests _be is incorrectly held at 0 during reads."
+  },
+  {
+    "file_path": "src/dm_obi_top.sv",
+    "reason": "If the bus interface is OBI-based, this top-level adapter may compute or forward _be differently for read vs write transactions, making it a likely place for a read-path byte-enable bug."
+  },
+  {
+    "file_path": "src/dm_mem.sv",
+    "reason": "Memory access datapath/control code may assign byte enables based on access type; a mismatch between read and write handling could leave _be cleared on reads."
+  },
+  {
+    "file_path": "src/dm_top.sv",
+    "reason": "Top-level debug module integration can wire together SBA/memory/bus signals; if _be is propagated or multiplexed here, an incorrect read-path assignment could occur."
+  },
+  {
+    "file_path": "src/dm_pkg.sv",
+    "reason": "Common enums/structs/constants for bus transactions may define the fields used for _be generation; while less likely than RTL modules, it could contain the transaction-type handling assumptions affecting read behavior."
+  }
+]

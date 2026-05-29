@@ -1,0 +1,39 @@
+diff --git a/rtl/pulp_soc/l2_ram_multi_bank.sv b/rtl/pulp_soc/l2_ram_multi_bank.sv
+index 86ba415..2dd9db4 100644
+--- a/rtl/pulp_soc/l2_ram_multi_bank.sv
++++ b/rtl/pulp_soc/l2_ram_multi_bank.sv
+@@ -35,6 +35,13 @@ module l2_ram_multi_bank #(
+ 
+ 
+     //INTERLEAVED Memory
++    // Address mapping is interleaved across banks: the byte address contains
++    //   - 2 LSBs for byte-in-word
++    //   - $clog2(NB_BANKS) bits for the bank index
++    // Those bank-index bits must be removed when generating the per-bank
++    // word address, otherwise the address space aliases once crossing the
++    // per-bank capacity.
++    localparam int unsigned NB_BANKS_LOG2 = (NB_BANKS <= 1) ? 0 : $clog2(NB_BANKS);
+     logic [31:0]           interleaved_addresses[NB_BANKS];
+     for(genvar i=0; i<NB_BANKS; i++) begin : CUTS
+         //Perform TCDM handshaking for constant 1 cycle latency
+@@ -64,8 +71,9 @@ module l2_ram_multi_bank #(
+                                                .CEN   ( ~mem_slave[i].req                                 ),
+                                                .BEN   ( ~mem_slave[i].be                                  ),
+                                                .WEN   ( mem_slave[i].wen                                  ),
+-                                               .A     ( interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+1:2] ), //Convert from
+-                                                                                                             //byte to word addressing
++                                               // Convert from byte addressing to per-bank word addressing:
++                                               // drop 2 byte-offset bits and the bank-index bits.
++                                               .A     ( interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+NB_BANKS_LOG2+1:2+NB_BANKS_LOG2] ),
+                                                .D     ( mem_slave[i].wdata                                ),
+                                                .Q     ( mem_slave[i].r_rdata                              )
+                                                );
+@@ -78,7 +86,7 @@ module l2_ram_multi_bank #(
+                .csn_i   (~mem_slave[i].req                                 ),
+                .wen_i   (mem_slave[i].wen                                  ),
+                .be_i    (mem_slave[i].be                                   ),
+-               .addr_i  (interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+1:2] ),
++               .addr_i  (interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+NB_BANKS_LOG2+1:2+NB_BANKS_LOG2] ),
+                .wdata_i (mem_slave[i].wdata                                ),
+                .rdata_o (mem_slave[i].r_rdata                              )
+                );

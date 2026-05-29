@@ -1,0 +1,86 @@
+diff --git a/graphics/ad-astra/ice40/top_lfsr.sv b/graphics/ad-astra/ice40/top_lfsr.sv
+index fdec6e6..1e5f8df 100644
+--- a/graphics/ad-astra/ice40/top_lfsr.sv
++++ b/graphics/ad-astra/ice40/top_lfsr.sv
+@@ -60,6 +60,7 @@ module top_lfsr (
+         .clk(clk_pix),
+         .rst(!clk_locked),
+         .en(sf_area && de),
++        .seed(17'h1),
+         .sreg(sf_reg)
+     );
+ 
+diff --git a/graphics/ad-astra/xc7/top_lfsr.sv b/graphics/ad-astra/xc7/top_lfsr.sv
+index 5557682..83b9041 100644
+--- a/graphics/ad-astra/xc7/top_lfsr.sv
++++ b/graphics/ad-astra/xc7/top_lfsr.sv
+@@ -58,6 +58,7 @@ module top_lfsr (
+         .clk(clk_pix),
+         .rst(!clk_locked),
+         .en(sf_area && de),
++        .seed(17'h1),
+         .sreg(sf_reg)
+     );
+ 
+diff --git a/graphics/framebuffers/ice40/top_david_v2.sv b/graphics/framebuffers/ice40/top_david_v2.sv
+index bfa5df1..da04939 100644
+--- a/graphics/framebuffers/ice40/top_david_v2.sv
++++ b/graphics/framebuffers/ice40/top_david_v2.sv
+@@ -83,6 +83,7 @@ module top_david_v2 (
+         .clk(clk_pix),
+         .rst(!clk_locked),
+         .en(lfsr_en),
++        .seed(15'h1),
+         .sreg(lfsr)
+     );
+ 
+diff --git a/graphics/framebuffers/xc7-hd/top_david_v2.sv b/graphics/framebuffers/xc7-hd/top_david_v2.sv
+index 29d1fa7..b2579ce 100644
+--- a/graphics/framebuffers/xc7-hd/top_david_v2.sv
++++ b/graphics/framebuffers/xc7-hd/top_david_v2.sv
+@@ -86,6 +86,7 @@ module top_david_v2 (
+         .clk(clk_pix),
+         .rst(!clk_pix_locked),
+         .en(lfsr_en),
++        .seed(15'h1),
+         .sreg(lfsr)
+     );
+ 
+diff --git a/graphics/framebuffers/xc7/top_david_v2.sv b/graphics/framebuffers/xc7/top_david_v2.sv
+index cac9f0a..1fd2221 100644
+--- a/graphics/framebuffers/xc7/top_david_v2.sv
++++ b/graphics/framebuffers/xc7/top_david_v2.sv
+@@ -81,6 +81,7 @@ module top_david_v2 (
+         .clk(clk_pix),
+         .rst(!clk_locked),
+         .en(lfsr_en),
++        .seed(15'h1),
+         .sreg(lfsr)
+     );
+ 
+diff --git a/lib/maths/lfsr.sv b/lib/maths/lfsr.sv
+index 866b7f2..b5bd22c 100644
+--- a/lib/maths/lfsr.sv
++++ b/lib/maths/lfsr.sv
+@@ -9,17 +9,17 @@
+ 
+ module lfsr #(
+     parameter LEN=8,                  // shift register length
+-    parameter TAPS=8'b10111000,       // XOR taps
+-    parameter SEED={LEN{1'b1}}        // initial seed value
++    parameter TAPS=8'b10111000       // XOR taps
+     ) (
+     input  wire logic clk,            // clock
+     input  wire logic rst,            // reset
+     input  wire logic en,             // enable
++    input  wire logic [LEN-1:0] seed, // initial seed value
+     output      logic [LEN-1:0] sreg  // lfsr output
+     );
+ 
+     always_ff @(posedge clk) begin
+-        if (en) sreg <= {1'b0, sreg[LEN-1:1]} ^ (sreg[0] ? TAPS : {LEN{1'b0}});
+-        if (rst) sreg <= SEED;
++        if (rst) sreg <= seed;
++        else if (en) sreg <= {1'b0, sreg[LEN-1:1]} ^ (sreg[0] ? TAPS : {LEN{1'b0}});
+     end
+ endmodule

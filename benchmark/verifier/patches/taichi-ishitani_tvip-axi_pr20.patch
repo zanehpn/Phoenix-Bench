@@ -1,0 +1,816 @@
+From b3d67e100dcd62ea3874d634e12699e8c09affe7 Mon Sep 17 00:00:00 2001
+From: Taichi Ishitani <taichi730@gmail.com>
+Date: Sat, 29 Aug 2020 15:21:05 +0900
+Subject: [PATCH 1/2] fix #19
+
+---
+ src/tvip_axi_component_base.svh |  7 ++++-
+ src/tvip_axi_monitor_base.svh   | 50 +++++++++++++++++++++++++++------
+ src/tvip_axi_slave_driver.svh   | 36 +++++++++++++++---------
+ 3 files changed, 69 insertions(+), 24 deletions(-)
+
+diff --git a/src/tvip_axi_component_base.svh b/src/tvip_axi_component_base.svh
+index 1c0b49f..c215edd 100644
+--- a/src/tvip_axi_component_base.svh
++++ b/src/tvip_axi_component_base.svh
+@@ -20,7 +20,9 @@ virtual class tvip_axi_component_base #(
+   endfunction
+ 
+   virtual task begin_address(tvip_axi_item item);
+-    void'(begin_tr(item));
++    if (!item.write_data_began()) begin
++      void'(begin_tr(item));
++    end
+     item.begin_address();
+   endtask
+ 
+@@ -30,6 +32,9 @@ virtual class tvip_axi_component_base #(
+ 
+   virtual task begin_write_data(tvip_axi_item item);
+     if (item.is_write()) begin
++      if (!item.address_began()) begin
++        void'(begin_tr(item));
++      end
+       item.begin_write_data();
+     end
+   endtask
+diff --git a/src/tvip_axi_monitor_base.svh b/src/tvip_axi_monitor_base.svh
+index 023c74f..f5664ac 100644
+--- a/src/tvip_axi_monitor_base.svh
++++ b/src/tvip_axi_monitor_base.svh
+@@ -9,7 +9,9 @@ virtual class tvip_axi_monitor_base #(
+   uvm_analysis_port #(tvip_axi_item)  response_item_port;
+ 
+   protected tvip_axi_item           current_address_item;
++  protected tvip_axi_item           address_item_queue[$];
+   protected tvip_axi_payload_store  write_items[$];
++  protected tvip_axi_payload_store  preceding_write_items[$];
+   protected tvip_axi_payload_store  response_items[tvip_axi_id][$];
+ 
+   function void build_phase(uvm_phase phase);
+@@ -41,14 +43,14 @@ virtual class tvip_axi_monitor_base #(
+   task end_address(tvip_axi_item item);
+     super.end_address(item);
+     address_item_port.write(item);
+-    if (is_read_component()) begin
++    if (item.request_ended()) begin
+       request_item_port.write(item);
+     end
+   endtask
+ 
+   task end_write_data(tvip_axi_item item);
+     super.end_write_data(item);
+-    if (is_write_component()) begin;
++    if (item.request_ended()) begin
+       request_item_port.write(item);
+     end
+   endtask
+@@ -72,6 +74,13 @@ virtual class tvip_axi_monitor_base #(
+     end
+     write_items.delete();
+ 
++    foreach (preceding_write_items[i]) begin
++      if (!preceding_write_items[i].item.ended()) begin
++        end_tr(preceding_write_items[i].item);
++      end
++    end
++    preceding_write_items.delete();
++
+     foreach (response_items[i, j]) begin
+       if (!response_items[i][j].item.ended()) begin
+         end_tr(response_items[i][j].item);
+@@ -92,8 +101,14 @@ virtual class tvip_axi_monitor_base #(
+   protected virtual task sample_address();
+     tvip_axi_payload_store  payload_store;
+ 
+-    current_address_item  = ITEM::type_id::create("axi_item");
+-    current_address_item.set_context(configuration, status);
++    if (preceding_write_items.size() > 0) begin
++      payload_store         = preceding_write_items.pop_front();
++      current_address_item  = payload_store.item;
++    end
++    else begin
++      payload_store         = null;
++      current_address_item  = create_monitor_item();
++    end
+ 
+     current_address_item.access_type  = (is_write_component()) ? TVIP_AXI_WRITE_ACCESS : TVIP_AXI_READ_ACCESS;
+     current_address_item.id           = get_address_id();
+@@ -104,9 +119,11 @@ virtual class tvip_axi_monitor_base #(
+     current_address_item.qos          = get_qos();
+     begin_address(current_address_item);
+ 
+-    payload_store = tvip_axi_payload_store::create(current_address_item);
+-    if (is_write_component()) begin
+-      write_items.push_back(payload_store);
++    if (payload_store == null) begin
++      payload_store = tvip_axi_payload_store::create(current_address_item);
++      if (is_write_component()) begin
++        write_items.push_back(payload_store);
++      end
+     end
+     response_items[current_address_item.id].push_back(payload_store);
+   endtask
+@@ -117,10 +134,18 @@ virtual class tvip_axi_monitor_base #(
+   endtask
+ 
+   protected virtual task monitor_write_data();
+-    if ((write_items.size() > 0) && (!write_items[0].item.write_data_began())) begin
++    if (write_items.size() == 0) begin
++      tvip_axi_item           item;
++      tvip_axi_payload_store  payload_store;
++      item          = create_monitor_item();
++      payload_store = tvip_axi_payload_store::create(item);
++      write_items.push_back(payload_store);
++      preceding_write_items.push_back(payload_store);
++    end
++    if (!write_items[0].item.write_data_began()) begin
+       begin_write_data(write_items[0].item);
+     end
+-    if ((write_items.size() > 0) && get_write_data_ready()) begin
++    if (get_write_data_ready()) begin
+       sample_write_data();
+     end
+   endtask
+@@ -156,6 +181,13 @@ virtual class tvip_axi_monitor_base #(
+     end
+   endtask
+ 
++  protected function tvip_axi_item create_monitor_item();
++    ITEM  item;
++    item  = ITEM::type_id::create("axi_item");
++    item.set_context(configuration, status);
++    return item;
++  endfunction
++
+   `tue_component_default_constructor(tvip_axi_monitor_base)
+ endclass
+ `endif
+diff --git a/src/tvip_axi_slave_driver.svh b/src/tvip_axi_slave_driver.svh
+index 2947ca5..ea15c57 100644
+--- a/src/tvip_axi_slave_driver.svh
++++ b/src/tvip_axi_slave_driver.svh
+@@ -90,6 +90,7 @@ class tvip_axi_slave_sub_driver extends tvip_axi_component_base #(
+   protected bit                                 default_ready[2];
+   protected int                                 ready_delay_queue[2][$];
+   protected int                                 ready_delay[2];
++  protected int                                 preceding_writes;
+   protected tvip_axi_item                       response_queue[tvip_axi_id][$];
+   protected tvip_axi_slave_driver_response_item response_items[tvip_axi_id];
+   protected tvip_axi_id                         active_ids[tvip_axi_id];
+@@ -155,6 +156,7 @@ class tvip_axi_slave_sub_driver extends tvip_axi_component_base #(
+     ready_delay       = '{-1, -1};
+     current_response  = null;
+     response_busy     = 0;
++    preceding_writes  = 0;
+     item_buffer.delete();
+     ready_delay_queue[0].delete();
+     ready_delay_queue[1].delete();
+@@ -172,6 +174,7 @@ class tvip_axi_slave_sub_driver extends tvip_axi_component_base #(
+ 
+   protected task update_ready_delay_queue();
+     tvip_axi_item item;
++    int           length;
+ 
+     uvm_wait_for_nba_region();
+     if (item_buffer.size() > 0) begin
+@@ -198,16 +201,16 @@ class tvip_axi_slave_sub_driver extends tvip_axi_component_base #(
+       return;
+     end
+ 
+-    if (item != null) begin
+-      foreach (item.write_data_ready_delay[i]) begin
++    length  = (item != null) ? item.burst_length : get_burst_length();
++    for (int i = 0;i < length;++i) begin
++      if (preceding_writes > 0) begin
++        --preceding_writes;
++      end
++      else if (item != null) begin
+         ready_delay_queue[1].push_back(item.write_data_ready_delay[i]);
+       end
+-    end
+-    else begin
+-      repeat (get_burst_length()) begin
+-        ready_delay_queue[1].push_back(
+-          randomize_delay(configuration.wready_delay)
+-        );
++      else begin
++        ready_delay_queue[1].push_back(randomize_delay(configuration.wready_delay));
+       end
+     end
+   endtask
+@@ -215,7 +218,7 @@ class tvip_axi_slave_sub_driver extends tvip_axi_component_base #(
+   protected task drive_address_channel();
+     bit address_ready;
+ 
+-    if ((ready_delay[0] < 0) && (ready_delay_queue[0].size() > 0)) begin
++    if (ready_delay[0] < 0) begin
+       ready_delay[0]  = ready_delay_queue[0].pop_front();
+     end
+ 
+@@ -233,13 +236,18 @@ class tvip_axi_slave_sub_driver extends tvip_axi_component_base #(
+   endtask
+ 
+   protected task drive_write_data_channel();
++    bit pop_ready_delay;
+     bit write_data_ready;
+ 
+-    if ((ready_delay[1] < 0) && (ready_delay_queue[1].size() > 0)) begin
+-      if (get_write_data_valid()) begin
+-        if (get_write_data_ready() == default_ready[1]) begin
+-          ready_delay[1]  = ready_delay_queue[1].pop_front();
+-        end
++    pop_ready_delay =
++      (ready_delay[1] < 0) && get_write_data_valid() && (get_write_data_ready() == default_ready[1]);
++    if (pop_ready_delay) begin
++      if (ready_delay_queue[1].size() > 0) begin
++        ready_delay[1]  = ready_delay_queue[1].pop_front();
++      end
++      else begin
++        ready_delay[1]  = randomize_delay(configuration.wready_delay);
++        ++preceding_writes;
+       end
+     end
+ 
+
+From a98680e45940cb1944d1e1eee9468440dbb9a63f Mon Sep 17 00:00:00 2001
+From: taichi <taichi730@gmail.com>
+Date: Wed, 2 Sep 2020 11:12:14 +0900
+Subject: [PATCH 2/2] added a delay module to create the situation that wvalid
+ precedes awvalid
+
+---
+ sample/env/top.sv                            |  18 +-
+ sample/env/tvip_axi_sample_configuration.svh | 137 +++++-----
+ sample/env/tvip_axi_sample_delay.sv          | 264 +++++++++++++++++++
+ sample/env/tvip_axi_sample_test.svh          |   7 +-
+ sample/work/makefile                         |   4 +-
+ sample/work/wvalid_preceding_awvalid/test.f  |   3 +
+ 6 files changed, 359 insertions(+), 74 deletions(-)
+ create mode 100644 sample/env/tvip_axi_sample_delay.sv
+ create mode 100644 sample/work/wvalid_preceding_awvalid/test.f
+
+diff --git a/sample/env/top.sv b/sample/env/top.sv
+index 500e0b7..e298e34 100644
+--- a/sample/env/top.sv
++++ b/sample/env/top.sv
+@@ -18,13 +18,25 @@ module top();
+ 
+   bit areset_n  = 0;
+   initial begin
+-    #(100ns);
++    repeat (20) @(posedge aclk);
+     areset_n  = 1;
+   end
+ 
+-  tvip_axi_if axi_if(aclk, areset_n);
++  tvip_axi_if axi_if[2](aclk, areset_n);
++
++  tvip_axi_sample_delay #(
++    .WRITE_ADDRESS_DELAY  (8  ),
++    .WRITE_DATA_DELAY     (8  ),
++    .WRITE_RESPONSE_DELAY (8  ),
++    .READ_ADDRESS_DELAY   (8  ),
++    .READ_RESPONSE_DELAY  (8  )
++  ) u_delay (
++    aclk, areset_n, axi_if[0], axi_if[1]
++  );
++
+   initial begin
+-    uvm_config_db #(tvip_axi_vif)::set(null, "", "vif", axi_if);
++    uvm_config_db #(tvip_axi_vif)::set(null, "", "vif[0]", axi_if[0]);
++    uvm_config_db #(tvip_axi_vif)::set(null, "", "vif[1]", axi_if[1]);
+     run_test("tvip_axi_sample_test");
+   end
+ endmodule
+diff --git a/sample/env/tvip_axi_sample_configuration.svh b/sample/env/tvip_axi_sample_configuration.svh
+index b70f00b..87c35ef 100644
+--- a/sample/env/tvip_axi_sample_configuration.svh
++++ b/sample/env/tvip_axi_sample_configuration.svh
+@@ -8,120 +8,123 @@ class tvip_axi_sample_configuration extends tue_configuration;
+         bit                     enable_ready_delay;
+         bit                     enable_out_of_order_response;
+         bit                     enable_read_interleave;
+-  rand  tvip_axi_configuration  axi_cfg;
++  rand  tvip_axi_configuration  axi_cfg[2];
+ 
+   constraint c_axi_basic {
+-    axi_cfg.id_width         == 8;
+-    axi_cfg.address_width    == 64;
+-    axi_cfg.max_burst_length == 256;
+-    axi_cfg.data_width       == 64;
+-    axi_cfg.qos_range[0]     != -1;
+-    axi_cfg.qos_range[1]     != -1;
++    foreach (axi_cfg[i]) {
++      axi_cfg[i].id_width         == 8;
++      axi_cfg[i].address_width    == 64;
++      axi_cfg[i].max_burst_length == 256;
++      axi_cfg[i].data_width       == 64;
++      axi_cfg[i].qos_range[0]     != -1;
++      axi_cfg[i].qos_range[1]     != -1;
++    }
+   }
+ 
+   constraint c_request_start_delay {
+     if (enable_request_start_delay) {
+-      axi_cfg.request_start_delay.min_delay          == 0;
+-      axi_cfg.request_start_delay.max_delay          == 10;
+-      axi_cfg.request_start_delay.weight_zero_delay  == 6;
+-      axi_cfg.request_start_delay.weight_short_delay == 3;
+-      axi_cfg.request_start_delay.weight_long_delay  == 1;
++      axi_cfg[0].request_start_delay.min_delay          == 0;
++      axi_cfg[0].request_start_delay.max_delay          == 10;
++      axi_cfg[0].request_start_delay.weight_zero_delay  == 6;
++      axi_cfg[0].request_start_delay.weight_short_delay == 3;
++      axi_cfg[0].request_start_delay.weight_long_delay  == 1;
+     }
+   }
+ 
+   constraint c_write_data_delay {
+     if (enable_write_data_delay) {
+-      axi_cfg.write_data_delay.min_delay          == 0;
+-      axi_cfg.write_data_delay.max_delay          == 10;
+-      axi_cfg.write_data_delay.weight_zero_delay  == 6;
+-      axi_cfg.write_data_delay.weight_short_delay == 3;
+-      axi_cfg.write_data_delay.weight_long_delay  == 1;
++      axi_cfg[0].write_data_delay.min_delay          == 0;
++      axi_cfg[0].write_data_delay.max_delay          == 10;
++      axi_cfg[0].write_data_delay.weight_zero_delay  == 6;
++      axi_cfg[0].write_data_delay.weight_short_delay == 3;
++      axi_cfg[0].write_data_delay.weight_long_delay  == 1;
+     }
+   }
+ 
+   constraint c_response_weight {
+-    axi_cfg.response_weight_okay         == 6;
+-    axi_cfg.response_weight_exokay       == 2;
+-    axi_cfg.response_weight_slave_error  == 1;
+-    axi_cfg.response_weight_decode_error == 1;
++    axi_cfg[1].response_weight_okay         == 6;
++    axi_cfg[1].response_weight_exokay       == 2;
++    axi_cfg[1].response_weight_slave_error  == 1;
++    axi_cfg[1].response_weight_decode_error == 1;
+   }
+ 
+   constraint c_response_start_delay {
+     if (enable_response_start_delay) {
+-      axi_cfg.response_start_delay.min_delay          == 0;
+-      axi_cfg.response_start_delay.max_delay          == 10;
+-      axi_cfg.response_start_delay.weight_zero_delay  == 6;
+-      axi_cfg.response_start_delay.weight_short_delay == 3;
+-      axi_cfg.response_start_delay.weight_long_delay  == 1;
++      axi_cfg[1].response_start_delay.min_delay          == 0;
++      axi_cfg[1].response_start_delay.max_delay          == 10;
++      axi_cfg[1].response_start_delay.weight_zero_delay  == 6;
++      axi_cfg[1].response_start_delay.weight_short_delay == 3;
++      axi_cfg[1].response_start_delay.weight_long_delay  == 1;
+     }
+   }
+ 
+   constraint c_response_delay {
+     if (enable_response_delay) {
+-      axi_cfg.response_delay.min_delay          == 0;
+-      axi_cfg.response_delay.max_delay          == 10;
+-      axi_cfg.response_delay.weight_zero_delay  == 6;
+-      axi_cfg.response_delay.weight_short_delay == 3;
+-      axi_cfg.response_delay.weight_long_delay  == 1;
++      axi_cfg[1].response_delay.min_delay          == 0;
++      axi_cfg[1].response_delay.max_delay          == 10;
++      axi_cfg[1].response_delay.weight_zero_delay  == 6;
++      axi_cfg[1].response_delay.weight_short_delay == 3;
++      axi_cfg[1].response_delay.weight_long_delay  == 1;
+     }
+   }
+ 
+   constraint c_ready_delay {
+     if (enable_ready_delay) {
+-      axi_cfg.awready_delay.min_delay          == 0;
+-      axi_cfg.awready_delay.max_delay          == 10;
+-      axi_cfg.awready_delay.weight_zero_delay  == 6;
+-      axi_cfg.awready_delay.weight_short_delay == 3;
+-      axi_cfg.awready_delay.weight_long_delay  == 1;
+-
+-      axi_cfg.wready_delay.min_delay          == 0;
+-      axi_cfg.wready_delay.max_delay          == 10;
+-      axi_cfg.wready_delay.weight_zero_delay  == 6;
+-      axi_cfg.wready_delay.weight_short_delay == 3;
+-      axi_cfg.wready_delay.weight_long_delay  == 1;
+-
+-      axi_cfg.bready_delay.min_delay          == 0;
+-      axi_cfg.bready_delay.max_delay          == 10;
+-      axi_cfg.bready_delay.weight_zero_delay  == 6;
+-      axi_cfg.bready_delay.weight_short_delay == 3;
+-      axi_cfg.bready_delay.weight_long_delay  == 1;
+-
+-      axi_cfg.arready_delay.min_delay          == 0;
+-      axi_cfg.arready_delay.max_delay          == 10;
+-      axi_cfg.arready_delay.weight_zero_delay  == 6;
+-      axi_cfg.arready_delay.weight_short_delay == 3;
+-      axi_cfg.arready_delay.weight_long_delay  == 1;
+-
+-      axi_cfg.rready_delay.min_delay          == 0;
+-      axi_cfg.rready_delay.max_delay          == 10;
+-      axi_cfg.rready_delay.weight_zero_delay  == 6;
+-      axi_cfg.rready_delay.weight_short_delay == 3;
+-      axi_cfg.rready_delay.weight_long_delay  == 1;
++      axi_cfg[1].awready_delay.min_delay          == 0;
++      axi_cfg[1].awready_delay.max_delay          == 10;
++      axi_cfg[1].awready_delay.weight_zero_delay  == 6;
++      axi_cfg[1].awready_delay.weight_short_delay == 3;
++      axi_cfg[1].awready_delay.weight_long_delay  == 1;
++
++      axi_cfg[1].wready_delay.min_delay          == 0;
++      axi_cfg[1].wready_delay.max_delay          == 10;
++      axi_cfg[1].wready_delay.weight_zero_delay  == 6;
++      axi_cfg[1].wready_delay.weight_short_delay == 3;
++      axi_cfg[1].wready_delay.weight_long_delay  == 1;
++
++      axi_cfg[0].bready_delay.min_delay          == 0;
++      axi_cfg[0].bready_delay.max_delay          == 10;
++      axi_cfg[0].bready_delay.weight_zero_delay  == 6;
++      axi_cfg[0].bready_delay.weight_short_delay == 3;
++      axi_cfg[0].bready_delay.weight_long_delay  == 1;
++
++      axi_cfg[1].arready_delay.min_delay          == 0;
++      axi_cfg[1].arready_delay.max_delay          == 10;
++      axi_cfg[1].arready_delay.weight_zero_delay  == 6;
++      axi_cfg[1].arready_delay.weight_short_delay == 3;
++      axi_cfg[1].arready_delay.weight_long_delay  == 1;
++
++      axi_cfg[0].rready_delay.min_delay          == 0;
++      axi_cfg[0].rready_delay.max_delay          == 10;
++      axi_cfg[0].rready_delay.weight_zero_delay  == 6;
++      axi_cfg[0].rready_delay.weight_short_delay == 3;
++      axi_cfg[0].rready_delay.weight_long_delay  == 1;
+     }
+   }
+ 
+   constraint c_response_ordering {
+     if (enable_out_of_order_response || enable_read_interleave) {
+-      axi_cfg.response_ordering == TVIP_AXI_OUT_OF_ORDER;
+-      axi_cfg.outstanding_responses inside {[2:5]};
++      axi_cfg[1].response_ordering == TVIP_AXI_OUT_OF_ORDER;
++      axi_cfg[1].outstanding_responses inside {[2:5]};
+     }
+     else {
+-      axi_cfg.response_ordering == TVIP_AXI_IN_ORDER;
++      axi_cfg[1].response_ordering == TVIP_AXI_IN_ORDER;
+     }
+   }
+ 
+   constraint c_read_interleave {
+     if (enable_read_interleave) {
+-      axi_cfg.enable_response_interleaving == 1;
++      axi_cfg[1].enable_response_interleaving == 1;
+     }
+     else {
+-      axi_cfg.enable_response_interleaving == 0;
++      axi_cfg[1].enable_response_interleaving == 0;
+     }
+   }
+ 
+   function new(string name = "tvip_axi_sample_configuration");
+     super.new(name);
+-    axi_cfg = tvip_axi_configuration::type_id::create("axi_cfg");
++    axi_cfg[0]  = tvip_axi_configuration::type_id::create("axi_cfg[0]");
++    axi_cfg[1]  = tvip_axi_configuration::type_id::create("axi_cfg[1]");
+   endfunction
+ 
+   function void pre_randomize();
+@@ -158,7 +161,7 @@ class tvip_axi_sample_configuration extends tue_configuration;
+     `uvm_field_int(enable_ready_delay, UVM_DEFAULT | UVM_BIN)
+     `uvm_field_int(enable_out_of_order_response, UVM_DEFAULT | UVM_BIN)
+     `uvm_field_int(enable_read_interleave, UVM_DEFAULT | UVM_BIN)
+-    `uvm_field_object(axi_cfg, UVM_DEFAULT)
++    `uvm_field_sarray_object(axi_cfg, UVM_DEFAULT)
+   `uvm_object_utils_end
+ endclass
+ `endif
+diff --git a/sample/env/tvip_axi_sample_delay.sv b/sample/env/tvip_axi_sample_delay.sv
+new file mode 100644
+index 0000000..99ed96e
+--- /dev/null
++++ b/sample/env/tvip_axi_sample_delay.sv
+@@ -0,0 +1,264 @@
++module tvip_axi_sample_delay_unit #(
++  parameter int   DELAY = 0,
++  parameter type  DATA  = logic
++)(
++  input   var       i_clk,
++  input   var       i_rst_n,
++  input   var       i_enable,
++  input   var       i_valid,
++  output  var       o_ready,
++  input   var DATA  i_d,
++  output  var       o_valid,
++  input   var       i_ready,
++  output  var DATA  o_d
++);
++  logic valid[DELAY+1];
++  logic ready[DELAY+1];
++  DATA  data[DELAY+1];
++
++  always_comb begin
++    valid[0]  = (i_enable) ? i_valid  : '0;
++    o_ready   = (i_enable) ? ready[0] : i_ready;
++    data[0]   = (i_enable) ? i_d      : '0;
++  end
++
++  always_comb begin
++    o_valid       = (i_enable) ? valid[DELAY] : i_valid;
++    ready[DELAY]  = (i_enable) ? i_ready      : '0;
++    o_d           = (i_enable) ? data[DELAY]  : i_d;
++  end
++
++  for (genvar i = 0;i < DELAY;++i) begin : g
++    always_ff @(posedge i_clk, negedge i_rst_n) begin
++      if (!i_rst_n) begin
++        valid[i+1]  <= '0;
++        data[i+1]   <= '0;
++      end
++      else if (ready[i]) begin
++        valid[i+1]  <= valid[i];
++        data[i+1]   <= data[i];
++      end
++    end
++
++    always_comb begin
++      ready[i]  = ready[i+1] || (!valid[i+1]);
++    end
++  end
++endmodule
++
++module tvip_axi_sample_delay #(
++  parameter int WRITE_ADDRESS_DELAY   = 0,
++  parameter int WRITE_DATA_DELAY      = 0,
++  parameter int WRITE_RESPONSE_DELAY  = 0,
++  parameter int READ_ADDRESS_DELAY    = 0,
++  parameter int READ_RESPONSE_DELAY   = 0
++)(
++  input var   i_clk,
++  input var   i_rst_n,
++  tvip_axi_if slave_if,
++  tvip_axi_if master_if
++);
++  import  tvip_axi_types_pkg::*;
++
++  typedef struct packed {
++    tvip_axi_id           awid;
++    tvip_axi_address      awaddr;
++    tvip_axi_burst_length awlen;
++    tvip_axi_burst_size   awsize;
++    tvip_axi_burst_type   awburst;
++    tvip_axi_qos          awqos;
++  } tvip_axi_write_address;
++
++  typedef struct packed {
++    tvip_axi_data   wdata;
++    tvip_axi_strobe wstrb;
++    bit             wlast;
++  } tvip_axi_write_data;
++
++  typedef struct packed {
++    tvip_axi_id       bid;
++    tvip_axi_response bresp;
++  } tvip_axi_write_response;
++
++  typedef struct packed {
++    tvip_axi_id           arid;
++    tvip_axi_address      araddr;
++    tvip_axi_burst_length arlen;
++    tvip_axi_burst_size   arsize;
++    tvip_axi_burst_type   arburst;
++    tvip_axi_qos          arqos;
++  } tvip_axi_read_address;
++
++  typedef struct packed {
++    tvip_axi_id       rid;
++    tvip_axi_data     rdata;
++    tvip_axi_response rresp;
++    bit               rlast;
++  } tvip_axi_read_response;
++
++  bit [4:0] enable_delay;
++  initial begin
++    enable_delay[0] = $test$plusargs("write_address_delay");
++    enable_delay[1] = $test$plusargs("write_data_delay");
++    enable_delay[2] = $test$plusargs("write_response_delay");
++    enable_delay[3] = $test$plusargs("read_address_delay");
++    enable_delay[4] = $test$plusargs("read_response_delay");
++  end
++
++  tvip_axi_write_address  write_address[2];
++
++  always_comb begin
++    write_address[0].awaddr   = slave_if.awaddr;
++    write_address[0].awid     = slave_if.awid;
++    write_address[0].awlen    = slave_if.awlen;
++    write_address[0].awsize   = slave_if.awsize;
++    write_address[0].awburst  = slave_if.awburst;
++    write_address[0].awqos    = slave_if.awqos;
++  end
++
++  always_comb begin
++    master_if.awaddr  = write_address[1].awaddr;
++    master_if.awid    = write_address[1].awid;
++    master_if.awlen   = write_address[1].awlen;
++    master_if.awsize  = write_address[1].awsize;
++    master_if.awburst = write_address[1].awburst;
++    master_if.awqos   = write_address[1].awqos;
++  end
++
++  tvip_axi_sample_delay_unit #(
++    .DELAY  (WRITE_ADDRESS_DELAY    ),
++    .DATA   (tvip_axi_write_address )
++  ) u_write_address_delay (
++    .i_clk    (i_clk              ),
++    .i_rst_n  (i_rst_n            ),
++    .i_enable (enable_delay[0]    ),
++    .i_valid  (slave_if.awvalid   ),
++    .o_ready  (slave_if.awready   ),
++    .i_d      (write_address[0]   ),
++    .o_valid  (master_if.awvalid  ),
++    .i_ready  (master_if.awready  ),
++    .o_d      (write_address[1]   )
++  );
++
++  tvip_axi_write_data write_data[2];
++
++  always_comb begin
++    write_data[0].wdata = slave_if.wdata;
++    write_data[0].wstrb = slave_if.wstrb;
++    write_data[0].wlast = slave_if.wlast;
++  end
++
++  always_comb begin
++    master_if.wdata = write_data[1].wdata;
++    master_if.wstrb = write_data[1].wstrb;
++    master_if.wlast = write_data[1].wlast;
++  end
++
++  tvip_axi_sample_delay_unit #(
++    .DELAY  (WRITE_DATA_DELAY     ),
++    .DATA   (tvip_axi_write_data  )
++  ) u_write_data_delay (
++    .i_clk    (i_clk            ),
++    .i_rst_n  (i_rst_n          ),
++    .i_enable (enable_delay[1]  ),
++    .i_valid  (slave_if.wvalid  ),
++    .o_ready  (slave_if.wready  ),
++    .i_d      (write_data[0]    ),
++    .o_valid  (master_if.wvalid ),
++    .i_ready  (master_if.wready ),
++    .o_d      (write_data[1]    )
++  );
++
++  tvip_axi_write_response write_response[2];
++
++  always_comb begin
++    write_response[0].bid   = master_if.bid;
++    write_response[0].bresp = master_if.bresp;
++  end
++
++  always_comb begin
++    slave_if.bid    = write_response[1].bid;
++    slave_if.bresp  = write_response[1].bresp;
++  end
++
++  tvip_axi_sample_delay_unit #(
++    .DELAY  (WRITE_RESPONSE_DELAY     ),
++    .DATA   (tvip_axi_write_response  )
++  ) u_write_response_delay (
++    .i_clk    (i_clk              ),
++    .i_rst_n  (i_rst_n            ),
++    .i_enable (enable_delay[2]    ),
++    .i_valid  (master_if.bvalid   ),
++    .o_ready  (master_if.bready   ),
++    .i_d      (write_response[0]  ),
++    .o_valid  (slave_if.bvalid    ),
++    .i_ready  (slave_if.bready    ),
++    .o_d      (write_response[1]  )
++  );
++
++  tvip_axi_read_address read_address[2];
++
++  always_comb begin
++    read_address[0].araddr  = slave_if.araddr;
++    read_address[0].arid    = slave_if.arid;
++    read_address[0].arlen   = slave_if.arlen;
++    read_address[0].arsize  = slave_if.arsize;
++    read_address[0].arburst = slave_if.arburst;
++    read_address[0].arqos   = slave_if.arqos;
++  end
++
++  always_comb begin
++    master_if.araddr  = read_address[1].araddr;
++    master_if.arid    = read_address[1].arid;
++    master_if.arlen   = read_address[1].arlen;
++    master_if.arsize  = read_address[1].arsize;
++    master_if.arburst = read_address[1].arburst;
++    master_if.arqos   = read_address[1].arqos;
++  end
++
++  tvip_axi_sample_delay_unit #(
++    .DELAY  (READ_ADDRESS_DELAY     ),
++    .DATA   (tvip_axi_read_address  )
++  ) u_read_address_delay (
++    .i_clk    (i_clk              ),
++    .i_rst_n  (i_rst_n            ),
++    .i_enable (enable_delay[3]    ),
++    .i_valid  (slave_if.arvalid   ),
++    .o_ready  (slave_if.arready   ),
++    .i_d      (read_address[0]    ),
++    .o_valid  (master_if.arvalid  ),
++    .i_ready  (master_if.arready  ),
++    .o_d      (read_address[1]    )
++  );
++
++  tvip_axi_read_response  read_response[2];
++
++  always_comb begin
++    read_response[0].rid    = master_if.rid;
++    read_response[0].rdata  = master_if.rdata;
++    read_response[0].rresp  = master_if.rresp;
++    read_response[0].rlast  = master_if.rlast;
++  end
++
++  always_comb begin
++    slave_if.rid    = read_response[1].rid;
++    slave_if.rdata  = read_response[1].rdata;
++    slave_if.rresp  = read_response[1].rresp;
++    slave_if.rlast  = read_response[1].rlast;
++  end
++
++  tvip_axi_sample_delay_unit #(
++    .DELAY  (READ_RESPONSE_DELAY    ),
++    .DATA   (tvip_axi_read_response )
++  ) u_read_response_delay (
++    .i_clk    (i_clk            ),
++    .i_rst_n  (i_rst_n          ),
++    .i_enable (enable_delay[4]  ),
++    .i_valid  (master_if.rvalid ),
++    .o_ready  (master_if.rready ),
++    .i_d      (read_response[0] ),
++    .o_valid  (slave_if.rvalid  ),
++    .i_ready  (slave_if.rready  ),
++    .o_d      (read_response[1] )
++  );
++endmodule
+diff --git a/sample/env/tvip_axi_sample_test.svh b/sample/env/tvip_axi_sample_test.svh
+index 7ad9086..96cb06c 100644
+--- a/sample/env/tvip_axi_sample_test.svh
++++ b/sample/env/tvip_axi_sample_test.svh
+@@ -15,7 +15,8 @@ class tvip_axi_sample_test extends tue_test #(
+ 
+   function void create_configuration();
+     super.create_configuration();
+-    void'(uvm_config_db #(tvip_axi_vif)::get(null, "", "vif", configuration.axi_cfg.vif));
++    void'(uvm_config_db #(tvip_axi_vif)::get(null, "", "vif[0]", configuration.axi_cfg[0].vif));
++    void'(uvm_config_db #(tvip_axi_vif)::get(null, "", "vif[1]", configuration.axi_cfg[1].vif));
+     if (configuration.randomize()) begin
+       `uvm_info(get_name(), $sformatf("configuration...\n%s", configuration.sprint()), UVM_NONE)
+     end
+@@ -28,10 +29,10 @@ class tvip_axi_sample_test extends tue_test #(
+     super.build_phase(phase);
+ 
+     master_agent  = tvip_axi_master_agent::type_id::create("master_agent", this);
+-    master_agent.set_configuration(configuration.axi_cfg);
++    master_agent.set_configuration(configuration.axi_cfg[0]);
+ 
+     slave_agent = tvip_axi_slave_agent::type_id::create("slave_agent", this);
+-    slave_agent.set_configuration(configuration.axi_cfg);
++    slave_agent.set_configuration(configuration.axi_cfg[1]);
+   endfunction
+ 
+   function void connect_phase(uvm_phase phase);
+diff --git a/sample/work/makefile b/sample/work/makefile
+index 707c819..bf4b11f 100644
+--- a/sample/work/makefile
++++ b/sample/work/makefile
+@@ -12,7 +12,8 @@ FILE_LISTS	+= $(TVIP_COMMON_HOME)/compile.f
+ FILE_LISTS	+= $(TVIP_AXI_HOME)/compile.f
+ FILE_LISTS	+= $(TVIP_AXI_HOME)/sample/env/compile.f
+ 
+-SOURCE_FILES	= $(TVIP_AXI_HOME)/sample/env/top.sv
++SOURCE_FILES	+= $(TVIP_AXI_HOME)/sample/env/tvip_axi_sample_delay.sv
++SOURCE_FILES	+= $(TVIP_AXI_HOME)/sample/env/top.sv
+ 
+ SIMULATOR	?= vcs
+ RANDOM_SEED	?= auto
+@@ -25,6 +26,7 @@ TESTS	+= response_delay
+ TESTS	+= ready_delay
+ TESTS	+= out_of_order_response
+ TESTS	+= read_interleave
++TESTS	+= wvalid_preceding_awvalid
+ 
+ .PHONY: all $(TESTS) clean clean_all
+ 
+diff --git a/sample/work/wvalid_preceding_awvalid/test.f b/sample/work/wvalid_preceding_awvalid/test.f
+new file mode 100644
+index 0000000..53e6d39
+--- /dev/null
++++ b/sample/work/wvalid_preceding_awvalid/test.f
+@@ -0,0 +1,3 @@
+++ENABLE_READY_DELAY
+++write_address_delay
++

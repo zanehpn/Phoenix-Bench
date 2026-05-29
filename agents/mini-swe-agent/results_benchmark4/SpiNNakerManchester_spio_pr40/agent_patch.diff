@@ -1,0 +1,38 @@
+diff --git a/modules/hss_multiplexer/spio_hss_multiplexer_pkt_store.v b/modules/hss_multiplexer/spio_hss_multiplexer_pkt_store.v
+index 1e028a9..23c0071 100644
+--- a/modules/hss_multiplexer/spio_hss_multiplexer_pkt_store.v
++++ b/modules/hss_multiplexer/spio_hss_multiplexer_pkt_store.v
+@@ -170,16 +170,21 @@ module spio_hss_multiplexer_pkt_store
+   //---------------------------------------------------------------
+   // buffer read pointer
+   //---------------------------------------------------------------
++  reg   [`BUF_BITS - 1:0] br_dly;   // delayed read pointer update
++
+   always @ (posedge clk or posedge rst)
+-    if (rst)
++    if (rst) begin
+       br <= `BUF_BITS'd0;
+-    else
++      br_dly <= `BUF_BITS'd0;
++    end else begin
+       br <= nxt_br;
++      br_dly <= br;
++    end
+ 
+   always @ (*)
+     casex ({vld_nak, bpkt_gt})
+         2'b1x:   nxt_br = seq_to_reg;  // nack'd frame
+-        2'b01:   nxt_br = br + 1;      // next in sequence
++        2'b01:   nxt_br = br_dly + 1;   // next in sequence, delayed
+         default: nxt_br = br;          // no change!
+     endcase
+   //---------------------------------------------------------------
+@@ -201,7 +206,7 @@ module spio_hss_multiplexer_pkt_store
+         3'b1xx,                        // nacks ack implicitly
+         3'bx10:  nxt_ba = seq_to_reg;  // valid ack
+ 
+-        3'bx11:  nxt_ba = br;          // no pending acks
++        3'bx11:  nxt_ba = br_dly;      // no pending acks
+ 
+         default: nxt_ba = ba;          // no change!
+     endcase

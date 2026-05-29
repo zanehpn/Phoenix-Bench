@@ -1,0 +1,59 @@
+diff --git a/src/dv/hvl_top/env/virtual_sequencer/pulpino_spi_master_subsystem_virtual_sequencer.sv b/src/dv/hvl_top/env/virtual_sequencer/pulpino_spi_master_subsystem_virtual_sequencer.sv
+index 27b18e3..ab8ab72 100644
+--- a/src/dv/hvl_top/env/virtual_sequencer/pulpino_spi_master_subsystem_virtual_sequencer.sv
++++ b/src/dv/hvl_top/env/virtual_sequencer/pulpino_spi_master_subsystem_virtual_sequencer.sv
+@@ -1,3 +1,54 @@
++`ifndef PULPINO_SPI_MASTER_SUBSYSTEM_ENV_INCLUDED_
++`define PULPINO_SPI_MASTER_SUBSYSTEM_ENV_INCLUDED_
++
++//--------------------------------------------------------------------------------------------
++// Class: pulpino_spi_master_subsystem_env
++// UVM environment that holds the master/slave agents, virtual sequencer and scoreboard.
++//--------------------------------------------------------------------------------------------
++class pulpino_spi_master_subsystem_env extends uvm_env;
++  `uvm_component_utils(pulpino_spi_master_subsystem_env)
++
++  // Agent handles
++  axi4_master_agent axi4_master_agent_h;
++  spi_slave_agent   spi_slave_agent_h;
++
++  // Virtual sequencer handle
++  pulpino_spi_master_subsystem_virtual_sequencer virtual_sequencer_h;
++
++  // Scoreboard handle
++  pulpino_spi_master_subsystem_scoreboard scoreboard_h;
++
++  // Configuration
++  pulpino_spi_master_subsystem_env_config env_config_h;
++
++  extern function new(string name = "pulpino_spi_master_subsystem_env", uvm_component parent = null);
++  extern virtual function void build_phase(uvm_phase phase);
++  extern virtual function void connect_phase(uvm_phase phase);
++endclass : pulpino_spi_master_subsystem_env
++
++function pulpino_spi_master_subsystem_env::new(string name = "pulpino_spi_master_subsystem_env", uvm_component parent = null);
++  super.new(name, parent);
++endfunction
++
++function void pulpino_spi_master_subsystem_env::build_phase(uvm_phase phase);
++  super.build_phase(phase);
++  if (!uvm_config_db#(pulpino_spi_master_subsystem_env_config)::get(this, "", "env_config_h", env_config_h)) begin
++    env_config_h = pulpino_spi_master_subsystem_env_config::type_id::create("env_config_h", this);
++  end
++  axi4_master_agent_h = axi4_master_agent::type_id::create("axi4_master_agent_h", this);
++  spi_slave_agent_h   = spi_slave_agent::type_id::create("spi_slave_agent_h", this);
++  virtual_sequencer_h = pulpino_spi_master_subsystem_virtual_sequencer::type_id::create("virtual_sequencer_h", this);
++  scoreboard_h        = pulpino_spi_master_subsystem_scoreboard::type_id::create("scoreboard_h", this);
++endfunction
++
++function void pulpino_spi_master_subsystem_env::connect_phase(uvm_phase phase);
++  super.connect_phase(phase);
++  if (virtual_sequencer_h != null) begin
++    virtual_sequencer_h.env_config_h = env_config_h;
++  end
++endfunction
++
++`endif
+ `ifndef PULPINO_SPI_MASTER_SUBSYSTEM_VIRTUAL_SEQUENCER_INCLUDED_
+ `define PULPINO_SPI_MASTER_SUBSYSTEM_VIRTUAL_SEQUENCER_INCLUDED_
+ 

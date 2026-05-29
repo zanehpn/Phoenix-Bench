@@ -1,0 +1,31 @@
+diff --git a/src/hdmi.sv b/src/hdmi.sv
+index 373c33c..4ad6360 100644
+--- a/src/hdmi.sv
++++ b/src/hdmi.sv
+@@ -245,6 +245,8 @@ generate
+     begin: true_hdmi_output
+         logic video_guard = 1;
+         logic video_preamble = 0;
++        logic video_field_end;
++        assign video_field_end = cx == screen_width - 1'b1 && cy == screen_height - 1'b1;
+         always_ff @(posedge clk_pixel)
+         begin
+             if (reset)
+@@ -255,7 +257,7 @@ generate
+             else
+             begin
+                 video_guard <= cx >= frame_width - 2 && cx < frame_width && (cy == frame_height - 1 || cy < screen_height);
+-                video_preamble <= cx >= frame_width - 10 && cx < frame_width - 2 && (cy == frame_height - 1 || cy < screen_height);
++                video_preamble <= cx >= frame_width - 10 && cx < frame_width - 2 && (cy == frame_height - 1 || cy < screen_height) && !video_field_end;
+             end
+         end
+ 
+@@ -298,8 +300,6 @@ generate
+         // See Section 5.2.3.4
+         logic [23:0] header;
+         logic [55:0] sub [3:0];
+-        logic video_field_end;
+-        assign video_field_end = cx == screen_width - 1'b1 && cy == screen_height - 1'b1;
+         logic [4:0] packet_pixel_counter;
+         packet_picker #(
+             .VIDEO_ID_CODE(VIDEO_ID_CODE),

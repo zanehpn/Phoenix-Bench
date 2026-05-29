@@ -1,0 +1,37 @@
+{
+  "instance_id": "pulp-platform_axi_pr89",
+  "bug_locs": [
+    [
+      {
+        "rel_file_path": "src/axi_lite_to_apb.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_axi_pr89/src/axi_lite_to_apb.sv",
+        "start": 2,
+        "end": 29,
+        "class_name": null,
+        "method_name": null,
+        "code": "2 // Copyright and related rights are licensed under the Solderpad Hardware\n3 // License, Version 0.51 (the \"License\"); you may not use this file except in\n4 // compliance with the License.  You may obtain a copy of the License at\n5 // http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law\n6 // or agreed to in writing, software, hardware and materials distributed under\n7 // this License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR\n8 // CONDITIONS OF ANY KIND, either express or implied. See the License for the\n9 // specific language governing permissions and limitations under the License.\n10 \n11 // Author: Wolfgang Roenninger <wroennin@ethz.ch>\n12 \n13 // Description: AXI4-Lite to APB4 bridge\n14 //\n15 // This module has one AXI4-Lite slave port and is capable of generating\n16 // APB4 requests for multiple APB4 slave modules. The address and data widths\n17 // of AXI4-Lite and APB4 have to be the same for both ports and are enforced over assertions.\n18 // The selection of the APB4 slave is handled by the `addr_decode` module from `common_cells`.\n19 // This module will answer with a `axi_pkg::RESP_DECERR` when a AXI4-Lite AW or AR request\n20 // is not in the address map of the module and `no` APB4 request is made.\n21 //\n22 // The type of the APB4 request is required to look like:\n23 //   typedef struct packed {\n24 //     addr_t paddr;   // same as AXI4-Lite\n25 //     prot_t pprot;   // same as AXI4-Lite, specification is the same\n26 //     logic  psel;    // each APB4 slave has its own single-bit psel\n27 //     logic  penable; // enable signal shows second APB4 cycle\n28 //     logic  pwrite;  // write enable\n29 //     data_t pwdata;  // write data, comes from W channel\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "src/axi_lite_to_apb.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_axi_pr89/src/axi_lite_to_apb.sv",
+        "start": 299,
+        "end": 332,
+        "class_name": null,
+        "method_name": null,
+        "code": "299           apb_state_d = Setup;\n300           apb_update  = 1'b1;\n301         end\n302       end\n303       default: /* do nothing */ ;\n304     endcase\n305   end\n306 \n307   `FFLARN(apb_state_q, apb_state_d, apb_update, Setup, clk_i, rst_ni)\n308 \n309   // parameter check\n310   // pragma translate_off\n311   `ifndef VERILATOR\n312   initial begin : check_params\n313     addr_width:  assert ($bits(axi_lite_req_i.aw.addr ) == $bits(apb_req_o[0].paddr)) else\n314       $fatal(1, $sformatf(\"AXI4-Lite and APB address width not equal\"));\n315     wdata_width: assert ($bits(axi_lite_req_i.w.data ) == $bits(apb_req_o[0].pwdata)) else\n316       $fatal(1, $sformatf(\"AXI4-Lite and APB write data width not equal\"));\n317     strb_width:  assert ($bits(axi_lite_req_i.w.strb ) == $bits(apb_req_o[0].pstrb)) else\n318       $fatal(1, $sformatf(\"AXI4-Lite and APB address width not equal\"));\n319     rdata_width: assert ($bits(axi_lite_resp_o.r.data ) == $bits(apb_resp_i[0].prdata)) else\n320       $fatal(1, $sformatf(\"AXI4-Lite and APB read data width not equal\"));\n321     sel_width:   assert ($bits(apb_req_o[0].psel) == 32'd1) else\n322       $fatal(1, $sformatf(\"APB psel signal has to have a width of 1'b1\"));\n323   end\n324   `endif\n325   // pragma translate_on\n326 endmodule\n327 \n328 `include \"axi/typedef.svh\"\n329 `include \"axi/assign.svh\"\n330 \n331 module axi_lite_to_apb_intf #(\n332   parameter int unsigned NoApbSlaves = 32'd1,  // Number of connected APB slaves\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "src/axi_lite_to_apb.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_axi_pr89/src/axi_lite_to_apb.sv",
+        "start": 321,
+        "end": 342,
+        "class_name": null,
+        "method_name": null,
+        "code": "321     sel_width:   assert ($bits(apb_req_o[0].psel) == 32'd1) else\n322       $fatal(1, $sformatf(\"APB psel signal has to have a width of 1'b1\"));\n323   end\n324   `endif\n325   // pragma translate_on\n326 endmodule\n327 \n328 `include \"axi/typedef.svh\"\n329 `include \"axi/assign.svh\"\n330 \n331 module axi_lite_to_apb_intf #(\n332   parameter int unsigned NoApbSlaves = 32'd1,  // Number of connected APB slaves\n333   parameter int unsigned NoRules     = 32'd1,  // Number of APB address rules\n334   parameter int unsigned AddrWidth   = 32'd32, // Address width\n335   parameter int unsigned DataWidth   = 32'd32, // Data width\n336   parameter type         rule_t      = logic,  // Address Decoder rule from `common_cells`\n337   // DEPENDENT PARAMERETS, DO NOT OVERWRITE!\n338   parameter type              addr_t = logic [AddrWidth-1:0],\n339   parameter type              data_t = logic [DataWidth-1:0],\n340   parameter type              strb_t = logic [DataWidth/8-1:0],\n341   parameter type              sel_t  = logic [NoApbSlaves-1:0]\n342 ) (\n",
+        "intended_behavior": ""
+      }
+    ]
+  ]
+}

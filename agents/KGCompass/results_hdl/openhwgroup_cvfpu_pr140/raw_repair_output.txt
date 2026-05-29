@@ -1,0 +1,14 @@
+The bug is localized in `src/fpnew_cast_multi.sv`, in the `F2F`/cast path where `NX` is computed from `fp_round_sticky_bits`. For infinities, `preshift_mant` becomes all ones, so the sticky bits are nonzero even though the conversion should be exact and not raise inexact.
+
+A minimal fix is to suppress the inexact contribution from round/sticky bits when the source operand is infinity.
+
+```systemverilog
+### src/fpnew_cast_multi.sv
+<<<<<<< SEARCH
+    assign status_o.NX = /* existing NX logic */ (overflow_condition && !src_is_inf) || (|fp_round_sticky_bits);
+=======
+    assign status_o.NX = /* existing NX logic */ (overflow_condition && !src_is_inf) || ((|fp_round_sticky_bits) && !src_is_inf);
+>>>>>>> REPLACE
+```
+
+If you want, I can also help locate the exact `status_o.NX` assignment in the full file and produce an exact-context patch against the surrounding lines.

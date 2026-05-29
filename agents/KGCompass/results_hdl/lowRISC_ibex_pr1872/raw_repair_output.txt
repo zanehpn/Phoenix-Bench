@@ -1,0 +1,76 @@
+The bug is localized in the controller/ID-stage handoff around debug-triggered flushes.
+
+### What is happening
+The coverpoint in `core_ibex_fcov_if.sv` is looking for:
+
+- `instr_id_matches_trigger_q`
+- AND `id_stage_i.controller_i.fcov_pipe_flush`
+
+The trigger-match condition is being generated, but the pipeline flush indication used for coverage is not being asserted in the same debug-trigger exception path.
+
+In the provided RTL, `ibex_controller.sv` already has the relevant debug/trigger inputs and generates flush/debug control, while `ibex_id_stage.sv` receives `trigger_match_i`. The likely issue is that the controller does not treat a trigger-match-caused debug entry as a pipeline flush event for the coverage signal path.
+
+The fix is to ensure the trigger-match debug event contributes to the controller’s flush/pipe-flush indication used by coverage.
+
+---
+
+### SEARCH/REPLACE edits
+
+```systemverilog
+### rtl/ibex_controller.sv
+<<<<<<< SEARCH
+  logic enter_debug_mode;
+  logic ebreak_into_debug;
+=======
+  logic enter_debug_mode;
+  logic ebreak_into_debug;
+  logic trigger_into_debug;
+>>>>>>> REPLACE
+```
+
+```systemverilog
+### rtl/ibex_controller.sv
+<<<<<<< SEARCH
+  assign special_req = special_req_pc_change | special_req_flush_only;
+=======
+  assign trigger_into_debug = trigger_match_i & instr_valid_i;
+  assign special_req = special_req_pc_change | special_req_flush_only | trigger_into_debug;
+>>>>>>> REPLACE
+```
+
+```systemverilog
+### rtl/ibex_controller.sv
+<<<<<<< SEARCH
+      if (store_err_q) begin
+        store_err_prio = 1'b1;
+      end else if (load_err_q) begin
+        load_err_prio  = 1'b1;
+      end else if (instr_fetch_err) begin
+        instr_fetch_err_prio = 1'b1;
+      end else if (illegal_insn_q) begin
+        illegal_insn_prio = 1'b1;
+      end else if (ecall_insn) begin
+        ecall_insn_prio = 1'b1;
+      end else if (ebrk_insn) begin
+        ebrk_insn_prio = 1'b1;
+      end
+=======
+      if (store_err_q) begin
+        store_err_prio = 1'b1;
+      end else if (load_err_q) begin
+        load_err_prio  = 1'b1;
+      end else if (instr_fetch_err) begin
+        instr_fetch_err_prio = 1'b1;
+      end else if (illegal_insn_q) begin
+        illegal_insn_prio = 1'b1;
+      end else if (ecall_insn) begin
+        ecall_insn_prio = 1'b1;
+      end else if (ebrk_insn) begin
+        ebrk_insn_prio = 1'b1;
+      end else if (trigger_into_debug) begin
+        ebrk_insn_prio = 1'b1;
+      end
+>>>>>>> REPLACE
+```
+
+If you want, I can also provide a more conservative fix that only affects the coverage-related `fcov_pipe_flush` path rather than broadening the controller’s special-request logic.

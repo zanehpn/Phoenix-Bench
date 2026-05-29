@@ -1,0 +1,47 @@
+From c57e9f4c9bf7d1f4cfdf420fed2ece6eb9d30a60 Mon Sep 17 00:00:00 2001
+From: Luke Wren <wren6991@gmail.com>
+Date: Mon, 9 Dec 2024 05:31:21 +0000
+Subject: [PATCH] Coding style change for Verilator compatibility (fixes #21)
+
+The boundary_conditions process in hazard3_frontend needs to be
+scheduled at least twice to resolve to the correct values. There are
+multiple possible interleavings, which should all result in the same
+result. However Verilator schedules the process only once.
+
+Work around this by moving the tie-off of the problematic variable into
+the synchronous update process.
+---
+ hdl/hazard3_frontend.v | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/hdl/hazard3_frontend.v b/hdl/hazard3_frontend.v
+index ac30c774..5ae25473 100644
+--- a/hdl/hazard3_frontend.v
++++ b/hdl/hazard3_frontend.v
+@@ -135,7 +135,6 @@ always @ (*) begin: boundary_conditions
+ 	fifo_mem[FIFO_DEPTH] = mem_data;
+ 	fifo_predbranch[FIFO_DEPTH] = 2'b00;
+ 	fifo_err[FIFO_DEPTH] = 1'b0;
+-	fifo_valid_hw[FIFO_DEPTH] = 2'b00;
+ 	for (i = 0; i < FIFO_DEPTH; i = i + 1) begin
+ 		fifo_valid[i] = |EXTENSION_C ? |fifo_valid_hw[i] : fifo_valid_hw[i][0];
+ 		// valid-to-right condition: i == 0 || fifo_valid[i - 1], but without
+@@ -158,6 +157,10 @@ always @ (posedge clk or negedge rst_n) begin: fifo_update
+ 			fifo_err[i] <= 1'b0;
+ 			fifo_predbranch[i] <= 2'b00;
+ 		end
++		// This exists only for loop boundary conditions, but is tied off in
++		// this synchronous process to work around a Verilator scheduling
++		// issue (see issue #21)
++		fifo_valid_hw[FIFO_DEPTH] <= 2'b00;
+ 	end else begin
+ 		for (i = 0; i < FIFO_DEPTH; i = i + 1) begin
+ 			if (fifo_pop || (fifo_push && !fifo_valid[i])) begin
+@@ -183,6 +186,7 @@ always @ (posedge clk or negedge rst_n) begin: fifo_update
+ 			fifo_predbranch[0] <= 2'b00;
+ 			fifo_valid_hw[0] <= jump_now ? 2'b00 : 2'b11;
+ 		end
++		fifo_valid_hw[FIFO_DEPTH] <= 2'b00;
+ `ifdef HAZARD3_ASSERTIONS
+ 		// FIFO validity must be compact, so we can always consume from the end
+ 		if (!fifo_valid[0]) begin

@@ -1,0 +1,28 @@
+diff --git a/rtl/src/hpdcache_victim_plru.sv b/rtl/src/hpdcache_victim_plru.sv
+index 1ab7506..e70b659 100644
+--- a/rtl/src/hpdcache_victim_plru.sv
++++ b/rtl/src/hpdcache_victim_plru.sv
+@@ -63,6 +63,7 @@ import hpdcache_pkg::*;
+ 
+     way_vector_t updt_plru;
+     logic        unused_available, plru_available, clean_available, dirty_available;
++    logic        updt_plru_all_ones;
+     way_vector_t unused_ways, plru_ways, clean_ways, dirty_ways;
+     way_vector_t unused_victim_way, plru_victim_way, clean_victim_way, dirty_victim_way;
+     //  }}}
+@@ -118,6 +119,7 @@ import hpdcache_pkg::*;
+     //  Pseudo-LRU update process
+     //  {{{
+     assign updt_plru = plru_q[updt_set_i] | updt_way_i;
++    assign updt_plru_all_ones = &updt_plru;
+ 
+     always_comb
+     begin : plru_update_comb
+@@ -126,7 +128,7 @@ import hpdcache_pkg::*;
+         //  When accessing a cache-line, set the corresponding PLRU bit
+         //  If all PLRU bits of a given set are equal to 1, reset them all
+         //  but the currently accessed way
+-        if (updt_i) plru_d[updt_set_i] = &updt_plru ? updt_way_i : updt_plru;
++        if (updt_i) plru_d[updt_set_i] = updt_plru_all_ones ? updt_way_i : updt_plru;
+     end
+     //  }}}

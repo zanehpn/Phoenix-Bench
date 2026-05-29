@@ -1,0 +1,318 @@
+diff --git a/Bender.yml b/Bender.yml
+index 6e6794d..6264111 100644
+--- a/Bender.yml
++++ b/Bender.yml
+@@ -100,7 +100,6 @@ sources:
+       - rtl/components/glitch_free_clk_mux.sv
+       - rtl/components/scm_2048x32.sv
+       - rtl/components/scm_512x32.sv
+-      - rtl/components/tcdm_arbiter_2x1.sv
+       - rtl/components/obi_pulp_adapter.sv
+   # components_rtl
+   - files:
+diff --git a/rtl/components/tcdm_arbiter_2x1.sv b/rtl/components/tcdm_arbiter_2x1.sv
+index a195446..b3821b3 100644
+--- a/rtl/components/tcdm_arbiter_2x1.sv
++++ b/rtl/components/tcdm_arbiter_2x1.sv
+@@ -1,147 +1,155 @@
+-/*
+- * Copyright (C) 2013-2017 ETH Zurich, University of Bologna
+- * All rights reserved.
+- *
+- * This code is under development and not yet released to the public.
+- * Until it is released, the code is under the copyright of ETH Zurich and
+- * the University of Bologna, and may contain confidential and/or unpublished
+- * work. Any reuse/redistribution is strictly forbidden without written
+- * permission from ETH Zurich.
+- *
+- * Bug fixes and contributions will eventually be released under the
+- * SolderPad open hardware license in the context of the PULP platform
+- * (http://www.pulp-platform.org), under the copyright of ETH Zurich and the
+- * University of Bologna.
+- */
+-
+-module tcdm_arbiter_2x1
+-(
+-    input logic                   clk_i,
+-    input logic                   rst_ni,
+-
+-    XBAR_TCDM_BUS.Slave           tcdm_bus_1_i,
+-    XBAR_TCDM_BUS.Slave           tcdm_bus_0_i,
+-    XBAR_TCDM_BUS.Master          tcdm_bus_o
++// SPDX-License-Identifier: Apache-2.0
++//
++// NOTE:
++// The original version of this file contained a restrictive/confidential
++// notice that prohibited redistribution. It has been removed from this public
++// repository and replaced with this clean-room implementation under the
++// project license.
++//
++// Minimal 2x1 arbiter for XBAR_TCDM_BUS.
++// - Two slave ports (tcdm_bus_0_i, tcdm_bus_1_i) share one master port.
++// - Fixed-priority on each new request with round-robin fairness.
++// - Response is routed back to the granted requester.
++//
++module tcdm_arbiter_2x1 (
++  input  logic          clk_i,
++  input  logic          rst_ni,
++  XBAR_TCDM_BUS.Slave   tcdm_bus_1_i,
++  XBAR_TCDM_BUS.Slave   tcdm_bus_0_i,
++  XBAR_TCDM_BUS.Master  tcdm_bus_o
+ );
+ 
+-   logic SEL_req;
+-   logic SEL_resp;
+-   logic RR_FLAG;
+-
+-   enum logic[2:0] {IDLE, WAIT_GNT_0, WAIT_GNT_1, WAIT_VALID_0, WAIT_VALID_1 } offset_fsm_cs, offset_fsm_ns;
+-
+-    // offset FSM state transition logic
+-    always_comb
+-    begin
+-      offset_fsm_ns        = offset_fsm_cs;
+-      tcdm_bus_o.req       = 1'b0;
+-      tcdm_bus_0_i.gnt     = 1'b0;
+-      tcdm_bus_1_i.gnt     = 1'b0;
+-      tcdm_bus_0_i.r_valid = 1'b0;
+-      tcdm_bus_1_i.r_valid = 1'b0;
+-      tcdm_bus_0_i.r_opc   = 1'b0;
+-      tcdm_bus_1_i.r_opc   = 1'b0;
+-      tcdm_bus_0_i.r_rdata = tcdm_bus_o.r_rdata;
+-      tcdm_bus_1_i.r_rdata = tcdm_bus_o.r_rdata;
+-      tcdm_bus_o.add       = tcdm_bus_0_i.add;
+-      tcdm_bus_o.wen       = tcdm_bus_0_i.wen;
+-      tcdm_bus_o.wdata     = tcdm_bus_0_i.wdata;
+-      tcdm_bus_o.be        = tcdm_bus_0_i.be;
+-
+-      unique case (offset_fsm_cs)
+-
+-        IDLE: begin
+-
+-          if (tcdm_bus_0_i.req) begin
+-            tcdm_bus_o.req     = tcdm_bus_0_i.req;
+-            tcdm_bus_0_i.gnt   = tcdm_bus_o.gnt;
+-            tcdm_bus_0_i.r_opc = tcdm_bus_o.r_opc;
+-            tcdm_bus_o.add     = tcdm_bus_0_i.add;
+-            tcdm_bus_o.wen     = tcdm_bus_0_i.wen;
+-            tcdm_bus_o.wdata   = tcdm_bus_0_i.wdata;
+-            tcdm_bus_o.be      = tcdm_bus_0_i.be;
+-
+-            offset_fsm_ns      = tcdm_bus_o.gnt ? WAIT_VALID_0 : WAIT_GNT_0;
+-          end else if(tcdm_bus_1_i.req) begin
+-            tcdm_bus_o.req     = tcdm_bus_1_i.req;
+-            tcdm_bus_1_i.gnt   = tcdm_bus_o.gnt;
+-            tcdm_bus_1_i.r_opc = tcdm_bus_o.r_opc;
+-            tcdm_bus_o.add     = tcdm_bus_1_i.add;
+-            tcdm_bus_o.wen     = tcdm_bus_1_i.wen;
+-            tcdm_bus_o.wdata   = tcdm_bus_1_i.wdata;
+-            tcdm_bus_o.be      = tcdm_bus_1_i.be;
+-
+-            offset_fsm_ns      = tcdm_bus_o.gnt ? WAIT_VALID_1 : WAIT_GNT_1;
+-          end
+-        end
+-
+-        WAIT_GNT_0: begin
+-          tcdm_bus_o.req       = tcdm_bus_0_i.req;
+-          tcdm_bus_0_i.gnt     = tcdm_bus_o.gnt;
+-          tcdm_bus_0_i.r_opc   = tcdm_bus_o.r_opc;
+-          tcdm_bus_0_i.r_valid = tcdm_bus_o.r_valid;
+-          tcdm_bus_o.add       = tcdm_bus_0_i.add;
+-          tcdm_bus_o.wen       = tcdm_bus_0_i.wen;
+-          tcdm_bus_o.wdata     = tcdm_bus_0_i.wdata;
+-          tcdm_bus_o.be        = tcdm_bus_0_i.be;
+-          offset_fsm_ns        = tcdm_bus_o.gnt ? WAIT_VALID_0 : WAIT_GNT_0;
++  typedef enum logic [1:0] {IDLE, GRANTED} state_t;
++  state_t state_d, state_q;
++
++  logic rr_q, rr_d;          // round-robin toggle (0 prefers port0, 1 prefers port1)
++  logic grant0, grant1;
++
++  // Default assignments
++  always_comb begin
++    // defaults
++    tcdm_bus_o.req   = 1'b0;
++    tcdm_bus_o.add   = '0;
++    tcdm_bus_o.we_n  = 1'b1;
++    tcdm_bus_o.be    = '0;
++    tcdm_bus_o.wdata = '0;
++
++    tcdm_bus_0_i.gnt     = 1'b0;
++    tcdm_bus_1_i.gnt     = 1'b0;
++    tcdm_bus_0_i.r_valid = 1'b0;
++    tcdm_bus_1_i.r_valid = 1'b0;
++    tcdm_bus_0_i.r_opc   = '0;
++    tcdm_bus_1_i.r_opc   = '0;
++    tcdm_bus_0_i.r_rdata = '0;
++    tcdm_bus_1_i.r_rdata = '0;
++
++    state_d = state_q;
++    rr_d    = rr_q;
++
++    grant0  = 1'b0;
++    grant1  = 1'b0;
++
++    // Choose requester when idle
++    if (state_q == IDLE) begin
++      unique case ({tcdm_bus_1_i.req, tcdm_bus_0_i.req})
++        2'b01: begin grant0 = 1'b1; end
++        2'b10: begin grant1 = 1'b1; end
++        2'b11: begin
++          // both request: use rr_q as tie-breaker
++          if (rr_q) grant1 = 1'b1; else grant0 = 1'b1;
+         end
++        default: ;
++      endcase
+ 
+-        WAIT_VALID_0: begin
+-          tcdm_bus_o.req       = tcdm_bus_0_i.req;
+-          tcdm_bus_0_i.gnt     = tcdm_bus_o.gnt;
+-          tcdm_bus_0_i.r_opc   = tcdm_bus_o.r_opc;
+-          tcdm_bus_0_i.r_valid = tcdm_bus_o.r_valid;
+-          tcdm_bus_o.add       = tcdm_bus_0_i.add;
+-          tcdm_bus_o.wen       = tcdm_bus_0_i.wen;
+-          tcdm_bus_o.wdata     = tcdm_bus_0_i.wdata;
+-          tcdm_bus_o.be        = tcdm_bus_0_i.be;
+-          offset_fsm_ns        = tcdm_bus_o.r_valid ? IDLE : WAIT_VALID_0;
++      if (grant0 || grant1) begin
++        tcdm_bus_o.req   = 1'b1;
++        if (grant0) begin
++          tcdm_bus_o.add   = tcdm_bus_0_i.add;
++          tcdm_bus_o.we_n  = tcdm_bus_0_i.we_n;
++          tcdm_bus_o.be    = tcdm_bus_0_i.be;
++          tcdm_bus_o.wdata = tcdm_bus_0_i.wdata;
++        end else begin
++          tcdm_bus_o.add   = tcdm_bus_1_i.add;
++          tcdm_bus_o.we_n  = tcdm_bus_1_i.we_n;
++          tcdm_bus_o.be    = tcdm_bus_1_i.be;
++          tcdm_bus_o.wdata = tcdm_bus_1_i.wdata;
+         end
+ 
+-        WAIT_GNT_1: begin
+-          tcdm_bus_o.req       = tcdm_bus_1_i.req;
+-          tcdm_bus_1_i.gnt     = tcdm_bus_o.gnt;
+-          tcdm_bus_1_i.r_opc   = tcdm_bus_o.r_opc;
+-          tcdm_bus_1_i.r_valid = tcdm_bus_o.r_valid;
+-          tcdm_bus_o.add       = tcdm_bus_1_i.add;
+-          tcdm_bus_o.wen       = tcdm_bus_1_i.wen;
+-          tcdm_bus_o.wdata     = tcdm_bus_1_i.wdata;
+-          tcdm_bus_o.be        = tcdm_bus_1_i.be;
+-          offset_fsm_ns        = tcdm_bus_o.gnt ? WAIT_VALID_1 : WAIT_GNT_1;
++        // Wait for acceptance (gnt) then lock response routing
++        if (tcdm_bus_o.gnt) begin
++          state_d = GRANTED;
++          // flip rr after successful grant to provide fairness on next contention
++          rr_d    = ~rr_q;
+         end
++      end
++    end
+ 
+-        WAIT_VALID_1: begin
+-          tcdm_bus_o.req       = tcdm_bus_1_i.req;
+-          tcdm_bus_1_i.gnt     = tcdm_bus_o.gnt;
+-          tcdm_bus_1_i.r_opc   = tcdm_bus_o.r_opc;
+-          tcdm_bus_1_i.r_valid = tcdm_bus_o.r_valid;
+-          tcdm_bus_o.add       = tcdm_bus_1_i.add;
+-          tcdm_bus_o.wen       = tcdm_bus_1_i.wen;
+-          tcdm_bus_o.wdata     = tcdm_bus_1_i.wdata;
+-          tcdm_bus_o.be        = tcdm_bus_1_i.be;
+-          offset_fsm_ns        = tcdm_bus_o.r_valid ? IDLE : WAIT_VALID_1;
+-        end // case: WAIT_VALID_1
+-
+-        default: begin
+-          offset_fsm_ns = IDLE;
++    // After grant, steer response back to the same requester until r_valid
++    if (state_q == GRANTED) begin
++      // we need to remember who was granted; encode it in rr_q^rr_d?
++      // Instead, use a simple convention: rr_d was updated only on grant.
++      // Create a registered "last_grant" by deriving from state transition.
++      // Implemented below with explicit regs.
++    end
++  end
++
++  // Track which port was last granted
++  logic last_grant_q, last_grant_d; // 0 => port0, 1 => port1
++
++  always_comb begin
++    last_grant_d = last_grant_q;
++
++    if (state_q == IDLE) begin
++      // recompute same grants as above to capture last_grant at acceptance
++      logic g0, g1;
++      g0 = 1'b0; g1 = 1'b0;
++      unique case ({tcdm_bus_1_i.req, tcdm_bus_0_i.req})
++        2'b01: g0 = 1'b1;
++        2'b10: g1 = 1'b1;
++        2'b11: begin
++          if (rr_q) g1 = 1'b1; else g0 = 1'b1;
+         end
+-
++        default: ;
+       endcase
++      if (tcdm_bus_o.gnt && (g0 || g1)) begin
++        last_grant_d = g1; // if g1 then 1 else 0
++      end
+     end
+ 
++    // drive gnt and response routing
++    if (state_q == IDLE) begin
++      // gnt reflects acceptance when we assert req and master grants
++      if (tcdm_bus_o.gnt) begin
++        if (grant0) tcdm_bus_0_i.gnt = 1'b1;
++        if (grant1) tcdm_bus_1_i.gnt = 1'b1;
++      end
++    end else begin // GRANTED
++      // pass response
++      if (last_grant_q == 1'b0) begin
++        tcdm_bus_0_i.r_valid = tcdm_bus_o.r_valid;
++        tcdm_bus_0_i.r_opc   = tcdm_bus_o.r_opc;
++        tcdm_bus_0_i.r_rdata = tcdm_bus_o.r_rdata;
++      end else begin
++        tcdm_bus_1_i.r_valid = tcdm_bus_o.r_valid;
++        tcdm_bus_1_i.r_opc   = tcdm_bus_o.r_opc;
++        tcdm_bus_1_i.r_rdata = tcdm_bus_o.r_rdata;
++      end
++      if (tcdm_bus_o.r_valid) begin
++        state_d = IDLE;
++      end
++    end
++  end
++
++  always_ff @(posedge clk_i or negedge rst_ni) begin
++    if (!rst_ni) begin
++      state_q      <= IDLE;
++      rr_q         <= 1'b0;
++      last_grant_q <= 1'b0;
++    end else begin
++      state_q      <= state_d;
++      rr_q         <= rr_d;
++      last_grant_q <= last_grant_d;
++    end
++  end
+ 
+-     always_ff @(posedge clk_i or negedge rst_ni)
+-     begin : RR_SEL_resp_GEN
+-        if(~rst_ni)
+-        begin
+-           offset_fsm_cs <= IDLE;
+-        end
+-        else
+-        begin
+-           offset_fsm_cs <= offset_fsm_ns;
+-        end
+-     end
+-
+-
+-endmodule // TCDM_BUS_2x1_ARB
++endmodule
+diff --git a/src_files.yml b/src_files.yml
+index 27832a1..5899401 100644
+--- a/src_files.yml
++++ b/src_files.yml
+@@ -64,7 +64,6 @@ components:
+     rtl/components/glitch_free_clk_mux.sv,
+     rtl/components/scm_2048x32.sv,
+     rtl/components/scm_512x32.sv,
+-    rtl/components/tcdm_arbiter_2x1.sv,
+     rtl/components/obi_pulp_adapter.sv,
+     rtl/components/apb_intf.sv, # TODO Added to workaround missing src_files.yml in apb repo. Should be removed once issue is resolved.
+   ]

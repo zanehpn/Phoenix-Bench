@@ -1,0 +1,612 @@
+From adb1bf9eae2bf8f81f800e3ffeeabcb1f4b23620 Mon Sep 17 00:00:00 2001
+From: Noah Moroze <noah@zeroasic.com>
+Date: Thu, 5 Aug 2021 15:48:45 -0400
+Subject: [PATCH 1/5] Fix whitespace in oh_padring
+
+- Convert tabs to spaces
+- Trim trailing whitespace
+---
+ padring/hdl/oh_padring.v | 238 +++++++++++++++++++--------------------
+ 1 file changed, 118 insertions(+), 120 deletions(-)
+
+diff --git a/padring/hdl/oh_padring.v b/padring/hdl/oh_padring.v
+index b17deea4..30785c88 100644
+--- a/padring/hdl/oh_padring.v
++++ b/padring/hdl/oh_padring.v
+@@ -1,7 +1,7 @@
+ //#############################################################################
+ //# Function: Padring Generator                                               #
+ //# Copyright: OH Project Authors. ALl rights Reserved.                       #
+-//# License:  MIT (see LICENSE file in OH repository)                         # 
++//# License:  MIT (see LICENSE file in OH repository)                         #
+ //#############################################################################
+ 
+ module oh_padring
+@@ -29,12 +29,12 @@ module oh_padring
+     parameter WE_VDDIO   =  8,
+     parameter WE_VSSIO   =  8,
+     parameter WE_VDD     =  8,
+-    parameter WE_VSS     =  8 
++    parameter WE_VSS     =  8
+     )
+    (
+     //CONTINUOUS GROUND
+     inout 		   vss,
+-    
++
+     inout 		   vdd,
+     //NORTH
+     inout [NO_DOMAINS-1:0] no_vddio,
+@@ -43,8 +43,9 @@ module oh_padring
+     output [NO_GPIO-1:0]   no_din, // data from pad
+     input [NO_GPIO-1:0]  no_dout, // data to pad
+     input [NO_GPIO*8-1:0]  no_cfg, // config
++
+     input [NO_GPIO-1:0]    no_ie, // input enable
+-    input [NO_GPIO-1:0]    no_oen, // output enable (bar)    
++    input [NO_GPIO-1:0]    no_oen, // output enable (bar)
+     //SOUTH
+     inout [SO_DOMAINS-1:0] so_vddio,
+     inout [SO_DOMAINS-1:0] so_vssio,
+@@ -80,145 +81,142 @@ module oh_padring
+    wire [SO_DOMAINS-1:0]   so_poc;
+    wire [WE_DOMAINS-1:0]   we_poc;
+    wire [EA_DOMAINS-1:0]   ea_poc;
+-   
++
+    generate
+       genvar 		  i;
+-            
++
+       //#############################
+       // NORTH
+       //#############################
+ 
+       for(i=0;i<NO_DOMAINS;i=i+1)
+-	begin: no_pads
+-	   oh_pads_domain #(.DIR("NO"),
+-			    .TYPE(TYPE),
+-			    .NGPIO(NO_GPIO),
+-			    .NVDDIO(NO_VDDIO),
+-			    .NVSSIO(NO_VSSIO),
+-			    .NVDD(NO_VDD),
+-			    .NVSS(NO_VSS),
+-			    .POC(1),
+-			    .LEFTCUT(1),
+-			    .RIGHTCUT(1))			    
+-	   i0 (.vdd     (vdd),
+-	       .vss     (vss),
+-	       // Outputs
+-	       .din     (no_din[NO_GPIO-1:0]),
+-	       // Inouts
+-	       .pad     (no_pad[NO_GPIO-1:0]),
+-	       .vddio   (no_vddio[i]),
+-	       .vssio	(no_vssio[i]),
+-	       .poc	(no_poc[i]),
+-	       // Inputs
+-	       .dout	(no_dout[NO_GPIO-1:0]),
+-	       .oen	(no_oen[NO_GPIO-1:0]),
+-	       .ie	(no_ie[NO_GPIO-1:0]),
+-	       .cfg	(no_cfg[NO_GPIO*8-1:0]));	   
+-	end
+-      
++        begin: no_pads
++           oh_pads_domain #(.DIR("NO"),
++                            .TYPE(TYPE),
++                            .NGPIO(NO_GPIO),
++                            .NVDDIO(NO_VDDIO),
++                            .NVSSIO(NO_VSSIO),
++                            .NVDD(NO_VDD),
++                            .NVSS(NO_VSS),
++                            .POC(1),
++                            .LEFTCUT(1),
++                            .RIGHTCUT(1))
++           i0 (.vdd     (vdd),
++               .vss     (vss),
++               // Outputs
++               .din     (no_din[NO_GPIO-1:0]),
++               // Inouts
++               .pad     (no_pad[NO_GPIO-1:0]),
++               .vddio   (no_vddio[i]),
++               .vssio	(no_vssio[i]),
++               .poc	(no_poc[i]),
++               // Inputs
++               .dout	(no_dout[NO_GPIO-1:0]),
++               .oen	(no_oen[NO_GPIO-1:0]),
++               .ie	(no_ie[NO_GPIO-1:0]),
++               .cfg	(no_cfg[NO_GPIO*8-1:0]));
++        end
++
+       //#############################
+       // SOUTH
+       //#############################
+ 
+       for(i=0;i<SO_DOMAINS;i=i+1)
+-	begin: so_pads
+-	   oh_pads_domain #(.DIR("SO"),
+-			    .TYPE(TYPE),
+-			    .NGPIO(SO_GPIO),
+-			    .NVDDIO(SO_VDDIO),
+-			    .NVSSIO(SO_VSSIO),
+-			    .NVDD(SO_VDD),
+-			    .NVSS(SO_VSS),
+-			    .POC(1),
+-			    .LEFTCUT(1),
+-			    .RIGHTCUT(1))
+-	   i0 (.vdd     (vdd),
+-	       .vss     (vss),
+-	       // Outputs
+-	       .din     (so_din[SO_GPIO-1:0]),
+-	       // Inouts
+-	       .pad     (so_pad[SO_GPIO-1:0]),
+-	       .vddio   (so_vddio[i]),
+-	       .vssio	(so_vssio[i]),
+-	       .poc	(so_poc[i]),
+-	       // Inputs
+-	       .dout	(so_dout[SO_GPIO-1:0]),
+-	       .oen	(so_oen[SO_GPIO-1:0]),
+-	       .ie	(so_ie[SO_GPIO-1:0]),
+-	       .cfg	(so_cfg[SO_GPIO*8-1:0]));
+-	end
+-      
+-      
++        begin: so_pads
++           oh_pads_domain #(.DIR("SO"),
++                            .TYPE(TYPE),
++                            .NGPIO(SO_GPIO),
++                            .NVDDIO(SO_VDDIO),
++                            .NVSSIO(SO_VSSIO),
++                            .NVDD(SO_VDD),
++                            .NVSS(SO_VSS),
++                            .POC(1),
++                            .LEFTCUT(1),
++                            .RIGHTCUT(1))
++           i0 (.vdd     (vdd),
++               .vss     (vss),
++               // Outputs
++               .din     (so_din[SO_GPIO-1:0]),
++               // Inouts
++               .pad     (so_pad[SO_GPIO-1:0]),
++               .vddio   (so_vddio[i]),
++               .vssio	(so_vssio[i]),
++               .poc	(so_poc[i]),
++               // Inputs
++               .dout	(so_dout[SO_GPIO-1:0]),
++               .oen	(so_oen[SO_GPIO-1:0]),
++               .ie	(so_ie[SO_GPIO-1:0]),
++               .cfg	(so_cfg[SO_GPIO*8-1:0]));
++        end
++
++
+       //#############################
+       // EAST
+       //#############################
+ 
+       for(i=0;i<EA_DOMAINS;i=i+1)
+-	begin: ea_pads
+-	   oh_pads_domain #(.DIR("EO"),
+-			    .TYPE(TYPE),
+-			    .NGPIO(EA_GPIO),
+-			    .NVDDIO(EA_VDDIO),
+-			    .NVSSIO(EA_VSSIO),
+-			    .NVDD(EA_VDD),
+-			    .NVSS(EA_VSS),
+-			    .POC(1),
+-			    .LEFTCUT(1),
+-			    .RIGHTCUT(1))			    
+-	   i0 (.vdd     (vdd),
+-	       .vss     (vss),
+-	       // Outputs
+-	       .din     (ea_din[EA_GPIO-1:0]),
+-	       // Inouts
+-	       .pad     (ea_pad[EA_GPIO-1:0]),
+-	       .vddio   (ea_vddio[i]),
+-	       .vssio	(ea_vssio[i]),
+-	       .poc	(ea_poc[i]),
+-	       // Inputs
+-	       .dout	(ea_dout[EA_GPIO-1:0]),
+-	       .oen	(ea_oen[EA_GPIO-1:0]),
+-	       .ie	(ea_ie[EA_GPIO-1:0]),
+-	       .cfg	(ea_cfg[EA_GPIO*8-1:0]));
+-	   
+-	end
+-      
++        begin: ea_pads
++           oh_pads_domain #(.DIR("EO"),
++                            .TYPE(TYPE),
++                            .NGPIO(EA_GPIO),
++                            .NVDDIO(EA_VDDIO),
++                            .NVSSIO(EA_VSSIO),
++                            .NVDD(EA_VDD),
++                            .NVSS(EA_VSS),
++                            .POC(1),
++                            .LEFTCUT(1),
++                            .RIGHTCUT(1))
++           i0 (.vdd     (vdd),
++               .vss     (vss),
++               // Outputs
++               .din     (ea_din[EA_GPIO-1:0]),
++               // Inouts
++               .pad     (ea_pad[EA_GPIO-1:0]),
++               .vddio   (ea_vddio[i]),
++               .vssio	(ea_vssio[i]),
++               .poc	(ea_poc[i]),
++               // Inputs
++               .dout	(ea_dout[EA_GPIO-1:0]),
++               .oen	(ea_oen[EA_GPIO-1:0]),
++               .ie	(ea_ie[EA_GPIO-1:0]),
++               .cfg	(ea_cfg[EA_GPIO*8-1:0]));
++
++        end
++
+       //#############################
+       // WEST
+       //#############################
+ 
+       for(i=0;i<WE_DOMAINS;i=i+1)
+-	begin: we_pads
+-	   oh_pads_domain #(.DIR("WE"),
+-			    .TYPE(TYPE),
+-			    .NGPIO(WE_GPIO),
+-			    .NVDDIO(WE_VDDIO),
+-			    .NVSSIO(WE_VSSIO),
+-			    .NVDD(WE_VDD),
+-			    .NVSS(WE_VSS),
+-			    .POC(1),
+-			    .LEFTCUT(1),
+-			    .RIGHTCUT(1))			    
+-	 
+-	   i0 (.vdd     (vdd),
+-	       .vss     (vss),
+-	       // Outputs
+-	       .din     (we_din[WE_GPIO-1:0]),
+-	       // Inouts
+-	       .pad     (we_pad[WE_GPIO-1:0]),
+-	       .vddio   (we_vddio[i]),
+-	       .vssio	(we_vssio[i]),
+-	       .poc	(we_poc[i]),
+-	       // Inputs
+-	       .dout	(we_dout[WE_GPIO-1:0]),
+-	       .oen	(we_oen[WE_GPIO-1:0]),
+-	       .ie	(we_ie[WE_GPIO-1:0]),
+-	       .cfg	(we_cfg[WE_GPIO*8-1:0]));
+-	   
+-	end
+-      
+-   endgenerate
++        begin: we_pads
++           oh_pads_domain #(.DIR("WE"),
++                            .TYPE(TYPE),
++                            .NGPIO(WE_GPIO),
++                            .NVDDIO(WE_VDDIO),
++                            .NVSSIO(WE_VSSIO),
++                            .NVDD(WE_VDD),
++                            .NVSS(WE_VSS),
++                            .POC(1),
++                            .LEFTCUT(1),
++                            .RIGHTCUT(1))
+ 
+-endmodule // oh_padring
++           i0 (.vdd     (vdd),
++               .vss     (vss),
++               // Outputs
++               .din     (we_din[WE_GPIO-1:0]),
++               // Inouts
++               .pad     (we_pad[WE_GPIO-1:0]),
++               .vddio   (we_vddio[i]),
++               .vssio	(we_vssio[i]),
++               .poc	(we_poc[i]),
++               // Inputs
++               .dout	(we_dout[WE_GPIO-1:0]),
++               .oen	(we_oen[WE_GPIO-1:0]),
++               .ie	(we_ie[WE_GPIO-1:0]),
++               .cfg	(we_cfg[WE_GPIO*8-1:0]));
+ 
++        end
+ 
++   endgenerate
+ 
++endmodule // oh_padring
+
+From d8a28ac1538bbb7bbcdbe83a8a3ba7ecb6bbafe3 Mon Sep 17 00:00:00 2001
+From: Noah Moroze <noah@zeroasic.com>
+Date: Thu, 5 Aug 2021 17:22:05 -0400
+Subject: [PATCH 2/5] padring: add pass-through "tech config" for GPIO
+
+This is an escape hatch for connecting to technology-specific I/O config pins.
+---
+ padring/hdl/oh_padring.v     | 34 +++++++++++++++++++++++-----------
+ padring/hdl/oh_pads_domain.v |  8 ++++++--
+ 2 files changed, 29 insertions(+), 13 deletions(-)
+
+diff --git a/padring/hdl/oh_padring.v b/padring/hdl/oh_padring.v
+index 30785c88..7c81e855 100644
+--- a/padring/hdl/oh_padring.v
++++ b/padring/hdl/oh_padring.v
+@@ -29,7 +29,8 @@ module oh_padring
+     parameter WE_VDDIO   =  8,
+     parameter WE_VSSIO   =  8,
+     parameter WE_VDD     =  8,
+-    parameter WE_VSS     =  8
++    parameter WE_VSS     =  8,
++    parameter TECH_CFG_WIDTH = 16
+     )
+    (
+     //CONTINUOUS GROUND
+@@ -43,9 +44,9 @@ module oh_padring
+     output [NO_GPIO-1:0]   no_din, // data from pad
+     input [NO_GPIO-1:0]  no_dout, // data to pad
+     input [NO_GPIO*8-1:0]  no_cfg, // config
+-
+     input [NO_GPIO-1:0]    no_ie, // input enable
+     input [NO_GPIO-1:0]    no_oen, // output enable (bar)
++    input [NO_GPIO*TECH_CFG_WIDTH-1:0] no_tech_cfg,
+     //SOUTH
+     inout [SO_DOMAINS-1:0] so_vddio,
+     inout [SO_DOMAINS-1:0] so_vssio,
+@@ -55,6 +56,7 @@ module oh_padring
+     input [SO_GPIO*8-1:0]  so_cfg, // config
+     input [SO_GPIO-1:0]    so_ie, // input enable
+     input [SO_GPIO-1:0]    so_oen, // output enable (bar)
++    input [SO_GPIO*TECH_CFG_WIDTH-1:0] so_tech_cfg,
+     //EAST
+     inout [EA_DOMAINS-1:0] ea_vddio,
+     inout [EA_DOMAINS-1:0] ea_vssio,
+@@ -64,6 +66,7 @@ module oh_padring
+     input [EA_GPIO*8-1:0]  ea_cfg, // config
+     input [EA_GPIO-1:0]    ea_ie, // input enable
+     input [EA_GPIO-1:0]    ea_oen, // output enable (bar)
++    input [EA_GPIO*TECH_CFG_WIDTH-1:0] ea_tech_cfg,
+     //WEST
+     inout [WE_DOMAINS-1:0] we_vddio,
+     inout [WE_DOMAINS-1:0] we_vssio,
+@@ -72,7 +75,8 @@ module oh_padring
+     input [WE_GPIO-1:0]  we_dout, // data to pad
+     input [WE_GPIO*8-1:0]  we_cfg, // config
+     input [WE_GPIO-1:0]    we_ie, // input enable
+-    input [WE_GPIO-1:0]    we_oen // output enable (bar)
++    input [WE_GPIO-1:0]    we_oen, // output enable (bar)
++    input [WE_GPIO*TECH_CFG_WIDTH-1:0] we_tech_cfg
+     );
+ 
+ 
+@@ -100,7 +104,8 @@ module oh_padring
+                             .NVSS(NO_VSS),
+                             .POC(1),
+                             .LEFTCUT(1),
+-                            .RIGHTCUT(1))
++                            .RIGHTCUT(1),
++                            .TECH_CFG_WIDTH(TECH_CFG_WIDTH))
+            i0 (.vdd     (vdd),
+                .vss     (vss),
+                // Outputs
+@@ -114,7 +119,8 @@ module oh_padring
+                .dout	(no_dout[NO_GPIO-1:0]),
+                .oen	(no_oen[NO_GPIO-1:0]),
+                .ie	(no_ie[NO_GPIO-1:0]),
+-               .cfg	(no_cfg[NO_GPIO*8-1:0]));
++               .cfg	(no_cfg[NO_GPIO*8-1:0]),
++               .tech_cfg(no_tech_cfg));
+         end
+ 
+       //#############################
+@@ -132,7 +138,8 @@ module oh_padring
+                             .NVSS(SO_VSS),
+                             .POC(1),
+                             .LEFTCUT(1),
+-                            .RIGHTCUT(1))
++                            .RIGHTCUT(1),
++                            .TECH_CFG_WIDTH(TECH_CFG_WIDTH))
+            i0 (.vdd     (vdd),
+                .vss     (vss),
+                // Outputs
+@@ -146,7 +153,8 @@ module oh_padring
+                .dout	(so_dout[SO_GPIO-1:0]),
+                .oen	(so_oen[SO_GPIO-1:0]),
+                .ie	(so_ie[SO_GPIO-1:0]),
+-               .cfg	(so_cfg[SO_GPIO*8-1:0]));
++               .cfg	(so_cfg[SO_GPIO*8-1:0]),
++               .tech_cfg(so_tech_cfg));
+         end
+ 
+ 
+@@ -165,7 +173,8 @@ module oh_padring
+                             .NVSS(EA_VSS),
+                             .POC(1),
+                             .LEFTCUT(1),
+-                            .RIGHTCUT(1))
++                            .RIGHTCUT(1),
++                            .TECH_CFG_WIDTH(TECH_CFG_WIDTH))
+            i0 (.vdd     (vdd),
+                .vss     (vss),
+                // Outputs
+@@ -179,7 +188,8 @@ module oh_padring
+                .dout	(ea_dout[EA_GPIO-1:0]),
+                .oen	(ea_oen[EA_GPIO-1:0]),
+                .ie	(ea_ie[EA_GPIO-1:0]),
+-               .cfg	(ea_cfg[EA_GPIO*8-1:0]));
++               .cfg	(ea_cfg[EA_GPIO*8-1:0]),
++               .tech_cfg(ea_tech_cfg));
+ 
+         end
+ 
+@@ -198,7 +208,8 @@ module oh_padring
+                             .NVSS(WE_VSS),
+                             .POC(1),
+                             .LEFTCUT(1),
+-                            .RIGHTCUT(1))
++                            .RIGHTCUT(1),
++                            .TECH_CFG_WIDTH(TECH_CFG_WIDTH))
+ 
+            i0 (.vdd     (vdd),
+                .vss     (vss),
+@@ -213,7 +224,8 @@ module oh_padring
+                .dout	(we_dout[WE_GPIO-1:0]),
+                .oen	(we_oen[WE_GPIO-1:0]),
+                .ie	(we_ie[WE_GPIO-1:0]),
+-               .cfg	(we_cfg[WE_GPIO*8-1:0]));
++               .cfg	(we_cfg[WE_GPIO*8-1:0]),
++               .tech_cfg(we_tech_cfg));
+ 
+         end
+ 
+diff --git a/padring/hdl/oh_pads_domain.v b/padring/hdl/oh_pads_domain.v
+index 036c9c1f..7f77a42a 100644
+--- a/padring/hdl/oh_pads_domain.v
++++ b/padring/hdl/oh_pads_domain.v
+@@ -14,7 +14,8 @@ module oh_pads_domain
+     parameter NVSS     =  8,    // total core ground pads
+     parameter POC      =  1,    // 1 = place poc cell
+     parameter LEFTCUT  =  1,    // 1 = place cut on left (seen from center)
+-    parameter RIGHTCUT =  1     // 1 = place cut on right (seen from center
++    parameter RIGHTCUT =  1,    // 1 = place cut on right (seen from center
++    parameter TECH_CFG_WIDTH = 16
+     )
+    (//pad
+     inout [NGPIO-1:0] 	pad, // pad
+@@ -30,6 +31,7 @@ module oh_pads_domain
+     input [NGPIO-1:0] 	oen, // output enable (bar)
+     input [NGPIO-1:0] 	ie, // input enable
+     input [NGPIO*8-1:0] cfg // io config
++    input [NGPIO*TECH_CFG_WIDTH-1:0] tech_cfg // technology-specific config
+     );
+       
+    generate
+@@ -58,7 +60,9 @@ module oh_pads_domain
+ 	       .vss    (vss),
+ 	       .vddio  (vddio),
+ 	       .vssio  (vssio),
+-	       .pad    (pad[i]));
++	       .pad    (pad[i]),
++	       
++	       .tech_cfg(tech_cfg[i*TECH_CFG_WIDTH+:TECH_CFG_WIDTH]));
+ 	end
+ 
+       //######################
+
+From bc9d7f8e55c7d703d93b8f05a2455dc2f27d7924 Mon Sep 17 00:00:00 2001
+From: Noah Moroze <noah@zeroasic.com>
+Date: Sat, 7 Aug 2021 17:15:48 -0400
+Subject: [PATCH 3/5] Insert missing comma
+
+---
+ padring/hdl/oh_pads_domain.v | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/padring/hdl/oh_pads_domain.v b/padring/hdl/oh_pads_domain.v
+index 7f77a42a..3e2cd283 100644
+--- a/padring/hdl/oh_pads_domain.v
++++ b/padring/hdl/oh_pads_domain.v
+@@ -30,7 +30,7 @@ module oh_pads_domain
+     output [NGPIO-1:0] 	din, // data from pad
+     input [NGPIO-1:0] 	oen, // output enable (bar)
+     input [NGPIO-1:0] 	ie, // input enable
+-    input [NGPIO*8-1:0] cfg // io config
++    input [NGPIO*8-1:0] cfg, // io config
+     input [NGPIO*TECH_CFG_WIDTH-1:0] tech_cfg // technology-specific config
+     );
+       
+
+From 3e1d6d8e8d6c66f6a979e1daf4725b05bb9bb592 Mon Sep 17 00:00:00 2001
+From: Noah Moroze <noah@zeroasic.com>
+Date: Fri, 13 Aug 2021 16:18:21 -0400
+Subject: [PATCH 4/5] Add parameters to disable POC/cut cells
+
+---
+ padring/hdl/oh_padring.v | 26 ++++++++++++++------------
+ 1 file changed, 14 insertions(+), 12 deletions(-)
+
+diff --git a/padring/hdl/oh_padring.v b/padring/hdl/oh_padring.v
+index 7c81e855..1b4c837e 100644
+--- a/padring/hdl/oh_padring.v
++++ b/padring/hdl/oh_padring.v
+@@ -30,6 +30,8 @@ module oh_padring
+     parameter WE_VSSIO   =  8,
+     parameter WE_VDD     =  8,
+     parameter WE_VSS     =  8,
++    parameter ENABLE_CUTS = 1,
++    parameter ENABLE_POC  = 1,
+     parameter TECH_CFG_WIDTH = 16
+     )
+    (
+@@ -102,9 +104,9 @@ module oh_padring
+                             .NVSSIO(NO_VSSIO),
+                             .NVDD(NO_VDD),
+                             .NVSS(NO_VSS),
+-                            .POC(1),
+-                            .LEFTCUT(1),
+-                            .RIGHTCUT(1),
++                            .POC(ENABLE_POC),
++                            .LEFTCUT(ENABLE_CUT),
++                            .RIGHTCUT(ENABLE_CUT),
+                             .TECH_CFG_WIDTH(TECH_CFG_WIDTH))
+            i0 (.vdd     (vdd),
+                .vss     (vss),
+@@ -136,9 +138,9 @@ module oh_padring
+                             .NVSSIO(SO_VSSIO),
+                             .NVDD(SO_VDD),
+                             .NVSS(SO_VSS),
+-                            .POC(1),
+-                            .LEFTCUT(1),
+-                            .RIGHTCUT(1),
++                            .POC(ENABLE_POC),
++                            .LEFTCUT(ENABLE_CUT),
++                            .RIGHTCUT(ENABLE_CUT),
+                             .TECH_CFG_WIDTH(TECH_CFG_WIDTH))
+            i0 (.vdd     (vdd),
+                .vss     (vss),
+@@ -171,9 +173,9 @@ module oh_padring
+                             .NVSSIO(EA_VSSIO),
+                             .NVDD(EA_VDD),
+                             .NVSS(EA_VSS),
+-                            .POC(1),
+-                            .LEFTCUT(1),
+-                            .RIGHTCUT(1),
++                            .POC(ENABLE_POC),
++                            .LEFTCUT(ENABLE_CUT),
++                            .RIGHTCUT(ENABLE_CUT),
+                             .TECH_CFG_WIDTH(TECH_CFG_WIDTH))
+            i0 (.vdd     (vdd),
+                .vss     (vss),
+@@ -206,9 +208,9 @@ module oh_padring
+                             .NVSSIO(WE_VSSIO),
+                             .NVDD(WE_VDD),
+                             .NVSS(WE_VSS),
+-                            .POC(1),
+-                            .LEFTCUT(1),
+-                            .RIGHTCUT(1),
++                            .POC(ENABLE_POC),
++                            .LEFTCUT(ENABLE_CUT),
++                            .RIGHTCUT(ENABLE_CUT),
+                             .TECH_CFG_WIDTH(TECH_CFG_WIDTH))
+ 
+            i0 (.vdd     (vdd),
+
+From b4f1aa3a601a04104e780be4cf00385eb7b3dea1 Mon Sep 17 00:00:00 2001
+From: Noah Moroze <noah@zeroasic.com>
+Date: Fri, 13 Aug 2021 16:18:37 -0400
+Subject: [PATCH 5/5] Add generic cell under oh_pads_corner
+
+To be consistent with how other I/O cells are defined.
+---
+ padring/hdl/oh_pads_corner.v | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/padring/hdl/oh_pads_corner.v b/padring/hdl/oh_pads_corner.v
+index 1aa662ca..27464010 100644
+--- a/padring/hdl/oh_pads_corner.v
++++ b/padring/hdl/oh_pads_corner.v
+@@ -11,6 +11,13 @@ module oh_pads_corner
+    inout 	       vdd, // core supply
+    inout 	       vss // common ground
+    );
++
++   asic_iocorner i0 (
++     .vddio,
++     .vssio,
++     .vdd,
++     .vss
++   );
+   
+ endmodule // oh_pads_corner
+ 

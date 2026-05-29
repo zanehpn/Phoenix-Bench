@@ -1,0 +1,60 @@
+diff --git a/docs/example.md b/docs/example.md
+index b51d82a..d685479 100644
+--- a/docs/example.md
++++ b/docs/example.md
+@@ -9,9 +9,11 @@ rather, it aims to show one method you can use to integrate the KCP53000 into yo
+ By the end of this chapter,
+ you will have a computer:
+ 
+-* with a bank of ROM 256 bytes in size, arranged as 64 words by 32 bits,
+-* with a memory bridge that supports byte, half-word, word, and double-word transfers, and,
+-* with a custom I/O register implemented as a custom CSR.
++* with a 4KB ROM, arranged as 1024 words by 32 bits,
++* with a 4KB RAM, arranged as 512 words by 64 bits,
++* with a simple address decoder and memory bridge,
++* with a console output CSR for printing characters, and
++* with a simulation-exit CSR for terminating the run.
+ 
+ This computer is aware that it's running inside a Verilog simulation,
+ and thus provides a means to terminate the simulation via its custom I/O register.
+@@ -120,18 +122,15 @@ So, we create a Verilog file named "rom.v" to hold our ROM model.
+ 
+     `timescale 1ns / 1ps
+ 
+-    module rom_module(
++    module rom(
+         input   [11:2]  A,  // Address
+         output  [31:0]  Q,  // Data output
+-        input   STB     // True if ROM is being accessed.
++        input           STB // True if ROM is being accessed.
+     );
+         reg [31:0] contents[0:1023];
+-        reg [31:0] results;
++        wire [31:0] results = contents[A];
+ 
+         assign Q = STB ? results : 0;
+-        always @(*) begin
+-            results <= contents[A];
+-        end
+ 
+         initial begin
+             $readmemh("example.hex", contents);
+@@ -324,3 +323,18 @@ I use Icarus Verilog to compile everything:
+ You should see the computer print `Hello world!` to the console,
+ and then the simulation should quit back to shell prompt.
+ 
++
++
++### Full Example Computer
++
++For convenience, the complete example application is also included below as a single top-level module.
++This design instantiates the processor, 4KB ROM, 4KB RAM, console output CSR, and the address decoder/bridge used to connect them.
++
++    `timescale 1ns / 1ps
++
++    module hello_world_computer(
++        input clk,
++        input reset
++    );
++        // ... see docs/example/computer.v for the full reference implementation ...
++    endmodule

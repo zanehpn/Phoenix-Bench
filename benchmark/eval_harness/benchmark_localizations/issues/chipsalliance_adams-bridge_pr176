@@ -1,0 +1,28 @@
+PR Title: [RTL][TB] Fix issues in compress, decompress, and input checks
+
+PR Description:
+The PR addresses four GitHub issues (165, 167, 168, 169) by implementing several fixes:
+- Input validation for encapsulation keys (each coefficient must be < MLKEM Q)
+- Input validation for decapsulation keys (encapsulation portion and hash verification)
+- Reset of decompress write address after completion
+- Proper timing of done signal in compress operation after all pipeline stages empty
+- Random test cases for both input checks
+
+Commits (10 total):
+The pull request includes commits addressing: decompress write address clearing, done signal timing, sequencer state renaming with ABR prefix, flop coding fixes, decompression logic corrections, error status implementation, test cases for encap/decap input errors, and error state persistence.
+
+Author: Nitsirks
+Reviewer & Merger: mojtaba-bisheh (approved July 30, 2025)
+
+Linked Issues Closed:
+- #165: Compression block done signal assertion timing
+- #167: Second decompression raising done prematurely
+- #168: Decaps flow missing input check
+- #169: Encaps flow missing input check
+
+Linked Issue #165 body:
+# mlkem: compression block done signal asserts before tx end
+
+- Source URL: https://github.com/chipsalliance/adams-bridge/issues/165
+
+In the compression when the last chunk of data being written to the memory the read done is asserted as the last rd is done but data arrives next cycle and buffer_valid_f to be set in next clock cycle. This would set the done and api write would happen in next clock cycle. But if the compress mode toggles in this cycle then the api wr isn't triggered and this causes the loss of data.

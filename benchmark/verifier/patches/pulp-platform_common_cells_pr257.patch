@@ -1,0 +1,769 @@
+From 115aa96f1a64385f299e630330894fb38b31a380 Mon Sep 17 00:00:00 2001
+From: Luca Colagrande <luca.colagrande3@gmail.com>
+Date: Tue, 8 Jul 2025 16:07:27 +0200
+Subject: [PATCH 01/13] id_queue: Expose full and empty status
+
+---
+ src/id_queue.sv | 13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/src/id_queue.sv b/src/id_queue.sv
+index e94fb0af..cb57b41e 100644
+--- a/src/id_queue.sv
++++ b/src/id_queue.sv
+@@ -76,7 +76,10 @@ module id_queue #(
+     input  logic    oup_req_i,
+     output data_t   oup_data_o,
+     output logic    oup_data_valid_o,
+-    output logic    oup_gnt_o
++    output logic    oup_gnt_o,
++
++    output logic    full_o,
++    output logic    empty_o
+ );
+ 
+     // Capacity of the head-tail table, which associates an ID with corresponding head and tail
+@@ -184,8 +187,10 @@ module id_queue #(
+         .empty_o (                      )
+     );
+ 
+-    // The queue is full if and only if there are no free items in the linked data structure.
++    // The queue is full if and only if there are no free entries in the linked data structure.
+     assign full = !(|linked_data_free);
++    // The queue is empty if and only if all entries in the linked data structure are free.
++    assign empty = &linked_data_free;
+     // Data potentially freed by the output.
+     assign oup_data_free_idx = head_tail_q[match_out_idx].head;
+ 
+@@ -400,6 +405,10 @@ module id_queue #(
+         end
+     end
+ 
++    // Status interface
++    assign full_o  = full;
++    assign empty_o = empty;
++
+     // Validate parameters.
+ `ifndef COMMON_CELLS_ASSERTS_OFF
+     `ASSERT_INIT(id_width_0, ID_WIDTH >= 1, "The ID must at least be one bit wide!")
+
+From a19d5efeaf494bcdb203c9e453be09e4b943087a Mon Sep 17 00:00:00 2001
+From: Luca Colagrande <luca.colagrande3@gmail.com>
+Date: Wed, 2 Jul 2025 11:56:23 +0200
+Subject: [PATCH 02/13] README.md: Add links to source files
+
+---
+ README.md | 26 +++++++++++++++-----------
+ 1 file changed, 15 insertions(+), 11 deletions(-)
+
+diff --git a/README.md b/README.md
+index 860958de..bc9940f0 100644
+--- a/README.md
++++ b/README.md
+@@ -52,17 +52,18 @@ Please note that cells with status *deprecated* are not to be used for new desig
+ 
+ ### Counters and Shift Registers
+ 
+-| Name                                                       | Description                                                       | Status       | Superseded By                   |
+-| ---------------------------------------------------------- | ----------------------------------------------------------------- | ------------ | ------------------------------- |
+-| [`counter`](src/counter.sv)                                | Generic up/down counter with overflow detection                   | active       |                                 |
+-| [`credit_counter`](src/credit_counter.sv)                  | Up/down counter for credit                                        | active       |                                 |
+-| [`delta_counter`](src/delta_counter.sv)                    | Up/down counter with variable delta and overflow detection        | active       |                                 |
+-| [`generic_LFSR_8bit`](src/deprecated/generic_LFSR_8bit.sv) | 8-bit linear feedback shift register (LFSR)                       | *deprecated* | [`lfsr_8bit`](src/lfsr_8bit.sv) |
+-| [`lfsr_8bit`](src/lfsr_8bit.sv)                            | 8-bit linear feedback shift register (LFSR)                       | active       |                                 |
+-| [`lfsr_16bit`](src/lfsr_16bit.sv)                          | 16-bit linear feedback shift register (LFSR)                      | active       |                                 |
+-| [`lfsr`](src/lfsr.sv)                                      | 4...64-bit parametric Galois LFSR with optional whitening feature | active       |                                 |
+-| [`max_counter`](src/max_counter.sv)                        | Up/down counter with variable delta that tracks its maximum value | active       |                                 |
+-| [`mv_filter`](src/mv_filter.sv)                            | **ZARUBAF ADD DESCRIPTION**                                       | active       |                                 |
++| Name                                                       | Description                                                         | Status       | Superseded By                   |
++| ---------------------------------------------------------- | ------------------------------------------------------------------- | ------------ | ------------------------------- |
++| [`counter`](src/counter.sv)                                | Generic up/down counter with overflow detection                     | active       |                                 |
++| [`credit_counter`](src/credit_counter.sv)                  | Up/down counter for credit                                          | active       |                                 |
++| [`delta_counter`](src/delta_counter.sv)                    | Up/down counter with variable delta and overflow detection          | active       |                                 |
++| [`generic_LFSR_8bit`](src/deprecated/generic_LFSR_8bit.sv) | 8-bit linear feedback shift register (LFSR)                         | *deprecated* | [`lfsr_8bit`](src/lfsr_8bit.sv) |
++| [`lfsr_8bit`](src/lfsr_8bit.sv)                            | 8-bit linear feedback shift register (LFSR)                         | active       |                                 |
++| [`lfsr_16bit`](src/lfsr_16bit.sv)                          | 16-bit linear feedback shift register (LFSR)                        | active       |                                 |
++| [`lfsr`](src/lfsr.sv)                                      | 4...64-bit parametric Galois LFSR with optional whitening feature   | active       |                                 |
++| [`max_counter`](src/max_counter.sv)                        | Up/down counter with variable delta that tracks its maximum value   | active       |                                 |
++| [`mv_filter`](src/mv_filter.sv)                            | **ZARUBAF ADD DESCRIPTION**                                         | active       |                                 |
++| [`trip_counter`](src/trip_counter.sv)                      | Counter that resets automatically when it reaches a specified bound | active       |                                 |
+ 
+ ### Data Path Elements
+ 
+@@ -107,6 +108,8 @@ Please note that cells with status *deprecated* are not to be used for new desig
+ | [`popcount`](src/popcount.sv)                                  | Combinatorial popcount (hamming weight)                                                                   | active       |                                     |
+ | [`mem_to_banks_detailed`](src/mem_to_banks_detailed.sv)        | Split memory access over multiple parallel banks with detailed response signals                           | active       |                                     |
+ | [`mem_to_banks`](src/mem_to_banks.sv)                          | Split memory access over multiple parallel banks                                                          | active       |                                     |
++| [`heaviside`](src/heaviside.sv)                                | Generates a mask obtained by applying the Heaviside step function                                         | active       |                                     |
++| [`boxcar`](src/boxcar.sv)                                      | Generates a mask obtained by applying a boxcar function                                                   | active       |                                     |
+ 
+ ### Data Structures
+ 
+@@ -117,6 +120,7 @@ Please note that cells with status *deprecated* are not to be used for new desig
+ | [`fifo_v2`](src/deprecated/fifo_v2.sv)                           | FIFO register with upper and lower threshold                                | *deprecated* | [`fifo_v3`](src/fifo_v3.sv)                                                                     |
+ | [`fifo_v3`](src/fifo_v3.sv)                                      | FIFO register with generic fill counts                                      | active       |                                                                                                 |
+ | [`passthrough_stream_fifo`](src/passthrough_stream_fifo.sv)      | FIFO register with ready/valid interface and same-cycle push/pop when full  | active       |                                                                                                 |
++| [`ring_buffer`](src/ring_buffer.sv)                              | Ring buffer with sequential write and random-access read interfaces         | active       |                                                                                                 |
+ | [`stream_fifo`](src/stream_fifo.sv)                              | FIFO register with ready/valid interface                                    | active       |                                                                                                 |
+ | [`stream_fifo_optimal_wrap`](src/stream_fifo_optimal_wrap.sv)    | Wrapper that optimally selects either a spill register or a FIFO            | active       |                                                                                                 |
+ | [`generic_fifo`](src/deprecated/generic_fifo.sv)                 | FIFO register without thresholds                                            | *deprecated* | [`fifo_v3`](src/fifo_v3.sv)                                                                     |
+
+From aad1246b27679206df335b9d0e5beb7d942e9080 Mon Sep 17 00:00:00 2001
+From: Luca Colagrande <luca.colagrande3@gmail.com>
+Date: Tue, 5 Nov 2024 16:03:24 +0100
+Subject: [PATCH 03/13] treewide: Replace non-resettable FFs
+
+---
+ src/isochronous_spill_register.sv | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/isochronous_spill_register.sv b/src/isochronous_spill_register.sv
+index 1c2965de..218298f5 100644
+--- a/src/isochronous_spill_register.sv
++++ b/src/isochronous_spill_register.sv
+@@ -84,7 +84,7 @@ module isochronous_spill_register #(
+     `FFLARN(rd_pointer_q, rd_pointer_q+1, (dst_valid_o && dst_ready_i), '0, dst_clk_i, dst_rst_ni)
+ 
+     T [1:0] mem_d, mem_q;
+-    `FFLNR(mem_q, mem_d, (src_valid_i && src_ready_o), src_clk_i)
++    `FFL(mem_q, mem_d, (src_valid_i && src_ready_o), '0, src_clk_i, src_rst_ni)
+     always_comb begin
+       mem_d = mem_q;
+       mem_d[wr_pointer_q[0]] = src_data_i;
+
+From 309199871965db6af2fcfa618185d6186f55b722 Mon Sep 17 00:00:00 2001
+From: Luca Colagrande <luca.colagrande3@gmail.com>
+Date: Wed, 4 Jun 2025 17:35:12 +0200
+Subject: [PATCH 04/13] Add ready-valid interface stability assertion
+
+---
+ README.md                           | 11 ++++++-----
+ include/common_cells/assertions.svh |  8 +++++++-
+ 2 files changed, 13 insertions(+), 6 deletions(-)
+
+diff --git a/README.md b/README.md
+index bc9940f0..f872655b 100644
+--- a/README.md
++++ b/README.md
+@@ -181,11 +181,12 @@ easier to use them. They are similar to but incompatible with the macros used by
+ - *`__desc` is an optional string argument describing the failure causing the assertion to be violated that is embedded into the error report and defaults to `""`.*
+ 
+ #### Complex Assertion Macros
+-| Macro                 | Arguments                                                    | Description                                                                                       |
+-| --------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+-| `` `ASSERT_PULSE``    | `__name`, `__sig`, (`__clk`, `__rst`, `__desc`)              | Assert that signal is an active-high pulse with pulse length of 1 clock cycle                     |
+-| `` `ASSERT_IF``       | `__name`, `__prop`, `__enable`, (`__clk`, `__rst`, `__desc`) | Assert that a property is true only when an enable signal is set                                  |
+-| `` `ASSERT_KNOWN_IF`` | `__name`, `__sig`, `__enable`, (`__clk`, `__rst`, `__desc`)  | Assert that signal has a known value (each bit is either '0' or '1') after reset if enable is set |
++| Macro                 | Arguments                                                                           | Description                                                                                                |
++| --------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
++| `` `ASSERT_PULSE``    | `__name`, `__sig`, (`__clk`, `__rst`, `__desc`)                                     | Assert that signal is an active-high pulse with pulse length of 1 clock cycle                              |
++| `` `ASSERT_IF``       | `__name`, `__prop`, `__enable`, (`__clk`, `__rst`, `__desc`)                        | Assert that a property is true only when an enable signal is set                                           |
++| `` `ASSERT_KNOWN_IF`` | `__name`, `__sig`, `__enable`, (`__clk`, `__rst`, `__desc`)                         | Assert that signal has a known value (each bit is either '0' or '1') after reset if enable is set          |
++| `` `ASSERT_STABLE``   | `__name`, `__valid`, `__ready`, `__data`, `__enable`, (`__clk`, `__rst`, `__desc`)  | Assert that the data on a ready-valid interface is kept stable after valid is asserted, until ready is too |
+ - *The name of the clock and reset signals for implicit variants is `clk_i` and `rst_ni`, respectively.*
+ - *`__desc` is an optional string argument describing the failure causing the assertion to be violated that is embedded into the error report and defaults to `""`.*
+ 
+diff --git a/include/common_cells/assertions.svh b/include/common_cells/assertions.svh
+index 66ce12a9..e3f09ffa 100644
+--- a/include/common_cells/assertions.svh
++++ b/include/common_cells/assertions.svh
+@@ -151,11 +151,17 @@
+ // Assert that signal has a known value (each bit is either '0' or '1') after reset if enable is
+ // set.  It can be called as a module (or interface) body item.
+ `define ASSERT_KNOWN_IF(__name, __sig, __enable, __clk = `ASSERT_DEFAULT_CLK, __rst = `ASSERT_DEFAULT_RST, __desc = "") \
+-`ifdef INC_ASSERT                                                                                          \
++`ifdef INC_ASSERT                                                                                                       \
+   `ASSERT_KNOWN(__name``KnownEnable, __enable, __clk, __rst, __desc)                                                    \
+   `ASSERT_IF(__name, !$isunknown(__sig), __enable, __clk, __rst, __desc)                                                \
+ `endif
+ 
++// Assert that data is stable when valid is high and ready is low.
++`define ASSERT_STABLE(__name, __valid, __ready, __data, __clk = `ASSERT_DEFAULT_CLK, __rst = `ASSERT_DEFAULT_RST, __desc = "") \
++`ifdef INC_ASSERT                                                                                                              \
++  `ASSERT(__name, __valid && !__ready |=> $stable(__data), __clk, __rst, __desc)                                               \
++`endif
++
+ ///////////////////////
+ // Assumption macros //
+ ///////////////////////
+
+From d1d0c9581ccf32d0d581fe28b2b6c22ff33daa75 Mon Sep 17 00:00:00 2001
+From: Luca Colagrande <luca.colagrande3@gmail.com>
+Date: Tue, 25 Feb 2025 21:26:49 +0100
+Subject: [PATCH 05/13] Add `ring_buffer` IP
+
+---
+ Bender.yml         |   1 +
+ README.md          |   1 -
+ src/ring_buffer.sv | 142 +++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 143 insertions(+), 1 deletion(-)
+ create mode 100644 src/ring_buffer.sv
+
+diff --git a/Bender.yml b/Bender.yml
+index df666703..5abacc82 100644
+--- a/Bender.yml
++++ b/Bender.yml
+@@ -50,6 +50,7 @@ sources:
+       - src/plru_tree.sv
+       - src/passthrough_stream_fifo.sv
+       - src/popcount.sv
++      - src/ring_buffer.sv
+       - src/rr_arb_tree.sv
+       - src/rstgen_bypass.sv
+       - src/serial_deglitch.sv
+diff --git a/README.md b/README.md
+index f872655b..229d3de8 100644
+--- a/README.md
++++ b/README.md
+@@ -130,7 +130,6 @@ Please note that cells with status *deprecated* are not to be used for new desig
+ | [`unread`](src/unread.sv)                                        | Empty module to sink unconnected outputs into                               | active       |                                                                                                 |
+ | [`read`](src/read.sv)                                            | Dummy module that prevents a signal from being removed during synthesis     | active       |                                                                                                 |
+ 
+-
+ ## Header Contents
+ 
+ This repository currently contains the following header files.
+diff --git a/src/ring_buffer.sv b/src/ring_buffer.sv
+new file mode 100644
+index 00000000..b1b866ba
+--- /dev/null
++++ b/src/ring_buffer.sv
+@@ -0,0 +1,142 @@
++// Copyright 2025 ETH Zurich and University of Bologna.
++// Solderpad Hardware License, Version 0.51, see LICENSE for details.
++// SPDX-License-Identifier: SHL-0.51
++//
++// Author: Luca Colagrande <colluca@iis.ee.ethz.ch>
++//
++// This module implements a flexible ring buffer with decoupled write and read access.
++// It supports sequential writes and random reads with a valid/ready handshake protocol.
++// The buffer is implemented using a dual-pointer mechanism with one-bit extension to
++// distinguish full from empty state. It supports wrapping around when full capacity is used.
++//
++// The read interface supports restricted random access: a consumer may request to read
++// any address `raddr_i` as long as it falls within the valid range between the current
++// read and write pointers. This allows re-reading previous entries.
++//
++// The read pointer is advanced independently using a dedicated `advance_i` and `step_i`
++// interface. This decouples read consumption from read address requests.
++
++`include "common_cells/registers.svh"
++`include "common_cells/assertions.svh"
++
++module ring_buffer #(
++    parameter int unsigned Depth = 32,
++    parameter type data_t = logic,
++    /// Derived parameter *Do not override*
++    localparam int unsigned AddrWidth = cf_math_pkg::idx_width(Depth),
++    localparam int unsigned StepWidth = cf_math_pkg::idx_width(Depth+1),
++    localparam type addr_t = logic [AddrWidth-1:0],
++    localparam type step_t = logic [StepWidth-1:0]
++) (
++    input logic clk_i,
++    input logic rst_ni,
++
++    // Write interface
++    input logic wvalid_i,
++    output logic wready_o,
++    input data_t wdata_i,
++
++    // Restricted random access read interface
++    input logic rvalid_i,
++    output logic rready_o,
++    input addr_t raddr_i,
++    output data_t rdata_o,
++
++    // Independent read pointer increment interface.
++    // Increments the read pointer by `step_i` when `advance_i` is asserted.
++    input logic advance_i,
++    input step_t step_i,
++
++    // Status signals
++    output addr_t wptr_o,
++    output addr_t rptr_o,
++    output logic full_o,
++    output logic empty_o
++);
++
++    ///////////
++    // State //
++    ///////////
++
++    data_t [Depth-1:0] mem_d, mem_q;
++
++    // We allocate one more bit than needed to represent memory
++    // addresses, to compute full/empty status of the buffer.
++    logic [AddrWidth:0] rptr_d, rptr_q;
++    logic [AddrWidth:0] wptr_d, wptr_q;
++
++    `FF(mem_q, mem_d, '0, clk_i, rst_ni)
++    `FF(rptr_q, rptr_d, '0, clk_i, rst_ni)
++    `FF(wptr_q, wptr_d, '0, clk_i, rst_ni)
++
++    ////////////////////////////
++    // State transition logic //
++    ////////////////////////////
++
++    always_comb begin
++        // Default assignments
++        mem_d = mem_q;
++        rptr_d = rptr_q;
++        wptr_d = wptr_q;
++
++        // Write logic
++        if (wvalid_i && wready_o) begin
++            mem_d[wptr_q[AddrWidth-1:0]] = wdata_i;
++            wptr_d = wptr_q + 1;
++        end
++
++        // Read pointer increment logic
++        if (advance_i) begin
++            rptr_d = rptr_q + step_i;
++        end
++    end
++
++    //////////////////
++    // Output logic //
++    //////////////////
++
++    assign wptr_o = wptr_q[AddrWidth-1:0];
++    assign rptr_o = rptr_q[AddrWidth-1:0];
++
++    assign empty_o = wptr_q == rptr_q;
++    assign full_o = (wptr_q[AddrWidth-1:0] == rptr_q[AddrWidth-1:0]) && !empty_o;
++
++    // A read request can only be accepted if it is within the range of
++    // valid instructions (i.e. between the read and write pointers).
++    // This ready signal is provided as a backpressure mechanism to wait
++    // for the write pointer to advance, until the requested instruction
++    // is present in the ring buffer.
++    // When rptr_o < wptr_o, the valid range is [rptr_o, wptr_o).
++    // When rptr_o > wptr_o (wrap-around), the valid range is [rptr_o, Depth) U [0, wptr_o).
++    // When rptr_o == wptr_o and !empty (buffer is full), all addresses are valid.
++    assign rready_o = ((rptr_o < wptr_o) && ((raddr_i >= rptr_o) && (raddr_i < wptr_o))) ||
++                      ((rptr_o > wptr_o) && ((raddr_i >= rptr_o) || (raddr_i < wptr_o))) ||
++                      ((rptr_o == wptr_o) && !empty_o);
++
++    assign wready_o = !full_o;
++    assign rdata_o = mem_q[raddr_i];
++
++    ////////////////
++    // Assertions //
++    ////////////////
++
++    // When rptr_o < wptr_o, the valid range is [rptr_o, wptr_o).
++    // When rptr_o > wptr_o (wrap-around), the valid range is [rptr_o, Depth) U [0, wptr_o).
++    // When rptr_o == wptr_o and !empty (buffer is full), all addresses are valid.
++    `ASSERT(
++        ReadAddrOutOfBounds,
++        rvalid_i && rready_o |->
++        (
++            ((rptr_o < wptr_o) && ((raddr_i >= rptr_o) && (raddr_i < wptr_o))) ||
++            ((rptr_o > wptr_o) && ((raddr_i >= rptr_o) || (raddr_i < wptr_o))) ||
++            ((rptr_o == wptr_o) && !empty_o)
++        ),
++        clk_i, !rst_ni,
++        "raddr_i is not within the valid range defined by rptr_o and wptr_o"
++    );
++
++    // Interfaces should be stable when valid is asserted but not ready
++    `ASSERT_STABLE(WriteStable, wvalid_i, wready_o, wdata_i)
++    `ASSERT_STABLE(ReadStable, rvalid_i, rready_o, raddr_i)
++
++endmodule
+
+From e4aeae33429a1f2597ba305ba60d2720d6086f6a Mon Sep 17 00:00:00 2001
+From: Luca Colagrande <luca.colagrande3@gmail.com>
+Date: Sat, 1 Mar 2025 10:07:20 +0100
+Subject: [PATCH 06/13] Add `trip_counter` IP
+
+---
+ Bender.yml          |  1 +
+ src/trip_counter.sv | 47 +++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 48 insertions(+)
+ create mode 100644 src/trip_counter.sv
+
+diff --git a/Bender.yml b/Bender.yml
+index 5abacc82..28502c1c 100644
+--- a/Bender.yml
++++ b/Bender.yml
+@@ -74,6 +74,7 @@ sources:
+       - src/cdc_2phase.sv
+       - src/cdc_4phase.sv
+       - src/clk_int_div_static.sv
++      - src/trip_counter.sv
+       # Level 2
+       - src/addr_decode.sv
+       - src/addr_decode_napot.sv
+diff --git a/src/trip_counter.sv b/src/trip_counter.sv
+new file mode 100644
+index 00000000..353e4c0d
+--- /dev/null
++++ b/src/trip_counter.sv
+@@ -0,0 +1,47 @@
++// Copyright 2025 ETH Zurich and University of Bologna.
++// Copyright and related rights are licensed under the Solderpad Hardware
++// License, Version 0.51 (the "License"); you may not use this file except in
++// compliance with the License. You may obtain a copy of the License at
++// http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
++// or agreed to in writing, software, hardware and materials distributed under
++// this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
++// CONDITIONS OF ANY KIND, either express or implied. See the License for the
++// specific language governing permissions and limitations under the License.
++//
++// Author: Luca Colagrande <colluca@iis.ee.ethz.ch>
++//
++// Counter which resets automatically when it reaches a specified bound, i.e.
++// when it "trips". Useful e.g. for implementing hardware loop logic.
++
++module trip_counter #(
++    parameter int unsigned WIDTH = 4
++)(
++    input  logic             clk_i,
++    input  logic             rst_ni,
++    input  logic             en_i,
++    input  logic [WIDTH-1:0] delta_i,
++    input  logic [WIDTH-1:0] bound_i,
++    output logic [WIDTH-1:0] q_o,
++    output logic             last_o,
++    output logic             trip_o
++);
++
++    delta_counter #(
++        .WIDTH(WIDTH)
++    ) i_delta_counter (
++        .clk_i(clk_i),
++        .rst_ni(rst_ni),
++        .clear_i(trip_o),
++        .en_i(en_i),
++        .load_i(1'b0),
++        .down_i(1'b0),
++        .delta_i(delta_i),
++        .d_i('0),
++        .q_o(q_o),
++        .overflow_o()
++    );
++
++    assign last_o = (q_o == bound_i);
++    assign trip_o = last_o && en_i;
++
++endmodule
+
+From ba7f645bbce5f4e790daed0cc5ee1cd54d2133d5 Mon Sep 17 00:00:00 2001
+From: Luca Colagrande <luca.colagrande3@gmail.com>
+Date: Sat, 1 Mar 2025 14:26:30 +0100
+Subject: [PATCH 07/13] lzc: Correct description
+
+---
+ src/lzc.sv | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/lzc.sv b/src/lzc.sv
+index eccc31a5..062b4a04 100644
+--- a/src/lzc.sv
++++ b/src/lzc.sv
+@@ -7,7 +7,7 @@
+ /// A trailing zero counter / leading zero counter.
+ /// Set MODE to 0 for trailing zero counter => cnt_o is the number of trailing zeros (from the LSB)
+ /// Set MODE to 1 for leading zero counter  => cnt_o is the number of leading zeros  (from the MSB)
+-/// If the input does not contain a zero, `empty_o` is asserted. Additionally `cnt_o` contains
++/// If the input does not contain a one, `empty_o` is asserted. Additionally `cnt_o` contains
+ /// the maximum number of zeros - 1. For example:
+ ///   in_i = 000_0000, empty_o = 1, cnt_o = 6 (mode = 0)
+ ///   in_i = 000_0001, empty_o = 0, cnt_o = 0 (mode = 0)
+
+From 5a4ce9823b85c7818e5f6b7851943ec06aacfb99 Mon Sep 17 00:00:00 2001
+From: Luca Colagrande <luca.colagrande3@gmail.com>
+Date: Wed, 4 Jun 2025 12:00:43 +0200
+Subject: [PATCH 08/13] Add `heaviside` and `boxcar` mask IPs
+
+---
+ Bender.yml       |  2 ++
+ src/boxcar.sv    | 31 +++++++++++++++++++++++++++++++
+ src/heaviside.sv | 25 +++++++++++++++++++++++++
+ 3 files changed, 58 insertions(+)
+ create mode 100644 src/boxcar.sv
+ create mode 100644 src/heaviside.sv
+
+diff --git a/Bender.yml b/Bender.yml
+index 28502c1c..cf837d6b 100644
+--- a/Bender.yml
++++ b/Bender.yml
+@@ -39,6 +39,7 @@ sources:
+       - src/exp_backoff.sv
+       - src/fifo_v3.sv
+       - src/gray_to_binary.sv
++      - src/heaviside.sv
+       - src/isochronous_4phase_handshake.sv
+       - src/isochronous_spill_register.sv
+       - src/lfsr.sv
+@@ -71,6 +72,7 @@ sources:
+       - src/read.sv
+       # Level 1
+       - src/addr_decode_dync.sv
++      - src/boxcar.sv
+       - src/cdc_2phase.sv
+       - src/cdc_4phase.sv
+       - src/clk_int_div_static.sv
+diff --git a/src/boxcar.sv b/src/boxcar.sv
+new file mode 100644
+index 00000000..091328f9
+--- /dev/null
++++ b/src/boxcar.sv
+@@ -0,0 +1,31 @@
++// Copyright 2025 ETH Zurich and University of Bologna.
++// Solderpad Hardware License, Version 0.51, see LICENSE for details.
++// SPDX-License-Identifier: SHL-0.51
++//
++// Author: Luca Colagrande <colluca@iis.ee.ethz.ch>
++//
++// This module can be used to generate any mask that can be obtained
++// by a boxcar function (https://en.wikipedia.org/wiki/Boxcar_function).
++// Specifically, it generates a mask with all and only the bits in
++// the (lsb_i, msb_i] interval asserted.
++
++module boxcar #(
++    parameter int unsigned Width = 32,
++    /// Derived parameter *Do not override*
++    localparam int unsigned IdxWidth = cf_math_pkg::idx_width(Width),
++    localparam type idx_t = logic [IdxWidth-1:0],
++    localparam type mask_t = logic [Width-1:0]
++) (
++    input idx_t lsb_i,
++    input idx_t msb_i,
++    output mask_t mask_o
++);
++
++    mask_t low_mask, high_mask_n;
++
++    heaviside #(.Width(Width)) i_lo (.x_i(lsb_i), .mask_o(low_mask));
++    heaviside #(.Width(Width)) i_hi (.x_i(msb_i), .mask_o(high_mask_n));
++
++    assign mask_o = ~low_mask & high_mask_n;
++
++endmodule
+diff --git a/src/heaviside.sv b/src/heaviside.sv
+new file mode 100644
+index 00000000..eb7cf913
+--- /dev/null
++++ b/src/heaviside.sv
+@@ -0,0 +1,25 @@
++// Copyright 2025 ETH Zurich and University of Bologna.
++// Solderpad Hardware License, Version 0.51, see LICENSE for details.
++// SPDX-License-Identifier: SHL-0.51
++//
++// Author: Luca Colagrande <colluca@iis.ee.ethz.ch>
++//
++// This module can be used to generate any mask that can be obtained by the
++// Heaviside function (https://en.wikipedia.org/wiki/Heaviside_step_function).
++// Specifically, it generates a mask with all and only the bits in
++// the [0, x_i] interval asserted.
++
++module heaviside #(
++    parameter int unsigned Width = 32,
++    /// Derived parameter *Do not override*
++    localparam int unsigned IdxWidth = cf_math_pkg::idx_width(Width),
++    localparam type idx_t = logic [IdxWidth-1:0],
++    localparam type mask_t = logic [Width-1:0]
++) (
++    input idx_t x_i,
++    output mask_t mask_o
++);
++
++    assign mask_o = (1 << (x_i + 1)) - 1;
++
++endmodule
+
+From f569560a9e9318131e631e9a456b81c4360903b0 Mon Sep 17 00:00:00 2001
+From: Luca Colagrande <luca.colagrande3@gmail.com>
+Date: Wed, 2 Jul 2025 14:13:17 +0200
+Subject: [PATCH 09/13] trip_counter: Add out of bounds assertion
+
+---
+ src/trip_counter.sv | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src/trip_counter.sv b/src/trip_counter.sv
+index 353e4c0d..56c41926 100644
+--- a/src/trip_counter.sv
++++ b/src/trip_counter.sv
+@@ -13,6 +13,8 @@
+ // Counter which resets automatically when it reaches a specified bound, i.e.
+ // when it "trips". Useful e.g. for implementing hardware loop logic.
+ 
++`include "common_cells/assertions.svh"
++
+ module trip_counter #(
+     parameter int unsigned WIDTH = 4
+ )(
+@@ -44,4 +46,6 @@ module trip_counter #(
+     assign last_o = (q_o == bound_i);
+     assign trip_o = last_o && en_i;
+ 
++    `ASSERT(CounterExceedsBound, !(en_i && (q_o + delta_i) > bound_i))
++
+ endmodule
+
+From 37a488a98cadd2c1666d09d6dbe201ba186980dc Mon Sep 17 00:00:00 2001
+From: Luca Colagrande <luca.colagrande3@gmail.com>
+Date: Wed, 2 Jul 2025 14:24:12 +0200
+Subject: [PATCH 10/13] ring_buffer: Add assertion to enforce power-of-two
+ Depth
+
+---
+ src/cf_math_pkg.sv | 6 ++++++
+ src/ring_buffer.sv | 3 +++
+ 2 files changed, 9 insertions(+)
+
+diff --git a/src/cf_math_pkg.sv b/src/cf_math_pkg.sv
+index cea39be1..6f70f52f 100644
+--- a/src/cf_math_pkg.sv
++++ b/src/cf_math_pkg.sv
+@@ -58,4 +58,10 @@ package cf_math_pkg;
+         return (num_idx > 32'd1) ? unsigned'($clog2(num_idx)) : 32'd1;
+     endfunction
+ 
++    /// Checks if a value is a power of 2 (and is not 0)
++    /// Returns 1 if the input value is a power of 2, else 0
++    function automatic bit is_power_of_2 (input integer unsigned value);
++        return (value != 0) && (value & (value - 1)) == 0;
++    endfunction
++
+ endpackage
+diff --git a/src/ring_buffer.sv b/src/ring_buffer.sv
+index b1b866ba..39399814 100644
+--- a/src/ring_buffer.sv
++++ b/src/ring_buffer.sv
+@@ -139,4 +139,7 @@ module ring_buffer #(
+     `ASSERT_STABLE(WriteStable, wvalid_i, wready_o, wdata_i)
+     `ASSERT_STABLE(ReadStable, rvalid_i, rready_o, raddr_i)
+ 
++    // Currently only power-of-2 depths are supported, could be loosened in future
++    `ASSERT_INIT(CheckDepthPow2, cf_math_pkg::is_power_of_2(Depth))
++
+ endmodule
+
+From f539ab85c40acad8a8d8111556055e22abad99a8 Mon Sep 17 00:00:00 2001
+From: Luca Colagrande <luca.colagrande3@gmail.com>
+Date: Wed, 2 Jul 2025 17:13:43 +0200
+Subject: [PATCH 11/13] ring_buffer: Add assertions against pointers overtaking
+ each other
+
+---
+ src/ring_buffer.sv | 28 ++++++++++++++++++++++++++++
+ 1 file changed, 28 insertions(+)
+
+diff --git a/src/ring_buffer.sv b/src/ring_buffer.sv
+index 39399814..1cbbd66a 100644
+--- a/src/ring_buffer.sv
++++ b/src/ring_buffer.sv
+@@ -120,6 +120,34 @@ module ring_buffer #(
+     // Assertions //
+     ////////////////
+ 
++    // Auxiliary signal for assertion
++    step_t max_step;
++
++    // Calculate maximum allowed step size, beyond which read pointer would overtake write pointer.
++    always_comb begin
++        if (rptr_q[AddrWidth] == wptr_d[AddrWidth])
++            max_step = wptr_d[AddrWidth-1:0] - rptr_q[AddrWidth-1:0];
++        else
++            max_step = Depth - rptr_q[AddrWidth-1:0] + wptr_d[AddrWidth-1:0];
++    end
++
++    // Read pointer should not overtake write pointer.
++    `ASSERT(
++        ReadPtrOvertakesWritePtr,
++        advance_i |-> step_i <= max_step,
++        clk_i, !rst_ni,
++        "Attempting to increment rptr beyond wptr"
++    );
++
++    // Write pointer should not overtake read pointer.
++    `ASSERT(
++        WritePtrOvertakesReadPtr,
++        wvalid_i && wready_o
++            |-> !((wptr_q[AddrWidth-1:0] == rptr_d[AddrWidth-1:0]) && !(wptr_q == rptr_d)),
++        clk_i, !rst_ni,
++        "Attempting to increment wptr beyond rptr"
++    );
++
+     // When rptr_o < wptr_o, the valid range is [rptr_o, wptr_o).
+     // When rptr_o > wptr_o (wrap-around), the valid range is [rptr_o, Depth) U [0, wptr_o).
+     // When rptr_o == wptr_o and !empty (buffer is full), all addresses are valid.
+
+From 1f9693dbfc6acc105f054a6de240e9ae8c75a1d1 Mon Sep 17 00:00:00 2001
+From: Luca Colagrande <luca.colagrande3@gmail.com>
+Date: Thu, 4 Sep 2025 14:43:42 +0200
+Subject: [PATCH 12/13] Correct ASSERT_STABLE macro and add __mask argument
+
+---
+ include/common_cells/assertions.svh | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/include/common_cells/assertions.svh b/include/common_cells/assertions.svh
+index e3f09ffa..8d6b2107 100644
+--- a/include/common_cells/assertions.svh
++++ b/include/common_cells/assertions.svh
+@@ -156,10 +156,10 @@
+   `ASSERT_IF(__name, !$isunknown(__sig), __enable, __clk, __rst, __desc)                                                \
+ `endif
+ 
+-// Assert that data is stable when valid is high and ready is low.
+-`define ASSERT_STABLE(__name, __valid, __ready, __data, __clk = `ASSERT_DEFAULT_CLK, __rst = `ASSERT_DEFAULT_RST, __desc = "") \
+-`ifdef INC_ASSERT                                                                                                              \
+-  `ASSERT(__name, __valid && !__ready |=> $stable(__data), __clk, __rst, __desc)                                               \
++// Assert that (unmasked parts of) data are stable when valid is high and ready is low.
++`define ASSERT_STABLE(__name, __valid, __ready, __data, __mask = '0, __clk = `ASSERT_DEFAULT_CLK, __rst = `ASSERT_DEFAULT_RST, __desc = "") \
++`ifdef INC_ASSERT                                                                                                                           \
++  `ASSERT(__name, (__valid) && !(__ready) |=> $stable((__data) & ~(__mask)), __clk, __rst, __desc)                                          \
+ `endif
+ 
+ ///////////////////////
+
+From df13c48f6c48c13ae6dee54f70cb0c664d1e5d32 Mon Sep 17 00:00:00 2001
+From: Luca Colagrande <luca.colagrande3@gmail.com>
+Date: Tue, 16 Sep 2025 18:16:35 +0200
+Subject: [PATCH 13/13] Update src_files.yml
+
+---
+ src_files.yml | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src_files.yml b/src_files.yml
+index 30aebdba..3a02718e 100644
+--- a/src_files.yml
++++ b/src_files.yml
+@@ -18,6 +18,7 @@ common_cells_all:
+     - src/exp_backoff.sv
+     - src/fifo_v3.sv
+     - src/gray_to_binary.sv
++    - src/heaviside.sv
+     - src/isochronous_4phase_handshake.sv
+     - src/isochronous_spill_register.sv
+     - src/lfsr.sv
+@@ -29,6 +30,7 @@ common_cells_all:
+     - src/plru_tree.sv
+     - src/passthrough_stream_fifo.sv
+     - src/popcount.sv
++    - src/ring_buffer.sv
+     - src/rr_arb_tree.sv
+     - src/rstgen_bypass.sv
+     - src/serial_deglitch.sv
+@@ -51,6 +53,7 @@ common_cells_all:
+     - src/cdc_reset_ctrlr_pkg.sv
+     # Level 1
+     - src/addr_decode_dync.sv
++    - src/boxcar.sv
+     - src/cdc_2phase.sv
+     - src/cdc_4phase.sv
+     - src/cb_filter.sv
+@@ -66,6 +69,7 @@ common_cells_all:
+     - src/stream_delay.sv
+     - src/stream_fifo.sv
+     - src/stream_fork_dynamic.sv
++    - src/trip_counter.sv
+     - src/clk_mux_glitch_free.sv
+     # Level 2
+     - src/addr_decode.sv

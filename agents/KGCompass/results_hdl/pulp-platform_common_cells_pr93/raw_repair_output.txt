@@ -1,0 +1,41 @@
+The bug is in `src/stream_register.sv`.
+
+### What’s wrong
+`$size(T)` is not the right construct here for a type parameter in this context, and Synplify is complaining while trying to elaborate the type/array size relationship for `fifo_v2`.  
+`$bits(T)` is the correct way to derive the packed bit-width of a type parameter, and in this module it preserves the intended behavior: the FIFO stores one element of type `T`, with `DATA_WIDTH` matching the number of bits in `T`.
+
+So the fix is to replace:
+
+```systemverilog
+.DATA_WIDTH     ($size(T))
+```
+
+with
+
+```systemverilog
+.DATA_WIDTH     ($bits(T))
+```
+
+This is not changing the module behavior; it is making the width expression synthesis-tool-friendly and semantically correct for a type parameter.
+
+## SEARCH/REPLACE edit
+
+```systemverilog
+### src/stream_register.sv
+<<<<<<< SEARCH
+    fifo_v2 #(
+        .FALL_THROUGH   (1'b0),
+        .DATA_WIDTH     ($size(T)),
+        .DEPTH          (1),
+        .dtype          (T)
+    ) i_fifo (
+=======
+    fifo_v2 #(
+        .FALL_THROUGH   (1'b0),
+        .DATA_WIDTH     ($bits(T)),
+        .DEPTH          (1),
+        .dtype          (T)
+    ) i_fifo (
+>>>>>>> REPLACE
+```
+

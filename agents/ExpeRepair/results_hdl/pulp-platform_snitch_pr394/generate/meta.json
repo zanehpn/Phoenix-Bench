@@ -1,0 +1,10 @@
+{
+    "task_info": {
+        "base_commit": "e56e3d79c533f8e4a4f489dfa9431824cb0eff5a",
+        "problem_statement": "# SPI Host: FSM Bug CSID Switch\n\nThe OpenTitan SPI host FSM contains a bug as it jumps to the WaitIdle state after receiving a command with a different CSID as the previous command. It therefore basically always skips the first command after a CSID change which this patch rectifies ([OpenTitan does it the same way](https://github.com/lowRISC/opentitan/blob/master/hw/ip/spi_host/rtl/spi_host_fsm.sv#L284)).\n\n```diff\ndiff --git a/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv b/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv\nindex 4fb1360d..babb6138 100644\n--- a/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv\n+++ b/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv\n@@ -290,7 +290,7 @@ module spi_host_fsm\n           if (idle_cntr_q == 4'h0) begin\n             prestall_st_d = WaitLead;\n           end else begin\n-            prestall_st_d = WaitIdle;\n+            prestall_st_d = CSBSwitch;\n           end\n         end\n         IdleCSBActive: begin\n```\n",
+        "instance_id": "pulp-platform_snitch_pr394"
+    },
+    "setup_info": {
+        "repo_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_snitch_pr394"
+    }
+}

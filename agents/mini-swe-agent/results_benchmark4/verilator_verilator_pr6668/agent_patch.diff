@@ -1,0 +1,76 @@
+diff --git a/src/V3Options.cpp b/src/V3Options.cpp
+index b22fb7c..f05fc5a 100644
+--- a/src/V3Options.cpp
++++ b/src/V3Options.cpp
+@@ -1113,10 +1113,9 @@ VTimescale V3Options::timeComputeUnit(const VTimescale& flag) const {
+ int V3Options::unrollCountAdjusted(const VOptionBool& full, bool generate, bool simulate) {
+     int count = unrollCount();
+     // std::max to avoid rollover if unrollCount is e.g. std::numeric_limits<int>::max()
+-    // With /*verilator unroll_full*/ still have a limit to avoid infinite loops
+     if (full.isSetTrue()) count = std::max(count, count * 1024);
+-    if (generate) count = std::max(count, count * 16);
+-    if (simulate) count = std::max(count, count * 16);
++    if (generate) count = std::max(count, unrollLimit());
++    if (simulate) count = std::max(count, unrollLimit());
+     return count;
+ }
+ 
+@@ -1793,6 +1792,7 @@ void V3Options::parseOptsList(FileLine* fl, const string& optdir, int argc,
+     DECL_OPTION("-underline-zero", OnOff, &m_underlineZero).undocumented();  // Deprecated
+     DECL_OPTION("-no-unlimited-stack", CbCall, []() {});  // Processed only in bin/verilator shell
+     DECL_OPTION("-unroll-count", Set, &m_unrollCount).undocumented();  // Optimization tweak
++    DECL_OPTION("-unroll-limit", Set, &m_unrollLimit).undocumented();  // Infinite-loop detection
+     DECL_OPTION("-unroll-stmts", Set, &m_unrollStmts).undocumented();  // Optimization tweak
+     DECL_OPTION("-unused-regexp", Set, &m_unusedRegexp);
+ 
+diff --git a/src/V3Options.h b/src/V3Options.h
+index 8bd742a..1000642 100644
+--- a/src/V3Options.h
++++ b/src/V3Options.h
+@@ -347,6 +347,7 @@ private:
+     int         m_traceMaxWidth = 4096; // main switch: --trace-max-width
+     int         m_traceThreads = 0; // main switch: --trace-threads
+     int         m_unrollCount = 64;  // main switch: --unroll-count
++    int         m_unrollLimit = 16384;  // main switch: --unroll-limit
+     int         m_unrollStmts = 30000;  // main switch: --unroll-stmts
+     int         m_verilateJobs = -1;  // main switch: --verilate-jobs
+ 
+diff --git a/src/V3Simulate.h b/src/V3Simulate.h
+index fd19fe2..0bce860 100644
+--- a/src/V3Simulate.h
++++ b/src/V3Simulate.h
+@@ -1096,7 +1096,7 @@ private:
+             if (loops++ > v3Global.opt.unrollCountAdjusted(nodep->unroll(), m_params, true)) {
+                 clearOptimizable(nodep, "Loop unrolling took too long; probably this is an"
+                                         "infinite loop, or use /*verilator unroll_full*/, or "
+-                                        "set --unroll-count above "
++                                        "set --unroll-limit above "
+                                             + cvtToStr(loops));
+                 break;
+             }
+diff --git a/src/V3Unroll.cpp b/src/V3Unroll.cpp
+index c3fb046..b2e62c7 100644
+--- a/src/V3Unroll.cpp
++++ b/src/V3Unroll.cpp
+@@ -57,7 +57,7 @@ struct UnrollStats final {
+     Stat m_nFailInfinite{"Failed - infinite loop"};
+     Stat m_nFailNestedLoopTest{"Failed - loop test in sub-statement"};
+     Stat m_nFailTimingControl{"Failed - contains timing control"};
+-    Stat m_nFailUnrollCount{"Failed - reached --unroll-count"};
++    Stat m_nFailUnrollCount{"Failed - reached --unroll-limit"};
+     Stat m_nFailUnrollStmts{"Failed - reached --unroll-stmts"};
+     Stat m_nPragmaDisabled{"Pragma unroll_disable"};
+     Stat m_nUnrolledLoops{"Unrolled loops"};
+diff --git a/src/V3UnrollGen.cpp b/src/V3UnrollGen.cpp
+index be0d19f..8c984f1 100644
+--- a/src/V3UnrollGen.cpp
++++ b/src/V3UnrollGen.cpp
+@@ -227,7 +227,7 @@ class UnrollGenVisitor final : public VNVisitor {
+                         nodep->v3error(
+                             "Loop unrolling took too long;"
+                             " probably this is an infinite loop, "
+-                            " or use /*verilator unroll_full*/, or set --unroll-count above "
++                            " or use /*verilator unroll_full*/, or set --unroll-limit above "
+                             << times);
+                         break;
+                     }

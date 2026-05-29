@@ -1,0 +1,119 @@
+diff --git a/app/cfg/core_rrv_boot_trap.json b/app/cfg/core_rrv_boot_trap.json
+index 2539320..83f516d 100644
+--- a/app/cfg/core_rrv_boot_trap.json
++++ b/app/cfg/core_rrv_boot_trap.json
+@@ -5,5 +5,11 @@
+     "D_MEM_LENGTH": 61440,
+     "crt0_file"   : "crt0_boot_trap.S",
+     "rv32_gcc"    : "rv32i",
+-    "name"        : "rv32i"
+-}
+\ No newline at end of file
++    "name"        : "rv32i",
++    "rtl_parameter_override"  : {
++        "RF_NUM_MSB"  : 31
++    },
++    "verif_pkg_parameter_override"  : {
++        "RF_NUM_MSB"  : 31
++    }
++}
+diff --git a/app/cfg/mini_rv32e.json b/app/cfg/mini_rv32e.json
+index a1c976a..d488674 100644
+--- a/app/cfg/mini_rv32e.json
++++ b/app/cfg/mini_rv32e.json
+@@ -6,4 +6,12 @@
+     "crt0_file"   : "crt0_mini_rv32e.S",
+     "rv32_gcc"    : "rv32e -mabi=ilp32e",
+     "name"        : "rv32e"
++,
++    "rtl_parameter_override"  : {
++        "RF_NUM_MSB"  : 15
++    },
++    "verif_pkg_parameter_override"  : {
++        "RF_NUM_MSB"  : 15,
++        "V_TIMEOUT" : 500000
++    }
+ }
+diff --git a/build.py b/build.py
+index 0e44070..88fbdd5 100644
+--- a/build.py
++++ b/build.py
+@@ -8,6 +8,7 @@ import argparse
+ import sys
+ import json
+ import fileinput
++import re
+ from termcolor import colored
+ 
+ examples = '''
+@@ -109,6 +110,8 @@ class Test:
+         Test.crt0_file    = config_data['crt0_file']
+         Test.rv32_gcc     = config_data['rv32_gcc']
+         Test.name         = config_data['name']
++        self.rtl_parameter_override = config_data.get('rtl_parameter_override', {})
++        self.verif_pkg_parameter_override = config_data.get('verif_pkg_parameter_override', {})
+ 
+     def load_config(self):
+         # Default JSON file location
+@@ -368,6 +371,61 @@ def chdir(dir):
+     print_message(f'[COMMAND] cd '+dir)
+     os.chdir(dir)
+ 
++
++
++def apply_parameter_overrides(target_root, overrides, label):
++    if not overrides:
++        return
++    file_exts = ('.sv', '.svh', '.v', '.vh')
++    pattern_tpl = r'(^\s*parameter\s+{name}\s*=\s*)([^;]+)(;)'
++    for root, _, files in os.walk(target_root):
++        for fname in files:
++            if not fname.endswith(file_exts):
++                continue
++            fpath = os.path.join(root, fname)
++            try:
++                with open(fpath, 'r') as fh:
++                    content = fh.read()
++            except OSError:
++                continue
++            original = content
++            for name, value in overrides.items():
++                pattern = pattern_tpl.format(name=re.escape(name))
++                def repl(m, name=name, value=value, fpath=fpath):
++                    old = m.group(2).strip()
++                    print_message(f'[INFO] {label}: {fpath}: overriding parameter {name} from {old} to {value}')
++                    return f"{m.group(1)}{value}{m.group(3)} // Note: This line was inserted using parameter override script"
++                content = re.sub(pattern, repl, content, flags=re.M)
++            if content != original:
++                with open(fpath, 'w') as fh:
++                    fh.write(content)
++
++def apply_parameter_overrides(target_root, overrides, label):
++    if not overrides:
++        return
++    file_exts = ('.sv', '.svh', '.v', '.vh')
++    for root, _, files in os.walk(target_root):
++        for fname in files:
++            if not fname.endswith(file_exts):
++                continue
++            fpath = os.path.join(root, fname)
++            try:
++                with open(fpath, 'r') as fh:
++                    content = fh.read()
++            except OSError:
++                continue
++            original = content
++            for name, value in overrides.items():
++                pattern = rf'(^\s*parameter\s+{re.escape(name)}\s*=\s*)([^;]+)(;)'
++                def repl(m, name=name, value=value, fpath=fpath):
++                    old = m.group(2).strip()
++                    print_message(f'[INFO] {label}: {fpath}: overriding parameter {name} from {old} to {value}')
++                    return f"{m.group(1)}{value}{m.group(3)} // Note: This line was inserted using parameter override script"
++                content = re.sub(pattern, repl, content, flags=re.M)
++            if content != original:
++                with open(fpath, 'w') as fh:
++                    fh.write(content)
++
+ def run_cmd_with_capture(cmd):
+     print_message(f'[COMMAND] '+cmd)
+     # default value for results so return value is not None

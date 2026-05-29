@@ -1,0 +1,18 @@
+The bug is localized in `rtl/pulp_soc/lint_jtag_wrap.sv`: the instantiation of `adbg_lintonly_top` leaves its input port `lint_r_aux_i` unconnected.
+
+A minimal fix is to tie that unused input to a constant value, consistent with the other unused aux signals in this wrapper.
+
+```systemverilog
+### rtl/pulp_soc/lint_jtag_wrap.sv
+<<<<<<< SEARCH
+        .lint_aux_o     (                          ),
+        .lint_gnt_i     ( jtag_lint_master.gnt     ),
+        .lint_r_aux_i   (                          ),
+        .lint_r_valid_i ( jtag_lint_master.r_valid ),
+=======
+        .lint_aux_o     (                          ),
+        .lint_gnt_i     ( jtag_lint_master.gnt     ),
+        .lint_r_aux_i   ('0                       ),
+        .lint_r_valid_i ( jtag_lint_master.r_valid ),
+>>>>>>> REPLACE
+```

@@ -1,0 +1,19 @@
+diff --git a/gateware/cores/vco.sv b/gateware/cores/vco.sv
+index 11e742d..f7b15cb 100755
+--- a/gateware/cores/vco.sv
++++ b/gateware/cores/vco.sv
+@@ -52,10 +52,11 @@ always_ff @(posedge sample_clk) begin
+     wavetable_pos <= wavetable_pos + 32'(v_oct_lut[lut_index_clamped]);
+ end
+ 
+-// Top 8 bits of the N.F fixed-point representation are index into wavetable.
+-localparam BIT_START = 10 + FDIV;
++ // Top 8 bits of the N.F fixed-point representation are index into wavetable.
++ // Keep the same phase indexing convention as the generic wavetable oscillator.
++localparam BIT_START = 10;
+ wire [$clog2(WAVETABLE_SIZE)-1:0] wavetable_idx =
+-    wavetable_pos[BIT_START+$clog2(WAVETABLE_SIZE)-1:BIT_START];
++    wavetable_pos[BIT_START + FDIV + $clog2(WAVETABLE_SIZE)-1:BIT_START + FDIV];
+ 
+ assign sample_out0 = wavetable[wavetable_idx];
+ assign sample_out1 = wavetable[wavetable_idx+WAVETABLE_SIZE/4];

@@ -1,0 +1,129 @@
+diff --git a/src/clk_int_div.sv b/src/clk_int_div.sv
+new file mode 100644
+index 0000000..923f3dc
+--- /dev/null
++++ b/src/clk_int_div.sv
+@@ -0,0 +1,111 @@
++// Copyright 2026
++// SPDX-License-Identifier: Apache-2.0
++//
++// Integer clock divider with 50% duty-cycle output.
++//
++// - Divides clk_i by an integer N >= 2 (even N: exact 50%; odd N: as close as
++//   possible by alternating floor/ceil half-periods).
++// - Supports runtime updates of the division value via a ready/valid handshake.
++// - In test mode the output clock is bypassed (clk_o = clk_i).
++
++module clk_int_div #(
++  parameter int unsigned DIV_VALUE_WIDTH        = 4,
++  parameter int unsigned DEFAULT_DIV_VALUE      = 0,
++  parameter bit          ENABLE_CLOCK_IN_RESET  = 1'b0
++) (
++  input  logic                        clk_i,
++  input  logic                        rst_ni,
++  input  logic                        en_i,
++  input  logic                        test_mode_en_i,
++  input  logic [DIV_VALUE_WIDTH-1:0]  div_i,
++  input  logic                        div_valid_i,
++  output logic                        div_ready_o,
++  output logic                        clk_o,
++  output logic [DIV_VALUE_WIDTH-1:0]  cycl_count_o
++);
++
++  // Latched division value (N). We treat values < 2 as bypass (no division).
++  logic [DIV_VALUE_WIDTH-1:0] div_q;
++
++  // Half-period countdown.
++  logic [DIV_VALUE_WIDTH-1:0] half_cnt_q;
++  logic                       clk_div_q;
++  logic                       odd_phase_q;
++
++  // Helpers
++  logic [DIV_VALUE_WIDTH-1:0] div_eff;
++  logic [DIV_VALUE_WIDTH-1:0] half_len;
++
++  // Effective division value used for operation.
++  // For div < 2: act as bypass.
++  assign div_eff = (div_q < 2) ? '0 : div_q;
++
++  // Ready/valid: always ready (simple, safe), latch on handshake.
++  assign div_ready_o = 1'b1;
++
++  // cycl_count_o: expose current half-period countdown.
++  assign cycl_count_o = half_cnt_q;
++
++  // Compute half-period length for current phase.
++  // Even N: N/2 always.
++  // Odd  N: alternate between floor(N/2) and ceil(N/2).
++  always_comb begin
++    if (div_eff == '0) begin
++      half_len = '0;
++    end else if (!div_eff[0]) begin
++      // even
++      half_len = div_eff >> 1;
++    end else begin
++      // odd
++      // floor = N>>1; ceil = floor+1
++      half_len = (div_eff >> 1) + (odd_phase_q ? {{(DIV_VALUE_WIDTH-1){1'b0}},1'b1} : '0);
++    end
++  end
++
++  // Sequential
++  always_ff @(posedge clk_i or negedge rst_ni) begin
++    if (!rst_ni) begin
++      div_q      <= DEFAULT_DIV_VALUE[DIV_VALUE_WIDTH-1:0];
++      clk_div_q  <= ENABLE_CLOCK_IN_RESET ? 1'b0 : 1'b0;
++      half_cnt_q <= '0;
++      odd_phase_q<= 1'b0;
++    end else begin
++      // Latch new division value when requested.
++      if (div_valid_i && div_ready_o) begin
++        div_q <= div_i;
++        // Restart phase/counter to avoid glitches.
++        half_cnt_q  <= '0;
++        odd_phase_q <= 1'b0;
++        clk_div_q   <= 1'b0;
++      end
++
++      if (!en_i) begin
++        // Hold divider output low and reset counters when disabled.
++        clk_div_q   <= 1'b0;
++        half_cnt_q  <= '0;
++        odd_phase_q <= 1'b0;
++      end else begin
++        if (div_eff == '0) begin
++          // bypass when div < 2
++          clk_div_q   <= clk_i;
++          half_cnt_q  <= '0;
++          odd_phase_q <= 1'b0;
++        end else begin
++          // Count down half-periods and toggle output.
++          if (half_cnt_q == (half_len - 1'b1)) begin
++            half_cnt_q  <= '0;
++            clk_div_q   <= ~clk_div_q;
++            if (div_eff[0]) odd_phase_q <= ~odd_phase_q;
++          end else begin
++            half_cnt_q <= half_cnt_q + 1'b1;
++          end
++        end
++      end
++    end
++  end
++
++  // Output assignment - bypass in testmode
++  // Note: for div<2 we already bypass internally, but keep explicit test bypass.
++  assign clk_o = test_mode_en_i ? clk_i : clk_div_q;
++
++endmodule
+diff --git a/src_files.yml b/src_files.yml
+index f0b7215..7c66c86 100644
+--- a/src_files.yml
++++ b/src_files.yml
+@@ -11,6 +11,7 @@ common_cells_all:
+     - src/cdc_2phase.sv
+     - src/cf_math_pkg.sv
+     - src/clk_div.sv
++    - src/clk_int_div.sv
+     - src/delta_counter.sv
+     - src/ecc_pkg.sv
+     - src/edge_propagator_tx.sv

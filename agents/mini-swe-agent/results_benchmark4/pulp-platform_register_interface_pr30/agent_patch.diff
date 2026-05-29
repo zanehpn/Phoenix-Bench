@@ -1,0 +1,96 @@
+diff --git a/src/apb_to_reg.sv b/src/apb_to_reg.sv
+index 907c1e7..7d4dcd2 100644
+--- a/src/apb_to_reg.sv
++++ b/src/apb_to_reg.sv
+@@ -10,7 +10,9 @@
+ //
+ // Florian Zaruba <zarubaf@iis.ee.ethz.ch>
+ 
+-module apb_to_reg (
++module apb_to_reg #(
++  parameter bit LATCH = 1'b0
++) (
+   input  logic          clk_i,
+   input  logic          rst_ni,
+ 
+@@ -26,12 +28,31 @@ module apb_to_reg (
+   REG_BUS.out  reg_o
+ );
+ 
++  logic [31:0] paddr_q, pwdata_q;
++  logic        pwrite_q, psel_q, penable_q;
++
++  always_ff @(posedge clk_i or negedge rst_ni) begin
++    if (!rst_ni) begin
++      paddr_q   <= '0;
++      pwrite_q  <= 1'b0;
++      pwdata_q  <= '0;
++      psel_q    <= 1'b0;
++      penable_q <= 1'b0;
++    end else if (!LATCH || !psel_q || !penable_q || reg_o.ready) begin
++      paddr_q   <= paddr_i;
++      pwrite_q  <= pwrite_i;
++      pwdata_q  <= pwdata_i;
++      psel_q    <= psel_i;
++      penable_q <= penable_i;
++    end
++  end
++
+   always_comb begin
+-    reg_o.addr = paddr_i;
+-    reg_o.write = pwrite_i;
+-    reg_o.wdata = pwdata_i;
++    reg_o.addr = LATCH ? paddr_q : paddr_i;
++    reg_o.write = LATCH ? pwrite_q : pwrite_i;
++    reg_o.wdata = LATCH ? pwdata_q : pwdata_i;
+     reg_o.wstrb = '1;
+-    reg_o.valid = psel_i & penable_i;
++    reg_o.valid = (LATCH ? psel_q : psel_i) & (LATCH ? penable_q : penable_i);
+     pready_o = reg_o.ready;
+     pslverr_o = reg_o.error;
+     prdata_o = reg_o.rdata;
+@@ -40,18 +61,39 @@ endmodule
+ 
+ module apb_to_reg_intf #(
+   parameter int unsigned DATA_WIDTH = 32,
+-  parameter int unsigned ADDR_WIDTH = 32
++  parameter int unsigned ADDR_WIDTH = 32,
++  parameter bit LATCH = 1'b0
+ )(
+   APB.Slave    apb_i,
+   REG_BUS.out  reg_o
+ );
+ 
++  logic [ADDR_WIDTH-1:0] paddr_q;
++  logic [DATA_WIDTH-1:0] pwdata_q;
++  logic pwrite_q, psel_q, penable_q;
++
++  always_ff @(posedge apb_i.pclk or negedge apb_i.presetn) begin
++    if (!apb_i.presetn) begin
++      paddr_q   <= '0;
++      pwrite_q  <= 1'b0;
++      pwdata_q  <= '0;
++      psel_q    <= 1'b0;
++      penable_q <= 1'b0;
++    end else if (!LATCH || !psel_q || !penable_q || reg_o.ready) begin
++      paddr_q   <= apb_i.paddr;
++      pwrite_q  <= apb_i.pwrite;
++      pwdata_q  <= apb_i.pwdata;
++      psel_q    <= apb_i.psel;
++      penable_q <= apb_i.penable;
++    end
++  end
++
+   always_comb begin
+-    reg_o.addr    = apb_i.paddr;
+-    reg_o.write   = apb_i.pwrite;
+-    reg_o.wdata   = apb_i.pwdata;
++    reg_o.addr    = LATCH ? paddr_q : apb_i.paddr;
++    reg_o.write   = LATCH ? pwrite_q : apb_i.pwrite;
++    reg_o.wdata   = LATCH ? pwdata_q : apb_i.pwdata;
+     reg_o.wstrb   = '1;
+-    reg_o.valid   = apb_i.psel & apb_i.penable;
++    reg_o.valid   = (LATCH ? psel_q : apb_i.psel) & (LATCH ? penable_q : apb_i.penable);
+     apb_i.pready  = reg_o.ready;
+     apb_i.pslverr = reg_o.error;
+     apb_i.prdata  = reg_o.rdata;

@@ -1,0 +1,36 @@
+diff --git a/src/uncore/gpio_apb.sv b/src/uncore/gpio_apb.sv
+index d83d4b6..2eaa112 100644
+--- a/src/uncore/gpio_apb.sv
++++ b/src/uncore/gpio_apb.sv
+@@ -84,8 +84,8 @@ module gpio_apb import cvw::*;  #(parameter cvw_t P) (
+   // register access
+   always_ff @(posedge PCLK)
+     if (~PRESETn) begin
+-      input_en  <= '0;
+-      output_en <= '0;
++      input_en   <= '0;
++      output_en  <= '0;
+       output_val <= '0;
+       rise_ie    <= '0;
+       rise_ip    <= '0;
+@@ -98,6 +98,7 @@ module gpio_apb import cvw::*;  #(parameter cvw_t P) (
+       iof_en     <= '0;
+       iof_sel    <= '0;
+       out_xor    <= '0;
++      Dout       <= '0;
+     end else begin     // writes
+         // According to FE310 spec: Once the interrupt is pending, it will remain set until a 1 is written to the *_ip register at that bit.
+         /* verilator lint_off CASEINCOMPLETE */
+diff --git a/testbench/common/wallyTracer.sv b/testbench/common/wallyTracer.sv
+index ef84d94..e30337a 100644
+--- a/testbench/common/wallyTracer.sv
++++ b/testbench/common/wallyTracer.sv
+@@ -35,7 +35,7 @@
+   always_ff @(posedge clk) \
+     prev_csr_``name <= rvvi.csr[0][0][addr]; \
+   assign rvvi.csr_wb[0][0][addr] = (rvvi.csr[0][0][addr] != prev_csr_``name); \
+-  assign rvvi.csr[0][0][addr] = valid ? val : prev_csr_``name;
++  assign rvvi.csr[0][0][addr] = ~StallW ? val : prev_csr_``name;
+ 
+ module wallyTracer import cvw::*; #(parameter cvw_t P) (rvviTrace rvvi);
+ 

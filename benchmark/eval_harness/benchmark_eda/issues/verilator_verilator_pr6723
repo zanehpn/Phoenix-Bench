@@ -1,0 +1,45 @@
+# X input values are not handled correctly in UDPs
+
+- Source URL: https://github.com/verilator/verilator/issues/6722
+
+To reproduce:
+
+```verilog
+module t ();
+
+   wire true;
+   not1 a(true, '0);
+
+   wire false;
+   not1 b(false, '1);
+
+   initial begin
+      if (true != '1) $stop;
+      if (false != '0) $stop;
+      $finish;
+   end
+
+endmodule // t
+
+primitive not1 (q, d);
+   output q;
+   input  d;
+   table
+      0 : 1;
+      1 : 0;
+      x : x;
+   endtable
+endprimitive // not1
+```
+
+And the test driver code:
+
+```python3
+import vltest_bootstrap
+test.scenarios('vlt_all')
+test.compile()
+test.execute()
+test.passes()
+```
+
+The expected result is that the `true` and `false` wires will be 1 and 0, respectively. However, they are both set to X (depending on the value of the `--x-assign` command-line argument).

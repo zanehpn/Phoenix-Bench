@@ -1,0 +1,22 @@
+From b2661dac63def179edff3fb8e7f612e2bc759247 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Raphael=20St=C3=A4bler?= <raphael@productionbuild.de>
+Date: Wed, 8 Dec 2021 11:00:26 +0100
+Subject: [PATCH] Fix PPU bug where PPU is supposed to enter mode 0 on disable
+
+---
+ rtl/ppu.v | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/rtl/ppu.v b/rtl/ppu.v
+index 38dbda9..bf4e1e8 100644
+--- a/rtl/ppu.v
++++ b/rtl/ppu.v
+@@ -460,7 +460,7 @@ module ppu(
+         end
+         else begin
+             case (r_state)
+-            S_IDLE: reg_stat[1:0] <= PPU_MODE_V_BLANK;
++            S_IDLE: reg_stat[1:0] <= (reg_lcd_en) ? (PPU_MODE_V_BLANK) : (PPU_MODE_H_BLANK);
+             S_BLANK: reg_stat[1:0] <= (is_in_v_blank) ? (PPU_MODE_V_BLANK) : (PPU_MODE_H_BLANK);
+             S_OAMX: reg_stat[1:0] <= PPU_MODE_OAM_SEARCH;
+             S_OAMY: reg_stat[1:0] <= PPU_MODE_OAM_SEARCH;

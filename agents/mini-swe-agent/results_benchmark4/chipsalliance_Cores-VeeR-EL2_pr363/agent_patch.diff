@@ -1,0 +1,78 @@
+diff --git a/design/el2_mem.sv b/design/el2_mem.sv
+index 873535c..9a8b2ad 100644
+--- a/design/el2_mem.sv
++++ b/design/el2_mem.sv
+@@ -99,6 +99,7 @@ import el2_pkg::*;
+    assign mem_export_local.clk = clk;
+ 
+    assign mem_export      .clk                = mem_export_local.clk;
++   assign ic_parerr = '0;
+ 
+    assign mem_export      .iccm_clken         = mem_export_local.iccm_clken;
+    assign mem_export      .iccm_wren_bank     = mem_export_local.iccm_wren_bank;
+diff --git a/design/el2_veer.sv b/design/el2_veer.sv
+index 7d21113..31bf56d 100644
+--- a/design/el2_veer.sv
++++ b/design/el2_veer.sv
+@@ -1359,7 +1359,7 @@ import el2_pkg::*;
+    assign lsu_axi_awready_int                 = pt.BUILD_AHB_LITE ? lsu_axi_awready_ahb : lsu_axi_awready;
+    assign lsu_axi_wready_int                  = pt.BUILD_AHB_LITE ? lsu_axi_wready_ahb : lsu_axi_wready;
+    assign lsu_axi_bvalid_int                  = pt.BUILD_AHB_LITE ? lsu_axi_bvalid_ahb : lsu_axi_bvalid;
+-   assign lsu_axi_bready_int                  = pt.BUILD_AHB_LITE ? lsu_axi_bready_ahb : lsu_axi_bready;
++   assign lsu_axi_bready_int                  = pt.BUILD_AHB_LITE ? 1'b1 : lsu_axi_bready;
+    assign lsu_axi_bresp_int[1:0]              = pt.BUILD_AHB_LITE ? lsu_axi_bresp_ahb[1:0] : lsu_axi_bresp[1:0];
+    assign lsu_axi_bid_int[pt.LSU_BUS_TAG-1:0] = pt.BUILD_AHB_LITE ? lsu_axi_bid_ahb[pt.LSU_BUS_TAG-1:0] : lsu_axi_bid[pt.LSU_BUS_TAG-1:0];
+    assign lsu_axi_arready_int                 = pt.BUILD_AHB_LITE ? lsu_axi_arready_ahb : lsu_axi_arready;
+@@ -1372,7 +1372,7 @@ import el2_pkg::*;
+    assign ifu_axi_awready_int                 = pt.BUILD_AHB_LITE ? ifu_axi_awready_ahb : ifu_axi_awready;
+    assign ifu_axi_wready_int                  = pt.BUILD_AHB_LITE ? ifu_axi_wready_ahb : ifu_axi_wready;
+    assign ifu_axi_bvalid_int                  = pt.BUILD_AHB_LITE ? ifu_axi_bvalid_ahb : ifu_axi_bvalid;
+-   assign ifu_axi_bready_int                  = pt.BUILD_AHB_LITE ? ifu_axi_bready_ahb : ifu_axi_bready;
++   assign ifu_axi_bready_int                  = pt.BUILD_AHB_LITE ? 1'b1 : ifu_axi_bready;
+    assign ifu_axi_bresp_int[1:0]              = pt.BUILD_AHB_LITE ? ifu_axi_bresp_ahb[1:0] : ifu_axi_bresp[1:0];
+    assign ifu_axi_bid_int[pt.IFU_BUS_TAG-1:0] = pt.BUILD_AHB_LITE ? ifu_axi_bid_ahb[pt.IFU_BUS_TAG-1:0] : ifu_axi_bid[pt.IFU_BUS_TAG-1:0];
+    assign ifu_axi_arready_int                 = pt.BUILD_AHB_LITE ? ifu_axi_arready_ahb : ifu_axi_arready;
+@@ -1385,7 +1385,7 @@ import el2_pkg::*;
+    assign sb_axi_awready_int                  = pt.BUILD_AHB_LITE ? sb_axi_awready_ahb : sb_axi_awready;
+    assign sb_axi_wready_int                   = pt.BUILD_AHB_LITE ? sb_axi_wready_ahb : sb_axi_wready;
+    assign sb_axi_bvalid_int                   = pt.BUILD_AHB_LITE ? sb_axi_bvalid_ahb : sb_axi_bvalid;
+-   assign sb_axi_bready_int                   = pt.BUILD_AHB_LITE ? sb_axi_bready_ahb : sb_axi_bready;
++   assign sb_axi_bready_int                   = pt.BUILD_AHB_LITE ? 1'b1 : sb_axi_bready;
+    assign sb_axi_bresp_int[1:0]               = pt.BUILD_AHB_LITE ? sb_axi_bresp_ahb[1:0] : sb_axi_bresp[1:0];
+    assign sb_axi_bid_int[pt.SB_BUS_TAG-1:0]   = pt.BUILD_AHB_LITE ? sb_axi_bid_ahb[pt.SB_BUS_TAG-1:0] : sb_axi_bid[pt.SB_BUS_TAG-1:0];
+    assign sb_axi_arready_int                  = pt.BUILD_AHB_LITE ? sb_axi_arready_ahb : sb_axi_arready;
+diff --git a/design/exu/el2_exu.sv b/design/exu/el2_exu.sv
+index 26e90ed..aa4bd66 100644
+--- a/design/exu/el2_exu.sv
++++ b/design/exu/el2_exu.sv
+@@ -331,6 +331,8 @@ if(pt.BTB_ENABLE==1) begin
+    assign exu_mp_pkt.pcall                                  =  final_predict_mp.pcall;
+    assign exu_mp_pkt.pja                                    =  final_predict_mp.pja;
+    assign exu_mp_pkt.pret                                   =  final_predict_mp.pret;
++   assign exu_mp_pkt.br_error                               =  final_predict_mp.br_error;
++   assign exu_mp_pkt.br_start_error                         =  final_predict_mp.br_start_error;
+    assign exu_mp_pkt.ataken                                 =  final_predict_mp.ataken;
+    assign exu_mp_pkt.boffset                                =  final_predict_mp.boffset;
+    assign exu_mp_pkt.pc4                                    =  final_predict_mp.pc4;
+diff --git a/design/lsu/el2_lsu_dccm_ctl.sv b/design/lsu/el2_lsu_dccm_ctl.sv
+index e0fbb98..cb1455a 100644
+--- a/design/lsu/el2_lsu_dccm_ctl.sv
++++ b/design/lsu/el2_lsu_dccm_ctl.sv
+@@ -181,6 +181,7 @@ import el2_pkg::*;
+ 
+    if (pt.LOAD_TO_USE_PLUS1 == 1) begin: L2U_Plus1_1
+       logic [63:0]  lsu_rdata_r, lsu_rdata_corr_r;
++      logic [63:0]  lsu_ld_data_r64;
+       logic [63:0]  dccm_rdata_r, dccm_rdata_corr_r;
+       logic [63:0]  stbuf_fwddata_r;
+       logic [7:0]   stbuf_fwdbyteen_r;
+@@ -196,7 +197,8 @@ import el2_pkg::*;
+       assign dccm_dma_ecc_error   = lsu_double_ecc_error_r;
+       assign dccm_dma_rtag[2:0]   = dma_mem_tag_r[2:0];
+       assign dccm_dma_rdata[63:0] = ldst_dual_r ? lsu_rdata_corr_r[63:0] : {2{lsu_rdata_corr_r[31:0]}};
+-      assign {lsu_ld_data_r_nc[63:32], lsu_ld_data_r[31:0]}           = lsu_rdata_r[63:0] >> 8*lsu_addr_r[1:0];
++      assign {lsu_ld_data_r_nc[63:32], lsu_ld_data_r64[31:0]}         = lsu_rdata_r[63:0] >> 8*lsu_addr_r[1:0];
++      assign lsu_ld_data_r[31:0]                                      = lsu_ld_data_r64[31:0];
+       assign {lsu_ld_data_corr_r_nc[63:32], lsu_ld_data_corr_r[31:0]} = lsu_rdata_corr_r[63:0] >> 8*lsu_addr_r[1:0];
+ 
+       assign picm_rd_data_r[63:32]   = picm_rd_data_r[31:0];

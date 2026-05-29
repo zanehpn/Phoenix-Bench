@@ -1,0 +1,97 @@
+diff --git a/src/axi_res_tbl.sv b/src/axi_res_tbl.sv
+index 7daeb28..cb8a39c 100644
+--- a/src/axi_res_tbl.sv
++++ b/src/axi_res_tbl.sv
+@@ -12,7 +12,8 @@
+ // AXI Reservation Table
+ module axi_res_tbl #(
+     parameter int unsigned AXI_ADDR_WIDTH = 0,
+-    parameter int unsigned AXI_ID_WIDTH = 0
++    parameter int unsigned AXI_ID_WIDTH = 0,
++    parameter int unsigned NUM_RESERVATIONS = 0
+ ) (
+     input  logic                        clk_i,
+     input  logic                        rst_ni,
+@@ -29,25 +30,50 @@ module axi_res_tbl #(
+ );
+ 
+     localparam integer N_IDS = 2**AXI_ID_WIDTH;
++    localparam integer N_RES = (NUM_RESERVATIONS == 0) ? N_IDS : NUM_RESERVATIONS;
+ 
+     // Declarations of Signals and Types
+-    logic [N_IDS-1:0][AXI_ADDR_WIDTH-1:0]   tbl_d,                      tbl_q;
++    logic [N_RES-1:0][AXI_ID_WIDTH-1:0]     id_d, id_q;
++    logic [$clog2(N_RES)-1:0]               match_idx;
++    logic                                   match_found;
++    logic [N_RES-1:0][AXI_ADDR_WIDTH-1:0]   tbl_d,                      tbl_q;
+     logic                                   clr,
+                                             set,
+                                             match;
+ 
+-    assign match = (tbl_q[check_id_i] == check_clr_addr_i);
++    always_comb begin
++        match_found = 1'b0;
++        match_idx   = '0;
++        for (int unsigned i = 0; i < N_RES; ++i) begin
++            if (!match_found && id_q[i] == check_id_i) begin
++                match_found = 1'b1;
++                match_idx   = i[$clog2(N_RES)-1:0];
++            end
++        end
++    end
++    assign match = match_found && (tbl_q[match_idx] == check_clr_addr_i);
+ 
+-    generate for (genvar i = 0; i < N_IDS; ++i) begin: gen_tbl
+-        always_comb begin
+-            tbl_d[i] = tbl_q[i];
+-            if (set && i == set_id_i) begin
+-                tbl_d[i] = set_addr_i;
+-            end else if (clr && tbl_q[i] == check_clr_addr_i) begin
+-                tbl_d[i] = '0;
++    always_comb begin
++        tbl_d = tbl_q;
++        id_d  = id_q;
++        if (set) begin
++            for (int unsigned i = 0; i < N_RES; ++i) begin
++                if (!id_q[i] || id_q[i] == set_id_i) begin
++                    tbl_d[i] = set_addr_i;
++                    id_d[i]  = set_id_i;
++                    break;
++                end
+             end
+         end
+-    end endgenerate
++        if (clr) begin
++            for (int unsigned i = 0; i < N_RES; ++i) begin
++                if (tbl_q[i] == check_clr_addr_i) begin
++                    tbl_d[i] = '0;
++                    id_d[i]  = '0;
++                end
++            end
++        end
++    end
+ 
+     // Table-Managing Logic
+     always_comb begin
+@@ -71,8 +97,10 @@ module axi_res_tbl #(
+     always_ff @(posedge clk_i, negedge rst_ni) begin
+         if (~rst_ni) begin
+             tbl_q   <= '0;
++            id_q    <= '0;
+         end else begin
+             tbl_q   <= tbl_d;
++            id_q    <= id_d;
+         end
+     end
+ 
+@@ -84,6 +112,10 @@ module axi_res_tbl #(
+             else $fatal(1, "AXI_ADDR_WIDTH must be greater than 0!");
+         assert (AXI_ID_WIDTH > 0)
+             else $fatal(1, "AXI_ID_WIDTH must be greater than 0!");
++        if (NUM_RESERVATIONS != 0) begin
++            assert (NUM_RESERVATIONS > 0)
++                else $fatal(1, "NUM_RESERVATIONS must be greater than 0!");
++        end
+     end
+ `endif
+ // pragma translate_on

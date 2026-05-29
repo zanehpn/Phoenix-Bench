@@ -1,0 +1,288 @@
+From 6c33fa583918b01ae8bd6605f02d8150278a63f8 Mon Sep 17 00:00:00 2001
+From: yairlan <yairlandsman@gmail.com>
+Date: Tue, 14 Oct 2025 10:25:12 -0400
+Subject: [PATCH 1/5] fix a few of the test cases for the load instructions by
+ adding cases for funct3 in top
+
+---
+ src/Instruction_Decode/Instruction_Decode.v |  3 ++-
+ src/top.v                                   | 15 ++++++++++++++-
+ 2 files changed, 16 insertions(+), 2 deletions(-)
+
+diff --git a/src/Instruction_Decode/Instruction_Decode.v b/src/Instruction_Decode/Instruction_Decode.v
+index 1bc3e80..70438fc 100644
+--- a/src/Instruction_Decode/Instruction_Decode.v
++++ b/src/Instruction_Decode/Instruction_Decode.v
+@@ -9,6 +9,7 @@ module Instruction_Decode(
+ 	input wire [31:0] ResultData,
+   input wire reg_write,
+   output opcode_t opcode,
++  output reg [2:0] funct3,
+ 	output wire [3:0] ALUControl,
+ 	output wire [31:0] baseAddr,
+ 	output wire [31:0] writeData,
+@@ -16,7 +17,7 @@ module Instruction_Decode(
+ );
+ 
+ 	alu_op_t alu_op;
+-	reg [2:0] funct3;
++	//reg [2:0] funct3;
+ 	reg [6:0] funct7;
+ 	reg [4:0] rd, rs1, rs2;
+ 	wire [3:0] state;
+diff --git a/src/top.v b/src/top.v
+index 871bb8f..9cc2e3e 100644
+--- a/src/top.v
++++ b/src/top.v
+@@ -18,8 +18,10 @@ module top #( parameter MEM_SIZE = 1024 )
+   instr_t  instruction;
+   opcode_t opcode;
+   imm_t    imm_ext;
++  reg [2:0] funct3;
+ 
+   data_t result;
++  data_t mem_load_result;
+ 
+   data_t rd1;
+   data_t rd2;
+@@ -101,8 +103,18 @@ module top #( parameter MEM_SIZE = 1024 )
+     end
+   end
+ 
++  always @(*) begin
++    case (funct3)
++    3'b000:    mem_load_result = {{24{memory_data[7]}}, memory_data[7:0]};
++    3'b001:    mem_load_result = {{16{memory_data[15]}}, memory_data[15:0]};
++    3'b010:    mem_load_result = memory_data;
++    3'b100:    mem_load_result = {{24{1'b0}}, memory_data[7:0]};
++    3'b101:    mem_load_result = {{16{1'b0}}, memory_data[15:0]};
++    endcase
++  end
++
+   always @(posedge clk) begin
+-    data <= memory_data;
++    data <= mem_load_result;
+   end
+ 
+   Instruction_Decode instruction_decode
+@@ -112,6 +124,7 @@ module top #( parameter MEM_SIZE = 1024 )
+     , .ResultData      ( result           )
+     , .reg_write       ( cfsm__reg_write  )
+     , .opcode          ( opcode           )
++    , .funct3          ( funct3           ) 
+     , .ALUControl      ( __tmp_ALUControl )
+     , .baseAddr        ( rd1              )
+     , .writeData       ( rd2              )
+
+From 816b7f79fb94e880370f319b21a7166bf6ae5d92 Mon Sep 17 00:00:00 2001
+From: yairlan <yairlandsman@gmail.com>
+Date: Tue, 14 Oct 2025 20:55:34 -0400
+Subject: [PATCH 2/5] add some comments for funct3
+
+---
+ src/top.v | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/src/top.v b/src/top.v
+index 9cc2e3e..8b9f31f 100644
+--- a/src/top.v
++++ b/src/top.v
+@@ -105,11 +105,11 @@ module top #( parameter MEM_SIZE = 1024 )
+ 
+   always @(*) begin
+     case (funct3)
+-    3'b000:    mem_load_result = {{24{memory_data[7]}}, memory_data[7:0]};
+-    3'b001:    mem_load_result = {{16{memory_data[15]}}, memory_data[15:0]};
+-    3'b010:    mem_load_result = memory_data;
+-    3'b100:    mem_load_result = {{24{1'b0}}, memory_data[7:0]};
+-    3'b101:    mem_load_result = {{16{1'b0}}, memory_data[15:0]};
++    3'b000:    mem_load_result = {{24{memory_data[7]}}, memory_data[7:0]}; //lb
++    3'b001:    mem_load_result = {{16{memory_data[15]}}, memory_data[15:0]}; //lh
++    3'b010:    mem_load_result = memory_data; //lw
++    3'b100:    mem_load_result = {{24{1'b0}}, memory_data[7:0]}; //lbu
++    3'b101:    mem_load_result = {{16{1'b0}}, memory_data[15:0]}; //lhu
+     endcase
+   end
+ 
+
+From 8b318efa7d8c924e11b14260c23ccca2e3b1599a Mon Sep 17 00:00:00 2001
+From: yairlan <yairlandsman@gmail.com>
+Date: Tue, 14 Oct 2025 23:20:41 -0400
+Subject: [PATCH 3/5] made all load commands work
+
+---
+ src/top.v | 45 +++++++++++++++++++++++++++++++++++++++++----
+ 1 file changed, 41 insertions(+), 4 deletions(-)
+
+diff --git a/src/top.v b/src/top.v
+index 8b9f31f..3100cef 100644
+--- a/src/top.v
++++ b/src/top.v
+@@ -20,6 +20,8 @@ module top #( parameter MEM_SIZE = 1024 )
+   imm_t    imm_ext;
+   reg [2:0] funct3;
+ 
++  integer byteindex;
++
+   data_t result;
+   data_t mem_load_result;
+ 
+@@ -104,12 +106,47 @@ module top #( parameter MEM_SIZE = 1024 )
+   end
+ 
+   always @(*) begin
++    byteindex = memory_address[1:0];
+     case (funct3)
+-    3'b000:    mem_load_result = {{24{memory_data[7]}}, memory_data[7:0]}; //lb
+-    3'b001:    mem_load_result = {{16{memory_data[15]}}, memory_data[15:0]}; //lh
++    3'b000:    
++      begin
++        case (byteindex)
++        0 : mem_load_result = {{24{memory_data[7]}}, memory_data[7:0]}; //lb
++        1 : mem_load_result = {{24{memory_data[15]}}, memory_data[15:8]}; //lb
++        2 : mem_load_result = {{24{memory_data[23]}}, memory_data[23:16]}; //lb
++        3 : mem_load_result = {{24{memory_data[31]}}, memory_data[31:24]}; //lb
++      endcase
++        
++      end 
++    3'b001:    
++    begin
++        case (byteindex)
++        0 : mem_load_result = {{16{memory_data[15]}}, memory_data[15:0]};
++        1 : mem_load_result = {{16{memory_data[23]}}, memory_data[23:8]};
++        2 : mem_load_result = {{16{memory_data[31]}}, memory_data[31:16]};
++      endcase
++        
++      end  //lh
+     3'b010:    mem_load_result = memory_data; //lw
+-    3'b100:    mem_load_result = {{24{1'b0}}, memory_data[7:0]}; //lbu
+-    3'b101:    mem_load_result = {{16{1'b0}}, memory_data[15:0]}; //lhu
++    3'b100:    
++    begin
++        case (byteindex)
++        0 : mem_load_result = {{24{1'b0}}, memory_data[7:0]}; //lb
++        1 : mem_load_result = {{24{1'b0}}, memory_data[15:8]}; //lb
++        2 : mem_load_result = {{24{1'b0}}, memory_data[23:16]}; //lb
++        3 : mem_load_result = {{24{1'b0}}, memory_data[31:24]}; //lb
++      endcase
++        
++      end 
++    3'b101: 
++    begin
++        case (byteindex)
++        0 : mem_load_result = {{16{1'b0}}, memory_data[15:0]};
++        1 : mem_load_result = {{16{1'b0}}, memory_data[23:8]};
++        2 : mem_load_result = {{16{1'b0}}, memory_data[31:16]};
++      endcase
++        
++      end  //lh
+     endcase
+   end
+ 
+
+From 3d01d6b79f32c3f9ef87eeabd7d157137d72e870 Mon Sep 17 00:00:00 2001
+From: yairlan <yairlandsman@gmail.com>
+Date: Tue, 14 Oct 2025 23:22:30 -0400
+Subject: [PATCH 4/5] add some comments
+
+---
+ src/top.v | 30 +++++++++++++++---------------
+ 1 file changed, 15 insertions(+), 15 deletions(-)
+
+diff --git a/src/top.v b/src/top.v
+index 3100cef..cff6c40 100644
+--- a/src/top.v
++++ b/src/top.v
+@@ -108,17 +108,17 @@ module top #( parameter MEM_SIZE = 1024 )
+   always @(*) begin
+     byteindex = memory_address[1:0];
+     case (funct3)
+-    3'b000:    
++    3'b000:    //lb
+       begin
+         case (byteindex)
+-        0 : mem_load_result = {{24{memory_data[7]}}, memory_data[7:0]}; //lb
+-        1 : mem_load_result = {{24{memory_data[15]}}, memory_data[15:8]}; //lb
+-        2 : mem_load_result = {{24{memory_data[23]}}, memory_data[23:16]}; //lb
+-        3 : mem_load_result = {{24{memory_data[31]}}, memory_data[31:24]}; //lb
++        0 : mem_load_result = {{24{memory_data[7]}}, memory_data[7:0]};
++        1 : mem_load_result = {{24{memory_data[15]}}, memory_data[15:8]};
++        2 : mem_load_result = {{24{memory_data[23]}}, memory_data[23:16]};
++        3 : mem_load_result = {{24{memory_data[31]}}, memory_data[31:24]};
+       endcase
+         
+       end 
+-    3'b001:    
++    3'b001:   //lh 
+     begin
+         case (byteindex)
+         0 : mem_load_result = {{16{memory_data[15]}}, memory_data[15:0]};
+@@ -126,27 +126,27 @@ module top #( parameter MEM_SIZE = 1024 )
+         2 : mem_load_result = {{16{memory_data[31]}}, memory_data[31:16]};
+       endcase
+         
+-      end  //lh
++      end  /
+     3'b010:    mem_load_result = memory_data; //lw
+     3'b100:    
+-    begin
++    begin //lbu
+         case (byteindex)
+-        0 : mem_load_result = {{24{1'b0}}, memory_data[7:0]}; //lb
+-        1 : mem_load_result = {{24{1'b0}}, memory_data[15:8]}; //lb
+-        2 : mem_load_result = {{24{1'b0}}, memory_data[23:16]}; //lb
+-        3 : mem_load_result = {{24{1'b0}}, memory_data[31:24]}; //lb
++        0 : mem_load_result = {{24{1'b0}}, memory_data[7:0]};
++        1 : mem_load_result = {{24{1'b0}}, memory_data[15:8]};
++        2 : mem_load_result = {{24{1'b0}}, memory_data[23:16]};
++        3 : mem_load_result = {{24{1'b0}}, memory_data[31:24]};
+       endcase
+         
+       end 
+-    3'b101: 
++    3'b101: //lhu
+     begin
+         case (byteindex)
+         0 : mem_load_result = {{16{1'b0}}, memory_data[15:0]};
+         1 : mem_load_result = {{16{1'b0}}, memory_data[23:8]};
+         2 : mem_load_result = {{16{1'b0}}, memory_data[31:16]};
+       endcase
+-        
+-      end  //lh
++      
++      end 
+     endcase
+   end
+ 
+
+From 7c697bfdb44db9cc80d64d2ead1a99364f0bb88a Mon Sep 17 00:00:00 2001
+From: yairlan <yairlandsman@gmail.com>
+Date: Tue, 14 Oct 2025 23:43:21 -0400
+Subject: [PATCH 5/5] fixed small typo
+
+---
+ src/top.v | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/top.v b/src/top.v
+index cff6c40..fc4903a 100644
+--- a/src/top.v
++++ b/src/top.v
+@@ -126,7 +126,7 @@ module top #( parameter MEM_SIZE = 1024 )
+         2 : mem_load_result = {{16{memory_data[31]}}, memory_data[31:16]};
+       endcase
+         
+-      end  /
++      end
+     3'b010:    mem_load_result = memory_data; //lw
+     3'b100:    
+     begin //lbu
+@@ -145,7 +145,7 @@ module top #( parameter MEM_SIZE = 1024 )
+         1 : mem_load_result = {{16{1'b0}}, memory_data[23:8]};
+         2 : mem_load_result = {{16{1'b0}}, memory_data[31:16]};
+       endcase
+-      
++
+       end 
+     endcase
+   end

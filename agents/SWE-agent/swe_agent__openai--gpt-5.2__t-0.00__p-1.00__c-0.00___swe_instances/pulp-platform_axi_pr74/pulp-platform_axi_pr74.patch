@@ -1,0 +1,520 @@
+diff --git a/src/axi_atop_filter.sv b/src/axi_atop_filter.sv
+index 638c41be..cd226f50 100644
+--- a/src/axi_atop_filter.sv
++++ b/src/axi_atop_filter.sv
+@@ -37,16 +37,16 @@ module axi_atop_filter #(
+   parameter int unsigned AxiMaxWriteTxns = 0,
+   // AXI request & response type
+   parameter type req_t  = logic,
+-  parameter type resp_t = logic
++  parameter type rsp_t = logic
+ ) (
+   input  logic  clk_i,
+   input  logic  rst_ni,
+   // slave port
+   input  req_t  slv_req_i,
+-  output resp_t slv_resp_o,
++  output rsp_t slv_resp_o,
+   // master port
+   output req_t  mst_req_o,
+-  input  resp_t mst_resp_i
++  input  rsp_t mst_resp_i
+ );
+ 
+   localparam int unsigned COUNTER_WIDTH = $clog2(AxiMaxWriteTxns+1);
+@@ -391,7 +391,7 @@ module axi_atop_filter_intf #(
+   `AXI_TYPEDEF_RESP_T(resp_t, b_chan_t, r_chan_t)
+ 
+   req_t  slv_req,  mst_req;
+-  resp_t slv_resp, mst_resp;
++  rsp_t slv_resp, mst_resp;
+ 
+   `AXI_ASSIGN_TO_REQ(slv_req, slv)
+   `AXI_ASSIGN_FROM_RESP(slv, slv_resp)
+@@ -405,7 +405,7 @@ module axi_atop_filter_intf #(
+     .AxiMaxWriteTxns ( AXI_MAX_WRITE_TXNS ),
+   // AXI request & response type
+     .req_t           ( req_t              ),
+-    .resp_t          ( resp_t             )
++    .rsp_t          ( rsp_t             )
+   ) i_axi_atop_filter (
+     .clk_i,
+     .rst_ni,
+diff --git a/src/axi_burst_splitter.sv b/src/axi_burst_splitter.sv
+index 28bdb242..f4fef5a9 100644
+--- a/src/axi_burst_splitter.sv
++++ b/src/axi_burst_splitter.sv
+@@ -33,18 +33,18 @@ module axi_burst_splitter #(
+   parameter int unsigned IdWidth      = 32'd0,
+   parameter int unsigned UserWidth    = 32'd0,
+   parameter type         req_t        = logic,
+-  parameter type         resp_t       = logic
++  parameter type         rsp_t       = logic
+ ) (
+   input  logic  clk_i,
+   input  logic  rst_ni,
+ 
+   // Input / Slave Port
+   input  req_t  slv_req_i,
+-  output resp_t slv_resp_o,
++  output rsp_t slv_resp_o,
+ 
+   // Output / Master Port
+   output req_t  mst_req_o,
+-  input  resp_t mst_resp_i
++  input  rsp_t mst_resp_i
+ );
+ 
+   typedef logic [AddrWidth-1:0]   addr_t;
+@@ -60,7 +60,7 @@ module axi_burst_splitter #(
+ 
+   // Demultiplex between supported and unsupported transactions.
+   req_t   act_req,  unsupported_req;
+-  resp_t  act_resp, unsupported_resp;
++  rsp_t  act_resp, unsupported_resp;
+   logic   sel_aw_unsupported, sel_ar_unsupported;
+   localparam int unsigned MaxTxns = (MaxReadTxns > MaxWriteTxns) ? MaxReadTxns : MaxWriteTxns;
+   axi_demux #(
+@@ -71,7 +71,7 @@ module axi_burst_splitter #(
+     .ar_chan_t    ( ar_chan_t ),
+     .r_chan_t     ( r_chan_t  ),
+     .req_t        ( req_t     ),
+-    .resp_t       ( resp_t    ),
++    .rsp_t       ( rsp_t    ),
+     .NoMstPorts   ( 2         ),
+     .MaxTrans     ( MaxTxns   ),
+     .AxiLookBits  ( IdWidth   ),
+@@ -117,7 +117,7 @@ module axi_burst_splitter #(
+   axi_err_slv #(
+     .AxiIdWidth ( IdWidth               ),
+     .req_t      ( req_t                 ),
+-    .resp_t     ( resp_t                ),
++    .rsp_t     ( rsp_t                ),
+     .Resp       ( axi_pkg::RESP_SLVERR  ),
+     .ATOPs      ( 1'b0                  ),  // The burst splitter does not support ATOPs.
+     .MaxTrans   ( 1                     )   // Splitting bursts implies a low-performance bus.
+diff --git a/src/axi_cut.sv b/src/axi_cut.sv
+index 45bfa964..c93db619 100644
+--- a/src/axi_cut.sv
++++ b/src/axi_cut.sv
+@@ -26,16 +26,16 @@ module axi_cut #(
+   parameter type  r_chan_t = logic,
+   // AXI request & response structs
+   parameter type     req_t = logic,
+-  parameter type    resp_t = logic
++  parameter type    rsp_t = logic
+ ) (
+   input logic   clk_i,
+   input logic   rst_ni,
+   // salve port
+   input  req_t  slv_req_i,
+-  output resp_t slv_resp_o,
++  output rsp_t slv_resp_o,
+   // master port
+   output req_t  mst_req_o,
+-  input  resp_t mst_resp_i
++  input  rsp_t mst_resp_i
+ );
+ 
+   // a spill register for each channel
+@@ -147,7 +147,7 @@ module axi_cut_intf #(
+   `AXI_TYPEDEF_RESP_T(resp_t, b_chan_t, r_chan_t)
+ 
+   req_t  slv_req,  mst_req;
+-  resp_t slv_resp, mst_resp;
++  rsp_t slv_resp, mst_resp;
+ 
+   `AXI_ASSIGN_TO_REQ(slv_req, in)
+   `AXI_ASSIGN_FROM_RESP(in, slv_resp)
+@@ -163,7 +163,7 @@ module axi_cut_intf #(
+     .ar_chan_t ( ar_chan_t ),
+     .r_chan_t  (  r_chan_t ),
+     .req_t     (     req_t ),
+-    .resp_t    (    resp_t )
++    .rsp_t    (    rsp_t )
+   ) i_axi_cut (
+     .clk_i,
+     .rst_ni,
+@@ -221,7 +221,7 @@ module axi_lite_cut_intf #(
+   `AXI_LITE_TYPEDEF_RESP_T(resp_t, b_chan_t, r_chan_t)
+ 
+   req_t   slv_req,  mst_req;
+-  resp_t  slv_resp, mst_resp;
++  rsp_t  slv_resp, mst_resp;
+ 
+   `AXI_LITE_ASSIGN_TO_REQ(slv_req, in)
+   `AXI_LITE_ASSIGN_FROM_RESP(in, slv_resp)
+@@ -237,7 +237,7 @@ module axi_lite_cut_intf #(
+     .ar_chan_t ( ar_chan_t ),
+     .r_chan_t  (  r_chan_t ),
+     .req_t     (     req_t ),
+-    .resp_t    (    resp_t )
++    .rsp_t    (    rsp_t )
+   ) i_axi_cut (
+     .clk_i,
+     .rst_ni,
+diff --git a/src/axi_delayer.sv b/src/axi_delayer.sv
+index 13fcb37b..d2035fef 100644
+--- a/src/axi_delayer.sv
++++ b/src/axi_delayer.sv
+@@ -20,7 +20,7 @@ module axi_delayer #(
+   parameter type  r_chan_t = logic,
+   // AXI request & response types
+   parameter type     req_t = logic,
+-  parameter type    resp_t = logic,
++  parameter type    rsp_t = logic,
+   // delay parameters
+   parameter bit          StallRandomInput  = 0,
+   parameter bit          StallRandomOutput = 0,
+@@ -31,10 +31,10 @@ module axi_delayer #(
+   input  logic  rst_ni,     // Asynchronous reset active low
+   // slave port
+   input  req_t  slv_req_i,
+-  output resp_t slv_resp_o,
++  output rsp_t slv_resp_o,
+   // master port
+   output req_t  mst_req_o,
+-  input  resp_t mst_resp_i
++  input  rsp_t mst_resp_i
+ );
+   // AW
+   stream_delay #(
+@@ -153,7 +153,7 @@ module axi_delayer_intf #(
+   `AXI_TYPEDEF_RESP_T(resp_t, b_chan_t, r_chan_t)
+ 
+   req_t  slv_req,  mst_req;
+-  resp_t slv_resp, mst_resp;
++  rsp_t slv_resp, mst_resp;
+ 
+   `AXI_ASSIGN_TO_REQ(slv_req, slv)
+   `AXI_ASSIGN_FROM_RESP(slv, slv_resp)
+@@ -168,7 +168,7 @@ module axi_delayer_intf #(
+     .ar_chan_t         (           ar_chan_t ),
+     .r_chan_t          (            r_chan_t ),
+     .req_t             (               req_t ),
+-    .resp_t            (              resp_t ),
++    .rsp_t            (              rsp_t ),
+     .StallRandomInput  ( STALL_RANDOM_INPUT  ),
+     .StallRandomOutput ( STALL_RANDOM_OUTPUT ),
+     .FixedDelayInput   ( FIXED_DELAY_INPUT   ),
+diff --git a/src/axi_demux.sv b/src/axi_demux.sv
+index 7ddc1057..4d294a65 100644
+--- a/src/axi_demux.sv
++++ b/src/axi_demux.sv
+@@ -22,7 +22,7 @@ module axi_demux #(
+   parameter type         ar_chan_t      = logic,
+   parameter type         r_chan_t       = logic,
+   parameter type         req_t          = logic,
+-  parameter type         resp_t         = logic,
++  parameter type         rsp_t         = logic,
+   parameter int unsigned NoMstPorts     = 32'd0,
+   parameter int unsigned MaxTrans       = 32'd8,
+   parameter int unsigned AxiLookBits    = 32'd3,
+@@ -43,10 +43,10 @@ module axi_demux #(
+   input  req_t                     slv_req_i,
+   input  select_t                  slv_aw_select_i,
+   input  select_t                  slv_ar_select_i,
+-  output resp_t                    slv_resp_o,
++  output rsp_t                    slv_resp_o,
+   // Master Ports
+   output req_t    [NoMstPorts-1:0] mst_reqs_o,
+-  input  resp_t   [NoMstPorts-1:0] mst_resps_i
++  input  rsp_t   [NoMstPorts-1:0] mst_resps_i
+ );
+ 
+   localparam int unsigned IdCounterWidth = MaxTrans > 1 ? $clog2(MaxTrans) : 1;
+@@ -691,9 +691,9 @@ module axi_demux_intf #(
+   `AXI_TYPEDEF_RESP_T(resp_t, b_chan_t, r_chan_t)
+ 
+   req_t                     slv_req;
+-  resp_t                    slv_resp;
++  rsp_t                    slv_resp;
+   req_t  [NO_MST_PORTS-1:0] mst_req;
+-  resp_t [NO_MST_PORTS-1:0] mst_resp;
++  rsp_t [NO_MST_PORTS-1:0] mst_resp;
+ 
+   `AXI_ASSIGN_TO_REQ(slv_req, slv)
+   `AXI_ASSIGN_FROM_RESP(slv, slv_resp)
+@@ -711,7 +711,7 @@ module axi_demux_intf #(
+     .ar_chan_t      ( ar_chan_t     ), // AR Channel Type
+     .r_chan_t       (  r_chan_t     ), //  R Channel Type
+     .req_t          (     req_t     ),
+-    .resp_t         (    resp_t     ),
++    .rsp_t         (    rsp_t     ),
+     .NoMstPorts     ( NO_MST_PORTS  ),
+     .MaxTrans       ( MAX_TRANS     ),
+     .AxiLookBits    ( AXI_LOOK_BITS ),
+diff --git a/src/axi_err_slv.sv b/src/axi_err_slv.sv
+index 3a1356e5..9d1deb9a 100644
+--- a/src/axi_err_slv.sv
++++ b/src/axi_err_slv.sv
+@@ -16,7 +16,7 @@
+ module axi_err_slv #(
+   parameter int unsigned    AxiIdWidth  = 0,                    // AXI ID Width
+   parameter type            req_t       = logic,                // AXI 4 request struct, with atop field
+-  parameter type            resp_t      = logic,                // AXI 4 response struct
++  parameter type            rsp_t      = logic,                // AXI 4 response struct
+   parameter axi_pkg::resp_t Resp        = axi_pkg::RESP_DECERR, // Error generated by this slave.
+   parameter bit             ATOPs       = 1'b1,                 // Activate support for ATOPs.  Set to 1 if this slave could ever get an atomic AXI transaction.
+   parameter int unsigned    MaxTrans    = 1                     // Maximum # of accepted transactions before stalling
+@@ -26,7 +26,7 @@ module axi_err_slv #(
+   input  logic  test_i,  // Testmode enable
+   // slave port
+   input  req_t  slv_req_i,
+-  output resp_t slv_resp_o
++  output rsp_t slv_resp_o
+ );
+   typedef logic [AxiIdWidth-1:0] id_t;
+   typedef struct packed {
+@@ -35,14 +35,14 @@ module axi_err_slv #(
+   } r_data_t;
+ 
+   req_t   err_req;
+-  resp_t  err_resp;
++  rsp_t  err_resp;
+ 
+   if (ATOPs) begin
+     axi_atop_filter #(
+       .AxiIdWidth       ( AxiIdWidth  ),
+       .AxiMaxWriteTxns  ( MaxTrans    ),
+       .req_t            ( req_t       ),
+-      .resp_t           ( resp_t      )
++      .rsp_t           ( rsp_t      )
+     ) i_atop_filter (
+       .clk_i,
+       .rst_ni,
+diff --git a/src/axi_lite_demux.sv b/src/axi_lite_demux.sv
+index 43631791..8c558f5c 100644
+--- a/src/axi_lite_demux.sv
++++ b/src/axi_lite_demux.sv
+@@ -23,7 +23,7 @@ module axi_lite_demux #(
+   parameter type         ar_chan_t      = logic, // AXI4-Lite AR channel
+   parameter type         r_chan_t       = logic, // AXI4-Lite  R channel
+   parameter type         req_t          = logic, // AXI4-Lite request struct
+-  parameter type         resp_t         = logic, // AXI4-Lite response struct
++  parameter type         rsp_t         = logic, // AXI4-Lite response struct
+   parameter int unsigned NoMstPorts     = 32'd0, // Number of instantiated ports
+   parameter int unsigned MaxTrans       = 32'd0, // Maximum number of open transactions per channel
+   parameter bit          FallThrough    = 1'b0,  // FIFOs are in fall through mode
+@@ -42,10 +42,10 @@ module axi_lite_demux #(
+   input  req_t                   slv_req_i,
+   input  select_t                slv_aw_select_i,
+   input  select_t                slv_ar_select_i,
+-  output resp_t                  slv_resp_o,
++  output rsp_t                  slv_resp_o,
+   // master ports (AXI4-Lite outputs), connect slave modules here
+   output req_t  [NoMstPorts-1:0] mst_reqs_o,
+-  input  resp_t [NoMstPorts-1:0] mst_resps_i
++  input  rsp_t [NoMstPorts-1:0] mst_resps_i
+ );
+ 
+   if (NoMstPorts == 32'd1) begin : gen_no_demux
+@@ -422,9 +422,9 @@ module axi_lite_demux_intf #(
+   `AXI_LITE_TYPEDEF_RESP_T(resp_t, b_chan_t, r_chan_t)
+ 
+   req_t                   slv_req;
+-  resp_t                  slv_resp;
++  rsp_t                  slv_resp;
+   req_t  [NoMstPorts-1:0] mst_reqs;
+-  resp_t [NoMstPorts-1:0] mst_resps;
++  rsp_t [NoMstPorts-1:0] mst_resps;
+ 
+   `AXI_LITE_ASSIGN_TO_REQ(slv_req, slv)
+   `AXI_LITE_ASSIGN_FROM_RESP(slv, slv_resp)
+diff --git a/src/axi_lite_mux.sv b/src/axi_lite_mux.sv
+index dbee0cb8..86546b2f 100644
+--- a/src/axi_lite_mux.sv
++++ b/src/axi_lite_mux.sv
+@@ -26,7 +26,7 @@ module axi_lite_mux #(
+   parameter type          ar_chan_t  = logic, // AR LITE Channel Type
+   parameter type           r_chan_t  = logic, //  R LITE Channel Type
+   parameter type              req_t  = logic, // AXI4-Lite request type
+-  parameter type             resp_t  = logic, // AXI4-Lite response type
++  parameter type             rsp_t  = logic, // AXI4-Lite response type
+   parameter int unsigned NoSlvPorts  = 32'd0, // Number of slave ports
+   // Maximum number of outstanding transactions per write or read
+   parameter int unsigned MaxTrans    = 32'd0,
+@@ -45,10 +45,10 @@ module axi_lite_mux #(
+   input  logic                   test_i,   // Test Mode enable
+   // slave ports (AXI4-Lite inputs), connect master modules here
+   input  req_t  [NoSlvPorts-1:0] slv_reqs_i,
+-  output resp_t [NoSlvPorts-1:0] slv_resps_o,
++  output rsp_t [NoSlvPorts-1:0] slv_resps_o,
+   // master port (AXI4-Lite output), connect slave module here
+   output req_t                   mst_req_o,
+-  input  resp_t                  mst_resp_i
++  input  rsp_t                  mst_resp_i
+ );
+   // pass through if only one slave port
+   if (NoSlvPorts == 32'h1) begin : gen_no_mux
+@@ -424,9 +424,9 @@ module axi_lite_mux_intf #(
+   `AXI_LITE_TYPEDEF_RESP_T(resp_t, b_chan_t, r_chan_t)
+ 
+   req_t     [NoSlvPorts-1:0] slv_reqs;
+-  resp_t    [NoSlvPorts-1:0] slv_resps;
++  rsp_t    [NoSlvPorts-1:0] slv_resps;
+   req_t                      mst_req;
+-  resp_t                     mst_resp;
++  rsp_t                     mst_resp;
+ 
+   for (genvar i = 0; i < NoSlvPorts; i++) begin : gen_assign_slv_ports
+     `AXI_LITE_ASSIGN_TO_REQ(slv_reqs[i], slv[i])
+diff --git a/src/axi_lite_to_axi.sv b/src/axi_lite_to_axi.sv
+index 93535682..1fc62903 100644
+--- a/src/axi_lite_to_axi.sv
++++ b/src/axi_lite_to_axi.sv
+@@ -19,14 +19,14 @@ module axi_lite_to_axi #(
+   parameter type resp_lite_t = logic,
+   // FULL AXI structs
+   parameter type       req_t = logic,
+-  parameter type      resp_t = logic
++  parameter type      rsp_t = logic
+ ) (
+   // Slave AXI LITE port
+   input  req_lite_t  slv_req_lite_i,
+   output resp_lite_t slv_resp_lite_o,
+   // Master AXI port
+   output req_t       mst_req_o,
+-  input  resp_t      mst_resp_i
++  input  rsp_t      mst_resp_i
+ );
+   localparam int unsigned write_size = $unsigned($clog2($bits(mst_req_o.w.data)/8));
+   localparam int unsigned read_size  = $unsigned($clog2($bits(mst_resp_i.r.data)/8));
+diff --git a/src/axi_lite_xbar.sv b/src/axi_lite_xbar.sv
+index b034cd74..aee81640 100644
+--- a/src/axi_lite_xbar.sv
++++ b/src/axi_lite_xbar.sv
+@@ -24,7 +24,7 @@ module axi_lite_xbar #(
+   parameter type ar_chan_t          = logic,
+   parameter type  r_chan_t          = logic,
+   parameter type     req_t          = logic,
+-  parameter type    resp_t          = logic,
++  parameter type    rsp_t          = logic,
+   parameter type    rule_t          = axi_pkg::xbar_rule_64_t,
+   // DEPENDENT PARAMETERS, DO NOT OVERWRITE!
+   parameter int unsigned MstIdxWidth = (Cfg.NoMstPorts > 32'd1) ? $clog2(Cfg.NoMstPorts) : 32'd1
+@@ -33,9 +33,9 @@ module axi_lite_xbar #(
+   input  logic                                        rst_ni,
+   input  logic                                        test_i,
+   input  req_t  [Cfg.NoSlvPorts-1:0]                  slv_ports_req_i,
+-  output resp_t [Cfg.NoSlvPorts-1:0]                  slv_ports_resp_o,
++  output rsp_t [Cfg.NoSlvPorts-1:0]                  slv_ports_resp_o,
+   output req_t  [Cfg.NoMstPorts-1:0]                  mst_ports_req_o,
+-  input  resp_t [Cfg.NoMstPorts-1:0]                  mst_ports_resp_i,
++  input  rsp_t [Cfg.NoMstPorts-1:0]                  mst_ports_resp_i,
+   input  rule_t [Cfg.NoAddrRules-1:0]                 addr_map_i,
+   input  logic  [Cfg.NoSlvPorts-1:0]                  en_default_mst_port_i,
+   input  logic  [Cfg.NoSlvPorts-1:0][MstIdxWidth-1:0] default_mst_port_i
+@@ -58,11 +58,11 @@ module axi_lite_xbar #(
+ 
+   // signals from the axi_lite_demuxes, one index more for decode error routing
+   req_t  [Cfg.NoSlvPorts-1:0][Cfg.NoMstPorts:0] slv_reqs;
+-  resp_t [Cfg.NoSlvPorts-1:0][Cfg.NoMstPorts:0] slv_resps;
++  rsp_t [Cfg.NoSlvPorts-1:0][Cfg.NoMstPorts:0] slv_resps;
+ 
+   // signals into the axi_lite_muxes, are of type slave as the multiplexer extends the ID
+   req_t  [Cfg.NoMstPorts-1:0][Cfg.NoSlvPorts-1:0] mst_reqs;
+-  resp_t [Cfg.NoMstPorts-1:0][Cfg.NoSlvPorts-1:0] mst_resps;
++  rsp_t [Cfg.NoMstPorts-1:0][Cfg.NoSlvPorts-1:0] mst_resps;
+ 
+   for (genvar i = 0; i < Cfg.NoSlvPorts; i++) begin : gen_slv_port_demux
+     logic [MstIdxWidth-1:0] dec_aw,        dec_ar;
+@@ -141,7 +141,7 @@ module axi_lite_xbar #(
+       .ar_chan_t      ( ar_chan_t          ),  // AR Channel Type
+       .r_chan_t       (  r_chan_t          ),  //  R Channel Type
+       .req_t          ( req_t              ),
+-      .resp_t         ( resp_t             ),
++      .rsp_t         ( rsp_t             ),
+       .NoMstPorts     ( Cfg.NoMstPorts + 1 ),
+       .MaxTrans       ( Cfg.MaxMstTrans    ),
+       .FallThrough    ( Cfg.FallThrough    ),
+@@ -166,9 +166,9 @@ module axi_lite_xbar #(
+     // typedef as the decode error slave uses full axi
+     axi_lite_to_axi #(
+       .req_lite_t  ( req_t       ),
+-      .resp_lite_t ( resp_t      ),
++      .resp_lite_t ( rsp_t      ),
+       .req_t       ( full_req_t  ),
+-      .resp_t      ( full_resp_t )
++      .rsp_t      ( full_resp_t )
+     ) i_dec_err_conv (
+       .slv_req_lite_i  ( slv_reqs[i][Cfg.NoMstPorts]  ),
+       .slv_resp_lite_o ( slv_resps[i][Cfg.NoMstPorts] ),
+@@ -179,7 +179,7 @@ module axi_lite_xbar #(
+     axi_err_slv #(
+       .AxiIdWidth  ( 32'd1                ), // ID width is one as defined as logic above
+       .req_t       ( full_req_t           ), // AXI request struct
+-      .resp_t      ( full_resp_t          ), // AXI response struct
++      .rsp_t      ( full_resp_t          ), // AXI response struct
+       .Resp        ( axi_pkg::RESP_DECERR ),
+       .ATOPs       ( 1'b0                 ), // no ATOPs in AXI4-Lite
+       .MaxTrans    ( 1                    )  // Transactions terminate at this slave, and AXI4-Lite
+@@ -210,7 +210,7 @@ module axi_lite_xbar #(
+       .ar_chan_t   ( ar_chan_t          ), // AR Channel Type
+       .r_chan_t    (  r_chan_t          ), //  R Channel Type
+       .req_t       ( req_t              ),
+-      .resp_t      ( resp_t             ),
++      .rsp_t      ( rsp_t             ),
+       .NoSlvPorts  ( Cfg.NoSlvPorts     ), // Number of Masters for the module
+       .MaxTrans    ( Cfg.MaxSlvTrans    ),
+       .FallThrough ( Cfg.FallThrough    ),
+diff --git a/src/axi_multicut.sv b/src/axi_multicut.sv
+index 4cf825a7..dd830566 100644
+--- a/src/axi_multicut.sv
++++ b/src/axi_multicut.sv
+@@ -25,16 +25,16 @@ module axi_multicut #(
+   parameter type  r_chan_t = logic,
+   // AXI request & response structs
+   parameter type     req_t = logic,
+-  parameter type    resp_t = logic
++  parameter type     rsp_t = logic
+ ) (
+   input  logic  clk_i,   // Clock
+   input  logic  rst_ni,  // Asynchronous reset active low
+   // slave port
+   input  req_t  slv_req_i,
+-  output resp_t slv_resp_o,
++  output rsp_t slv_resp_o,
+   // master port
+   output req_t  mst_req_o,
+-  input  resp_t mst_resp_i
++  input  rsp_t mst_resp_i
+ );
+ 
+   if (NoCuts == '0) begin : gen_no_cut
+@@ -44,7 +44,7 @@ module axi_multicut #(
+   end else begin : gen_axi_cut
+     // instantiate all needed cuts
+     req_t  [NoCuts:0] cut_req;
+-    resp_t [NoCuts:0] cut_resp;
++    rsp_t [NoCuts:0] cut_resp;
+ 
+     // connect slave to the lowest index
+     assign cut_req[0] = slv_req_i;
+@@ -60,7 +60,7 @@ module axi_multicut #(
+         .ar_chan_t ( ar_chan_t ),
+         .r_chan_t  (  r_chan_t ),
+         .req_t     (     req_t ),
+-        .resp_t    (    resp_t )
++        .resp_t    (    rsp_t )
+       ) i_cut (
+         .clk_i,
+         .rst_ni,
+@@ -134,7 +134,7 @@ module axi_multicut_intf #(
+     .ar_chan_t ( ar_chan_t ),
+     .r_chan_t  (  r_chan_t ),
+     .req_t     (     req_t ),
+-    .resp_t    (    resp_t )
++    .resp_t    (    rsp_t )
+   ) i_axi_multicut (
+     .clk_i,
+     .rst_ni,
+@@ -208,7 +208,7 @@ module axi_lite_multicut_intf #(
+     .ar_chan_t ( ar_chan_t ),
+     .r_chan_t  (  r_chan_t ),
+     .req_t     (     req_t ),
+-    .resp_t    (    resp_t )
++    .resp_t    (    rsp_t )
+   ) i_axi_multicut (
+     .clk_i,
+     .rst_ni,

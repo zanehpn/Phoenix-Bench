@@ -1,0 +1,463 @@
+2026-01-19 22:34:04,872 - INFO - rex-deploy - Pulling image 'hwebench/pulp-platform_snitch:pr394'
+2026-01-19 22:34:10,893 - INFO - rex-deploy - Building image hwebench/pulp-platform_snitch:pr394 to install a standalone python to /root. This might take a while (but you only have to do it once). To skip this step, set `python_standalone_dir` to None.
+2026-01-19 22:34:53,217 - INFO - rex-deploy - Starting container hwebenchpulp-platform_snitchpr394-be5c06aa-1ac4-47fe-9ae4-074343b8909f with image hwebench/pulp-platform_snitch:pr394 serving on port 52773
+2026-01-19 22:34:53,221 - INFO - rex-deploy - Starting runtime at 52773
+2026-01-19 22:34:53,990 - INFO - rex-deploy - Runtime started in 0.77s
+2026-01-19 22:34:54,782 - INFO - swea-env - Environment Initialized
+2026-01-19 22:34:57,366 - INFO - swea-agent - Setting up agent for instance pulp-platform_snitch_pr394
+2026-01-19 22:34:57,371 - INFO - swea-agent - Trajectory will be saved to /workspace/phoenix-bench/agents/SWE-agent/trajectories/anon/swe_agent__openai--gpt-5.2__t-0.00__p-1.00__c-0.00___swe_instances/pulp-platform_snitch_pr394/pulp-platform_snitch_pr394.traj
+2026-01-19 22:35:00,009 - INFO - swea-tools - Resetting tools
+2026-01-19 22:35:00,368 - INFO - swea-agent - SYSTEM (main)
+You are an expert agent that can interact with a computer to debug SystemVerilog/Verilog repositories. You are in an environment
+with Verilator, Make, Python3 and Spike RISC-V ISA Simulator.
+2026-01-19 22:35:00,514 - INFO - swea-agent - 🤖 MODEL INPUT
+<uploaded_files>
+/testbed
+</uploaded_files>
+I've uploaded a HDL code repository in the directory /testbed. Consider the following PR description:
+
+<pr_description>
+# SPI Host: FSM Bug CSID Switch
+
+The OpenTitan SPI host FSM contains a bug as it jumps to the WaitIdle state after receiving a command with a different CSID as the previous command. It therefore basically always skips the first command after a CSID change which this patch rectifies ([OpenTitan does it the same way](https://github.com/lowRISC/opentitan/blob/master/hw/ip/spi_host/rtl/spi_host_fsm.sv#L284)).
+
+```diff
+diff --git a/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv b/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv
+index 4fb1360d..babb6138 100644
+--- a/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv
++++ b/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv
+@@ -290,7 +290,7 @@ module spi_host_fsm
+           if (idle_cntr_q == 4'h0) begin
+             prestall_st_d = WaitLead;
+           end else begin
+-            prestall_st_d = WaitIdle;
++            prestall_st_d = CSBSwitch;
+           end
+         end
+         IdleCSBActive: begin
+```
+
+</pr_description>
+
+Implement the necessary changes to the repository so that the issue specified in the <pr_description> are resolved.
+Your task is to make the minimal changes to files in the /testbed directory to ensure the <pr_description> is fixed.
+Follow these steps to resolve the issue:
+1. As a first step, it might be a good idea to find and read code relevant to the <pr_description>.
+2. Edit the sourcecode of the repo to resolve the issue.
+3. Think about edgecases and make sure your fix handles them as well.
+
+You can use the tools Verilog debugging tools if needed.
+Your thinking should be thorough and so it's fine if it's very long.
+2026-01-19 22:35:00,521 - INFO - swea-agent - ========================= STEP 1 =========================
+2026-01-19 22:35:07,767 - WARNING - swea-agent - Requerying model after FunctionCallingFormatError (1th requery)
+2026-01-19 22:35:07,774 - WARNING - swea-agent - Your last output included multiple tool calls!
+Please make sure your output includes a thought and exactly _ONE_ function call.
+2026-01-19 22:35:09,951 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && sed -i 's/prestall_st_d = WaitIdle;/prestall_st_d = CSBSwitch;/' hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv
+2026-01-19 22:35:10,269 - INFO - swea-agent - 🤖 MODEL INPUT
+Your command ran successfully and did not produce any output.
+2026-01-19 22:35:10,274 - INFO - swea-agent - ========================= STEP 3 =========================
+2026-01-19 22:35:12,677 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && make -n >/dev/null 2>&1 || true; ls
+2026-01-19 22:35:12,935 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+Bender.local     README.md             hw                       setup.cfg
+CONTRIBUTING.md  apt-requirements.txt  mkdocs.yml               sw
+LICENSE          docs                  python-requirements.txt  util
+
+2026-01-19 22:35:12,941 - INFO - swea-agent - ========================= STEP 4 =========================
+2026-01-19 22:35:15,360 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && verilator -Wall --lint-only hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv >/dev/null
+2026-01-19 22:35:15,657 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+%Error: hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv:8:10: Cannot find include file: common_cells/assertions.svh
+    8 | `include "common_cells/assertions.svh"
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+%Error: hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv:8:10: This may be because there's no search path specified with -I<dir>.
+    8 | `include "common_cells/assertions.svh"
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        ... Looked in:
+             common_cells/assertions.svh
+             common_cells/assertions.svh.v
+             common_cells/assertions.svh.sv
+             obj_dir/common_cells/assertions.svh
+             obj_dir/common_cells/assertions.svh.v
+             obj_dir/common_cells/assertions.svh.sv
+%Error: hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv:11:10: Package/class 'spi_host_cmd_pkg' not found, and needs to be predeclared (IEEE 1800-2017 26.3)
+   11 |   import spi_host_cmd_pkg::*;
+      |          ^~~~~~~~~~~~~~~~
+%Error: hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv:11:10: Importing from missing package 'spi_host_cmd_pkg'
+   11 |   import spi_host_cmd_pkg::*;
+      |          ^~~~~~~~~~~~~~~~
+%Error: hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv:563:3: Define or directive not defined: '`ASSERT'
+  563 |   `ASSERT(BidirOnlyInStdMode_A, $isunknown(rst_ni) || (cmd_speed == Standard || !(cmd_rd_en && cmd_wr_en)), clk_i, rst_ni)
+      |   ^~~~~~~
+%Error: hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv:563:10: syntax error, unexpected '('
+  563 |   `ASSERT(BidirOnlyInStdMode_A, $isunknown(rst_ni) || (cmd_speed == Standard || !(cmd_rd_en && cmd_wr_en)), clk_i, rst_ni)
+      |          ^
+%Error: hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv:564:3: Define or directive not defined: '`ASSERT'
+  564 |   `ASSERT(ValidSpeed_A, $isunknown(rst_ni) || (cmd_speed != RsvdSpd), clk_i, rst_ni)
+      |   ^~~~~~~
+%Error: hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv:565:3: Define or directive not defined: '`ASSERT'
+  565 |   `ASSERT(ValidCSID_A, $isunknown(rst_ni) || (csid < NumCS), clk_i, rst_ni)
+      |   ^~~~~~~
+%Error: Cannot continue
+
+2026-01-19 22:35:15,665 - INFO - swea-agent - ========================= STEP 5 =========================
+2026-01-19 22:35:18,645 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+str_replace_editor view /testbed/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv  --view_range 250 330
+2026-01-19 22:35:18,929 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+Here's the result of running `cat -n` on /testbed/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv:
+   250	          // and of CSAAT is asserted, the details of the subsequent command.
+   251	          if (!last_bit || !last_byte) begin
+   252	            prestall_st_d = InternalClkLow;
+   253	          // Check value of csaat for the previously submitted segment
+   254	          end else if (!csaat_q) begin
+   255	            prestall_st_d = WaitTrail;
+   256	          end else if (!command_valid_i) begin
+   257	            prestall_st_d = IdleCSBActive;
+   258	          end else if (command_i.csid != csid_q) begin
+   259	            prestall_st_d = WaitTrail;
+   260	          end else begin
+   261	            command_ready_o  = 1'b1;
+   262	            prestall_st_d = InternalClkLow;
+   263	          end
+   264	        end
+   265	        WaitTrail: begin
+   266	          // Prepare to enter CSB high idle state by waiting csntrail cycles.
+   267	          if (trail_cntr_q == 4'h0) begin
+   268	            prestall_st_d = CSBSwitch;
+   269	          end
+   270	        end
+   271	        WaitIdle: begin
+   272	          // Once CSB is high, wait for the designated number of cyclse before accepting commands.
+   273	          if (idle_cntr_q == 4'h0) begin
+   274	            // ready to accept new command
+   275	            command_ready_o = 1'b1;
+   276	            if (command_valid_i) begin
+   277	              if (switch_required) begin
+   278	                 prestall_st_d = CSBSwitch;
+   279	              end else begin
+   280	                 prestall_st_d = WaitLead;
+   281	              end
+   282	            end else begin
+   283	              prestall_st_d = Idle;
+   284	            end
+   285	          end
+   286	        end
+   287	        CSBSwitch: begin
+   288	          // Insert extra idle cycles when swtiching between CSID, this allows time to switch CPHA,
+   289	          // CPOL and clkdiv settings, as well as guarantee that the idle delay requirements have
+   290	          // been observed for the new device.
+   291	          if (idle_cntr_q == 4'h0) begin
+   292	            prestall_st_d = WaitLead;
+   293	          end else begin
+   294	            prestall_st_d = CSBSwitch;
+   295	          end
+   296	        end
+   297	        IdleCSBActive: begin
+   298	          // Wait for new commands, but with CSB held active low.
+   299	          if (command_valid_i) begin
+   300	            if (command_i.csid != csid_q) begin
+   301	              // New command received, but for a different CSID than the last.  Deactivate CSB,
+   302	              // while still adhering to trail and idle time requirements
+   303	              prestall_st_d = WaitTrail;
+   304	              // Explicitly delay command_ready until the end of WaitIdle.  We need to observe
+   305	              // the trail time requirements for the current CSID, so we can't update our
+   306	              // configopts until CSB is high.
+   307	              command_ready_o = 1'b0;
+   308	            end else begin
+   309	              command_ready_o = 1'b1;
+   310	              prestall_st_d = InternalClkLow;
+   311	            end
+   312	          end else begin
+   313	            command_ready_o = 1'b1;
+   314	          end
+   315	        end
+   316	        default: begin
+   317	          command_ready_o  = 1'b0;
+   318	          prestall_st_d = Idle;
+   319	        end
+   320	      endcase
+   321	    end
+   322	  end
+   323	
+   324	  // All register updates freeze when a stall is detected.
+   325	  // The definition of the stall signal looks ahead to determine whether a conflict is looming.
+   326	  // Thus stall depends on actual_st_d.  Making the actual state depend on stall
+   327	  // would create a circular logic loop, and lint errors.  Therefore stall is applied here, not
+   328	  // in the previous always_comb block;
+   329	
+   330	  logic stall_resolve;
+
+
+2026-01-19 22:35:18,945 - INFO - swea-agent - ========================= STEP 6 =========================
+2026-01-19 22:35:22,026 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && grep -n "prestall_st_d = CSBSwitch;" -n hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv | head
+2026-01-19 22:35:22,280 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+231:              prestall_st_d = CSBSwitch;
+268:            prestall_st_d = CSBSwitch;
+278:                 prestall_st_d = CSBSwitch;
+294:            prestall_st_d = CSBSwitch;
+
+2026-01-19 22:35:22,288 - INFO - swea-agent - ========================= STEP 7 =========================
+2026-01-19 22:35:24,764 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+str_replace_editor view /testbed/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv  --view_range 210 245
+2026-01-19 22:35:25,048 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+Here's the result of running `cat -n` on /testbed/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv:
+   210	  // command_ready_o Note: New commands should may be acknowled as we enter into the idle condition
+   211	  // with two subtle exceptions:
+   212	  //   1. During stall conditions the FSM does not actually perform transitions and so
+   213	  //      command_ready_o should be held low during stalls regardless of the current state
+   214	  //   2. In cases where the next segment is for a different CSID, command_ready_o is held
+   215	  //      explicitly low to enforce CSNTRAIL, CSIDLE requirements for the previous segment.
+   216	  //      Holding command_ready_o low in this case defers updates of the internal state variables
+   217	  always_comb begin
+   218	    prestall_st_d = actual_st_q;
+   219	    command_ready_o = 1'b0;
+   220	    if (sw_rst_i) begin
+   221	      prestall_st_d = Idle;
+   222	    end else if (stall_q) begin
+   223	      prestall_st_d = prestall_st_q;
+   224	    end else if (fsm_en) begin
+   225	      unique case (actual_st_q)
+   226	        Idle: begin
+   227	          // Initial state, wait for commands.
+   228	          command_ready_o = 1'b1;
+   229	          if (command_valid_i) begin
+   230	            if (command_i.csid != csid_q) begin
+   231	              prestall_st_d = CSBSwitch;
+   232	            end else begin
+   233	              prestall_st_d = WaitLead;
+   234	            end
+   235	          end
+   236	        end
+   237	        WaitLead: begin
+   238	          // Transaction lead: CSB is low, waiting to start sck pulses.
+   239	          if (lead_cntr_q == 4'h0) begin
+   240	            prestall_st_d = InternalClkHigh;
+   241	          end
+   242	        end
+   243	        InternalClkLow: begin
+   244	          // One of two active clock states. sck is low when CPOL=0.
+   245	          prestall_st_d = InternalClkHigh;
+
+
+2026-01-19 22:35:25,060 - INFO - swea-agent - ========================= STEP 8 =========================
+2026-01-19 22:35:29,265 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && grep -n "WaitIdle" -n hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv | head -n 20
+2026-01-19 22:35:29,522 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+105:    WaitIdle,
+271:        WaitIdle: begin
+304:              // Explicitly delay command_ready until the end of WaitIdle.  We need to observe
+459:                        (actual_st_d == WaitIdle ||
+
+2026-01-19 22:35:29,530 - INFO - swea-agent - ========================= STEP 9 =========================
+2026-01-19 22:35:33,688 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+str_replace_editor view /testbed/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv  --view_range 430 490
+2026-01-19 22:35:33,972 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+Here's the result of running `cat -n` on /testbed/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv:
+   430	                      bit_shifting     ? bit_cntr_q - shift_size :
+   431	                      bit_cntr_q;
+   432	
+   433	  assign last_bit  = (bit_cntr_q == 3'h0);
+   434	  assign last_byte = (byte_cntr_q == 9'h0);
+   435	
+   436	  assign byte_cntr_d = sw_rst_i    ? 9'h0 :
+   437	                       !fsm_en     ? byte_cntr_q :
+   438	                       new_command ? cmd_len :
+   439	                       byte_ending ? byte_cntr_q - 1 :
+   440	                       byte_cntr_q;
+   441	
+   442	  assign lead_starting = state_changing && actual_st_d == WaitLead;
+   443	
+   444	  assign lead_cntr_d = sw_rst_i         ? 4'h0 :
+   445	                       !fsm_en          ? lead_cntr_q :
+   446	                       lead_starting    ? csnlead :
+   447	                       lead_cntr_q == 0 ? 4'h0 :
+   448	                       lead_cntr_q - 1;
+   449	
+   450	  assign trail_starting = state_changing && actual_st_d == WaitTrail;
+   451	
+   452	  assign trail_cntr_d = sw_rst_i          ? 4'h0 :
+   453	                        !fsm_en           ? trail_cntr_q :
+   454	                        trail_starting    ? csntrail :
+   455	                        trail_cntr_q == 0 ? 4'h0 :
+   456	                        trail_cntr_q - 1;
+   457	
+   458	  assign idle_starting = state_changing &&
+   459	                        (actual_st_d == WaitIdle ||
+   460	                         actual_st_d == CSBSwitch);
+   461	
+   462	  assign idle_cntr_d = sw_rst_i         ? 4'h0 :
+   463	                       !fsm_en          ? idle_cntr_q :
+   464	                       idle_starting    ? csnidle :
+   465	                       idle_cntr_q == 0 ? 4'h0 :
+   466	                       idle_cntr_q - 1;
+   467	
+   468	  always_ff @(posedge clk_i or negedge rst_ni) begin
+   469	    if (!rst_ni) begin
+   470	      bit_cntr_q   <= 3'h0;
+   471	      byte_cntr_q  <= 9'h0;
+   472	      idle_cntr_q  <= 4'h0;
+   473	      lead_cntr_q  <= 4'h0;
+   474	      trail_cntr_q <= 4'h0;
+   475	    end else begin
+   476	      bit_cntr_q   <= stall ? bit_cntr_q   : bit_cntr_d;
+   477	      byte_cntr_q  <= stall ? byte_cntr_q  : byte_cntr_d;
+   478	      idle_cntr_q  <= stall ? idle_cntr_q  : idle_cntr_d;
+   479	      lead_cntr_q  <= stall ? lead_cntr_q  : lead_cntr_d;
+   480	      trail_cntr_q <= stall ? trail_cntr_q : trail_cntr_d;
+   481	    end
+   482	  end
+   483	
+   484	  assign wr_en_internal    = byte_starting & cmd_wr_en;
+   485	  assign shift_en_internal = bit_shifting;
+   486	  assign rd_en_internal    = byte_ending & cmd_rd_en;
+   487	  assign speed_o           = cmd_speed;
+   488	  assign sample_en_d       = byte_starting | shift_en_o;
+   489	  assign full_cyc_o        = full_cyc;
+   490	  assign cmd_end_o         = (byte_cntr_q == 'h1) & wr_en_o & sr_wr_ready_i;
+
+
+2026-01-19 22:35:33,987 - INFO - swea-agent - ========================= STEP 10 =========================
+2026-01-19 22:35:37,203 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+submit
+2026-01-19 22:35:37,499 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+Thank you for your work on this issue. Please review your changes and run the submit command again to confirm.
+
+Here is a list of all of your changes:
+
+<diff>
+diff --git a/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv b/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv
+index 9c28a419..a592970f 100644
+--- a/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv
++++ b/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv
+@@ -265,7 +265,7 @@ module spi_host_fsm
+         WaitTrail: begin
+           // Prepare to enter CSB high idle state by waiting csntrail cycles.
+           if (trail_cntr_q == 4'h0) begin
+-            prestall_st_d = WaitIdle;
++            prestall_st_d = CSBSwitch;
+           end
+         end
+         WaitIdle: begin
+@@ -291,7 +291,7 @@ module spi_host_fsm
+           if (idle_cntr_q == 4'h0) begin
+             prestall_st_d = WaitLead;
+           end else begin
+-            prestall_st_d = WaitIdle;
++            prestall_st_d = CSBSwitch;
+           end
+         end
+         IdleCSBActive: begin
+
+</diff>
+
+
+2026-01-19 22:35:37,510 - INFO - swea-agent - ========================= STEP 11 =========================
+2026-01-19 22:35:42,067 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+str_replace_editor str_replace /testbed/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv   --old_str '        WaitTrail: begin
+          // Prepare to enter CSB high idle state by waiting csntrail cycles.
+          if (trail_cntr_q == 4'"'"'h0) begin
+            prestall_st_d = CSBSwitch;
+          end
+        end' --new_str '        WaitTrail: begin
+          // Prepare to enter CSB high idle state by waiting csntrail cycles.
+          if (trail_cntr_q == 4'"'"'h0) begin
+            prestall_st_d = WaitIdle;
+          end
+        end'
+2026-01-19 22:35:42,356 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+The file /testbed/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv has been edited. Here's the result of running `cat -n` on a snippet of /testbed/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv:
+   260	          end else begin
+   261	            command_ready_o  = 1'b1;
+   262	            prestall_st_d = InternalClkLow;
+   263	          end
+   264	        end
+   265	        WaitTrail: begin
+   266	          // Prepare to enter CSB high idle state by waiting csntrail cycles.
+   267	          if (trail_cntr_q == 4'h0) begin
+   268	            prestall_st_d = WaitIdle;
+   269	          end
+   270	        end
+   271	        WaitIdle: begin
+   272	          // Once CSB is high, wait for the designated number of cyclse before accepting commands.
+   273	          if (idle_cntr_q == 4'h0) begin
+Review the changes and make sure they are as expected. Edit the file again if necessary.
+
+2026-01-19 22:35:42,367 - INFO - swea-agent - ========================= STEP 12 =========================
+2026-01-19 22:35:45,580 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+submit
+2026-01-19 22:35:45,880 - INFO - swea-agent - Found submission: diff --git a/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv b/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv
+index 9c28a419..86107ad5 100644
+--- a/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv
++++ b/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv
+@@ -291,7 +291,7 @@ module spi_host_fsm
+           if (idle_cntr_q == 4'h0) begin
+             prestall_st_d = WaitLead;
+           end else begin
+-            prestall_st_d = WaitIdle;
++            prestall_st_d = CSBSwitch;
+           end
+         end
+         IdleCSBActive: begin
+
+2026-01-19 22:35:45,887 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+diff --git a/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv b/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv
+index 9c28a419..86107ad5 100644
+--- a/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv
++++ b/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv
+@@ -291,7 +291,7 @@ module spi_host_fsm
+           if (idle_cntr_q == 4'h0) begin
+             prestall_st_d = WaitLead;
+           end else begin
+-            prestall_st_d = WaitIdle;
++            prestall_st_d = CSBSwitch;
+           end
+         end
+         IdleCSBActive: begin
+
+2026-01-19 22:35:45,904 - INFO - swea-agent - Trajectory saved to /workspace/phoenix-bench/agents/SWE-agent/trajectories/anon/swe_agent__openai--gpt-5.2__t-0.00__p-1.00__c-0.00___swe_instances/pulp-platform_snitch_pr394/pulp-platform_snitch_pr394.traj
+2026-01-19 22:35:45,911 - INFO - swea-env - Beginning environment shutdown...

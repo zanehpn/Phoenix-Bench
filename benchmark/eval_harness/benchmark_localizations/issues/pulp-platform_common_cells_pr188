@@ -1,0 +1,41 @@
+# popcount for INPUT_WIDTH=1
+
+`popcount.sv` contradicts itself in the description and this commit https://github.com/pulp-platform/common_cells/commit/bf4db7cfa01030f36a59c1a4d21ee233f6aee01e whether the case `INPUT_WIDTH=1` is supported.
+
+Furthermore, it seems like the https://github.com/pulp-platform/common_cells/commit/bf4db7cfa01030f36a59c1a4d21ee233f6aee01e doesn't properly add full support for `INPUT_WIDTH=1` since
+
+```verilog
+logic [PopcountWidth-2:0]         left_child_result, right_child_result;
+```
+
+(from here https://github.com/pulp-platform/common_cells/blob/master/src/popcount.sv#L30)
+
+becomes negative causing at least VCS to crash. A simple hacky fix is to change the `-2`  to `-1` but I'm not sure if that works out well.
+
+Maybe @meggiman can you comment on this (since you seem to know the most being the designer of this module) ?
+
+PR Title: Simplify popcount and add proper support for all input widths
+
+PR #188 (Merged May 30, 2023)
+
+Description:
+The original popcount implementation relied on a recursive binary adder tree using nested modules. Testing with modern synthesis tools revealed that describing the popcount logic as a flat for loop achieved equal or superior results with faster compilation times. This refactor also resolves issue #187.
+
+Comments:
+
+@meggiman (May 24, 2023):
+"The popcount implementation so far used a recursive implementation using a binary adder tree. However, experiments using reasonably modern synthesis tools show that the logic optimization heuristics achieve the same or better results in less compilation time when the popcount logic is described in a flat for loop instead of nested modules."
+
+@bluewww (May 24, 2023):
+"LGTM!"
+
+@niwis (May 29, 2023):
+"Thanks a lot! Just one typo from my side" [Requested changes, later approved after corrections]
+
+Linked Issue:
+#187: popcount for INPUT_WIDTH=1
+
+Participants:
+- @meggiman (author)
+- @niwis (reviewer/merger)
+- @bluewww (reviewer)

@@ -1,0 +1,42 @@
+diff --git a/src/dmi_jtag_tap.sv b/src/dmi_jtag_tap.sv
+index 01153ec..12ba179 100644
+--- a/src/dmi_jtag_tap.sv
++++ b/src/dmi_jtag_tap.sv
+@@ -197,16 +197,11 @@ module dmi_jtag_tap #(
+     end
+   end
+ 
+-logic trst_sync1, trst_sync2;
+-
+-always_ff @(posedge tck_i or negedge trst_ni) begin
+-  if (!trst_ni) begin
+-    trst_sync2 <= 1'b0;
+-  end else begin
+-    trst_sync2 <= trst_sync1;
+-    trst_no    <= trst_sync2;
++  // Generate a clean reset indication for downstream logic.
++  // Avoid a glitch-prone synchronizer chain driving asynchronous resets.
++  always_comb begin
++    trst_no = (tap_state_q == TestLogicReset) ? 1'b0 : 1'b1;
+   end
+-end
+ 
+   // ----------------
+   // TAP FSM
+@@ -214,8 +209,6 @@ end
+   // Determination of next state; purely combinatorial
+   always_comb begin : p_tap_fsm
+ 
+-    trst_sync1         = trst_ni;
+-
+     capture_dr         = 1'b0;
+     shift_dr           = 1'b0;
+     update_dr          = 1'b0;
+@@ -228,7 +221,6 @@ end
+     unique case (tap_state_q)
+       TestLogicReset: begin
+         tap_state_d = (tms_i) ? TestLogicReset : RunTestIdle;
+-        trst_sync1 = 1'b1;
+       end
+       RunTestIdle: begin
+         tap_state_d = (tms_i) ? SelectDrScan : RunTestIdle;

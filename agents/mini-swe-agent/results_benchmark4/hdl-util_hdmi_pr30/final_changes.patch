@@ -1,0 +1,22 @@
+diff --git a/src/hdmi.sv b/src/hdmi.sv
+index 6ffd3fd..0a84bd5 100644
+--- a/src/hdmi.sv
++++ b/src/hdmi.sv
+@@ -318,7 +318,7 @@ generate
+             begin
+                 mode <= data_island_guard ? 3'd4 : data_island_period ? 3'd3 : video_guard ? 3'd2 : video_data_period ? 3'd1 : 3'd0;
+                 video_data <= rgb;
+-                control_data <= {{1'b0, data_island_preamble}, {1'b0, video_preamble || data_island_preamble}, {vsync, hsync}}; // ctrl3, ctrl2, ctrl1, ctrl0, vsync, hsync
++                control_data <= {{1'b0, data_island_preamble}, {1'b0, video_preamble || data_island_preamble}, {cy == screen_height + vsync_porch_start + vsync_porch_size - 1'b1 ? invert : vsync, hsync}}; // ctrl3, ctrl2, ctrl1, ctrl0, vsync, hsync
+                 data_island_data[11:4] <= packet_data[8:1];
+                 data_island_data[3] <= cx != 0;
+                 data_island_data[2] <= packet_data[0];
+@@ -340,7 +340,7 @@ generate
+             begin
+                 mode <= video_data_period ? 3'd1 : 3'd0;
+                 video_data <= rgb;
+-                control_data <= {4'b0000, {vsync, hsync}}; // ctrl3, ctrl2, ctrl1, ctrl0, vsync, hsync
++                control_data <= {4'b0000, {cy == screen_height + vsync_porch_start + vsync_porch_size - 1'b1 ? invert : vsync, hsync}}; // ctrl3, ctrl2, ctrl1, ctrl0, vsync, hsync
+             end
+         end
+     end

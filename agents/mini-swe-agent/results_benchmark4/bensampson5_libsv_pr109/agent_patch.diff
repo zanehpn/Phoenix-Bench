@@ -1,0 +1,123 @@
+diff --git a/docs/source/decoder_8b10b.rst b/docs/source/decoder_8b10b.rst
+index 7db7aa0..274ddae 100644
+--- a/docs/source/decoder_8b10b.rst
++++ b/docs/source/decoder_8b10b.rst
+@@ -8,10 +8,11 @@ disparity, while at the same time provide enough state changes to allow reasonab
+ outputs an 8-bit binary value, ``o_8b``, according to 
+ `IBM's 8B/10B implementation <https://en.wikipedia.org/wiki/8b/10b_encoding#IBM_implementation>`_.
+ 
+-The input disparity is required via the ``i_disp`` input where ``0`` equals a disparity of -1
+-and ``1`` equals a disparity of +1. Additionally, this module provides other output signals:
++The running disparity is tracked internally by the decoder. The core starts in the -1 state after reset
++and updates the internal running disparity on each enabled decode operation. Additionally, this module
++provides other output signals:
+ 
+-  - ``o_disp`` is the output disparity where ``0`` = -1 and ``1`` = +1.
++  - ``o_disp`` is the registered output disparity where ``0`` = -1 and ``1`` = +1.
+   - ``o_ctrl`` is the control symbol indicator bit where ``0`` means the decoded value is a data symbol
+     and ``1`` means it is a control symbol.
+   - ``o_code_err`` is the output code error bit where ``0`` means that the received 10b code is not an
+@@ -34,12 +35,9 @@ calculating running disparity are:
+   2. If the disparity of the 6b or 4b codeword is not 0 (i.e. ±2, ±4, ±6) then the output running disparity
+      is equal to the complement of the input running disparity (i.e. -1 -> +1, +1 -> -1)
+ 
+-In almost all use-cases, the user is required to keep track of the running disparity over a given 
+-data stream being decoded but this feature is not handled by this module as it is a purely combinatorial
+-implementation. Instead, this is left to the user to implement in the parent module that instantiates
+-this module although the ``o_disp`` output signal is provided for convenience. For example, a simple
+-implementation that would maintain the running disparity over an input data stream would be registering
+-``o_disp`` and then feeding the output of that register back into this module as ``i_disp``.
++The decoder keeps track of the running disparity internally, so the user does not need to feed an input
++disparity signal back into the module. The running disparity is reset to -1 when ``i_aresetn`` is
++deasserted. When ``i_en`` is low, the outputs and internal running disparity hold their current values.
+ 
+ Two error output signals, ``o_code_err`` and ``o_disp_err``, are provided for the decoder as there are
+ certain input combinations that may only generate one of the two error types in decoding 10b values -
+@@ -204,13 +202,15 @@ Parameters
+ 
+ Ports
+ -----
++- ``i_clk`` : input clock
++- ``i_aresetn`` : input asynchronous active-low reset
++- ``i_en`` : input active-high enable
+ - ``i_10b`` : input 10-bit binary value (bit-order is ``jhgfiedcba`` where ``a`` is the lsb)
+-- ``i_disp`` : input disparity (``0`` = -1, ``1`` = +1)
+-- ``o_8b`` : output 8-bit binary value (bit-order is ``HGFEDCBA`` where ``A`` is the lsb)
+-- ``o_disp`` : output disparity (``0`` = -1, ``1`` = +1)
+-- ``o_ctrl`` : output control symbol indicator bit (``0`` = data symbol, ``1`` = control symbol)
+-- ``o_code_err`` : output code error bit (``0`` = no code error, ``1`` = code error)
+-- ``o_disp_err`` : output disparity error bit (``0`` = no disparity error, ``1`` = disparity error)
++- ``o_8b`` : registered output 8-bit binary value (bit-order is ``HGFEDCBA`` where ``A`` is the lsb)
++- ``o_disp`` : registered output disparity (``0`` = -1, ``1`` = +1)
++- ``o_ctrl`` : registered output control symbol indicator bit (``0`` = data symbol, ``1`` = control symbol)
++- ``o_code_err`` : registered output code error bit (``0`` = no code error, ``1`` = code error)
++- ``o_disp_err`` : registered output disparity error bit (``0`` = no disparity error, ``1`` = disparity error)
+ 
+ Source Code
+ -----------
+diff --git a/libsv/coders/decoder_8b10b.sv b/libsv/coders/decoder_8b10b.sv
+index e9e9b89..f724008 100644
+--- a/libsv/coders/decoder_8b10b.sv
++++ b/libsv/coders/decoder_8b10b.sv
+@@ -1,22 +1,46 @@
+ module decoder_8b10b (
+-    input  logic [9:0] i_10b,
+-    input  logic       i_disp,
+-    output logic [7:0] o_8b,
+-    output logic       o_disp,
+-    output logic       o_ctrl,
+-    output logic       o_code_err,
+-    output logic       o_disp_err
++    input  logic       i_clk,  // input clock
++    input  logic       i_aresetn,  // input asynchronous active-low reset
++    input  logic       i_en,  // input enable
++    input  logic [9:0] i_10b,  // input 10-bit value
++    output logic [7:0] o_8b,  // output 8-bit value
++    output logic       o_disp,  // output running disparity
++    output logic       o_ctrl,  // output control symbol indicator
++    output logic       o_code_err,  // output code error
++    output logic       o_disp_err  // output disparity error
+ );
+ 
++  logic        rd;  // running disparity
++  logic [10:0] i_lut;  // input vector to 8b/10b decoding look-up table
++  logic [11:0] o_lut;  // output vector from 8b/10b decoding look-up table
++
++  always_ff @(posedge i_clk or negedge i_aresetn) begin
++    if (!i_aresetn) begin
++      o_8b       <= 8'b0;
++      o_disp     <= 1'b0;
++      o_ctrl     <= 1'b0;
++      o_code_err <= 1'b0;
++      o_disp_err <= 1'b0;
++      rd         <= 1'b0;
++    end else if (!i_en) begin
++      o_8b       <= o_8b;
++      o_disp     <= o_disp;
++      o_ctrl     <= o_ctrl;
++      o_code_err <= o_code_err;
++      o_disp_err <= o_disp_err;
++      rd         <= rd;
++    end else begin
++      o_8b       <= o_lut[7:0];
++      o_disp     <= o_lut[8];
++      o_ctrl     <= o_lut[9];
++      o_code_err <= o_lut[10];
++      o_disp_err <= o_lut[11];
++      rd         <= o_lut[8];
++    end
++  end
++
+   // Create lookup table input and output vectors
+-  logic [10:0] i_lut;
+-  logic [11:0] o_lut;
+-  assign i_lut      = {i_disp, i_10b};
+-  assign o_8b       = o_lut[7:0];
+-  assign o_disp     = o_lut[8];
+-  assign o_ctrl     = o_lut[9];
+-  assign o_code_err = o_lut[10];
+-  assign o_disp_err = o_lut[11];
++  assign i_lut = {rd, i_10b};
+ 
+   // Mapping is rjhgfiedcba: ZYXRHGFEDCBA, where:
+   //     * r          = input disparity (0 = -1, 1 = +1)

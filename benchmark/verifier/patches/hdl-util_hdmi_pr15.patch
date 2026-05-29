@@ -1,0 +1,47 @@
+From 2f443e76094e892a4fea95f62cd3eb27aab672fe Mon Sep 17 00:00:00 2001
+From: Sameer Puri <sameer@users.noreply.github.com>
+Date: Sat, 6 Feb 2021 18:48:31 -0500
+Subject: [PATCH] add format 34 (1080p30)
+
+---
+ README.md   | 2 ++
+ src/hdmi.sv | 5 +++--
+ 2 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/README.md b/README.md
+index 9ae124b..5601936 100644
+--- a/README.md
++++ b/README.md
+@@ -71,6 +71,8 @@ You'll need to set up a PLL for producing the two HDMI clocks. The pixel clock f
+ |1280x720|4|59.94Hz|74.176MHz|
+ |1920x1080|16|60Hz|148.5MHz|
+ |1920x1080|16|59.94Hz|148.352MHz|
++|1920x1080|34|30Hz|74.25MHz|
++|1920x1080|34|29.97Hz|74.176MHz|
+ |720x576|17, 18|50Hz|27MHz|
+ |1280x720|19|50Hz|74.25MHz|
+ |3840x2160|97, 107|60Hz|594MHz|
+diff --git a/src/hdmi.sv b/src/hdmi.sv
+index dfa46fa..f9827a8 100644
+--- a/src/hdmi.sv
++++ b/src/hdmi.sv
+@@ -104,7 +104,7 @@ generate
+             assign hsync = cx >= 110 && cx < 110 + 40;
+             assign vsync = cy >= 5 && cy < 5 + 5;
+         end
+-        16:
++        16, 34:
+         begin
+             assign frame_width = 2200;
+             assign frame_height = 1125;
+@@ -212,8 +212,9 @@ generate
+             : VIDEO_ID_CODE == 16 ? 148.5E6
+             : VIDEO_ID_CODE == 17 || VIDEO_ID_CODE == 18 ? 27E6
+             : VIDEO_ID_CODE == 19 ? 74.25E6
++            : VIDEO_ID_CODE == 34 ? 74.25E6
+             : VIDEO_ID_CODE == 97 || VIDEO_ID_CODE == 107 ? 594E6
+-            : 0) * (VIDEO_REFRESH_RATE == 59.94 ? 1000.0/1001.0 : 1); // https://groups.google.com/forum/#!topic/sci.engr.advanced-tv/DQcGk5R_zsM
++            : 0) * (VIDEO_REFRESH_RATE == 59.94 || VIDEO_REFRESH_RATE == 29.97 ? 1000.0/1001.0 : 1); // https://groups.google.com/forum/#!topic/sci.engr.advanced-tv/DQcGk5R_zsM
+         packet_picker #(
+             .VIDEO_ID_CODE(VIDEO_ID_CODE),
+             .VIDEO_RATE(VIDEO_RATE),

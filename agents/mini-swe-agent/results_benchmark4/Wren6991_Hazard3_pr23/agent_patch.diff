@@ -1,0 +1,27 @@
+diff --git a/hdl/debug/dm/hazard3_dm.v b/hdl/debug/dm/hazard3_dm.v
+index f195d4b..8cf21d4 100644
+--- a/hdl/debug/dm/hazard3_dm.v
++++ b/hdl/debug/dm/hazard3_dm.v
+@@ -623,11 +623,13 @@ always @ (posedge clk or negedge rst_n) begin
+ 		acmd_prev_postexec <= 1'b0;
+ 		acmd_prev_transfer <= 1'b0;
+ 		acmd_prev_write <= 1'b0;
++		acmd_prev_regno <= 5'd0;
+ 		acmd_prev_unsupported <= 1'b1;
+ 	end else if (!dmactive) begin
+ 		acmd_prev_postexec <= 1'b0;
+ 		acmd_prev_transfer <= 1'b0;
+ 		acmd_prev_write <= 1'b0;
++		acmd_prev_regno <= 5'd0;
+ 		acmd_prev_unsupported <= 1'b1;
+ 	end else if (start_abstract_cmd && acmd_new) begin
+ 		acmd_prev_postexec <= acmd_new_postexec;
+@@ -746,7 +748,7 @@ wire [N_HARTS-1:0] hart_instr_data_vld_nxt = {{N_HARTS-1{1'b0}},
+ 
+ wire [31:0] hart_instr_data_nxt =
+ 	acmd_state_nxt == S_ISSUE_REGWRITE  ? 32'hbff02073 | {20'd0, acmd_new_regno,  7'd0} : // csrr xx, dmdata0
+-	acmd_state_nxt == S_ISSUE_REGREAD   ? 32'hbff01073 | {12'd0, acmd_new_regno, 15'd0} : // csrw dmdata0, xx
++	acmd_state_nxt == S_ISSUE_REGREAD   ? 32'hbff01073 | {12'd0, acmd_prev_regno, 15'd0} : // csrw dmdata0, xx
+ 	acmd_state_nxt == S_ISSUE_PROGBUF0  ? progbuf0                                      :
+ 	acmd_state_nxt == S_ISSUE_PROGBUF1  ? progbuf1                                      :
+ 	                                      32'h00100073;                                   // ebreak

@@ -1,0 +1,65 @@
+diff --git a/rtl/serv_alu.v b/rtl/serv_alu.v
+index a93c516..cfd730c 100644
+--- a/rtl/serv_alu.v
++++ b/rtl/serv_alu.v
+@@ -1,6 +1,7 @@
+ `default_nettype none
+ module serv_alu
+-  (
++  #(parameter W = 1)
++   (
+    input wire 	    clk,
+    //State
+    input wire 	    i_en,
+@@ -26,18 +27,18 @@ module serv_alu
+    reg 	       add_cy_r;
+ 
+    //Sign-extended operands
+-   wire rs1_sx  = i_rs1 & i_cmp_sig;
+-   wire op_b_sx = i_op_b  & i_cmp_sig;
++   wire [W-1:0] rs1_sx  = {W{i_rs1 & i_cmp_sig}};
++   wire [W-1:0] op_b_sx = {W{i_op_b & i_cmp_sig}};
+ 
+-   wire add_b = i_op_b^i_sub;
++   wire [W-1:0] add_b = {W{i_op_b^i_sub}};
++   wire [W-1:0] add_sum = i_rs1 + add_b + add_cy_r;
++   assign {add_cy, result_add} = add_sum;
+ 
+-   assign {add_cy,result_add}   = i_rs1+add_b+add_cy_r;
++   wire [W-1:0] result_lt = rs1_sx + ~op_b_sx + add_cy;
+ 
+-   wire result_lt = rs1_sx + ~op_b_sx + add_cy;
++   wire result_eq = !result_add[0] & (cmp_r[0] | i_cnt0);
+ 
+-   wire result_eq = !result_add & (cmp_r | i_cnt0);
+-
+-   assign o_cmp = i_cmp_eq ? result_eq : result_lt;
++   assign o_cmp = i_cmp_eq ? result_eq : result_lt[0];
+ 
+    /*
+     The result_bool expression implements the following operations between
+@@ -51,18 +52,18 @@ module serv_alu
+     i_bool_op will be 01 during shift operations, so by outputting zero under
+     this condition we can safely or result_bool with i_buf
+     */
+-   wire result_bool = ((i_rs1 ^ i_op_b) & ~ i_bool_op[0]) | (i_bool_op[1] & i_op_b & i_rs1);
++   wire [W-1:0] result_bool = ((i_rs1 ^ i_op_b) & {W{~i_bool_op[0]}}) | ({W{i_bool_op[1]}} & i_op_b & i_rs1);
+ 
+    assign o_rd = i_buf |
+-                 (i_rd_sel[0] & result_add) |
+-                 (i_rd_sel[1] & cmp_r & i_cnt0) |
+-                 (i_rd_sel[2] & result_bool);
++                 ({W{i_rd_sel[0]}} & result_add) |
++                 ({W{i_rd_sel[1]}} & {W{cmp_r[0] & i_cnt0}}) |
++                 ({W{i_rd_sel[2]}} & result_bool);
+ 
+    always @(posedge clk) begin
+-      add_cy_r <= i_en ? add_cy : i_sub;
++      add_cy_r <= i_en ? add_cy : {W{i_sub}};
+ 
+       if (i_en)
+-	cmp_r <= o_cmp;
++	cmp_r <= {W{o_cmp}};
+    end
+ 
+ endmodule

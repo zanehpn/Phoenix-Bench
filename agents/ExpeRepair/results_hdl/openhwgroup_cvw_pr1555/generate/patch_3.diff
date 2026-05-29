@@ -1,0 +1,26 @@
+diff --git a/testbench/common/wallyTracer.sv b/testbench/common/wallyTracer.sv
+index ef84d94..0ed8bd9 100644
+--- a/testbench/common/wallyTracer.sv
++++ b/testbench/common/wallyTracer.sv
+@@ -33,9 +33,9 @@
+ `define CONNECT_CSR(name, addr, val) \
+   logic [P.XLEN-1:0] prev_csr_``name; \
+   always_ff @(posedge clk) \
+-    prev_csr_``name <= rvvi.csr[0][0][addr]; \
+-  assign rvvi.csr_wb[0][0][addr] = (rvvi.csr[0][0][addr] != prev_csr_``name); \
+-  assign rvvi.csr[0][0][addr] = valid ? val : prev_csr_``name;
++    if (~StallW) prev_csr_``name <= rvvi.csr[0][0][addr]; \
++  assign rvvi.csr_wb[0][0][addr] = ~StallW & (val != prev_csr_``name); \
++  assign rvvi.csr[0][0][addr] = ~StallW ? val : prev_csr_``name;
+ 
+ module wallyTracer import cvw::*; #(parameter cvw_t P) (rvviTrace rvvi);
+ 
+@@ -109,7 +109,7 @@ module wallyTracer import cvw::*; #(parameter cvw_t P) (rvviTrace rvvi);
+   assign FlushM         = testbench.dut.core.FlushM;
+   assign FlushW         = testbench.dut.core.FlushW;
+   assign TrapM          = testbench.dut.core.TrapM;
+-  assign HaltM          = testbench.DCacheFlushStart;
++  assign HaltM          = testbench.DCacheFlushStart | wfiM;
+   if (P.ZICSR_SUPPORTED) begin
+     assign PrivilegeModeW = testbench.dut.core.priv.priv.privmode.PrivilegeModeW;
+     assign STATUS_SXL     = testbench.dut.core.priv.priv.csr.csrsr.STATUS_SXL;

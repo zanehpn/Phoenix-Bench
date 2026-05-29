@@ -1,0 +1,32 @@
+# Super Mario Land hangs when entering bonus game
+
+- Source URL: https://github.com/zephray/VerilogBoy/issues/29
+
+As you know, I use your VerilogBoy with real cartridges instead of ROM images and I ran into an issue with _Super Mario Land_ that I'm not sure where it's originating.
+
+**_Issue_**
+
+When _Super Mario Land_ is supposed to enter the bonus game (triggered by exiting through the upper door in level 1 and 2 or by finishing level 3), the execution of the game hangs.
+
+So far I have determined that:
+
+- The execution is caught up in a loop between PC `0x97` and `0x9C` which is basically the following loop:
+
+```
+LDH A, [$FF41]
+ADD $03
+JR NZ, $FA
+```
+
+- The loop waits for an HSYNC to occur that just won't happen.
+- The _stat register_ at `0xFF41` keeps a constant value of `0x41` and the PPU state stays on `s_IDLE` forever.
+
+**_Steps to reproduce_**
+
+Exit level 1 or 2 through the upper door or finish level 3.
+
+**_Further considerations_**
+
+I'm not sure yet whether this is a general issue with VerilogBoy or whether this only arises when using real cartridges. It may be helpful to know if you can reproduce this behavior at all.
+
+I'll keep looking for the root cause but any suggestions on what might be the issue are very welcome 😊

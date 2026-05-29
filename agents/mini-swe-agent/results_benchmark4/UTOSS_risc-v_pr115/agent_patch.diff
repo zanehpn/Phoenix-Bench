@@ -1,0 +1,88 @@
+diff --git a/src/Instruction_Decode/Instruction_Decode.v b/src/Instruction_Decode/Instruction_Decode.v
+index 874272e..ab9a817 100644
+--- a/src/Instruction_Decode/Instruction_Decode.v
++++ b/src/Instruction_Decode/Instruction_Decode.v
+@@ -64,59 +64,31 @@ module Instruction_Decode
+   //logic for extracting rs1, rs2, and rd registers from 32-bit instruction field
+   //The logic depends on the instruction type
+   always @(*) begin
++    rd  = 5'b00000;
++    rs1 = 5'b00000;
++    rs2 = 5'b00000;
+ 
+-    if (opcode == RType) begin //R-Type
+-
+-      rd = instr[11:7];
+-      rs1 = instr[19:15];
+-      rs2 = instr[24:20];
+-
+-    end
+-
+-    else if (opcode == IType_logic || opcode == IType_load) begin //I-Type (where lw is I type)
+-
+-      rd = instr[11:7];
+-      rs1 = instr[19:15];
+-      rs2 = 5'b00000;
+-
+-    end
+-
+-    else if (opcode == SType || opcode == BType) begin //S-type and B-Type
+-
+-      rd = 5'b00000;
+-      rs1 = instr[19:15];
+-      rs2 = instr[24:20];
+-
+-    end
+-
+-    else if (opcode == JType) begin //J-Type
+-
+-      rd = instr[11:7];
+-      rs1 = 5'b00000;
+-      rs2 = 5'b00000;
+-
+-    end
+-
+-    else if (opcode == UType_auipc || opcode == UType_lui) begin
+-      rd = instr[11:7];
+-      rs1 = 5'b00000;
+-      rs2 = 5'b00000;
+-    end
+-
+-    else if (opcode == IType_jalr) begin
+-      rd = instr[11:7];
+-      rs1 = instr[19:15];
+-      rs2 = 5'b00000;
+-    end
+-
+-    else begin
+-
+-      rd = 5'b00000;
+-      rs1 = 5'b00000;
+-      rs2 = 5'b00000;
+-
+-    end
+-
++    case (opcode)
++      RType: begin
++        rd  = instr[11:7];
++        rs1 = instr[19:15];
++        rs2 = instr[24:20];
++      end
++
++      IType_logic, IType_load, IType_jalr: begin
++        rd  = instr[11:7];
++        rs1 = instr[19:15];
++      end
++
++      SType, BType: begin
++        rs1 = instr[19:15];
++        rs2 = instr[24:20];
++      end
++
++      JType, UType_auipc, UType_lui: begin
++        rd = instr[11:7];
++      end
++    endcase
+   end
+ 
+   // case statement for choosing 32-bit immediate format; based on opcode

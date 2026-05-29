@@ -1,0 +1,74 @@
+diff --git a/pzcorebus_common/pzcorebus_pkg.sv b/pzcorebus_common/pzcorebus_pkg.sv
+index d421ab2..8972d7e 100644
+--- a/pzcorebus_common/pzcorebus_pkg.sv
++++ b/pzcorebus_common/pzcorebus_pkg.sv
+@@ -71,6 +71,7 @@ package pzcorebus_pkg;
+     PZCOREBUS_WRITE               = 4'b10_00,
+     PZCOREBUS_WRITE_NON_POSTED    = 4'b11_00,
+     PZCOREBUS_BROADCAST           = 4'b10_01,
++    PZCOREBUS_BROADCAST_NON_POSTED = 4'b11_01,
+     PZCOREBUS_ATOMIC              = 4'b10_10,
+     PZCOREBUS_ATOMIC_NON_POSTED   = 4'b11_10,
+     PZCOREBUS_MESSAGE             = 4'b00_11,
+diff --git a/pzcorebus_common/pzcorebus_utils.sv b/pzcorebus_common/pzcorebus_utils.sv
+index c8a9082..6720098 100644
+--- a/pzcorebus_common/pzcorebus_utils.sv
++++ b/pzcorebus_common/pzcorebus_utils.sv
+@@ -44,7 +44,7 @@ interface pzcorebus_utils
+   endfunction
+ 
+   function automatic logic is_response_with_data(pzcorebus_command_type command_type);
+-    return command_type inside {PZCOREBUS_READ, PZCOREBUS_ATOMIC_NON_POSTED};
++    return command_type inside {PZCOREBUS_READ, PZCOREBUS_ATOMIC_NON_POSTED, PZCOREBUS_BROADCAST_NON_POSTED};
+   endfunction
+ 
+   function automatic pzcorebus_length pack_length(pzcorebus_unpacked_length length);
+diff --git a/pzcorebus_debug/pzcorebus_command_counter.sv b/pzcorebus_debug/pzcorebus_command_counter.sv
+index aba342b..dc0af61 100644
+--- a/pzcorebus_debug/pzcorebus_command_counter.sv
++++ b/pzcorebus_debug/pzcorebus_command_counter.sv
+@@ -51,10 +51,11 @@ module pzcorebus_command_counter
+       PZCOREBUS_WRITE:              return TARGET_COMMAND[1];
+       PZCOREBUS_WRITE_NON_POSTED:   return TARGET_COMMAND[2];
+       PZCOREBUS_BROADCAST:          return TARGET_COMMAND[3];
+-      PZCOREBUS_ATOMIC:             return TARGET_COMMAND[4];
+-      PZCOREBUS_ATOMIC_NON_POSTED:  return TARGET_COMMAND[5];
+-      PZCOREBUS_MESSAGE:            return TARGET_COMMAND[6];
+-      PZCOREBUS_MESSAGE_NON_POSTED: return TARGET_COMMAND[7];
++      PZCOREBUS_BROADCAST_NON_POSTED:return TARGET_COMMAND[4];
++      PZCOREBUS_ATOMIC:             return TARGET_COMMAND[5];
++      PZCOREBUS_ATOMIC_NON_POSTED:  return TARGET_COMMAND[6];
++      PZCOREBUS_MESSAGE:            return TARGET_COMMAND[7];
++      PZCOREBUS_MESSAGE_NON_POSTED: return 1'b0;
+       default:                      return '0;
+     endcase
+   endfunction
+diff --git a/pzcorebus_debug/pzcorebus_length_counter.sv b/pzcorebus_debug/pzcorebus_length_counter.sv
+index c7e7313..c79c434 100644
+--- a/pzcorebus_debug/pzcorebus_length_counter.sv
++++ b/pzcorebus_debug/pzcorebus_length_counter.sv
+@@ -68,8 +68,9 @@ module pzcorebus_length_counter
+       PZCOREBUS_WRITE:              return TARGET_COMMAND[1];
+       PZCOREBUS_WRITE_NON_POSTED:   return TARGET_COMMAND[2];
+       PZCOREBUS_BROADCAST:          return TARGET_COMMAND[3];
+-      PZCOREBUS_ATOMIC:             return TARGET_COMMAND[4];
+-      PZCOREBUS_ATOMIC_NON_POSTED:  return TARGET_COMMAND[5];
++      PZCOREBUS_BROADCAST_NON_POSTED:return TARGET_COMMAND[4];
++      PZCOREBUS_ATOMIC:             return TARGET_COMMAND[5];
++      PZCOREBUS_ATOMIC_NON_POSTED:  return TARGET_COMMAND[6];
+       default:                      return '0;
+     endcase
+   endfunction
+diff --git a/pzcorebus_dummy/pzcorebus_dummy_slave.sv b/pzcorebus_dummy/pzcorebus_dummy_slave.sv
+index 65f3870..f75bbfe 100644
+--- a/pzcorebus_dummy/pzcorebus_dummy_slave.sv
++++ b/pzcorebus_dummy/pzcorebus_dummy_slave.sv
+@@ -255,7 +255,7 @@ module pzcorebus_dummy_slave
+   function automatic pzcorebus_response_type get_sresp(
+     pzcorebus_command_type  mcmd
+   );
+-    if (mcmd inside {PZCOREBUS_WRITE_NON_POSTED, PZCOREBUS_MESSAGE_NON_POSTED}) begin
++    if (mcmd inside {PZCOREBUS_WRITE_NON_POSTED, PZCOREBUS_MESSAGE_NON_POSTED, PZCOREBUS_BROADCAST_NON_POSTED}) begin
+       return PZCOREBUS_RESPONSE;
+     end
+     else begin

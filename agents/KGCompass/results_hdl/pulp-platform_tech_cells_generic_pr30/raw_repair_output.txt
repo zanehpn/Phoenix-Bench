@@ -1,0 +1,27 @@
+The bug is in **`src/fpga/tc_sram_xilinx.sv`**.
+
+### Root cause
+`be_al` and `we_al` are declared as byte-enable vectors, but in the generate loop they are driven with only a **single bit**:
+
+```systemverilog
+assign be_al[i][j*BytesPerByte+:BytesPerByte] = be_i[i][j];
+assign we_al[i][j*BytesPerByte+:BytesPerByte] = be_i[i][j] & we_i[i];
+```
+
+For `BytesPerByte > 1`, this assigns one bit to a multi-bit slice, so only the first bit/byte lane is effectively written on FPGA.
+
+### Fix
+Replicate the enable bit across the full aligned byte slice.
+
+```systemverilog
+### src/fpga/tc_sram_xilinx.sv
+<<<<<<< SEARCH
+        // In case ByteWidth > 8, let each be_i drive the corresponding number of memory be
+        assign be_al[i][j*BytesPerByte+:BytesPerByte]            = be_i[i][j];
+        assign we_al[i][j*BytesPerByte+:BytesPerByte]            = be_i[i][j] & we_i[i];
+=======
+        // In case ByteWidth > 8, let each be_i drive the corresponding number of memory be
+        assign be_al[i][j*BytesPerByte+:BytesPerByte]            = {BytesPerByte{be_i[i][j]}};
+        assign we_al[i][j*BytesPerByte+:BytesPerByte]            = {BytesPerByte{be_i[i][j] & we_i[i]}};
+>>>>>>> REPLACE
+```

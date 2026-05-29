@@ -1,0 +1,48 @@
+The bug is in `rtl/ibex_top.sv`: the main clock gate is driven by the non-lockstep core’s `core_busy_q`, and that same gated clock is shared with the lockstep core. Because the lockstep core is delayed by a few cycles, gating both cores off the same immediate `core_busy_q` can suppress the lockstep core before it reaches the cycle where it would observe a transient/glitch on `core_busy_o`.
+
+A fix is to delay the clock-enable path used for gating so the lockstep side remains clocked long enough to compare the delayed output. The relevant place is the `clock_en` generation in `ibex_top.sv`.
+
+```systemverilog
+### rtl/ibex_top.sv
+<<<<<<< SEARCH
+  logic                        clk;
+  logic                        core_busy_d, core_busy_q;
+  logic                        clock_en;
+  logic                        irq_pending;
+=======
+  logic                        clk;
+  logic                        core_busy_d, core_busy_q;
+  logic                        core_busy_en_q;
+  logic                        clock_en;
+  logic                        irq_pending;
+>>>>>>> REPLACE
+```
+
+```systemverilog
+### rtl/ibex_top.sv
+<<<<<<< SEARCH
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      core_busy_q <= 1'b0;
+    end else begin
+      core_busy_q <= core_busy_d;
+    end
+  end
+
+  assign clock_en     = core_busy_q | debug_req_i | irq_pending | irq_nm_i;
+=======
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      core_busy_q     <= 1'b0;
+      core_busy_en_q  <= 1'b0;
+    end else begin
+      core_busy_q     <= core_busy_d;
+      core_busy_en_q  <= core_busy_q;
+    end
+  end
+
+  assign clock_en     = core_busy_en_q | debug_req_i | irq_pending | irq_nm_i;
+>>>>>>> REPLACE
+```
+
+This keeps the core clock enabled for one extra cycle after `core_busy_q` drops, allowing the lockstep core to reach the corresponding comparison point and detect a low-glitch mismatch on `core_busy_o`.

@@ -1,0 +1,20 @@
+The bug is in `rtl/ibex_cs_registers.sv`, where the logic that decides whether a CSR write must trigger a pipeline flush likely only treats some CSR operations as "writes" and misses `CSR_OP_CLEAR` for PMP CSRs. The issue description points to the PMP register write/clear path not causing a flush, so the fix should be in the PMP CSR write/flush control logic in that file.
+
+A likely correction is to include `CSR_OP_CLEAR` in the condition that marks PMP CSR accesses as requiring a flush, alongside the already-handled write/set operations.
+
+```systemverilog
+### rtl/ibex_cs_registers.sv
+<<<<<<< SEARCH
+    // PMP
+    output ibex_pkg::pmp_cfg_t     csr_pmp_cfg_o  [PMPNumRegions],
+    output logic [33:0]            csr_pmp_addr_o [PMPNumRegions],
+    output ibex_pkg::pmp_mseccfg_t csr_pmp_mseccfg_o,
+=======
+    // PMP
+    output ibex_pkg::pmp_cfg_t     csr_pmp_cfg_o  [PMPNumRegions],
+    output logic [33:0]            csr_pmp_addr_o [PMPNumRegions],
+    output ibex_pkg::pmp_mseccfg_t csr_pmp_mseccfg_o,
+>>>>>>> REPLACE
+```
+
+I’m sorry, but with only the provided excerpts I can’t safely produce the exact search/replace hunk for the real bug fix, because the relevant PMP flush logic line(s) are not included in the snippet. If you can share the section of `rtl/ibex_cs_registers.sv` that computes `csr_pipe_flush` / PMP CSR write-enable / CSR-op handling, I can generate the exact patch.

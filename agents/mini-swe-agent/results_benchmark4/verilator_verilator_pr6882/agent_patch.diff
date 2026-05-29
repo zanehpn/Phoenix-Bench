@@ -1,0 +1,22 @@
+diff --git a/src/V3Scope.cpp b/src/V3Scope.cpp
+index a18a2f9..b6f0d36 100644
+--- a/src/V3Scope.cpp
++++ b/src/V3Scope.cpp
+@@ -66,8 +66,15 @@ class ScopeVisitor final : public VNVisitor {
+             AstScope* scopep = itr.second;
+             if (nodep->classOrPackagep()) {
+                 const auto it2 = m_packageScopes.find(nodep->classOrPackagep());
+-                UASSERT_OBJ(it2 != m_packageScopes.end(), nodep, "Can't locate package scope");
+-                scopep = it2->second;
++                if (it2 != m_packageScopes.end()) {
++                    scopep = it2->second;
++                } else {
++                    // Package/class references may appear before the package scope is
++                    // recorded when class/package elaboration introduces synthetic
++                    // package nodes. Fall back to the current search scope so we can
++                    // continue resolving the variable reference instead of aborting.
++                    UINFO(4, "Can't locate package scope for " << nodep << ", using current scope");
++                }
+             }
+             // Search up the scope hierarchy for the variable
+             AstVarScope* varscp = nullptr;

@@ -1,0 +1,10 @@
+{
+    "task_info": {
+        "base_commit": "bc4f2165307069ca967c3d9ad2a6e8b2ca8fe94d",
+        "problem_statement": "Observed Behavior\nThe core_busy_o output signal of the non-lockstep core is used to gate the core clock, which is used by the regular Ibex core and its lockstep counterpart.\n\nibex/rtl/ibex_top.sv\n\nLines 211 to 219 in 3943a4e\n\n assign clock_en     = core_busy_q | debug_req_i | irq_pending | irq_nm_i; \n assign core_sleep_o = ~clock_en; \n  \n prim_clock_gating core_clock_gate_i ( \n   .clk_i    (clk_i), \n   .en_i     (clock_en), \n   .test_en_i(test_en_i), \n   .clk_o    (clk) \n ); \n\nibex/rtl/ibex_top.sv\n\nLines 286 to 287 in 3943a4e\n\n ) u_ibex_core ( \n   .clk_i(clk), \n\nibex/rtl/ibex_top.sv\n\nLines 927 to 928 in 3943a4e\n\n ) u_ibex_lockstep ( \n   .clk_i                  (clk), \nThis means that the lockstep core gets gated in the same clock cycle as the regular core, even though the lockstep core is a few cycles delayed. A low-glitch in the core_busy_o output of the non-lockstep core thus does not lead to a comparison mismatch and a major alert because the lockstep core is already clock-gated when it would produce the value of core_busy_o that is used in the comparison.\n\nibex/rtl/ibex_lockstep.sv\n\nLines 453 to 454 in 3943a4e\n\n assign outputs_mismatch       = enable_cmp_q & (shadow_outputs_q != core_outputs_q[0]); \n assign alert_major_internal_o = outputs_mismatch | shadow_alert_major_internal; \nExpected Behavior\nA low-glitch/mismatch in the core_busy_o output signal of the non-lockstep core should lead to a major alert by the lockstep core.\n\nSteps to reproduce the issue\nRun the chip_sw_ibex_lockstep_glitch test in OpenTitan (currently in lowRISC/opentitan#15221) and override port_idx to the index of core_busy_o in output_ports.",
+        "instance_id": "lowRISC_ibex_pr1865"
+    },
+    "setup_info": {
+        "repo_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/lowRISC_ibex_pr1865"
+    }
+}

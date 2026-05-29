@@ -1,0 +1,44 @@
+From 3b7b39ad28f485a96075c3704d0c7e43a07729e8 Mon Sep 17 00:00:00 2001
+From: Taichi Ishitani <taichi730@gmail.com>
+Date: Thu, 2 Nov 2023 00:56:14 +0900
+Subject: [PATCH] fix wrong condition monitoring the 'pready' signal
+
+(refs: #3)
+---
+ src/tvip_apb_master_driver.svh | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/src/tvip_apb_master_driver.svh b/src/tvip_apb_master_driver.svh
+index eba112e..49fd58a 100644
+--- a/src/tvip_apb_master_driver.svh
++++ b/src/tvip_apb_master_driver.svh
+@@ -59,8 +59,8 @@ class tvip_apb_master_driver extends tue_driver #(
+       ipg = current_item.get_ipg();
+       finish_item();
+ 
+-      repeat (ipg + 1) begin
+-        @(vif.master_cb);
++      repeat (ipg) begin
++        @(vif.master_cb_edge);
+       end
+     end
+   endtask
+@@ -83,14 +83,14 @@ class tvip_apb_master_driver extends tue_driver #(
+       vif.master_cb.pstrb   <= current_item.strobe;
+     end
+ 
+-    @(vif.master_cb);
++    @(vif.master_cb_edge);
+     vif.master_cb.penable <= '1;
+   endtask
+ 
+   protected virtual task wait_for_done();
+-    while (!vif.master_cb.pready) begin
+-      @(vif.master_cb);
+-    end
++    do begin
++      @(vif.master_cb_edge);
++    end while (!vif.master_cb.pready);
+   endtask
+ 
+   protected virtual task sample_response();

@@ -1,0 +1,25 @@
+The bug is in `src/axi_lite_mux.sv` in the W-channel muxing logic.
+
+### Localization
+In the multi-slave-port case, `mst_w_chan` is currently driven by a conditional mux:
+
+```systemverilog
+assign mst_w_chan      = (!w_fifo_empty && !b_fifo_full) ? slv_reqs_i[w_select].w        :   '0;
+assign mst_w_valid     = (!w_fifo_empty && !b_fifo_full) ? slv_reqs_i[w_select].w_valid  : 1'b0;
+```
+
+The issue suggests that the mux for `mst_w_chan` is redundant and that `mst_w_chan` should be tied to zero whenever `mst_w_valid == 0`. That implies the data path can be simplified to always select the indexed slave channel, while `mst_w_valid` still controls whether the beat is meaningful.
+
+### Fix
+Replace the conditional assignment to `mst_w_chan` with a direct assignment, while keeping `mst_w_valid` as-is.
+
+```systemverilog
+### src/axi_lite_mux.sv
+<<<<<<< SEARCH
+    assign mst_w_chan      = (!w_fifo_empty && !b_fifo_full) ? slv_reqs_i[w_select].w        :   '0;
+    assign mst_w_valid     = (!w_fifo_empty && !b_fifo_full) ? slv_reqs_i[w_select].w_valid  : 1'b0;
+=======
+    assign mst_w_chan      = slv_reqs_i[w_select].w;
+    assign mst_w_valid     = (!w_fifo_empty && !b_fifo_full) ? slv_reqs_i[w_select].w_valid  : 1'b0;
+>>>>>>> REPLACE
+```

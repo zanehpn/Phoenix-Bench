@@ -1,0 +1,30 @@
+diff --git a/py_src/pyslint.py b/py_src/pyslint.py
+index f04aa6f..1598d95 100644
+--- a/py_src/pyslint.py
++++ b/py_src/pyslint.py
+@@ -365,6 +365,17 @@ def chk_dpi_rules (lv_cu_scope):
+         chk_dpi_rval_2st (lv_mod_mem_i)
+ 
+ 
++def chk_tdef_in_mod (lv_cu_scope):
++  if (lv_cu_scope.kind.name == 'ModuleDeclaration'):
++    for lv_mod_mem_i in lv_cu_scope.members:
++      if (lv_mod_mem_i.kind.name == 'TypedefDeclaration'):
++        msg = 'Avoid declaring typedef inside module scope; '
++        msg += 'move it to a package for reuse instead.'
++        msg += ' Found code as: '
++        msg += str(lv_mod_mem_i)
++        pyslint_msg ('REUSE_NO_TDEF_IN_MOD', msg)
++
++
+ def chk_naming (lv_cu_scope):
+   if (lv_cu_scope.kind.name == 'ClassDeclaration'):
+     lv_ident_name = str(lv_cu_scope.name)
+@@ -403,6 +414,7 @@ for scope_i in (tree.root.members):
+   cnst_arr_method_cast (scope_i)
+   cl_endlabel_chk (scope_i)
+   chk_dpi_rules (scope_i)
++  chk_tdef_in_mod (scope_i)
+ 
+ 
+ cu_scope = tree.root.members[0]

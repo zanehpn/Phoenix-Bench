@@ -1,0 +1,18 @@
+diff --git a/cores/s18/doc/segas18_v.cpp b/cores/s18/doc/segas18_v.cpp
+index d7ffa3a..170a9d2 100644
+--- a/cores/s18/doc/segas18_v.cpp
++++ b/cores/s18/doc/segas18_v.cpp
+@@ -238,8 +238,12 @@ uint32_t segas18_state::screen_update(screen_device &screen, bitmap_ind16 &bitma
+ 					int priority = (pix >> 10) & 3;
+ 					if ((1 << priority) > pri[x])
+ 					{
++						// sprite pixel 0 is opaque black and should be drawn, matching
++						// the original System 18 borders used by instructional sprites.
++						if ((pix & 0x03ff) == 0x0000)
++							dest[x] = m_palette->black_pen();
+ 						// if the color is set to maximum, shadow pixels underneath us
+-						if ((pix & 0x03f0) == 0x03f0)
++						else if ((pix & 0x03f0) == 0x03f0)
+ 							dest[x] += m_palette_entries;
+ 
+ 						// otherwise, just add in sprite palette base

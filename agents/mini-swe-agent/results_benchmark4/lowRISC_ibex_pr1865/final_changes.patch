@@ -1,0 +1,15 @@
+diff --git a/rtl/ibex_lockstep.sv b/rtl/ibex_lockstep.sv
+index e6ab5fd..d89252c 100644
+--- a/rtl/ibex_lockstep.sv
++++ b/rtl/ibex_lockstep.sv
+@@ -298,7 +298,9 @@ module ibex_lockstep import ibex_pkg::*; #(
+   assign core_outputs_in.double_fault_seen   = double_fault_seen_i;
+   assign core_outputs_in.core_busy           = core_busy_i;
+ 
+-  // Delay the outputs
++  // Delay the outputs. core_busy_o gates the non-lockstep core clock, so the
++  // comparison needs to use a correspondingly delayed core_busy value to avoid
++  // masking short glitches when the shadow core is still active.
+   always_ff @(posedge clk_i) begin
+     for (int unsigned i = 0; i < OutputsOffset - 1; i++) begin
+       core_outputs_q[i] <= core_outputs_q[i+1];

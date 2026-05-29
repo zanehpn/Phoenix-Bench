@@ -1,0 +1,127 @@
+The bug is in `src/dmi_jtag_tap.sv`.
+
+### Localization
+`dtmcs.dmireset` is currently wired directly from the `dtmcs_q` register:
+```systemverilog
+assign dmi_reset_o = dtmcs_q.dmireset;
+```
+Since `dtmcs_q` is a shift/register field, the bit stays high after being written until another JTAG capture/update cycle overwrites it. Per spec, `dmireset` should be a write-one pulse, not a sticky level.
+
+### Fix
+Generate a one-cycle pulse when the DTMCS DR is updated with `dmireset` set, and clear the stored bit back to 0 afterward. This keeps the externally observed reset as a pulse while preserving normal capture/shift behavior.
+
+```systemverilog
+### src/dmi_jtag_tap.sv
+<<<<<<< SEARCH
+  logic [31:0] idcode_d, idcode_q;
+  logic        idcode_select;
+  logic        bypass_select;
+  dtmcs_t      dtmcs_d, dtmcs_q;
+  logic        bypass_d, bypass_q;  // this is a 1-bit register
+
+  assign dmi_reset_o = dtmcs_q.dmireset;
+=======
+  logic [31:0] idcode_d, idcode_q;
+  logic        idcode_select;
+  logic        bypass_select;
+  dtmcs_t      dtmcs_d, dtmcs_q;
+  logic        bypass_d, bypass_q;  // this is a 1-bit register
+  logic        dmi_reset_pulse_d, dmi_reset_pulse_q;
+
+  assign dmi_reset_o = dmi_reset_pulse_q;
+>>>>>>> REPLACE
+```
+
+```systemverilog
+### src/dmi_jtag_tap.sv
+<<<<<<< SEARCH
+    idcode_d = idcode_q;
+    bypass_d = bypass_q;
+    dtmcs_d  = dtmcs_q;
+=======
+    idcode_d = idcode_q;
+    bypass_d = bypass_q;
+    dtmcs_d  = dtmcs_q;
+    dmi_reset_pulse_d = 1'b0;
+>>>>>>> REPLACE
+```
+
+```systemverilog
+### src/dmi_jtag_tap.sv
+<<<<<<< SEARCH
+       if (dtmcs_select_o) dtmcs_d  = {td_i, 31'(dtmcs_q >> 1)};
+=======
+       if (dtmcs_select_o) dtmcs_d  = {td_i, 31'(dtmcs_q >> 1)};
+>>>>>>> REPLACE
+```
+
+```systemverilog
+### src/dmi_jtag_tap.sv
+<<<<<<< SEARCH
+    if (test_logic_reset_o) begin
+      idcode_d = IdcodeValue;
+      bypass_d = 1'b0;
+    end
+=======
+    if (test_logic_reset_o) begin
+      idcode_d = IdcodeValue;
+      bypass_d = 1'b0;
+    end
+
+    // dmireset is W1 and must behave like a pulse
+    if (update_dr_o && dtmcs_select_o && dtmcs_q.dmireset) begin
+      dmi_reset_pulse_d = 1'b1;
+      dtmcs_d.dmireset  = 1'b0;
+    end
+>>>>>>> REPLACE
+```
+
+```systemverilog
+### src/dmi_jtag_tap.sv
+<<<<<<< SEARCH
+   // ----------------
+   // DFT
+   // ----------------
+=======
+   // ----------------
+   // DFT
+   // ----------------
+>>>>>>> REPLACE
+```
+
+```systemverilog
+### src/dmi_jtag_tap.sv
+<<<<<<< SEARCH
+  always_ff @(posedge tck_n, negedge trst_ni) begin : p_tdo_regs
+    if (!trst_ni) begin
+      td_o     <= 1'b0;
+      tdo_oe_o <= 1'b0;
+    end else begin
+      td_o     <= tdo_mux;
+      tdo_oe_o <= (shift_ir | shift_dr_o);
+    end
+  end
+=======
+  always_ff @(posedge tck_n, negedge trst_ni) begin : p_tdo_regs
+    if (!trst_ni) begin
+      td_o             <= 1'b0;
+      tdo_oe_o         <= 1'b0;
+      dmi_reset_pulse_q <= 1'b0;
+    end else begin
+      td_o             <= tdo_mux;
+      tdo_oe_o         <= (shift_ir | shift_dr_o);
+      dmi_reset_pulse_q <= dmi_reset_pulse_d;
+    end
+  end
+>>>>>>> REPLACE
+```
+
+```systemverilog
+### src/dmi_jtag_tap.sv
+<<<<<<< SEARCH
+   logic tck_n, tck_ni;
+=======
+   logic tck_n, tck_ni;
+>>>>>>> REPLACE
+```
+

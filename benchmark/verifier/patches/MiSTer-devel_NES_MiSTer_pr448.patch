@@ -1,0 +1,102 @@
+From d34b97d73f77c2f220a8565364d3008089455709 Mon Sep 17 00:00:00 2001
+From: littlegamer87 <17988200+littlegamer87@users.noreply.github.com>
+Date: Thu, 18 Dec 2025 10:22:30 +0100
+Subject: [PATCH 1/3] Mapper 141: Add 8KB unbanked CHR-RAM variant (Q boy)
+
+---
+ rtl/mappers/Sachen.sv | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/rtl/mappers/Sachen.sv b/rtl/mappers/Sachen.sv
+index 7085f41c..33bbb828 100644
+--- a/rtl/mappers/Sachen.sv
++++ b/rtl/mappers/Sachen.sv
+@@ -61,6 +61,7 @@ wire mapper139 = (flags[7:0] == 139);
+ wire mapper141 = (flags[7:0] == 141);
+ wire mapper150 = (flags[7:0] == 150);
+ wire mapper243 = (flags[7:0] == 243);
++wire has_chr_ram = flags[15];
+ 
+ reg [2:0] register;
+ reg [2:0] prg_bank;
+@@ -138,7 +139,8 @@ always @* begin
+ 	else if (mapper138)
+ 		chrsel = {2'b11, chr_banko, chr_bank, chr_ain[10]};
+ 	else if (mapper141)
+-		chrsel = {1'b1, chr_banko, chr_bank, chr_ain[11:10]};
++		chrsel = has_chr_ram	? {6'b100000, chr_ain[12:10]} // Q boy
++								: {1'b1, chr_banko, chr_bank, chr_ain[11:10]};
+ 	else if (mapper139)
+ 		chrsel = {chr_banko, chr_bank, chr_ain[12:10]};
+ 	else if (mapper150)
+@@ -160,7 +162,7 @@ always @* begin
+ end
+ 
+ assign prg_aout = {4'b00_00, prg_bank, prg_ain[14:0]};
+-assign chr_allow = flags[15];
++assign chr_allow = has_chr_ram;
+ assign chr_aout = {3'b10_0, chrsel, chr_ain[9:0]};
+ assign vram_ce = chr_ain[13];
+ //assign vram_a10 = ; //done above
+
+From fe3dd62de0796da196e70980bbabf6b713210286 Mon Sep 17 00:00:00 2001
+From: littlegamer87 <17988200+littlegamer87@users.noreply.github.com>
+Date: Thu, 18 Dec 2025 16:05:59 +0100
+Subject: [PATCH 2/3] Mapper 243: Fix CHR addressing (Honey Peach)
+
+---
+ rtl/mappers/Sachen.sv | 7 ++-----
+ 1 file changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/rtl/mappers/Sachen.sv b/rtl/mappers/Sachen.sv
+index 33bbb828..b6d2b93b 100644
+--- a/rtl/mappers/Sachen.sv
++++ b/rtl/mappers/Sachen.sv
+@@ -86,10 +86,7 @@ end else if (ce && prg_write) begin
+ 		register <= prg_din[2:0];
+ 	end else if ({prg_ain[15:14], prg_ain[8], prg_ain[0]} == 4'b0111) begin
+ 		case (register)
+-			0: begin 
+-			   chr_bank_0 <= prg_din[2:0];  // Select 2 KB CHR bank at PPU $0000-$07FF;
+-				if (mapper243) {prg_bank, chr_bank_2[0], chr_bank_p[1:0], chr_bank_o[0]} = 7'b000_0011;
+-				end
++			0: chr_bank_0 <= prg_din[2:0];  // Select 2 KB CHR bank at PPU $0000-$07FF;
+ 			1: chr_bank_1 <= prg_din[2:0];  // Select 2 KB CHR bank at PPU $0800-$0FFF;
+ 			2: begin
+ 			   chr_bank_2 <= prg_din[2:0];  // Select 2 KB CHR bank at PPU $1000-$17FF;
+@@ -146,7 +143,7 @@ always @* begin
+ 	else if (mapper150)
+ 		chrsel = {2'b00, chr_bank_2[0], chr_bank_o[0], chr_bank_p[1:0], chr_ain[12:10]};
+ 	else if (mapper243)
+-		chrsel = {2'b00, chr_bank_2[0], chr_bank_p[1:0], chr_bank_o[0], chr_ain[12:10]};
++		chrsel = {2'b00, chr_bank_p[1:0], chr_bank_o[0], chr_bank_2[0], chr_ain[12:10]};
+ 	else
+ 		chrsel = 9'h000;
+ end
+
+From 4553dbc1844687ac773fdddb79231831a665365b Mon Sep 17 00:00:00 2001
+From: littlegamer87 <17988200+littlegamer87@users.noreply.github.com>
+Date: Thu, 18 Dec 2025 17:45:19 +0100
+Subject: [PATCH 3/3] Formatting
+
+---
+ rtl/mappers/Sachen.sv | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/rtl/mappers/Sachen.sv b/rtl/mappers/Sachen.sv
+index b6d2b93b..76591b82 100644
+--- a/rtl/mappers/Sachen.sv
++++ b/rtl/mappers/Sachen.sv
+@@ -89,9 +89,9 @@ end else if (ce && prg_write) begin
+ 			0: chr_bank_0 <= prg_din[2:0];  // Select 2 KB CHR bank at PPU $0000-$07FF;
+ 			1: chr_bank_1 <= prg_din[2:0];  // Select 2 KB CHR bank at PPU $0800-$0FFF;
+ 			2: begin
+-			   chr_bank_2 <= prg_din[2:0];  // Select 2 KB CHR bank at PPU $1000-$17FF;
+-				if (mapper150) prg_bank = {2'b00, prg_din[0]};
+-				end
++			   		chr_bank_2 <= prg_din[2:0];  // Select 2 KB CHR bank at PPU $1000-$17FF;
++					if (mapper150) prg_bank = {2'b00, prg_din[0]};
++			   end
+ 			3: chr_bank_3 <= prg_din[2:0];  // Select 2 KB CHR bank at PPU $1800-$1FFF;
+ 			4: chr_bank_o <= prg_din[2:0];  // Outer CHR bank
+ 			5: prg_bank   <= prg_din[2:0];  // Select 32 KB PRG ROM bank at $8000-$FFFF;

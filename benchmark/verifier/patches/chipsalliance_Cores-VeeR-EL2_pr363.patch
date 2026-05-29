@@ -1,0 +1,123 @@
+From e49a4d1f59db853b01fd63137be81661669ff256 Mon Sep 17 00:00:00 2001
+From: Karol Gugala <kgugala@antmicro.com>
+Date: Mon, 20 Jan 2025 15:47:40 +0100
+Subject: [PATCH] Remove unused signals and tie undriven to 0
+
+---
+ design/el2_mem.sv              | 1 +
+ design/el2_veer.sv             | 6 ------
+ design/exu/el2_exu.sv          | 2 ++
+ design/ifu/el2_ifu_bp_ctl.sv   | 5 ++++-
+ design/lsu/el2_lsu_dccm_ctl.sv | 6 ++++++
+ 5 files changed, 13 insertions(+), 7 deletions(-)
+
+diff --git a/design/el2_mem.sv b/design/el2_mem.sv
+index 873535cf721..0b0b8f91584 100644
+--- a/design/el2_mem.sv
++++ b/design/el2_mem.sv
+@@ -161,6 +161,7 @@ else  begin
+    assign   ictag_debug_rd_data  = '0 ;
+    assign   ic_debug_rd_data  = '0 ;
+    assign   ic_eccerr      = '0;
++   assign   ic_parerr      = '0;
+ end // else: !if( pt.ICACHE_ENABLE )
+ 
+ 
+diff --git a/design/el2_veer.sv b/design/el2_veer.sv
+index 7d21113bf42..643fe78418e 100644
+--- a/design/el2_veer.sv
++++ b/design/el2_veer.sv
+@@ -496,7 +496,6 @@ import el2_pkg::*;
+    logic                         lsu_axi_awready_int;
+    logic                         lsu_axi_wready_int;
+    logic                         lsu_axi_bvalid_int;
+-   logic                         lsu_axi_bready_int;
+    logic [1:0]                   lsu_axi_bresp_int;
+    logic [pt.LSU_BUS_TAG-1:0]    lsu_axi_bid_int;
+    logic                         lsu_axi_arready_int;
+@@ -522,7 +521,6 @@ import el2_pkg::*;
+    logic                         ifu_axi_awready_int;
+    logic                         ifu_axi_wready_int;
+    logic                         ifu_axi_bvalid_int;
+-   logic                         ifu_axi_bready_int;
+    logic [1:0]                   ifu_axi_bresp_int;
+    logic [pt.IFU_BUS_TAG-1:0]    ifu_axi_bid_int;
+    logic                         ifu_axi_arready_int;
+@@ -548,7 +546,6 @@ import el2_pkg::*;
+    logic                         sb_axi_awready_int;
+    logic                         sb_axi_wready_int;
+    logic                         sb_axi_bvalid_int;
+-   logic                         sb_axi_bready_int;
+    logic [1:0]                   sb_axi_bresp_int;
+    logic [pt.SB_BUS_TAG-1:0]     sb_axi_bid_int;
+    logic                         sb_axi_arready_int;
+@@ -1359,7 +1356,6 @@ import el2_pkg::*;
+    assign lsu_axi_awready_int                 = pt.BUILD_AHB_LITE ? lsu_axi_awready_ahb : lsu_axi_awready;
+    assign lsu_axi_wready_int                  = pt.BUILD_AHB_LITE ? lsu_axi_wready_ahb : lsu_axi_wready;
+    assign lsu_axi_bvalid_int                  = pt.BUILD_AHB_LITE ? lsu_axi_bvalid_ahb : lsu_axi_bvalid;
+-   assign lsu_axi_bready_int                  = pt.BUILD_AHB_LITE ? lsu_axi_bready_ahb : lsu_axi_bready;
+    assign lsu_axi_bresp_int[1:0]              = pt.BUILD_AHB_LITE ? lsu_axi_bresp_ahb[1:0] : lsu_axi_bresp[1:0];
+    assign lsu_axi_bid_int[pt.LSU_BUS_TAG-1:0] = pt.BUILD_AHB_LITE ? lsu_axi_bid_ahb[pt.LSU_BUS_TAG-1:0] : lsu_axi_bid[pt.LSU_BUS_TAG-1:0];
+    assign lsu_axi_arready_int                 = pt.BUILD_AHB_LITE ? lsu_axi_arready_ahb : lsu_axi_arready;
+@@ -1372,7 +1368,6 @@ import el2_pkg::*;
+    assign ifu_axi_awready_int                 = pt.BUILD_AHB_LITE ? ifu_axi_awready_ahb : ifu_axi_awready;
+    assign ifu_axi_wready_int                  = pt.BUILD_AHB_LITE ? ifu_axi_wready_ahb : ifu_axi_wready;
+    assign ifu_axi_bvalid_int                  = pt.BUILD_AHB_LITE ? ifu_axi_bvalid_ahb : ifu_axi_bvalid;
+-   assign ifu_axi_bready_int                  = pt.BUILD_AHB_LITE ? ifu_axi_bready_ahb : ifu_axi_bready;
+    assign ifu_axi_bresp_int[1:0]              = pt.BUILD_AHB_LITE ? ifu_axi_bresp_ahb[1:0] : ifu_axi_bresp[1:0];
+    assign ifu_axi_bid_int[pt.IFU_BUS_TAG-1:0] = pt.BUILD_AHB_LITE ? ifu_axi_bid_ahb[pt.IFU_BUS_TAG-1:0] : ifu_axi_bid[pt.IFU_BUS_TAG-1:0];
+    assign ifu_axi_arready_int                 = pt.BUILD_AHB_LITE ? ifu_axi_arready_ahb : ifu_axi_arready;
+@@ -1385,7 +1380,6 @@ import el2_pkg::*;
+    assign sb_axi_awready_int                  = pt.BUILD_AHB_LITE ? sb_axi_awready_ahb : sb_axi_awready;
+    assign sb_axi_wready_int                   = pt.BUILD_AHB_LITE ? sb_axi_wready_ahb : sb_axi_wready;
+    assign sb_axi_bvalid_int                   = pt.BUILD_AHB_LITE ? sb_axi_bvalid_ahb : sb_axi_bvalid;
+-   assign sb_axi_bready_int                   = pt.BUILD_AHB_LITE ? sb_axi_bready_ahb : sb_axi_bready;
+    assign sb_axi_bresp_int[1:0]               = pt.BUILD_AHB_LITE ? sb_axi_bresp_ahb[1:0] : sb_axi_bresp[1:0];
+    assign sb_axi_bid_int[pt.SB_BUS_TAG-1:0]   = pt.BUILD_AHB_LITE ? sb_axi_bid_ahb[pt.SB_BUS_TAG-1:0] : sb_axi_bid[pt.SB_BUS_TAG-1:0];
+    assign sb_axi_arready_int                  = pt.BUILD_AHB_LITE ? sb_axi_arready_ahb : sb_axi_arready;
+diff --git a/design/exu/el2_exu.sv b/design/exu/el2_exu.sv
+index 26e90edb23a..ffd42985a95 100644
+--- a/design/exu/el2_exu.sv
++++ b/design/exu/el2_exu.sv
+@@ -336,6 +336,8 @@ if(pt.BTB_ENABLE==1) begin
+    assign exu_mp_pkt.pc4                                    =  final_predict_mp.pc4;
+    assign exu_mp_pkt.hist[1:0]                              =  final_predict_mp.hist[1:0];
+    assign exu_mp_pkt.toffset[11:0]                          =  final_predict_mp.toffset[11:0];
++   assign exu_mp_pkt.br_error                               =  '0;
++   assign exu_mp_pkt.br_start_error                         =  '0;
+ 
+    assign exu_mp_fghr[pt.BHT_GHR_SIZE-1:0]                  =  after_flush_eghr[pt.BHT_GHR_SIZE-1:0];
+ 
+diff --git a/design/ifu/el2_ifu_bp_ctl.sv b/design/ifu/el2_ifu_bp_ctl.sv
+index e7d9469398e..01464bf05fa 100644
+--- a/design/ifu/el2_ifu_bp_ctl.sv
++++ b/design/ifu/el2_ifu_bp_ctl.sv
+@@ -822,7 +822,10 @@ end // if (!pt.BTB_FULLYA)
+                     .dout(btb_used[pt.BTB_SIZE-1:0]));
+ 
+ end // block: fa
+-
++else begin
++   assign ifu_bp_fa_index_f[1] = '0;
++   assign ifu_bp_fa_index_f[0] = '0;
++end
+ 
+    //-----------------------------------------------------------------------------
+    // BHT
+diff --git a/design/lsu/el2_lsu_dccm_ctl.sv b/design/lsu/el2_lsu_dccm_ctl.sv
+index e0fbb98f61d..b56f97a17ef 100644
+--- a/design/lsu/el2_lsu_dccm_ctl.sv
++++ b/design/lsu/el2_lsu_dccm_ctl.sv
+@@ -231,6 +231,12 @@ import el2_pkg::*;
+       logic [63:32] lsu_ld_data_m_nc, lsu_ld_data_corr_m_nc;
+       logic [31:0]  lsu_ld_data_corr_m;
+ 
++      assign lsu_ld_data_r        = '0;
++      assign dccm_rdata_lo_r      = '0;
++      assign dccm_rdata_hi_r      = '0;
++      assign dccm_data_ecc_lo_r   = '0;
++      assign dccm_data_ecc_hi_r   = '0;
++
+       assign dccm_dma_rvalid      = lsu_pkt_m.valid & lsu_pkt_m.load & lsu_pkt_m.dma;
+       assign dccm_dma_ecc_error   = lsu_double_ecc_error_m;
+       assign dccm_dma_rtag[2:0]   = dma_mem_tag_m[2:0];

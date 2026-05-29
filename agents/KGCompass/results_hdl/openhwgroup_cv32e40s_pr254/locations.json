@@ -1,0 +1,22 @@
+[
+  {
+    "file_path": "rtl/cv32e40s_cs_registers.sv",
+    "reason": "Contains the PMP CSR storage signals (`pmp_addr_rdata` / PMP address register handling). The bug report indicates these CSR values are stored with `PMP_ADDR_WIDTH` instead of full 32-bit RVFI width, so this is the most likely source."
+  },
+  {
+    "file_path": "rtl/cv32e40s_pkg.sv",
+    "reason": "Defines core-wide PMP parameters such as `PMP_ADDR_WIDTH`, `PMP_MAX_REGIONS`, and related sizing logic. If the width is derived incorrectly, the truncation originates here."
+  },
+  {
+    "file_path": "bhv/cv32e40s_rvfi.sv",
+    "reason": "Implements RVFI signal packaging/typing for the behavioral wrapper. It likely declares or maps `csr_pmpaddr_q_i` as 32-bit and may need adjustment if the internal RTL width changed or is mismatched."
+  },
+  {
+    "file_path": "bhv/cv32e40s_wrapper.sv",
+    "reason": "The compile error is reported at the wrapper connection to `.csr_pmpaddr_q_i(...)`. This file directly wires the internal PMP address array into the RVFI interface and is where the type mismatch is exposed."
+  },
+  {
+    "file_path": "sva/cv32e40s_rvfi_sva.sv",
+    "reason": "Formal/CEX issues are mentioned for RVFI PMP CSR values. RVFI assertion/checking code may assume 32-bit PMP addresses and could need updates if the internal signal width is corrected."
+  }
+]

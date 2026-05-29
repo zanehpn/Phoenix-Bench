@@ -1,0 +1,23 @@
+diff --git a/rtl/serv_alu.v b/rtl/serv_alu.v
+index 2679a4a..a8f7fc2 100644
+--- a/rtl/serv_alu.v
++++ b/rtl/serv_alu.v
+@@ -25,6 +25,9 @@ module serv_alu
+    wire [B:0]  result_add;
+    wire [B:0]  result_slt;
+ 
++   wire [W-1:0] bool_mask0 = {W{i_bool_op[0]}};
++   wire [W-1:0] bool_mask1 = {W{i_bool_op[1]}};
++
+    reg 	       cmp_r;
+ 
+    wire        add_cy;
+@@ -56,7 +59,7 @@ module serv_alu
+     i_bool_op will be 01 during shift operations, so by outputting zero under
+     this condition we can safely or result_bool with i_buf
+     */
+-   wire [B:0] result_bool = ((i_rs1 ^ i_op_b) & ~{W{i_bool_op[0]}}) | ({W{i_bool_op[1]}} & i_op_b & i_rs1);
++   wire [B:0] result_bool = ((i_rs1 ^ i_op_b) & ~bool_mask0) | (bool_mask1 & i_op_b & i_rs1);
+ 
+    assign result_slt[0] = cmp_r & i_cnt0;
+    generate

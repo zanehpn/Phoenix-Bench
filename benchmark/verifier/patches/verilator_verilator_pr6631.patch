@@ -1,0 +1,73 @@
+From 0e1ce55fc7d5f03afb15ac30234f51a2a52f0ae1 Mon Sep 17 00:00:00 2001
+From: Krzysztof Bieganski <kbieganski@antmicro.com>
+Date: Mon, 3 Nov 2025 13:27:02 +0100
+Subject: [PATCH] Fix `--timing` with `--x-initial-edge`
+
+Signed-off-by: Krzysztof Bieganski <kbieganski@antmicro.com>
+---
+ include/verilated_timing.cpp            |  5 +++++
+ test_regress/t/t_timing_initial_edge.py | 18 ++++++++++++++++++
+ test_regress/t/t_timing_initial_edge.v  | 13 +++++++++++++
+ 3 files changed, 36 insertions(+)
+ create mode 100755 test_regress/t/t_timing_initial_edge.py
+ create mode 100644 test_regress/t/t_timing_initial_edge.v
+
+diff --git a/include/verilated_timing.cpp b/include/verilated_timing.cpp
+index 58c21bdb49e..ea819c16d46 100644
+--- a/include/verilated_timing.cpp
++++ b/include/verilated_timing.cpp
+@@ -80,6 +80,11 @@ void VlDelayScheduler::resume() {
+     }
+ 
+     if (!resumed) {
++        if (m_context.time() == 0) {
++            // Nothing was scheduled at time 0, but resume() got called due to --x-initial-edge
++            return;
++        }
++
+         VL_FATAL_MT(__FILE__, __LINE__, "",
+                     "%Error: Encountered process that should've been resumed at an "
+                     "earlier simulation time. Missed a time slot?\n");
+diff --git a/test_regress/t/t_timing_initial_edge.py b/test_regress/t/t_timing_initial_edge.py
+new file mode 100755
+index 00000000000..2e1f0f617a1
+--- /dev/null
++++ b/test_regress/t/t_timing_initial_edge.py
+@@ -0,0 +1,18 @@
++#!/usr/bin/env python3
++# DESCRIPTION: Verilator: Verilog Test driver/expect definition
++#
++# Copyright 2025 by Wilson Snyder. This program is free software; you
++# can redistribute it and/or modify it under the terms of either the GNU
++# Lesser General Public License Version 3 or the Perl Artistic License
++# Version 2.0.
++# SPDX-License-Identifier: LGPL-3.0-only OR Artistic-2.0
++
++import vltest_bootstrap
++
++test.scenarios('simulator')
++
++test.compile(verilator_flags2=["--binary", "--x-initial-edge"])
++
++test.execute()
++
++test.passes()
+diff --git a/test_regress/t/t_timing_initial_edge.v b/test_regress/t/t_timing_initial_edge.v
+new file mode 100644
+index 00000000000..b1a095085e4
+--- /dev/null
++++ b/test_regress/t/t_timing_initial_edge.v
+@@ -0,0 +1,13 @@
++// DESCRIPTION: Verilator: Verilog Test module
++//
++// This file ONLY is placed under the Creative Commons Public Domain, for
++// any use, without warranty, 2025 by Antmicro.
++// SPDX-License-Identifier: CC0-1.0
++
++module t;
++  initial begin
++    #10;
++    $write("*-* All Finished *-*\n");
++    $finish;
++  end
++endmodule

@@ -1,0 +1,67 @@
+diff --git a/src/counter.v b/src/counter.v
+new file mode 100644
+index 0000000..81df201
+--- /dev/null
++++ b/src/counter.v
+@@ -0,0 +1,17 @@
++module counter #(
++    parameter WIDTH = 8
++) (
++    input  wire                  clk,
++    input  wire                  rst_n,
++    input  wire                  en,
++    output reg  [WIDTH-1:0]      count
++);
++
++always @(posedge clk or negedge rst_n) begin
++    if (!rst_n)
++        count <= {WIDTH{1'b0}};
++    else if (en)
++        count <= count + 1'b1;
++end
++
++endmodule
+diff --git a/tb/counter_tb.sv b/tb/counter_tb.sv
+new file mode 100644
+index 0000000..d1b6401
+--- /dev/null
++++ b/tb/counter_tb.sv
+@@ -0,0 +1,38 @@
++`timescale 1ns/1ps
++
++module counter_tb;
++    localparam WIDTH = 4;
++
++    reg clk = 0;
++    reg rst_n = 0;
++    reg en = 0;
++    wire [WIDTH-1:0] count;
++
++    counter #(.WIDTH(WIDTH)) dut (
++        .clk(clk),
++        .rst_n(rst_n),
++        .en(en),
++        .count(count)
++    );
++
++    always #5 clk = ~clk;
++
++    initial begin
++        $dumpfile("counter_tb.vcd");
++        $dumpvars(0, counter_tb);
++
++        #12 rst_n = 1;
++        en = 1;
++        #40;
++        en = 0;
++        #20;
++        $finish;
++    end
++
++    always @(posedge clk) begin
++        if (!rst_n)
++            $display("reset count=%0d", count);
++        else
++            $display("count=%0d", count);
++    end
++endmodule

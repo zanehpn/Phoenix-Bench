@@ -1,0 +1,27 @@
+The bug is localized in `src/fpnew_cast_multi.sv`, in the `I2F` conversion path where overflow/invalid status is assigned. The issue statement points to the comment and logic around lines 721–727: overflow on integer-to-float should set **overflow**, not **invalid**, and it should not be suppressed for half precision.
+
+Here is the minimal fix as a SEARCH/REPLACE edit.
+
+```systemverilog
+### src/fpnew_cast_multi.sv
+<<<<<<< SEARCH
+    // Integer to FP: overflow does not exist for single and double precision
+    // and should not raise invalid. Half precision can overflow and must raise
+    // overflow instead.
+    if (src_is_int) begin
+      if (overflow) begin
+        status_o.NV = 1'b1;
+      end
+    end
+=======
+    // Integer to FP: overflow can occur for half precision and must raise
+    // the overflow flag. It must not be converted into invalid.
+    if (src_is_int) begin
+      if (overflow) begin
+        status_o.OF = 1'b1;
+      end
+    end
+>>>>>>> REPLACE
+```
+
+If you want, I can also help verify whether any related status handling elsewhere in `fpnew_cast_multi.sv` needs to be adjusted for consistency.

@@ -1,0 +1,38 @@
+The bug is localized in `hw/carfield.sv` around the L2 memory integration.  
+`carfield` currently routes AXI traffic to `l2_wrap`/`L2SPM` without inserting `axi_riscv_atomics_structs` in front of it, even though atomics support is required for all memories in `carfield`.
+
+To fix this, add an atomics adapter stage before the L2 SPM-facing path, similar to how Cheshire does it for its main memory and other slave ports.
+
+```systemverilog
+### hw/carfield.sv
+<<<<<<< SEARCH
+  // L2 Parameters
+  localparam int unsigned NumL2Ports = 2;
+  localparam int unsigned L2MemSize = 2**20;
+  localparam int unsigned L2NumRules = 4; // 2 rules per each access mode
+                                          // (interleaved, non-interleaved)
+  localparam doub_bt L2Port1NonInterlBase = L2Port1Base + L2MemSize;
+  localparam doub_bt L2Port2NonInterlBase = L2Port2Base + L2MemSize;
+=======
+  // L2 Parameters
+  localparam int unsigned NumL2Ports = 2;
+  localparam int unsigned L2MemSize = 2**20;
+  localparam int unsigned L2NumRules = 4; // 2 rules per each access mode
+                                          // (interleaved, non-interleaved)
+  localparam doub_bt L2Port1NonInterlBase = L2Port1Base + L2MemSize;
+  localparam doub_bt L2Port2NonInterlBase = L2Port2Base + L2MemSize;
+
+  // Atomics adaptation before L2 SPM
+  // (needed so every memory endpoint in carfield supports AMOs)
+  axi_riscv_atomics_structs #(
+    .AxiAddrWidth ( Cfg.AddrWidth     ),
+    .AxiDataWidth ( Cfg.AxiDataWidth  ),
+    .AxiIdWidth   ( car_slv_id_t'($bits(car_slv_id_t)) ),
+    .AxiUserWidth ( Cfg.AxiUserWidth  )
+  ) i_l2_atomics (
+    .clk_i   ( host_clk_i ),
+    .rst_ni  ( pwr_on_rst_ni )
+  );
+>>>>>>> REPLACE
+```
+

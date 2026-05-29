@@ -1,0 +1,22 @@
+[
+  {
+    "file_path": "testbench/common/wallyTracer.sv",
+    "reason": "The reported anomalies are in the tracer output itself (memory access labeling and interrupt/timing messages), so this is the most likely place where the trace decoding or event annotation is wrong."
+  },
+  {
+    "file_path": "src/rvvi/packetizer.sv",
+    "reason": "Tracer/trace-packet generation is commonly handled here; incorrect packaging of memory and CSR/interrupt events could explain the misleading 'read uninitialized RAM' warning and MTIP transitions."
+  },
+  {
+    "file_path": "src/rvvi/regchangedetect.sv",
+    "reason": "The issue involves wrong reported changes to mip.MTIP and possibly other CSR state, which may come from incorrect register change detection used by the tracer."
+  },
+  {
+    "file_path": "src/privileged/csr.sv",
+    "reason": "mip.MTIP is a CSR field; if its update/visibility is incorrect, the timer interrupt appearing and disappearing at the wrong times could originate in CSR logic."
+  },
+  {
+    "file_path": "src/uncore/clint_apb.sv",
+    "reason": "MTIP is driven by the CLINT timer interrupt path. A bug here could cause MTIP to assert/deassert at unexpected times around WFI."
+  }
+]

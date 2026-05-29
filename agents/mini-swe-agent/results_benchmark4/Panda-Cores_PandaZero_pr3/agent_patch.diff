@@ -1,0 +1,64 @@
+diff --git a/rtl/core/core_top.sv b/rtl/core/core_top.sv
+index 5238263..e7f7904 100644
+--- a/rtl/core/core_top.sv
++++ b/rtl/core/core_top.sv
+@@ -117,6 +117,8 @@ IF_stage IF_i (
+     .MEM_en_o    ( IF_en_o      ),
+     .MEM_addr_o  ( IF_addr_o     ),
+     .MEM_data_i  ( IF_data_i     ),
++    .MEM_data_o  ( IF_data_o     ),
++    .MEM_write_o ( IF_write_o    ),
+     //Branching
+     .branch_i    ( branch        ),
+     .pc_i        ( EX_MEM_result )
+diff --git a/rtl/core/pipelineStages/instructionFetch/IF_stage.sv b/rtl/core/pipelineStages/instructionFetch/IF_stage.sv
+index 9958d43..a89804f 100644
+--- a/rtl/core/pipelineStages/instructionFetch/IF_stage.sv
++++ b/rtl/core/pipelineStages/instructionFetch/IF_stage.sv
+@@ -30,6 +30,8 @@ module IF_stage (
+     output logic         MEM_en_o,
+     output logic [31:0]  MEM_addr_o,
+     input logic [31:0]   MEM_data_i,
++    output logic [31:0]  MEM_data_o,
++    output logic [3:0]   MEM_write_o,
+     //Branching
+     input logic [31:0]   pc_i,
+     input logic          branch_i
+@@ -55,6 +57,8 @@ assign pc_o = data_q.pc;
+ always_comb
+ begin
+     MEM_en_o = 1'b1;
++    MEM_data_o = 'b0;
++    MEM_write_o = 'b0;
+     data_n  = data_q;
+     incr_pc = 1'b0;
+ 
+diff --git a/rtl/core_wrapper.sv b/rtl/core_wrapper.sv
+index a8bd753..7954b19 100644
+--- a/rtl/core_wrapper.sv
++++ b/rtl/core_wrapper.sv
+@@ -29,6 +29,7 @@ wire        rst_reqn;
+ wire [31:0] IF_addr;
+ wire [31:0] mem_IF_data;
+ wire [31:0] IF_mem_data;
++wire [31:0] IF_core_data;
+ wire [31:0] MEM_addr;
+ wire [31:0] mem_MEM_data;
+ wire [31:0] MEM_mem_data;
+@@ -38,7 +39,6 @@ wire        IF_en;
+ wire        MEM_en;
+ 
+ assign rst_o = ~rst_reqn;
+-assign IF_mem_data = 'b0;
+ 
+ core_top core_i
+ (
+@@ -50,7 +50,7 @@ core_top core_i
+     .IF_write_o ( IF_write     ),
+     .IF_addr_o  ( IF_addr      ),
+     .IF_data_i  ( mem_IF_data  ),
+-    .IF_data_o  ( IF_mem_data  ),
++    .IF_data_o  ( IF_core_data ),
+     .MEM_en_o   ( MEM_en       ),
+     .MEM_addr_o ( MEM_addr     ),
+     .MEM_data_i ( mem_MEM_data ),

@@ -1,0 +1,97 @@
+From c724a52ed88914a67cf2be123bd70e524b90f8f4 Mon Sep 17 00:00:00 2001
+From: Michael Norris <michnorris@microsoft.com>
+Date: Thu, 20 Nov 2025 09:34:39 -0800
+Subject: [PATCH 1/3] fixes bug 1130/1129 Remove the else term so that the
+ secondary flop will receive the updated value when manuf or prod debug unlock
+ is granted current implementation assumed a pulse at reset to sample the
+ first flop with debug unlock, the signal is static so the else condition is
+ never reached
+
+---
+ src/integration/rtl/caliptra_top.sv | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/src/integration/rtl/caliptra_top.sv b/src/integration/rtl/caliptra_top.sv
+index 6711e6b47..27eb1e277 100755
+--- a/src/integration/rtl/caliptra_top.sv
++++ b/src/integration/rtl/caliptra_top.sv
+@@ -733,9 +733,7 @@ el2_veer_wrapper rvtop (
+         else if (unlock_caliptra_security_state) begin 
+             cptra_security_state_Latched_d <= security_state;
+         end 
+-        else begin
+-            cptra_security_state_Latched_f <= cptra_security_state_Latched_d;
+-        end
++        cptra_security_state_Latched_f <= cptra_security_state_Latched_d;
+     end
+ 
+     always_ff @(posedge clk or negedge cptra_pwrgood) begin
+
+From 9e92dc5976954b7f2152cb534727fb739c44bde4 Mon Sep 17 00:00:00 2001
+From: Michael Norris <michnorris@microsoft.com>
+Date: Thu, 20 Nov 2025 10:28:26 -0800
+Subject: [PATCH 2/3] fix security state capturing flops for lint removing the
+ else directly caused the reset term to not be observed correctly
+
+---
+ src/integration/rtl/caliptra_top.sv | 13 ++++++++-----
+ 1 file changed, 8 insertions(+), 5 deletions(-)
+
+diff --git a/src/integration/rtl/caliptra_top.sv b/src/integration/rtl/caliptra_top.sv
+index 27eb1e277..2bd118369 100755
+--- a/src/integration/rtl/caliptra_top.sv
++++ b/src/integration/rtl/caliptra_top.sv
+@@ -726,14 +726,17 @@ el2_veer_wrapper rvtop (
+     end
+ 
+     always_ff @(posedge clk or negedge cptra_noncore_rst_b) begin
+-        if (~cptra_noncore_rst_b) begin
+-            cptra_security_state_Latched_d <= '{device_lifecycle: DEVICE_PRODUCTION, debug_locked: 1'b1}; //Setting the default value to be debug locked and in production mode
++        if (~cptra_noncore_rst_b) begin //Setting the default value to be debug locked and in production mode
++            cptra_security_state_Latched_d <= '{device_lifecycle: DEVICE_PRODUCTION, debug_locked: 1'b1}; 
+             cptra_security_state_Latched_f <= '{device_lifecycle: DEVICE_PRODUCTION, debug_locked: 1'b1};
+         end
+-        else if (unlock_caliptra_security_state) begin 
++        else if (unlock_caliptra_security_state) begin //capture the new value at reset or when unlocked
+             cptra_security_state_Latched_d <= security_state;
+-        end 
+-        cptra_security_state_Latched_f <= cptra_security_state_Latched_d;
++            cptra_security_state_Latched_f <= cptra_security_state_Latched_d;
++        end else begin //hold the previous value when locked
++            cptra_security_state_Latched_d <= cptra_security_state_Latched_d;
++            cptra_security_state_Latched_f <= cptra_security_state_Latched_d;
++        end
+     end
+ 
+     always_ff @(posedge clk or negedge cptra_pwrgood) begin
+
+From a7d582cef4ccd8fa705af494d75936c17886d1e7 Mon Sep 17 00:00:00 2001
+From: Michael Norris <michnorris@microsoft.com>
+Date: Fri, 21 Nov 2025 01:22:14 +0000
+Subject: [PATCH 3/3] MICROSOFT AUTOMATED PIPELINE: Stamp
+ 'user/dev/michnorris/sec_state_bugfix_2.1' with updated timestamp and hash
+ after successful run
+
+---
+ .github/workflow_metadata/pr_hash      | 2 +-
+ .github/workflow_metadata/pr_timestamp | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/.github/workflow_metadata/pr_hash b/.github/workflow_metadata/pr_hash
+index feb85dbe0..80f58491b 100644
+--- a/.github/workflow_metadata/pr_hash
++++ b/.github/workflow_metadata/pr_hash
+@@ -1 +1 @@
+-3a54ceb761897258f845deeb2609e5fa25f3d86a60e663422765ddc080be2bba15686def7e47333dc7362255559b9acd
+\ No newline at end of file
++aa59e42f6ee35392e2c7c6b76f37439dfcd3d4f54b69da2219cf767a7cf6603efac56eee29498d83b589896ee13bb302
+\ No newline at end of file
+diff --git a/.github/workflow_metadata/pr_timestamp b/.github/workflow_metadata/pr_timestamp
+index 8254b113d..f58e512e6 100644
+--- a/.github/workflow_metadata/pr_timestamp
++++ b/.github/workflow_metadata/pr_timestamp
+@@ -1 +1 @@
+-1763073221
+\ No newline at end of file
++1763688126
+\ No newline at end of file

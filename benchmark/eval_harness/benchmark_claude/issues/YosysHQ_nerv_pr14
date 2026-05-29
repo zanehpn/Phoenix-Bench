@@ -1,0 +1,33 @@
+# iverilog 13.0 errors
+
+- Source URL: https://github.com/YosysHQ/nerv/issues/13
+
+Running `make` with the latest version of iverilog bundled with https://github.com/YosysHQ/oss-cad-suite-build/releases/tag/2025-02-20 gives the following error on Ubuntu 24.04.
+
+```
+riscv64-unknown-elf-gcc -march=rv32i_zicsr -mabi=ilp32 -Os -Wall -Wextra -Wl,-Bstatic,-T,sections.lds,--strip-debug -ffreestanding -nostdlib -o firmware.elf firmware.s vectors.s firmware.c
+/usr/lib/gcc/riscv64-unknown-elf/13.2.0/../../../riscv64-unknown-elf/bin/ld: warning: firmware.elf has a LOAD segment with RWX permissions
+riscv64-unknown-elf-objcopy -O verilog firmware.elf firmware.hex
+/home/philip/Downloads/oss-cad-suite-linux-x64-20250220/oss-cad-suite/bin/iverilog -g2012 -o testbench -D STALL -D NERV_DBGREGS testbench.sv nerv.sv
+nerv.sv:565: error: Unable to bind wire/reg/memory `irq_num' in `testbench.dut'
+nerv.sv:625:      : A symbol with that name was declared here. Check for declaration after use.
+nerv.sv:565: error: Unable to elaborate r-value: ((((running)&&(imem_valid))&&(!(irq_num)))&&((insn_opcode)==(OPCODE_SYSTEM)))?(insn_funct3['sd1:'sd0]):(2'd0)
+nerv.sv:612: error: Net csr_hpm_event_sel['sd2:'sd0] is not defined in this context.
+nerv.sv:1171:      : A symbol with that name was declared here. Check for declaration after use.
+nerv.sv:613: error: Net csr_hpm_counter_sel['sd1] is not defined in this context.
+nerv.sv:766:      : A symbol with that name was declared here. Check for declaration after use.
+nerv.sv:614: error: Net csr_hpm_counterh_sel['sd1] is not defined in this context.
+nerv.sv:967:      : A symbol with that name was declared here. Check for declaration after use.
+nerv.sv:1052: error: Unable to bind wire/reg/memory `mem_rdata' in `testbench.dut'
+nerv.sv:1087:      : A symbol with that name was declared here. Check for declaration after use.
+6 error(s) during elaboration.
+make: *** [Makefile:32: testbench] Error 6
+```
+
+```
+/oss-cad-suite-linux-x64-20250220/oss-cad-suite/bin/iverilog -v
+Icarus Verilog version 13.0 (devel) (s20250103-25-g99580cd05)
+```
+
+
+Reverting to iverilog 12.0 makes it work.

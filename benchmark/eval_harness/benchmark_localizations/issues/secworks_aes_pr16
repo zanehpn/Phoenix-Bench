@@ -1,0 +1,25 @@
+# Bug Report: ready_reg in aes_key_mem.v reset value causes deadlock on initialization
+
+- Source URL: https://github.com/secworks/aes/issues/15
+
+The `aes_key_mem.v` module incorrectly initializes `ready_reg` to `1'b0` during reset, causing a deadlock when controlling logic waits for the `ready` signal before initiating key expansion.
+
+After reset, the module enters the `CTRL_IDLE` state, indicating it should be available to accept new commands. However, `ready_reg = 1'b0` signals the module is busy, creating a contradiction between the FSM state and the ready flag.
+
+### Steps to Reproduce
+1. Instantiate `aes_key_mem` in a testbench
+2. Assert `reset_n` (active-low reset)
+3. Deassert `reset_n` and wait for `ready` signal
+4. **Result**: `ready` remains `0` indefinitely
+5. **Consequence**: Any master logic waiting on `ready` before asserting `init` will hang
+
+### Expected Behavior
+After reset, `aes_key_mem` should be idle and ready to accept a new key expansion operation. The `ready` signal should be `1'b1` to indicate the module is available for immediate use.
+
+
+- **Branch**: `master`
+- **File**: `src/rtl/aes_key_mem.v`
+- **Affected Line**: line 142
+
+`ready_reg <= 1'b0; ` **// Bug** 
+`ready_reg <= 1'b1; ` **// Fix: Module is ready immediately after reset**

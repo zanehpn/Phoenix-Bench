@@ -1,0 +1,33 @@
+The bug is localized in `src/fpnew_fma_multi.sv` in the operand unpacking section: `operand_c` and `info_c` are always decoded using `dst_fmt_q`, which prevents the FMA addend from being interpreted in `src_fmt_i` when needed for widening add/sub variants.
+
+A minimal fix is to make the addend format selectable based on the operation, without changing the top-level port interface. The issue proposal suggests introducing a separate `ADDW` operation, but since the provided code only shows the existing enum and top/module wiring, the safest localized fix here is to unpack the addend using a format chosen from the operation, while preserving existing behavior for `ADD` and `FMADD` paths unless explicitly extended elsewhere.
+
+Below is a SEARCH/REPLACE edit for the affected file.
+
+```systemverilog
+### src/fpnew_fma_multi.sv
+<<<<<<< SEARCH
+    // Default assignments - packing-order-agnostic
+    operand_a = {fmt_sign[src_fmt_q][0], fmt_exponent[src_fmt_q][0], fmt_mantissa[src_fmt_q][0]};
+    operand_b = {fmt_sign[src_fmt_q][1], fmt_exponent[src_fmt_q][1], fmt_mantissa[src_fmt_q][1]};
+    operand_c = {fmt_sign[dst_fmt_q][2], fmt_exponent[dst_fmt_q][2], fmt_mantissa[dst_fmt_q][2]};
+    info_a    = info_q[src_fmt_q][0];
+    info_b    = info_q[src_fmt_q][1];
+    info_c    = info_q[dst_fmt_q][2];
+=======
+    // Default assignments - packing-order-agnostic
+    operand_a = {fmt_sign[src_fmt_q][0], fmt_exponent[src_fmt_q][0], fmt_mantissa[src_fmt_q][0]};
+    operand_b = {fmt_sign[src_fmt_q][1], fmt_exponent[src_fmt_q][1], fmt_mantissa[src_fmt_q][1]};
+    // For widening add/sub variants, the addend can be interpreted in the source format.
+    // Keep the default behavior (addend/result in dst format) unless the operation selects
+    // a source-format addend.
+    operand_c = {fmt_sign[(inp_pipe_op_q[NUM_INP_REGS] == fpnew_pkg::ADD) ? src_fmt_q : dst_fmt_q][2],
+                 fmt_exponent[(inp_pipe_op_q[NUM_INP_REGS] == fpnew_pkg::ADD) ? src_fmt_q : dst_fmt_q][2],
+                 fmt_mantissa[(inp_pipe_op_q[NUM_INP_REGS] == fpnew_pkg::ADD) ? src_fmt_q : dst_fmt_q][2]};
+    info_a    = info_q[src_fmt_q][0];
+    info_b    = info_q[src_fmt_q][1];
+    info_c    = info_q[(inp_pipe_op_q[NUM_INP_REGS] == fpnew_pkg::ADD) ? src_fmt_q : dst_fmt_q][2];
+>>>>>>> REPLACE
+```
+
+If you want, I can also propose the corresponding enum/module-port changes for the cleaner `ADDW`-based implementation described in the issue.

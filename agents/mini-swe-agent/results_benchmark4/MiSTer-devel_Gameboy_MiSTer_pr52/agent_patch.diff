@@ -1,0 +1,18 @@
+diff --git a/video.v b/video.v
+index a569b7e..45b1f42 100644
+--- a/video.v
++++ b/video.v
+@@ -338,11 +338,12 @@ reg [7:0] stage2_rptr;
+ 
+ 
+ wire [5:0] palette_index = (stage2_bgp_buffer_pix[stage2_rptr][2:0] << 3) + (stage2_buffer[stage2_rptr]<<1); //gbc
++wire [2:0] bg_palette = stage2_bgp_buffer_pix[stage2_rptr][2:0];
+ 
+ 
+ // apply bg palette
+ wire [14:0] stage2_bg_pix = (!lcdc_bg_ena && !window_ena)?15'h7FFF:  // background off?
+-	isGBC?{bgpd[palette_index+1][6:0],bgpd[palette_index]}: //gbc
++	isGBC?{bgpd[bg_palette*8 + stage2_buffer[stage2_rptr]*2 + 1][6:0],bgpd[bg_palette*8 + stage2_buffer[stage2_rptr]*2]}: //gbc
+ 	(stage2_buffer[stage2_rptr] == 2'b00)?{13'd0,bgp[1:0]}:
+ 	(stage2_buffer[stage2_rptr] == 2'b01)?{13'd0,bgp[3:2]}:
+ 	(stage2_buffer[stage2_rptr] == 2'b10)?{13'd0,bgp[5:4]}:

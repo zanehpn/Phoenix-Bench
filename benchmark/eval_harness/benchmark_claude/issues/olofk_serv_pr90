@@ -1,0 +1,23 @@
+# ice40_pll.v - Guarantee at least 2 cycles of o_rst after PLL locked.
+
+Instance: olofk_serv_pr90
+Source: https://github.com/olofk/serv/pull/90
+Fetched: 2026-04-26
+Repository: olofk/serv
+Pull request: #90
+Author: emeb
+State: closed
+Base branch: main
+Head branch: master
+Created: 2022-08-08T23:30:57Z
+Updated: 2022-08-10T09:02:55Z
+Closed: 2022-08-10T09:02:51Z
+Merged: 2022-08-10T09:02:51Z
+
+While helping gojimmypi to bring up FuseSOC Serv on a new ice40-based target we were having trouble with Serv not starting up after configuration. Digging into the clock and reset logic I discovered that the wb_rst signal generated in the ice40_pll.v module was not asserting during start up.
+
+The existing circuit relies on the PLL lock signal to clear the reset after two clock cycles, but because the initial state of the two delay registers defaults to logic 0, the reset signal is not guaranteed to ever assert. By inverting the input and output of the 2-stage register pipeline we can ensure that at least two cycles of logic '1' are generated, thus providing a usable reset.
+
+This change has been verified working on the icebreaker target and also on the new ice-v-wireless target that we're working on.
+
+NOTE - the verilator-based CI script that's part of the serv repo appears to be broken so that has been failing for me lately.

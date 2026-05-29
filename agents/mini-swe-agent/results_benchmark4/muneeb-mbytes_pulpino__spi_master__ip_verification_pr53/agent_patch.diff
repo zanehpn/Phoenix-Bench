@@ -1,0 +1,30 @@
+diff --git a/src/dv/hvl_top/env/apb_master_collector.sv b/src/dv/hvl_top/env/apb_master_collector.sv
+index 02836c4..2749c12 100644
+--- a/src/dv/hvl_top/env/apb_master_collector.sv
++++ b/src/dv/hvl_top/env/apb_master_collector.sv
+@@ -21,6 +21,7 @@ class apb_master_collector extends uvm_component;
+   extern virtual function void start_of_simulation_phase(uvm_phase phase);
+   extern virtual task run_phase(uvm_phase phase);
+   extern function void write(apb_master_tx t);
++  extern function void collect_register_data(ref apb_master_tx t);
+ 
+ endclass : apb_master_collector
+ 
+@@ -105,9 +106,16 @@ endtask : run_phase
+ // Parameters : 
+ // t  - apb_master_tx
+ //--------------------------------------------------------------------------------------------
++function void apb_master_collector::collect_register_data(ref apb_master_tx t);
++  if (t.paddr == 32'h1A10_2000) begin
++    t.pwdata = {t.pwdata[31:24], t.pwdata[23:16], t.pwdata[15:8], t.pwdata[7:0]};
++  end
++endfunction : collect_register_data
++
+ function void apb_master_collector::write(apb_master_tx t);
+ 
+- `uvm_info(get_type_name(),$sformatf("Req print = %0s",t.sprint()),UVM_HIGH) 
++ collect_register_data(t);
++ `uvm_info(get_type_name(),$sformatf("Collected APB master packet = %0s",t.sprint()),UVM_HIGH) 
+ 
+  apb_master_coll_analysis_port.write(t);
+ 

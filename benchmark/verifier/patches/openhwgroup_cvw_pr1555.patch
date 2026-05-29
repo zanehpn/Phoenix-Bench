@@ -1,0 +1,42 @@
+From e4809d92205f2fca93384f343784bfd368191cd6 Mon Sep 17 00:00:00 2001
+From: David Harris <David_Harris@hmc.edu>
+Date: Tue, 11 Nov 2025 04:36:19 -0800
+Subject: [PATCH] Cleaned up spurious uninitialized RAM warning #1297
+
+---
+ testbench/common/ramxdetector.sv | 3 ++-
+ testbench/testbench.sv           | 2 +-
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/testbench/common/ramxdetector.sv b/testbench/common/ramxdetector.sv
+index 499994678..b26bf9a36 100644
+--- a/testbench/common/ramxdetector.sv
++++ b/testbench/common/ramxdetector.sv
+@@ -32,12 +32,13 @@ module ramxdetector #(parameter XLEN, LLEN) (
+   input  logic [XLEN-1:0] PCM,
+   input  logic [31:0]     InstrM,
+   input  logic [XLEN-1:0] IEUAdrM,
++  input  logic            StallW,
+   input  string           InstrMName
+ );
+ 
+   always_ff @(posedge clk)
+     /* verilator lint_off WIDTHXZEXPAND */
+-    if (MemReadM & ~LSULoadAccessFaultM & (ReadDataM === 'bx)) begin
++    if (MemReadM & ~LSULoadAccessFaultM & ~StallW & (ReadDataM === 'bx)) begin
+       /* verilator lint_on WIDTHXZEXPAND */
+       $display("WARNING: Attempting to read from uninitialized RAM.  Processor may go haywire if it uses x value. But this is normal in WALLY-mmu and ExceptionInstr tests.");
+       $display("  PCM = %x InstrM = %x (%s), IEUAdrM = %x", PCM, InstrM, InstrMName, IEUAdrM);
+diff --git a/testbench/testbench.sv b/testbench/testbench.sv
+index 5a6683202..fabe4683a 100644
+--- a/testbench/testbench.sv
++++ b/testbench/testbench.sv
+@@ -693,7 +693,7 @@ module testbench;
+   // watch for problems such as lockup, reading uninitialized memory, bad configs
+   watchdog #(P.XLEN, 1000000) watchdog(.clk, .reset, .TEST);  // check if PCW is stuck
+   ramxdetector #(P.XLEN, P.LLEN) ramxdetector(clk, dut.core.lsu.MemRWM[1], dut.core.lsu.LSULoadAccessFaultM, dut.core.lsu.ReadDataM,
+-                                      dut.core.ifu.PCM, InstrM, dut.core.lsu.IEUAdrM, InstrMName);
++                                      dut.core.ifu.PCM, InstrM, dut.core.lsu.IEUAdrM, dut.core.lsu.StallW, InstrMName);
+   riscvassertions       #(P) riscvassertions();     // check assertions for a legal architectural configuration
+   riscvassertions_wally #(P) riscvassertions_wally();  // check assertions for a legal microarchitectural configuration
+   loggers #(P, PrintHPMCounters, I_CACHE_ADDR_LOGGER, D_CACHE_ADDR_LOGGER, BPRED_LOGGER)

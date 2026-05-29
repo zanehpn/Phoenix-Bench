@@ -1,0 +1,32 @@
+The bug is in the instruction fetch path: `ibex_if_stage.sv` passes `icache_enable_i` straight through to `ibex_icache`, but there is no debug-mode gating. As a result, the I-cache can still be used while the core is in debug mode, which matches the reported incorrect behavior.
+
+A minimal fix is to disable the I-cache whenever `debug_mode_i` is asserted, by gating the `icache_enable_i` signal before it reaches `ibex_icache`.
+
+```systemverilog
+### rtl/ibex_if_stage.sv
+<<<<<<< SEARCH
+  logic        icache_enable;
+=======
+  logic        icache_enable;
+  logic        icache_enable_dbg;
+>>>>>>> REPLACE
+```
+
+```systemverilog
+### rtl/ibex_if_stage.sv
+<<<<<<< SEARCH
+  assign csr_mtvec_init_o = (pc_mux_i == PC_BOOT) & pc_set_i;
+=======
+  assign csr_mtvec_init_o = (pc_mux_i == PC_BOOT) & pc_set_i;
+  assign icache_enable_dbg = icache_enable & ~debug_mode_i;
+>>>>>>> REPLACE
+```
+
+```systemverilog
+### rtl/ibex_if_stage.sv
+<<<<<<< SEARCH
+        .icache_enable_i     ( icache_enable_i            ),
+=======
+        .icache_enable_i     ( icache_enable_dbg          ),
+>>>>>>> REPLACE
+```

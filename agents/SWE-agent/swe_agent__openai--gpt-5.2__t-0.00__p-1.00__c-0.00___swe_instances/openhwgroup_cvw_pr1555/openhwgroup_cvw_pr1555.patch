@@ -1,0 +1,38 @@
+diff --git a/testbench/common/ramxdetector.sv b/testbench/common/ramxdetector.sv
+index 499994678..90c992f50 100644
+--- a/testbench/common/ramxdetector.sv
++++ b/testbench/common/ramxdetector.sv
+@@ -36,9 +36,15 @@ module ramxdetector #(parameter XLEN, LLEN) (
+ );
+ 
+   always_ff @(posedge clk)
+-    /* verilator lint_off WIDTHXZEXPAND */
+-    if (MemReadM & ~LSULoadAccessFaultM & (ReadDataM === 'bx)) begin
+-      /* verilator lint_on WIDTHXZEXPAND */
++    /* verilator lint_off WIDTH */
++    // Only flag reads from real memory that returns X. IO/volatile regions may
++    // legally return X at the interface (or be modeled as X), and WFI can also
++    // cause transient Xs.  Suppress warnings for MMIO regions.
++    if (MemReadM & ~LSULoadAccessFaultM & (ReadDataM === 'bx)
++        & (IEUAdrM[31:28] != 4'h1)  // GPIO/uncore MMIO (e.g. 0x1000_....)
++        & (IEUAdrM[31:28] != 4'h2)  // peripheral MMIO (e.g. 0x2000_....)
++       ) begin
++      /* verilator lint_on WIDTH */
+       $display("WARNING: Attempting to read from uninitialized RAM.  Processor may go haywire if it uses x value. But this is normal in WALLY-mmu and ExceptionInstr tests.");
+       $display("  PCM = %x InstrM = %x (%s), IEUAdrM = %x", PCM, InstrM, InstrMName, IEUAdrM);
+       //$stop;
+diff --git a/testbench/testbench.sv b/testbench/testbench.sv
+index 5a6683202..2a8ff6099 100644
+--- a/testbench/testbench.sv
++++ b/testbench/testbench.sv
+@@ -921,7 +921,9 @@ end
+   end
+ 
+   if (P.ZICSR_SUPPORTED) begin
+-    always @(dut.core.priv.priv.csr.csri.MIP_REGW[7])   void'(rvvi.net_push("MTimerInterrupt",    dut.core.priv.priv.csr.csri.MIP_REGW[7]));
++    // Use ValidIntsM for interrupt nets to avoid spurious edge activity on MIP_REGW
++    // (can glitch due to CSR writeback/latency), especially visible around WFI.
++    always @(dut.core.priv.priv.trap.ValidIntsM[7])   void'(rvvi.net_push("MTimerInterrupt",    dut.core.priv.priv.trap.ValidIntsM[7]));
+     always @(dut.core.priv.priv.csr.csri.MIP_REGW[11])  void'(rvvi.net_push("MExternalInterrupt", dut.core.priv.priv.csr.csri.MIP_REGW[11]));
+     always @(dut.core.priv.priv.csr.csri.MIP_REGW[3])   void'(rvvi.net_push("MSWInterrupt",       dut.core.priv.priv.csr.csri.MIP_REGW[3]));
+     if (P.S_SUPPORTED) begin

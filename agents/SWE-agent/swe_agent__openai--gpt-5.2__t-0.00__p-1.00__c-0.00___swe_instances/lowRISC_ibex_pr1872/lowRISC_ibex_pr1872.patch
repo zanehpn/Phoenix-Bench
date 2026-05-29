@@ -1,0 +1,29 @@
+diff --git a/dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv b/dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv
+index bf457fb7..4150f0c6 100644
+--- a/dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv
++++ b/dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv
+@@ -294,12 +294,18 @@ interface core_ibex_fcov_if import ibex_pkg::*; (
+ 
+   logic instr_id_matches_trigger_d, instr_id_matches_trigger_q;
+ 
+-  assign instr_id_matches_trigger_d = id_stage_i.controller_i.trigger_match_i &&
+-                                      id_stage_i.controller_i.fcov_debug_entry_if;
+-
+-  // Delay instruction matching trigger point since it is catched in IF stage.
+-  // We would want to cross it with decoded instruction categories and it does not matter
+-  // when exactly we are hitting the condition.
++  // A trigger match is detected in the frontend (IF) but its architectural effect happens
++  // later (ID may enter debug, or a matching instruction may be killed and cause a flush).
++  //
++  // For functional coverage we want a stable 1-cycle pulse in the cycle *after* the match is
++  // observed, so that it can be crossed with ID-stage events (decoded instruction categories,
++  // pipe flush, etc.).
++  //
++  // Do not gate with fcov_debug_entry_if here: some trigger hits can result in an exception/
++  // pipeline flush instead of debug entry.
++  assign instr_id_matches_trigger_d = id_stage_i.controller_i.trigger_match_i;
++
++  // Delay instruction matching trigger point since it is caught in IF stage.
+   always @(posedge clk_i or negedge rst_ni) begin
+     if (!rst_ni) begin
+       instr_id_matches_trigger_q <= 1'b0;

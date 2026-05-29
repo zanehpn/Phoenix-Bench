@@ -1,0 +1,23 @@
+diff --git a/rtl/mappers/generic.sv b/rtl/mappers/generic.sv
+index 1ec5f3a..5751143 100644
+--- a/rtl/mappers/generic.sv
++++ b/rtl/mappers/generic.sv
+@@ -173,6 +173,7 @@ reg [1:0] chrbank;
+ reg nametable;
+ wire four_screen = flags[16] && flags[14];
+ wire battery = flags[25];
++wire battery_or_save = flags[25] | flags[7];
+ 
+ always @(posedge clk) begin
+ 	if (~enable) begin
+@@ -184,8 +185,8 @@ always @(posedge clk) begin
+ 		chrbank   <= SS_MAP1[ 6: 5];
+ 		nametable <= SS_MAP1[    7];
+ 	end else if (ce) begin
+-		// with battery bit set $C000-$FFFF else $8000-$FFFF
+-		if (prg_ain[15] & (prg_ain[14] | ~battery) & prg_write) begin
++		// with battery bit set (or if save RAM is present) $C000-$FFFF else $8000-$FFFF
++		if (prg_ain[15] & (prg_ain[14] | ~battery_or_save) & prg_write) begin
+ 			{nametable, chrbank, prgbank}   <= prg_din[7:0];
+ 		end
+ 	end

@@ -1,0 +1,707 @@
+From 3030b42cd5458e7520e2c2da56461f55aad2d69d Mon Sep 17 00:00:00 2001
+From: Philipp Wagner <philipp.wagner@tum.de>
+Date: Wed, 17 Oct 2018 11:10:46 +0200
+Subject: [PATCH 1/8] DEM UART: Code style fixes
+
+---
+ modules/dem_uart/common/osd_dem_uart_16550.sv | 18 +++++++++++++-----
+ 1 file changed, 13 insertions(+), 5 deletions(-)
+
+diff --git a/modules/dem_uart/common/osd_dem_uart_16550.sv b/modules/dem_uart/common/osd_dem_uart_16550.sv
+index 9ef687d..23ae553 100644
+--- a/modules/dem_uart/common/osd_dem_uart_16550.sv
++++ b/modules/dem_uart/common/osd_dem_uart_16550.sv
+@@ -64,15 +64,17 @@ module osd_dem_uart_16550
+    logic [7:0]  lcr;
+    logic [7:0]  nxt_lcr;
+ 
+-   logic [15:0]   divisor;
+-   logic [15:0]   nxt_divisor;
++   logic [15:0] divisor;
++   logic [15:0] nxt_divisor;
+ 
+    // Interrupt enable registers
+    logic        erbfi, etbei, elsi;
+    logic        nxt_erbfi, nxt_etbei, nxt_elsi;
+ 
+    // Interrupts
+-   logic        irq_rbf, irq_tbe, irq_ls;
++   logic        irq_rbf;
++   logic        irq_tbe;
++   logic        irq_ls;
+ 
+    assign irq_rbf = erbfi & in_valid;            // Receive data available
+    assign irq_tbe = etbei & (out_ready | drop);  // (THRE) Transmitter holding register empty
+@@ -81,8 +83,14 @@ module osd_dem_uart_16550
+    assign irq = irq_rbf | irq_tbe | irq_ls;
+ 
+    // FIFO
+-   reg          fifo_enable, fifo_rx_clear, fifo_tx_clear, dma_mode;
+-   logic        nxt_fifo_enable, nxt_fifo_rx_clear, nxt_fifo_tx_clear, nxt_dma_mode;
++   logic        fifo_enable;
++   logic        fifo_rx_clear;
++   logic        fifo_tx_clear;
++   logic        dma_mode;
++   logic        nxt_fifo_enable;
++   logic        nxt_fifo_rx_clear;
++   logic        nxt_fifo_tx_clear;
++   logic        nxt_dma_mode;
+ 
+    reg          req;
+    reg [2:0]    addr;
+
+From 2090efe57e432bec74a81adebcb8eea5a4ddfcbe Mon Sep 17 00:00:00 2001
+From: Philipp Wagner <philipp.wagner@tum.de>
+Date: Wed, 17 Oct 2018 11:14:34 +0200
+Subject: [PATCH 2/8] DEM UART: Add more names and comments
+
+---
+ modules/dem_uart/common/osd_dem_uart_16550.sv | 17 +++++++++++++++--
+ 1 file changed, 15 insertions(+), 2 deletions(-)
+
+diff --git a/modules/dem_uart/common/osd_dem_uart_16550.sv b/modules/dem_uart/common/osd_dem_uart_16550.sv
+index 23ae553..23b315f 100644
+--- a/modules/dem_uart/common/osd_dem_uart_16550.sv
++++ b/modules/dem_uart/common/osd_dem_uart_16550.sv
+@@ -58,6 +58,11 @@ module osd_dem_uart_16550
+    localparam INTR_RBF  = 4'b0100;
+    localparam INTR_TBE  = 4'b0010;
+ 
++   // Bits in the Line Status Register (LSR)
++   localparam BIT_LSR_DR   = 0; // Data Ready
++   localparam BIT_LSR_THRE = 5; // Transmitter Holding Register Empty
++   localparam BIT_LSR_TEMT = 6; // Transmitter Empty
++
+    // DLAB (LCR7):
+    // 0: RBR, THR and IER accessible (during communication)
+    // 1: DLL and DLM accessible (during initialization to set baud rate)
+@@ -127,6 +132,9 @@ module osd_dem_uart_16550
+       end
+    end
+ 
++   logic dlab;
++   assign dlab = lcr[7];
++
+    always_comb begin
+       nxt_erbfi = erbfi;
+       nxt_etbei = etbei;
+@@ -147,7 +155,7 @@ module osd_dem_uart_16550
+       if (req) begin
+          case (addr)
+             REG_RBR_THR: begin
+-               if (lcr[7]) begin
++               if (dlab) begin
+                   if (write) begin
+                      nxt_divisor = {divisor[15:8], bus_wdata};
+                   end else begin
+@@ -167,7 +175,8 @@ module osd_dem_uart_16550
+                end
+             end
+             REG_IER: begin
+-               if (lcr[7]) begin
++               if (dlab) begin
++                  // Divisor Latch MS (DLM)
+                   if (write) begin
+                      nxt_divisor = {bus_wdata, divisor[7:0]};
+                   end else begin
+@@ -175,6 +184,7 @@ module osd_dem_uart_16550
+                   end
+                   bus_ack = bus_req;
+                end else begin
++                  // Interrupt Enable Register (IER)
+                   if (write) begin
+                      {nxt_elsi, nxt_etbei, nxt_erbfi} = bus_wdata[2:0];
+                   end else begin
+@@ -185,8 +195,10 @@ module osd_dem_uart_16550
+             end
+             REG_IIR_FCR: begin
+                if (write) begin
++                  // FIFO Control Register (FCR)
+                   {nxt_dma_mode, nxt_fifo_tx_clear, nxt_fifo_rx_clear, nxt_fifo_enable} = bus_wdata[3:0];
+                end else begin
++                  // Interrupt Indent. Register (IIR)
+                   bus_rdata[7:6] = {fifo_enable, fifo_enable};
+                   bus_rdata[5:4] = 2'h0;
+ 
+@@ -203,6 +215,7 @@ module osd_dem_uart_16550
+                bus_ack = bus_req;
+             end
+             REG_LCR: begin
++               // Line Control Register (LCR)
+                if (write) begin
+                   nxt_lcr = bus_wdata;
+                end else begin
+
+From fbf606ab58e7c7b029a290696dd3d8c8077fff4c Mon Sep 17 00:00:00 2001
+From: Philipp Wagner <philipp.wagner@tum.de>
+Date: Wed, 17 Oct 2018 13:18:28 +0200
+Subject: [PATCH 3/8] DEM UART: Check UART regs before reading/writing
+
+We cannot read/write over the bus to the DEM UART and expect valid
+read/write data unless we check for available data first (or use
+interrupts or FIFOs for bursts).
+---
+ modules/dem_uart/test/test_dem_uart_wb.py | 41 ++++++++++++++++++++---
+ 1 file changed, 37 insertions(+), 4 deletions(-)
+
+diff --git a/modules/dem_uart/test/test_dem_uart_wb.py b/modules/dem_uart/test/test_dem_uart_wb.py
+index a9577ff..7ade7ec 100644
+--- a/modules/dem_uart/test/test_dem_uart_wb.py
++++ b/modules/dem_uart/test/test_dem_uart_wb.py
+@@ -9,6 +9,7 @@
+ 
+ from cocotb.clock import Clock
+ from cocotb.triggers import RisingEdge, ClockCycles
++from cocotb.result import ReturnValue
+ 
+ from osdtestlib.debug_interconnect import RegAccess, DiPacket, NocDiReader, NocDiWriter
+ from osdtestlib.asserts import *
+@@ -184,8 +185,6 @@ def _di_to_bus_tx(dut, num_transfers=500, max_delay=100, random_data=False):
+ 
+         data = random.randint(0, 255) if random_data else 0x42
+ 
+-        _di_to_bus_fifo.append(data)
+-
+         tx_packet.set_contents(dest=MODULE_DI_ADDRESS, src=SENDER_DI_ADDRESS,
+                                type=DiPacket.TYPE.EVENT.value, type_sub=0,
+                                payload=[data])
+@@ -194,6 +193,8 @@ def _di_to_bus_tx(dut, num_transfers=500, max_delay=100, random_data=False):
+ 
+         yield RisingEdge(dut.clk)
+ 
++        _di_to_bus_fifo.append(data)
++
+ @cocotb.coroutine
+ def _di_to_bus_rx(dut, num_transfers=500, max_delay=100):
+ 
+@@ -233,6 +234,28 @@ def test_di_to_bus(dut):
+ 
+     yield read_thread.join()
+ 
++@cocotb.coroutine
++def _lsr_can_write(dut, wb_master):
++    """
++    Check if the UART LSR register signals space in its output buffers
++    """
++    ret = yield wb_master.send_cycle([WBOp(adr=0x4, dat=None, sel=0x4)])
++    lsr = ret.pop(0).datrd & 0xFF
++
++    # Writing is possible if THRE (bit 5) and TEMPT (bit 6) are set
++    raise ReturnValue(lsr & (1 << 5) and lsr & (1 << 6))
++
++@cocotb.coroutine
++def _lsr_can_read(dut, wb_master):
++    """
++    Check if the UART LSR register signals data available in its input buffer
++    """
++    ret = yield wb_master.send_cycle([WBOp(adr=0x4, dat=None, sel=0x4)])
++    lsr = ret.pop(0).datrd & 0xFF
++
++    # Reading is possible if DR (bit 0) is set
++    raise ReturnValue(lsr & (1 << 0))
++
+ @cocotb.test()
+ def test_both_directions(dut):
+     """
+@@ -269,7 +292,10 @@ def test_both_directions(dut):
+             for _ in range(random.randint(0, MAX_DELAY)):
+                 yield RisingEdge(dut.clk)
+ 
+-            tx_packets -= 1
++            # Check if the UART signals space in its send buffer
++            lsr_can_write = yield _lsr_can_write(dut, wb_master)
++            if not lsr_can_write:
++                continue
+ 
+             data = random.randint(0, 255) if RANDOM_DATA else 0x42
+             _bus_to_di_fifo.append(data)
+@@ -277,6 +303,8 @@ def test_both_directions(dut):
+             yield wb_master.send_cycle([WBOp(adr=0x0, dat=data, sel=0x8)])
+ 
+             yield RisingEdge(dut.clk)
++
++            tx_packets -= 1
+         else:
+             if not rx_packets:
+                 continue
+@@ -284,7 +312,10 @@ def test_both_directions(dut):
+             for _ in range(random.randint(0, MAX_DELAY)):
+                 yield RisingEdge(dut.clk)
+ 
+-            rx_packets -= 1
++            # Check if the UART signals available data in its read buffer
++            lsr_can_read = yield _lsr_can_read(dut, wb_master)
++            if not lsr_can_read:
++                continue
+ 
+             ret = yield wb_master.send_cycle([WBOp(adr=0x0, dat=None, sel=0x8)])
+             res = ret.pop(0).datrd & 0xFF
+@@ -297,6 +328,8 @@ def test_both_directions(dut):
+ 
+             yield RisingEdge(dut.clk)
+ 
++            rx_packets -= 1
++
+     # we implicitly wait for the write_thread in the loop above
+     yield read_thread.join()
+ 
+
+From 944d2df4517b47306a9d2b51c7b600a741038c19 Mon Sep 17 00:00:00 2001
+From: Philipp Wagner <philipp.wagner@tum.de>
+Date: Wed, 17 Oct 2018 13:19:51 +0200
+Subject: [PATCH 4/8] DEM UART: Reduce test duration
+
+With the reduced number of test cycles we get a reasonable reliable
+result with much reduced testing time.
+---
+ modules/dem_uart/test/test_dem_uart_wb.py | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/modules/dem_uart/test/test_dem_uart_wb.py b/modules/dem_uart/test/test_dem_uart_wb.py
+index 7ade7ec..f7bfb38 100644
+--- a/modules/dem_uart/test/test_dem_uart_wb.py
++++ b/modules/dem_uart/test/test_dem_uart_wb.py
+@@ -262,8 +262,8 @@ def test_both_directions(dut):
+     Randomly alternate between read/write cycles on the WISHBONE bus
+     """
+ 
+-    NUM_TRANSFERS = 10000
+-    MAX_DELAY     = 100
++    NUM_TRANSFERS = 1000
++    MAX_DELAY     = 50
+     RANDOM_DATA   = True
+ 
+     yield _init_dut(dut)
+
+From 758c8ebf9600a2ee575420f0872f1355608d2cbe Mon Sep 17 00:00:00 2001
+From: Philipp Wagner <philipp.wagner@tum.de>
+Date: Wed, 17 Oct 2018 13:31:43 +0200
+Subject: [PATCH 5/8] DEM UART: Give correct information in the LSR
+
+Previously, the UART LSR was hardcoded to always have data available to
+be received. This is wrong, instead the actual FIFO status must be used.
+---
+ modules/dem_uart/common/osd_dem_uart_16550.sv |  8 ++++++--
+ modules/dem_uart/test/test_dem_uart_wb.py     | 15 ++++++++++++++-
+ 2 files changed, 20 insertions(+), 3 deletions(-)
+
+diff --git a/modules/dem_uart/common/osd_dem_uart_16550.sv b/modules/dem_uart/common/osd_dem_uart_16550.sv
+index 23b315f..c8deb57 100644
+--- a/modules/dem_uart/common/osd_dem_uart_16550.sv
++++ b/modules/dem_uart/common/osd_dem_uart_16550.sv
+@@ -224,8 +224,12 @@ module osd_dem_uart_16550
+                bus_ack = bus_req;
+             end
+             REG_LSR: begin
+-               // TEMT=1, THRE=1, DR (data ready) when input
+-               bus_rdata = {7'b0110000, in_valid};
++               // Line Status Register (LSR)
++               bus_rdata = 8'h0;
++               bus_rdata[BIT_LSR_DR] = in_valid;
++               bus_rdata[BIT_LSR_TEMT] = out_ready;
++               bus_rdata[BIT_LSR_THRE] = out_ready;
++
+                bus_ack = bus_req;
+             end
+             default: begin
+diff --git a/modules/dem_uart/test/test_dem_uart_wb.py b/modules/dem_uart/test/test_dem_uart_wb.py
+index f7bfb38..cc698b3 100644
+--- a/modules/dem_uart/test/test_dem_uart_wb.py
++++ b/modules/dem_uart/test/test_dem_uart_wb.py
+@@ -119,8 +119,14 @@ def _bus_to_di_tx(dut, num_transfers=500, max_delay=100, random_data=False):
+         for _ in range(delay):
+             yield RisingEdge(dut.clk)
+ 
+-        data = random.randint(0, 255) if random_data else 0x42
++        # Wait until the UART signals that it is ready for writes
++        while True:
++            lsr_can_write = yield _lsr_can_write(dut, wb_master)
++            if lsr_can_write:
++                break
++            yield RisingEdge(dut.clk)
+ 
++        data = random.randint(0, 255) if random_data else 0x42
+         _bus_to_di_fifo.append(data)
+ 
+         yield wb_master.send_cycle([WBOp(adr=0x0, dat=data, sel=0x8)])
+@@ -206,6 +212,13 @@ def _di_to_bus_rx(dut, num_transfers=500, max_delay=100):
+         for _ in range(delay):
+             yield RisingEdge(dut.clk)
+ 
++        # Wait until the UART signals that it is ready for a read
++        while True:
++            lsr_can_read = yield _lsr_can_read(dut, wb_master)
++            if lsr_can_read:
++                break
++            yield RisingEdge(dut.clk)
++
+         # Only look at the LSB of the 32-bit wide result.
+         ret = yield wb_master.send_cycle([WBOp(adr=0x0, dat=None, sel=0x8)])
+         res = ret.pop(0).datrd & 0xFF
+
+From 5a8f379243d52b051d44d1d7a8e61fe905850ff6 Mon Sep 17 00:00:00 2001
+From: Philipp Wagner <philipp.wagner@tum.de>
+Date: Wed, 17 Oct 2018 14:30:28 +0200
+Subject: [PATCH 6/8] DEM UART: Make test more robust
+
+Depending on (randomized) timing, no data might be available to read for
+1000 cycles, leading to a spurious test failure.
+---
+ modules/dem_uart/test/test_dem_uart_wb.py | 16 ++++++++++------
+ 1 file changed, 10 insertions(+), 6 deletions(-)
+
+diff --git a/modules/dem_uart/test/test_dem_uart_wb.py b/modules/dem_uart/test/test_dem_uart_wb.py
+index cc698b3..61c7218 100644
+--- a/modules/dem_uart/test/test_dem_uart_wb.py
++++ b/modules/dem_uart/test/test_dem_uart_wb.py
+@@ -96,6 +96,8 @@ def test_dem_uart_activation(dut):
+     # receive parts of the RegAccess response packet
+     yield RisingEdge(dut.clk)
+ 
++    # Don't confuse users of this test when they see a warning message
++    dut._log.warning("The following warning 'packet receive timed out' is expected:")
+     packet = yield NocDiReader(dut, dut.clk).receive_packet(set_ready=True)
+     if packet:
+         raise TestFailure("Received packet while module was deactivated")
+@@ -143,16 +145,18 @@ def _bus_to_di_rx(dut, num_transfers=500, max_delay=100):
+         for _ in range(delay):
+             yield RisingEdge(dut.clk)
+ 
+-        rx_packet = yield reader.receive_packet(set_ready=True)
++        # Wait until data has been written to the device
++        while not _bus_to_di_fifo:
++            yield RisingEdge(dut.clk)
+ 
+-        data = _bus_to_di_fifo.pop(0)
++        rx_packet = yield reader.receive_packet(set_ready=True)
++        if not rx_packet:
++            raise TestFailure("receive_packet() timed out")
+ 
++        exp_data = _bus_to_di_fifo.pop(0)
+         ex_packet.set_contents(dest=SENDER_DI_ADDRESS, src=MODULE_DI_ADDRESS,
+                                type=DiPacket.TYPE.EVENT, type_sub=0,
+-                               payload=[data])
+-
+-        if not rx_packet:
+-            raise TestFailure("receive_packet() timed out")
++                               payload=[exp_data])
+ 
+         if not rx_packet.equal_to(dut, ex_packet, mask=None):
+             raise TestFailure("Unexpected content of " + rx_packet.__str__() +
+
+From aaca27fb9499e99af39d0049fc6a7b7ce6bf1b26 Mon Sep 17 00:00:00 2001
+From: Philipp Wagner <philipp.wagner@tum.de>
+Date: Wed, 17 Oct 2018 14:33:02 +0200
+Subject: [PATCH 7/8] DEM UART: Fix remaining Linux boot issues
+
+1) Acknowledge all bus accesses
+
+Flow control cannot be performed through the bus, but must be performed
+using the UART LSR register. Linux, for example, clears the interrupt
+lines by reading the RBR (RX) register even though no data is available.
+If we do not acknowledge this write (and return bogous data) the Linux
+boot hangs.
+
+2) Do not register bus_* signals. That's unnecessary and breaks the bus
+logic.
+---
+ modules/dem_uart/common/osd_dem_uart_16550.sv | 51 +++++--------------
+ modules/dem_uart/test/test_dem_uart_wb.py     | 16 ++++++
+ 2 files changed, 30 insertions(+), 37 deletions(-)
+
+diff --git a/modules/dem_uart/common/osd_dem_uart_16550.sv b/modules/dem_uart/common/osd_dem_uart_16550.sv
+index c8deb57..127eb3a 100644
+--- a/modules/dem_uart/common/osd_dem_uart_16550.sv
++++ b/modules/dem_uart/common/osd_dem_uart_16550.sv
+@@ -1,4 +1,4 @@
+-// Copyright 2016 by the authors
++// Copyright 2016-2018 by the authors
+ //
+ // Copyright and related rights are licensed under the Solderpad
+ // Hardware License, Version 0.51 (the "License"); you may not use
+@@ -13,6 +13,7 @@
+ //
+ // Authors:
+ //    Stefan Wallentowitz <stefan@wallentowitz.de>
++//    Thomas Leyk <thomas.leyk@tum.de>
+ 
+ import dii_package::dii_flit;
+ 
+@@ -97,16 +98,8 @@ module osd_dem_uart_16550
+    logic        nxt_fifo_tx_clear;
+    logic        nxt_dma_mode;
+ 
+-   reg          req;
+-   reg [2:0]    addr;
+-   reg          write;
+-
+    always_ff @(posedge clk) begin
+       if (rst) begin
+-         req <= 1'b0;
+-         addr <= 3'h0;
+-         write <= 1'b0;
+-
+          erbfi <= 1'b0;
+          etbei <= 1'b0;
+          elsi <= 1'b0;
+@@ -116,10 +109,6 @@ module osd_dem_uart_16550
+          dma_mode <= 1'b0;
+          lcr <= 8'h0;
+       end else begin
+-         req <= bus_req;
+-         addr <= bus_addr;
+-         write <= bus_write;
+-
+          erbfi <= nxt_erbfi;
+          etbei <= nxt_etbei;
+          elsi <= nxt_elsi;
+@@ -135,6 +124,8 @@ module osd_dem_uart_16550
+    logic dlab;
+    assign dlab = lcr[7];
+ 
++   assign bus_ack = bus_req;
++
+    always_comb begin
+       nxt_erbfi = erbfi;
+       nxt_etbei = etbei;
+@@ -150,51 +141,45 @@ module osd_dem_uart_16550
+       out_valid = 1'b0;
+       in_ready = 1'b0;
+       bus_rdata = 8'h0;
+-      bus_ack = 1'b0;
+ 
+-      if (req) begin
+-         case (addr)
++      if (bus_req) begin
++         case (bus_addr)
+             REG_RBR_THR: begin
+                if (dlab) begin
+-                  if (write) begin
++                  if (bus_write) begin
+                      nxt_divisor = {divisor[15:8], bus_wdata};
+                   end else begin
+                      bus_rdata = divisor[7:0];
+                   end
+-                  bus_ack = bus_req;
+                end else begin
+-                  if (write) begin
++                  if (bus_write) begin
+                      out_char = bus_wdata;
+                      out_valid = 1'b1;
+-                     bus_ack = out_ready;
+                   end else begin
+                      bus_rdata = in_char;
+                      in_ready = 1'b1;
+-                     bus_ack = in_valid;
+                   end
+                end
+             end
+             REG_IER: begin
+                if (dlab) begin
+                   // Divisor Latch MS (DLM)
+-                  if (write) begin
++                  if (bus_write) begin
+                      nxt_divisor = {bus_wdata, divisor[7:0]};
+                   end else begin
+                      bus_rdata = divisor[15:8];
+                   end
+-                  bus_ack = bus_req;
+                end else begin
+                   // Interrupt Enable Register (IER)
+-                  if (write) begin
++                  if (bus_write) begin
+                      {nxt_elsi, nxt_etbei, nxt_erbfi} = bus_wdata[2:0];
+                   end else begin
+-                     bus_rdata = {5'h0, nxt_elsi, nxt_etbei, nxt_erbfi};
++                     bus_rdata = {5'h0, elsi, etbei, erbfi};
+                   end
+-                  bus_ack = bus_req;
+                end
+             end
+             REG_IIR_FCR: begin
+-               if (write) begin
++               if (bus_write) begin
+                   // FIFO Control Register (FCR)
+                   {nxt_dma_mode, nxt_fifo_tx_clear, nxt_fifo_rx_clear, nxt_fifo_enable} = bus_wdata[3:0];
+                end else begin
+@@ -212,16 +197,14 @@ module osd_dem_uart_16550
+                      bus_rdata[3:0] = INTR_NONE;
+                   end
+                end
+-               bus_ack = bus_req;
+             end
+             REG_LCR: begin
+                // Line Control Register (LCR)
+-               if (write) begin
++               if (bus_write) begin
+                   nxt_lcr = bus_wdata;
+                end else begin
+                   bus_rdata = lcr;
+                end
+-               bus_ack = bus_req;
+             end
+             REG_LSR: begin
+                // Line Status Register (LSR)
+@@ -229,15 +212,9 @@ module osd_dem_uart_16550
+                bus_rdata[BIT_LSR_DR] = in_valid;
+                bus_rdata[BIT_LSR_TEMT] = out_ready;
+                bus_rdata[BIT_LSR_THRE] = out_ready;
+-
+-               bus_ack = bus_req;
+-            end
+-            default: begin
+-               // Not acknowledging access to unimplemented registers could hang the bus.
+-               bus_ack = bus_req;
+             end
+          endcase
+-      end // if (req)
++      end
+ 
+       if (fifo_enable & fifo_rx_clear) begin
+          // TODO Clear all data in RXFifo
+diff --git a/modules/dem_uart/test/test_dem_uart_wb.py b/modules/dem_uart/test/test_dem_uart_wb.py
+index 61c7218..b3347f7 100644
+--- a/modules/dem_uart/test/test_dem_uart_wb.py
++++ b/modules/dem_uart/test/test_dem_uart_wb.py
+@@ -431,3 +431,19 @@ def test_uart_16550_registers(dut):
+     if res != 0x0:
+         raise TestFailure("DLM test failed! Wrote: 0x%x, Read: 0x%x"
+                           % (0x0, res))
++
++@cocotb.test()
++def test_uart_read_empty(dut):
++    """
++    Ensure that the bus doesn't block even though no data is available to read
++    """
++
++    yield _init_dut(dut)
++    yield _activate_module(dut)
++
++    # WB master with 10 cycles timeout
++    wb_master = WishboneMaster(dut, dut.clk, timeout=10)
++
++    # Read from Receiver Buffer Register (RBR)
++    ret = yield wb_master.send_cycle([WBOp(adr=0x0, dat=None, sel=0x0)])
++    res = ret.pop(0).datrd & 0xFF
+
+From c97721b2ef3dc8cb415ac7e6eea2c6bc26e9f997 Mon Sep 17 00:00:00 2001
+From: Philipp Wagner <philipp.wagner@tum.de>
+Date: Mon, 29 Oct 2018 13:48:18 +0100
+Subject: [PATCH 8/8] DEM UART: Add IRQ-related tests
+
+---
+ modules/dem_uart/test/test_dem_uart_wb.py | 97 +++++++++++++++++++++++
+ 1 file changed, 97 insertions(+)
+
+diff --git a/modules/dem_uart/test/test_dem_uart_wb.py b/modules/dem_uart/test/test_dem_uart_wb.py
+index b3347f7..3c084f7 100644
+--- a/modules/dem_uart/test/test_dem_uart_wb.py
++++ b/modules/dem_uart/test/test_dem_uart_wb.py
+@@ -371,6 +371,9 @@ def test_uart_16550_registers(dut):
+ 
+     yield wb_master.send_cycle([WBOp(adr=0x0, dat=0x3, sel=0x4)])
+ 
++    for _ in range(10):
++        yield RisingEdge(dut.clk)
++
+     ret = yield wb_master.send_cycle([WBOp(adr=0x0, dat=None, sel=0x4)])
+     res = ret.pop(0).datrd & 0xFF
+ 
+@@ -447,3 +450,97 @@ def test_uart_read_empty(dut):
+     # Read from Receiver Buffer Register (RBR)
+     ret = yield wb_master.send_cycle([WBOp(adr=0x0, dat=None, sel=0x0)])
+     res = ret.pop(0).datrd & 0xFF
++
++
++@cocotb.test()
++def test_uart_irq_tbe(dut):
++    """
++    Check if the Transmit Buffer Empty interrupt is sent
++    """
++
++    yield _init_dut(dut)
++    yield _activate_module(dut)
++
++    wb_master = WishboneMaster(dut, dut.clk)
++
++    # ensure that IRQ is lowered before we start sending
++    if dut.irq.value != 0:
++        raise TestFailure("irq is not lowered at start.")
++
++    # Enable TBE interrupt by setting bit 2 in IER
++    yield wb_master.send_cycle([WBOp(adr=0x0, dat=0x2, sel=0x4)])
++    yield RisingEdge(dut.clk)
++
++    # ensure that IRQ is still lowered before we start sending
++    if dut.irq.value != 1:
++        raise TestFailure("irq is not high (indicating an empty transmit buffer)")
++
++    yield RisingEdge(dut.clk)
++
++    # simulate the CPU sending a single char to the UART device
++    yield _bus_to_di_tx(dut, num_transfers=1, random_data=False)
++
++    # check that IRQ is now lowered
++    if dut.irq.value != 0:
++        raise TestFailure("irq it not lowered after receiving data.")
++
++    # Let the UART module empty its send buffer
++    yield _bus_to_di_rx(dut, num_transfers=1)
++
++    # check that IRQ is now high again, indicating an empty transmit buffer
++    if dut.irq.value != 1:
++        raise TestFailure("irq not high again after emptying the transmit buffer.")
++
++    # Disable the TBE interrupt again
++    yield wb_master.send_cycle([WBOp(adr=0x0, dat=0x0, sel=0x4)])
++    yield RisingEdge(dut.clk)
++
++    # Ensure that the interrupt signal is now lowered
++    if dut.irq.value != 0:
++        raise TestFailure("irq not lowered after disabling the interrupt.")
++
++
++@cocotb.test()
++def test_uart_irq_rbf(dut):
++    """
++    Check if the Receive Buffer Full interrupt is sent
++    """
++
++    yield _init_dut(dut)
++    yield _activate_module(dut)
++
++    _di_to_bus_fifo.clear()
++
++    wb_master = WishboneMaster(dut, dut.clk)
++
++    # ensure that IRQ is lowered before we start sending
++    if dut.irq.value != 0:
++        raise TestFailure("irq is not lowered at start.")
++
++    # Enable RBF interrupt by setting bit 1 in IER
++    yield wb_master.send_cycle([WBOp(adr=0x0, dat=0x1, sel=0x4)])
++    yield RisingEdge(dut.clk)
++
++    # ensure that IRQ is still lowered before we start sending
++    if dut.irq.value != 0:
++        raise TestFailure("irq is not low, even though receive buffer is empty")
++
++    yield RisingEdge(dut.clk)
++
++    # send a single packet to the UART module
++    yield _di_to_bus_tx(dut, num_transfers=1, random_data=False)
++
++    for _ in range(4):
++        yield RisingEdge(dut.clk)
++
++    # check that IRQ is now high
++    if dut.irq.value != 1:
++        raise TestFailure("irq it not high after receiving a character")
++
++    # simulate CPU consuming the incoming character
++    yield _di_to_bus_rx(dut, num_transfers=1)
++
++    # check that IRQ is now lowered again
++    if dut.irq.value != 0:
++        raise TestFailure("irq it not lowered after the incoming character has been consumed")
++

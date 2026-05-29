@@ -1,0 +1,40 @@
+# Support basic global constraints (#6551)
+
+Instance: verilator_verilator_pr6552
+Source: https://github.com/verilator/verilator/pull/6552
+Fetched: 2026-05-03
+Repository: verilator/verilator
+Pull request: #6552
+Author: YilouWang
+State: closed
+Base branch: master
+Head branch: new_branch_for_global_rand
+Created: 2025-10-12
+Updated: 2025-11-05
+Closed: 2025-11-05
+Merged: 2025-11-05
+
+## PR Title
+Support basic global constraints (#6551)
+
+## PR Description
+Implements the global-constraints feature defined in IEEE 1800-2023 section 18.5.8, addressing issue #6551. The implementation has three main pieces:
+
+1. Global-constraint detection: an `isGlobalConstrained` flag is added to AstVar to identify variables participating in global constraints.
+2. Constraint hoisting: constraints from nested member classes are extracted and evaluated together at the top-level class so that cross-object constraint solving works.
+3. MemberSel handling: logic for nested member-access paths (e.g. `m1.inner.val`) is added so the SMT variable declaration is correct.
+
+The author noted a memory leak issue early on which was addressed via subsequent refinements. The feature was developed across many commits between Sep 19 and Nov 5, 2025.
+
+## PR Comments
+**RRozak**: Pointed out that the implementation does not handle polymorphic-type scenarios where the declared class type differs from the actual runtime type. **YilouWang** agreed to handle this in a follow-up PR.
+
+**wsnyder**: Requested verification of `rand_mode` behaviour against the IEEE specification. Reviewed across multiple iterations and ultimately merged on Nov 5, 2025.
+
+Other participants: gezalore (review), udayaa-init (contributions/co-author).
+
+## Linked Issues
+**Issue #6551 - "Support global constraints"** (closed by this PR).
+
+Issue body (verbatim from the source URL):
+"After [PR#5625](https://github.com/verilator/verilator/pull/5625), global constraints has been kept as an unsupported warning messages, which needs to be fixed."

@@ -1,0 +1,59 @@
+{
+  "case_name": "pulp-platform_riscv-dbg_pr56",
+  "status": "completed",
+  "num_patches": 4,
+  "bug_locs": [
+    [
+      {
+        "rel_file_path": "src/dm_csrs.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_riscv-dbg_pr56/src/dm_csrs.sv",
+        "start": 86,
+        "end": 125,
+        "class_name": null,
+        "method_name": null,
+        "code": "86   assign dtm_op = dm::dtm_op_e'(dmi_req_i.op);\n87 \n88   logic        resp_queue_full;\n89   logic        resp_queue_empty;\n90   logic        resp_queue_push;\n91   logic        resp_queue_pop;\n92   logic [31:0] resp_queue_data;\n93 \n94   localparam dm::dm_csr_e DataEnd = dm::dm_csr_e'(dm::Data0 + {4'b0, dm::DataCount} - 8'h01);\n95   localparam dm::dm_csr_e ProgBufEnd = dm::dm_csr_e'(dm::ProgBuf0 + {4'b0, dm::ProgBufSize} - 8'h01);\n96 \n97   logic [31:0] haltsum0, haltsum1, haltsum2, haltsum3;\n98   logic [((NrHarts-1)/2**5 + 1) * 32 - 1 : 0] halted;\n99   logic [(NrHarts-1)/2**5:0][31:0] halted_reshaped0;\n100   logic [NrHarts/2**10:0][31:0] halted_reshaped1;\n101   logic [NrHarts/2**15:0][31:0] halted_reshaped2;\n102   logic [(NrHarts/2**10+1)*32-1:0] halted_flat1;\n103   logic [(NrHarts/2**15+1)*32-1:0] halted_flat2;\n104   logic [32-1:0] halted_flat3;\n105 \n106   // haltsum0\n107   logic [14:0] hartsel_idx0;\n108   always_comb begin : p_haltsum0\n109     halted              = '0;\n110     haltsum0            = '0;\n111     hartsel_idx0        = hartsel_o[19:5];\n112     halted[NrHarts-1:0] = halted_i;\n113     halted_reshaped0    = halted;\n114     if (hartsel_idx0 < 15'((NrHarts-1)/2**5+1)) begin\n115       haltsum0 = halted_reshaped0[hartsel_idx0];\n116     end\n117   end\n118 \n119   // haltsum1\n120   logic [9:0] hartsel_idx1;\n121   always_comb begin : p_reduction1\n122     halted_flat1 = '0;\n123     haltsum1     = '0;\n124     hartsel_idx1 = hartsel_o[19:10];\n125 \n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "src/dm_csrs.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_riscv-dbg_pr56/src/dm_csrs.sv",
+        "start": 110,
+        "end": 143,
+        "class_name": null,
+        "method_name": null,
+        "code": "110     haltsum0            = '0;\n111     hartsel_idx0        = hartsel_o[19:5];\n112     halted[NrHarts-1:0] = halted_i;\n113     halted_reshaped0    = halted;\n114     if (hartsel_idx0 < 15'((NrHarts-1)/2**5+1)) begin\n115       haltsum0 = halted_reshaped0[hartsel_idx0];\n116     end\n117   end\n118 \n119   // haltsum1\n120   logic [9:0] hartsel_idx1;\n121   always_comb begin : p_reduction1\n122     halted_flat1 = '0;\n123     haltsum1     = '0;\n124     hartsel_idx1 = hartsel_o[19:10];\n125 \n126     for (int unsigned k = 0; k < NrHarts/2**5+1; k++) begin\n127       halted_flat1[k] = |halted_reshaped0[k];\n128     end\n129     halted_reshaped1 = halted_flat1;\n130 \n131     if (hartsel_idx1 < 10'((NrHarts/2**10+1))) begin\n132       haltsum1 = halted_reshaped1[hartsel_idx1];\n133     end\n134   end\n135 \n136   // haltsum2\n137   logic [4:0] hartsel_idx2;\n138   always_comb begin : p_reduction2\n139     halted_flat2 = '0;\n140     haltsum2     = '0;\n141     hartsel_idx2 = hartsel_o[19:15];\n142 \n143     for (int unsigned k = 0; k < NrHarts/2**10+1; k++) begin\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "src/dm_csrs.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_riscv-dbg_pr56/src/dm_csrs.sv",
+        "start": 125,
+        "end": 160,
+        "class_name": null,
+        "method_name": null,
+        "code": "125 \n126     for (int unsigned k = 0; k < NrHarts/2**5+1; k++) begin\n127       halted_flat1[k] = |halted_reshaped0[k];\n128     end\n129     halted_reshaped1 = halted_flat1;\n130 \n131     if (hartsel_idx1 < 10'((NrHarts/2**10+1))) begin\n132       haltsum1 = halted_reshaped1[hartsel_idx1];\n133     end\n134   end\n135 \n136   // haltsum2\n137   logic [4:0] hartsel_idx2;\n138   always_comb begin : p_reduction2\n139     halted_flat2 = '0;\n140     haltsum2     = '0;\n141     hartsel_idx2 = hartsel_o[19:15];\n142 \n143     for (int unsigned k = 0; k < NrHarts/2**10+1; k++) begin\n144       halted_flat2[k] = |halted_reshaped1[k];\n145     end\n146     halted_reshaped2 = halted_flat2;\n147 \n148     if (hartsel_idx2 < 5'((NrHarts/2**15+1))) begin\n149       haltsum2         = halted_reshaped2[hartsel_idx2];\n150     end\n151   end\n152 \n153   // haltsum3\n154   always_comb begin : p_reduction3\n155     halted_flat3 = '0;\n156     for (int unsigned k = 0; k < NrHarts/2**15+1; k++) begin\n157       halted_flat3[k] = |halted_reshaped2[k];\n158     end\n159     haltsum3 = halted_flat3;\n160   end\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "src/dm_csrs.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_riscv-dbg_pr56/src/dm_csrs.sv",
+        "start": 142,
+        "end": 169,
+        "class_name": null,
+        "method_name": null,
+        "code": "142 \n143     for (int unsigned k = 0; k < NrHarts/2**10+1; k++) begin\n144       halted_flat2[k] = |halted_reshaped1[k];\n145     end\n146     halted_reshaped2 = halted_flat2;\n147 \n148     if (hartsel_idx2 < 5'((NrHarts/2**15+1))) begin\n149       haltsum2         = halted_reshaped2[hartsel_idx2];\n150     end\n151   end\n152 \n153   // haltsum3\n154   always_comb begin : p_reduction3\n155     halted_flat3 = '0;\n156     for (int unsigned k = 0; k < NrHarts/2**15+1; k++) begin\n157       halted_flat3[k] = |halted_reshaped2[k];\n158     end\n159     haltsum3 = halted_flat3;\n160   end\n161 \n162 \n163   dm::dmstatus_t      dmstatus;\n164   dm::dmcontrol_t     dmcontrol_d, dmcontrol_q;\n165   dm::abstractcs_t    abstractcs;\n166   dm::cmderr_e        cmderr_d, cmderr_q;\n167   dm::command_t       command_d, command_q;\n168   logic               cmd_valid_d, cmd_valid_q;\n169   dm::abstractauto_t  abstractauto_d, abstractauto_q;\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "src/dm_pkg.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_riscv-dbg_pr56/src/dm_pkg.sv",
+        "start": 99,
+        "end": 186,
+        "class_name": null,
+        "method_name": null,
+        "code": "99     logic         allrunning;\n100     logic         anyrunning;\n101     logic         allhalted;\n102     logic         anyhalted;\n103     logic         authenticated;\n104     logic         authbusy;\n105     logic         hasresethaltreq;\n106     logic         devtreevalid;\n107     logic [3:0]   version;\n108   } dmstatus_t;\n109 \n110   typedef struct packed {\n111     logic         haltreq;\n112     logic         resumereq;\n113     logic         hartreset;\n114     logic         ackhavereset;\n115     logic         zero1;\n116     logic         hasel;\n117     logic [25:16] hartsello;\n118     logic [15:6]  hartselhi;\n119     logic [5:4]   zero0;\n120     logic         setresethaltreq;\n121     logic         clrresethaltreq;\n122     logic         ndmreset;\n123     logic         dmactive;\n124   } dmcontrol_t;\n125 \n126   typedef struct packed {\n127     logic [31:24] zero1;\n128     logic [23:20] nscratch;\n129     logic [19:17] zero0;\n130     logic         dataaccess;\n131     logic [15:12] datasize;\n132     logic [11:0]  dataaddr;\n133   } hartinfo_t;\n134 \n135   typedef enum logic [2:0] {\n136     CmdErrNone, CmdErrBusy, CmdErrNotSupported,\n137     CmdErrorException, CmdErrorHaltResume,\n138     CmdErrorBus, CmdErrorOther = 7\n139   } cmderr_e;\n140 \n141   typedef struct packed {\n142     logic [31:29] zero3;\n143     logic [28:24] progbufsize;\n144     logic [23:13] zero2;\n145     logic         busy;\n146     logic         zero1;\n147     cmderr_e      cmderr;\n148     logic [7:4]   zero0;\n149     logic [3:0]   datacount;\n150   } abstractcs_t;\n151 \n152   typedef enum logic [7:0] {\n153     AccessRegister = 8'h0,\n154     QuickAccess    = 8'h1,\n155     AccessMemory   = 8'h2\n156   } cmd_e;\n157 \n158   typedef struct packed {\n159     cmd_e        cmdtype;\n160     logic [23:0] control;\n161   } command_t;\n162 \n163   typedef struct packed {\n164     logic [31:16] autoexecprogbuf;\n165     logic [15:12] zero0;\n166     logic [11:0]  autoexecdata;\n167   } abstractauto_t;\n168 \n169   typedef struct packed {\n170     logic         zero1;\n171     logic [22:20] aarsize;\n172     logic         aarpostincrement;\n173     logic         postexec;\n174     logic         transfer;\n175     logic         write;\n176     logic [15:0]  regno;\n177   } ac_ar_cmd_t;\n178 \n179   // DTM\n180   typedef enum logic [1:0] {\n181     DTM_NOP   = 2'h0,\n182     DTM_READ  = 2'h1,\n183     DTM_WRITE = 2'h2\n184   } dtm_op_e;\n185 \n186   typedef struct packed {\n",
+        "intended_behavior": ""
+      }
+    ]
+  ]
+}

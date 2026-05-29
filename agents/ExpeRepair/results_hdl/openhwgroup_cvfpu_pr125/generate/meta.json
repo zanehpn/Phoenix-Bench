@@ -1,0 +1,10 @@
+{
+    "task_info": {
+        "base_commit": "e2e68fed8d080e704edad4c716d519f975599ad6",
+        "problem_statement": "# CVFPU incorrectly suppresses overflow flag on `I2F` conversions\n\nAccording to IEEE 754-2008, converting an integer to a floating-point value should trigger an overflow exception in case the rounded value exceeds the range of the floating-point type.\n\n![image](https://github.com/openhwgroup/cvfpu/assets/9446837/8b5c00bc-ca18-4ccf-aca6-e4e4efb63691)\n\nHowever, CVFPU suppresses the overflow flag when the source operand is an integer (i.e., on `I2F` conversions), and sets the invalid flag instead:\n\nhttps://github.com/openhwgroup/cvfpu/blob/81c53c5381f7438272c05025ee3265d752f96e02/src/fpnew_cast_multi.sv#L721-L727\n\nThe comment on line 721 is incorrect: an overflow should *not* trigger an invalid exception on `I2F` conversions.\n\nI believe this has been confused with the opposite case, converting a floating-point value to an integer, which indeed is not supposed to produce an overflow exception:\n\n![image](https://github.com/openhwgroup/cvfpu/assets/9446837/c43ce567-69f8-4b6c-94cd-fc6b83ac0776)\n\nFor single-precision and double-precision types an overflow cannot happen, because the exponent range is always large enough such that any 32-bit or 64-bit integer value does not exceed it. However, for half-precision values an overflow can occur on `I2F` conversions.\n\n@lucabertaccini @pascalgouedo @stmach Please let me know whether my assessment is correct. I will then move forward with a PR to fix the behavior.\n",
+        "instance_id": "openhwgroup_cvfpu_pr125"
+    },
+    "setup_info": {
+        "repo_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/openhwgroup_cvfpu_pr125"
+    }
+}

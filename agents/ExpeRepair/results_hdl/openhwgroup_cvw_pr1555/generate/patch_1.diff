@@ -1,0 +1,44 @@
+diff --git a/src/uncore/gpio_apb.sv b/src/uncore/gpio_apb.sv
+index d83d4b6..2eaa112 100644
+--- a/src/uncore/gpio_apb.sv
++++ b/src/uncore/gpio_apb.sv
+@@ -84,8 +84,8 @@ module gpio_apb import cvw::*;  #(parameter cvw_t P) (
+   // register access
+   always_ff @(posedge PCLK)
+     if (~PRESETn) begin
+-      input_en  <= '0;
+-      output_en <= '0;
++      input_en   <= '0;
++      output_en  <= '0;
+       output_val <= '0;
+       rise_ie    <= '0;
+       rise_ip    <= '0;
+@@ -98,6 +98,7 @@ module gpio_apb import cvw::*;  #(parameter cvw_t P) (
+       iof_en     <= '0;
+       iof_sel    <= '0;
+       out_xor    <= '0;
++      Dout       <= '0;
+     end else begin     // writes
+         // According to FE310 spec: Once the interrupt is pending, it will remain set until a 1 is written to the *_ip register at that bit.
+         /* verilator lint_off CASEINCOMPLETE */
+diff --git a/testbench/common/wallyTracer.sv b/testbench/common/wallyTracer.sv
+index ef84d94..157adeb 100644
+--- a/testbench/common/wallyTracer.sv
++++ b/testbench/common/wallyTracer.sv
+@@ -179,7 +179,15 @@ module wallyTracer import cvw::*; #(parameter cvw_t P) (rvviTrace rvvi);
+     `CONNECT_CSR(MEPC, 12'h341, testbench.dut.core.priv.priv.csr.csrm.MEPC_REGW);
+     `CONNECT_CSR(MCAUSE, 12'h342, testbench.dut.core.priv.priv.csr.csrm.MCAUSE_REGW);
+     `CONNECT_CSR(MTVAL, 12'h343, testbench.dut.core.priv.priv.csr.csrm.MTVAL_REGW);
+-    `CONNECT_CSR(MIP, 12'h344, testbench.dut.core.priv.priv.csr.csrm.MIP_REGW);
++
++    // MIP contains asynchronous interrupt-pending state (e.g., MTIP), so expose it
++    // directly rather than gating on retire-valid. This avoids delayed/oddly-timed
++    // visibility around WFI and stalled retire windows.
++    logic [P.XLEN-1:0] prev_csr_MIP;
++    always_ff @(posedge clk)
++      prev_csr_MIP <= rvvi.csr[0][0][12'h344];
++    assign rvvi.csr_wb[0][0][12'h344] = (rvvi.csr[0][0][12'h344] != prev_csr_MIP);
++    assign rvvi.csr[0][0][12'h344]    = {{(P.XLEN-12){1'b0}}, testbench.dut.core.priv.priv.csr.csrm.MIP_REGW};
+ 
+     // S-mode trap CSRs
+     if (P.S_SUPPORTED) begin

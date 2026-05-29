@@ -1,0 +1,21 @@
+# Add optional parameter to tc_clk_gating to flag functional gates
+
+Instance: pulp-platform_tech_cells_generic_pr22
+Source: https://github.com/pulp-platform/tech_cells_generic/pull/22
+Fetched: 2026-04-26
+Repository: pulp-platform/tech_cells_generic
+Pull request: #22
+Author: meggiman
+State: closed
+Base branch: master
+Head branch: functional_clk_gate_flagging
+Created: 2022-03-17T13:15:38Z
+Updated: 2022-03-17T13:51:27Z
+Closed: 2022-03-17T13:29:49Z
+Merged: 2022-03-17T13:29:49Z
+
+For certain target platforms clock gating cells are not available or should be used very sparsingly (e.g. many FPGAs have very limited amounts of global clock buffer cells available for that purposes). For these cases it is important to distinguish between functional clock gates that are required for functional correctness of the design (e.g. in clock dividers or in peripherals) or if the clock gate is only used for hierarchical clock gating for power saving purposes. For clock gating resource limited targets, the later (non-functional clock gates) can be safely replaced with a simple feedthrough without affecting functionality. 
+
+This PR adds an optional parameter to the tc_clk_gating cell for designer to flag, wether a particular CG instance is functionally required or not. Target specific implementations of the generic tc_clk_gating module might then opt to use dedicated ICGs for functional clock gates while removing the not-strictly required ones.
+
+The default value is 1'b1 which means the clock gate is functional. That way the change is backward compatible because by default we assume, that all tc_clk_gating instances in old designs are functionally required unless someone modifies the instantiations to mark them otherwise.

@@ -1,0 +1,27 @@
+diff --git a/src/mmu/mmu.sv b/src/mmu/mmu.sv
+index c4ff19554..594767ccb 100644
+--- a/src/mmu/mmu.sv
++++ b/src/mmu/mmu.sv
+@@ -141,9 +141,19 @@ module mmu import cvw::*;  #(parameter cvw_t P,
+       2'b10:  DataMisalignedM = VAdr[1] | VAdr[0]; // lw, sw, flw, fsw, lwu
+       2'b11:  DataMisalignedM = |VAdr[2:0];        // ld, sd, fld, fsd
+     endcase
+-  // When ZiCCLSM_SUPPORTED, misalgined cacheable loads and stores are handled in hardware so they do not throw a misaligned fault
+-  assign LoadMisalignedFaultM     = DataMisalignedM & ReadNoAmoAccessM & ~(P.ZICCLSM_SUPPORTED & Cacheable) & ~TLBMiss;
+-  assign StoreAmoMisalignedFaultM = DataMisalignedM & WriteAccessM & ~(P.ZICCLSM_SUPPORTED & Cacheable) & ~TLBMiss; // Store and AMO both assert WriteAccess
++  // Misaligned faults
++  //
++  // ZiCCLSM only allows the implementation to *successfully complete* some misaligned
++  // accesses in hardware. If ZiCCLSM is not supported, the privileged spec requires a
++  // misaligned exception (cause=4/6) to be taken even if the address would also fail PMA/PMP.
++  //
++  // Therefore, misaligned detection must be independent of Cacheable; cacheability is a
++  // microarchitectural property and should not change architectural exception type.
++  //
++  // If ZiCCLSM is supported, this core only handles misaligned accesses for cacheable regions
++  // (via the align logic in the LSU). Non-cacheable misaligned accesses still trap.
++  assign LoadMisalignedFaultM     = DataMisalignedM & ReadNoAmoAccessM & (~P.ZICCLSM_SUPPORTED | ~Cacheable) & ~TLBMiss;
++  assign StoreAmoMisalignedFaultM = DataMisalignedM & WriteAccessM & (~P.ZICCLSM_SUPPORTED | ~Cacheable) & ~TLBMiss; // Store and AMO both assert WriteAccess
+ 
+   // a misaligned Atomic causes an access fault rather than a misaligned fault if a misaligned load/store is handled in hardware
+   // this is subtle - see privileged spec 3.6.3.3

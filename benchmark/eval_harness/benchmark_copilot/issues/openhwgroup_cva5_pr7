@@ -1,0 +1,36 @@
+# Cached memory interface: AXI wstrb not stable if AW handshake completes first
+
+- Source URL: https://github.com/openhwgroup/cva5/issues/6
+
+CVA5's dcache memory interface (via l1_arbiter, l2_arbiter, axi_to_arb) starts each single beat AXI AW handshake simultaneously to the only W handshake. The byte enable value `be` (used for `wstrb`) is stored alongside the address in the `l2_request_t` structure, and the FIFO entry is popped as soon as the AW handshake is complete. However, `wstrb` is in the W handshake alongside `wdata`.
+
+Scenario: Downstream bus component sets `wready` only after having accepted an AW handshake. CVA5 will pop from the request FIFO, and `wstrb` will change to whatever is in the next valid or invalid FIFO element, even though the W handshake is still active.
+
+Effect: Depends on the bus components. In our case (using only Xilinx IP downstream), the presence or absence of an AXI crossbar appears to determine whether `wstrb` is sampled in the first W handshake cycle, where the AW handshake is still valid and the fault would be hidden, or in a later cycle. In that case, bytes may unintenionally be masked on or off, so data in memory could become inconsistent.
+
+(Suggested) solution: Move `be`/`wstrb` to the same FIFO as the write data. I'm preparing a pull request but still doing some validation of the patches for upstream.
+
+## PR Title
+L2: Move be (i.e. wstrb for AXI) into the data FIFO (Fixes #6)
+
+## PR Description
+The contributor moved the `be` signal to the same FIFO as write data and adapted the L2 interface accordingly. Testing included custom design simulation and taiga-project's compliance tests. The `litex/l1_to_wishbone.sv` example and AXI test bench remained untested due to unrelated compile errors.
+
+## PR Comments
+
+**e-matthews** (September 13, 2022):
+"Thank you very much for both reporting and providing a fix for this issue. I've given a first look over the changes and they look good. I'll run some additional tests and we'll look at getting these changes in soon."
+
+**e-matthews** (April 17, 2023):
+Approved the changes.
+
+**MikeOpenHWGroup** (April 18, 2023):
+"Merging based on @e-matthews approval."
+
+## Linked Issue
+#6: Cached memory interface: AXI wstrb not stable if AW handshake completes first
+
+## PR Metadata
+- Submitted by: flmeisel
+- Merged by: MikeOpenHWGroup
+- Status: Merged (April 18, 2023)

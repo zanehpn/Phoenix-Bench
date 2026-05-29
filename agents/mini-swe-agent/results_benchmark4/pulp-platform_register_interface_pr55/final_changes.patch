@@ -1,0 +1,39 @@
+diff --git a/src/apb_to_reg.sv b/src/apb_to_reg.sv
+index 6a99886..f775cf7 100644
+--- a/src/apb_to_reg.sv
++++ b/src/apb_to_reg.sv
+@@ -3,14 +3,14 @@
+ // License, Version 0.51 (the "License"); you may not use this file except in
+ // compliance with the License.  You may obtain a copy of the License at
+ // http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
+-// or agreed to in writing, software, hardware and materials distributed under
++// or agreed to in writing, software, hardware, and materials distributed under
+ // this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ // CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ // specific language governing permissions and limitations under the License.
+ //
+ // Florian Zaruba <zarubaf@iis.ee.ethz.ch>
+ 
+-module apb_to_reg #(
++module apb_to_reg_v2 #(
+   parameter bit Feedthrough = 1'b1
+ )(
+   input  logic          clk_i,
+@@ -29,7 +29,6 @@ module apb_to_reg #(
+ );
+ 
+   if (Feedthrough) begin : gen_feedthrough
+-    // in this mode just using plain register interface makes more sense
+     always_comb begin
+       reg_o.addr = paddr_i;
+       reg_o.write = pwrite_i;
+@@ -40,9 +39,7 @@ module apb_to_reg #(
+       pslverr_o = reg_o.error;
+       prdata_o = reg_o.rdata;
+     end
+-
+   end else begin : gen_apb_reg
+-    // latch forward path as apb intends
+     always_ff @(posedge clk_i or negedge rst_ni) begin
+       if (!rst_ni) begin
+         reg_o.addr  <= '0;

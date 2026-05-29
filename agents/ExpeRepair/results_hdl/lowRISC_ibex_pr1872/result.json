@@ -1,0 +1,39 @@
+{
+  "case_name": "lowRISC_ibex_pr1872",
+  "status": "completed",
+  "num_patches": 3,
+  "bug_locs": [
+    [
+      {
+        "rel_file_path": "dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/lowRISC_ibex_pr1872/dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv",
+        "start": 285,
+        "end": 318,
+        "class_name": null,
+        "method_name": null,
+        "code": "285   always_latch begin\n286     if (id_stage_i.controller_i.ctrl_fsm_cs == DECODE) begin\n287       kept_wfi_with_irq = 1'b0;\n288     end else if (id_stage_i.controller_i.ctrl_fsm_cs == SLEEP &&\n289                  id_stage_i.controller_i.ctrl_fsm_ns == SLEEP &&\n290                  (|cs_registers_i.mip)) begin\n291       kept_wfi_with_irq = 1'b1;\n292     end\n293   end\n294 \n295   logic instr_id_matches_trigger_d, instr_id_matches_trigger_q;\n296 \n297   assign instr_id_matches_trigger_d = id_stage_i.controller_i.trigger_match_i &&\n298                                       id_stage_i.controller_i.fcov_debug_entry_if;\n299 \n300   // Delay instruction matching trigger point since it is catched in IF stage.\n301   // We would want to cross it with decoded instruction categories and it does not matter\n302   // when exactly we are hitting the condition.\n303   always @(posedge clk_i or negedge rst_ni) begin\n304     if (!rst_ni) begin\n305       instr_id_matches_trigger_q <= 1'b0;\n306     end else begin\n307       instr_id_matches_trigger_q <= instr_id_matches_trigger_d;\n308     end\n309   end\n310 \n311   // Keep track of previous data addr of Store to catch RAW hazard caused by STORE->LOAD\n312   logic [31:0]     prev_store_addr;\n313   logic [31:0]     data_addr_incr;\n314   logic [31:0]     curr_data_addr;\n315   logic            raw_hz;\n316 \n317   always @(posedge clk_i or negedge rst_ni) begin\n318     if (!rst_ni) begin\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/lowRISC_ibex_pr1872/dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv",
+        "start": 481,
+        "end": 512,
+        "class_name": null,
+        "method_name": null,
+        "code": "481 \n482     // All CSR operations perform a read so we don't need to specify the CSR operation.\n483     cp_ignored_csrs: coverpoint cs_registers_i.csr_addr_i iff (id_stage_i.csr_access_o) {\n484       bins unimplemented_csrs_read = {`NOT_IMPLEMENTED_CSRS};\n485     }\n486 \n487     cp_ignored_csrs_w: coverpoint cs_registers_i.csr_addr_i iff (fcov_csr_write) {\n488       bins unimplemented_csrs_written = {`NOT_IMPLEMENTED_CSRS};\n489     }\n490 \n491     `DV_FCOV_EXPR_SEEN(csr_invalid_read_only, fcov_csr_read_only && cs_registers_i.illegal_csr)\n492     `DV_FCOV_EXPR_SEEN(csr_invalid_write, fcov_csr_write && cs_registers_i.illegal_csr)\n493 \n494     cp_debug_mode: coverpoint debug_mode;\n495 \n496     `DV_FCOV_EXPR_SEEN(debug_wakeup, id_stage_i.controller_i.fcov_debug_wakeup)\n497     `DV_FCOV_EXPR_SEEN(debug_entry_if, id_stage_i.controller_i.fcov_debug_entry_if)\n498     `DV_FCOV_EXPR_SEEN(debug_entry_id, id_stage_i.controller_i.fcov_debug_entry_id)\n499     `DV_FCOV_EXPR_SEEN(pipe_flush, id_stage_i.controller_i.fcov_pipe_flush)\n500     `DV_FCOV_EXPR_SEEN(single_step_taken, id_stage_i.controller_i.fcov_debug_single_step_taken)\n501     `DV_FCOV_EXPR_SEEN(insn_trigger_enter_debug, instr_id_matches_trigger_q)\n502     `DV_FCOV_EXPR_SEEN(insn_trigger_exception, instr_id_matches_trigger_q &&\n503                                                id_stage_i.controller_i.fcov_pipe_flush)\n504 \n505     cp_nmi_taken: coverpoint ((fcov_irqs[5] || fcov_irqs[4])) iff\n506                              (id_stage_i.controller_i.fcov_interrupt_taken);\n507 \n508     cp_interrupt_taken: coverpoint fcov_irqs iff (id_stage_i.controller_i.fcov_interrupt_taken){\n509       wildcard bins nmi_external  = {6'b1?????};\n510       wildcard bins nmi_internal  = {6'b01????};\n511       wildcard bins irq_fast      = {6'b001???};\n512       wildcard bins irq_external  = {6'b0001??};\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/lowRISC_ibex_pr1872/dv/uvm/core_ibex/fcov/core_ibex_fcov_if.sv",
+        "start": 471,
+        "end": 518,
+        "class_name": null,
+        "method_name": null,
+        "code": "471     cp_irq_pending: coverpoint id_stage_i.irq_pending_i | id_stage_i.irq_nm_i;\n472     cp_debug_req: coverpoint id_stage_i.controller_i.fcov_debug_req;\n473 \n474     cp_csr_read_only: coverpoint cs_registers_i.csr_addr_i iff (fcov_csr_read_only) {\n475       ignore_bins ignore = {`IGNORED_CSRS};\n476     }\n477 \n478     cp_csr_write: coverpoint cs_registers_i.csr_addr_i iff (fcov_csr_write) {\n479       ignore_bins ignore = {`IGNORED_CSRS};\n480     }\n481 \n482     // All CSR operations perform a read so we don't need to specify the CSR operation.\n483     cp_ignored_csrs: coverpoint cs_registers_i.csr_addr_i iff (id_stage_i.csr_access_o) {\n484       bins unimplemented_csrs_read = {`NOT_IMPLEMENTED_CSRS};\n485     }\n486 \n487     cp_ignored_csrs_w: coverpoint cs_registers_i.csr_addr_i iff (fcov_csr_write) {\n488       bins unimplemented_csrs_written = {`NOT_IMPLEMENTED_CSRS};\n489     }\n490 \n491     `DV_FCOV_EXPR_SEEN(csr_invalid_read_only, fcov_csr_read_only && cs_registers_i.illegal_csr)\n492     `DV_FCOV_EXPR_SEEN(csr_invalid_write, fcov_csr_write && cs_registers_i.illegal_csr)\n493 \n494     cp_debug_mode: coverpoint debug_mode;\n495 \n496     `DV_FCOV_EXPR_SEEN(debug_wakeup, id_stage_i.controller_i.fcov_debug_wakeup)\n497     `DV_FCOV_EXPR_SEEN(debug_entry_if, id_stage_i.controller_i.fcov_debug_entry_if)\n498     `DV_FCOV_EXPR_SEEN(debug_entry_id, id_stage_i.controller_i.fcov_debug_entry_id)\n499     `DV_FCOV_EXPR_SEEN(pipe_flush, id_stage_i.controller_i.fcov_pipe_flush)\n500     `DV_FCOV_EXPR_SEEN(single_step_taken, id_stage_i.controller_i.fcov_debug_single_step_taken)\n501     `DV_FCOV_EXPR_SEEN(insn_trigger_enter_debug, instr_id_matches_trigger_q)\n502     `DV_FCOV_EXPR_SEEN(insn_trigger_exception, instr_id_matches_trigger_q &&\n503                                                id_stage_i.controller_i.fcov_pipe_flush)\n504 \n505     cp_nmi_taken: coverpoint ((fcov_irqs[5] || fcov_irqs[4])) iff\n506                              (id_stage_i.controller_i.fcov_interrupt_taken);\n507 \n508     cp_interrupt_taken: coverpoint fcov_irqs iff (id_stage_i.controller_i.fcov_interrupt_taken){\n509       wildcard bins nmi_external  = {6'b1?????};\n510       wildcard bins nmi_internal  = {6'b01????};\n511       wildcard bins irq_fast      = {6'b001???};\n512       wildcard bins irq_external  = {6'b0001??};\n513       wildcard bins irq_software  = {6'b00001?};\n514       wildcard bins irq_timer     = {6'b000001};\n515     }\n516 \n517     cp_controller_fsm: coverpoint id_stage_i.controller_i.ctrl_fsm_cs {\n518       bins out_of_reset = (RESET => BOOT_SET);\n",
+        "intended_behavior": ""
+      }
+    ]
+  ]
+}

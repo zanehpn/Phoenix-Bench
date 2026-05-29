@@ -1,0 +1,42 @@
+The bug is in `src/dm_csrs.sv`, in the `Data0..DataEnd` read/write handling.
+
+### Why this is the bug
+Per spec, any access to `data0` while an abstract command is executing must set `cmderr = busy` if it is currently `0`.
+
+In the current code, the `Data0` access path only checks `cmdbusy_i` to decide whether to auto-execute, but it does **not** raise `cmderr` when a debugger accesses `data0` while busy. So the illegal concurrent access is silently accepted.
+
+---
+
+## Fix
+When `data0..dataN` is accessed and `cmdbusy_i` is asserted, set `cmderr_d` to `CmdErrBusy` if it is still `CmdErrNone`.
+
+Below is the SEARCH/REPLACE edit.
+
+```systemverilog
+### src/dm_csrs.sv
+<<<<<<< SEARCH
+        [(dm::Data0):DataEnd]: begin
+          // logic [$clog2(dm::DataCount)-1:0] resp_queue_idx;
+          // resp_queue_idx = dmi_req_i.addr[4:0] - int'(dm::Data0);
+          resp_queue_data = data_q[$clog2(dm::DataCount)'(autoexecdata_idx)];
+          if (!cmdbusy_i) begin
+            // check whether we need to re-execute the command (just give a cmd_valid)
+            if (autoexecdata_idx < $bits(abstractauto_q.autoexecdata)) begin
+              cmd_valid_d = abstractauto_q.autoexecdata[autoexecdata_idx];
+            end
+=======
+        [(dm::Data0):DataEnd]: begin
+          // logic [$clog2(dm::DataCount)-1:0] resp_queue_idx;
+          // resp_queue_idx = dmi_req_i.addr[4:0] - int'(dm::Data0);
+          resp_queue_data = data_q[$clog2(dm::DataCount)'(autoexecdata_idx)];
+          if (cmdbusy_i && (cmderr_d == dm::CmdErrNone)) begin
+            cmderr_d = dm::CmdErrBusy;
+          end else if (!cmdbusy_i) begin
+            // check whether we need to re-execute the command (just give a cmd_valid)
+            if (autoexecdata_idx < $bits(abstractauto_q.autoexecdata)) begin
+              cmd_valid_d = abstractauto_q.autoexecdata[autoexecdata_idx];
+            end
+>>>>>>> REPLACE
+```
+
+If you want, I can also inspect whether the same busy-check should be applied to `data1` or only `data0` depending on how strictly your implementation follows the spec and the surrounding code paths.

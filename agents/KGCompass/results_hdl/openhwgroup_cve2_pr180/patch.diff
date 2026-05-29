@@ -1,0 +1,20 @@
+diff --git a/rtl/cve2_wb.sv b/rtl/cve2_wb.sv
+index dee73f74..c82da6f1 100644
+--- a/rtl/cve2_wb.sv
++++ b/rtl/cve2_wb.sv
+@@ -51,10 +51,11 @@ module cve2_wb #(
+     assign rf_wdata_wb_mux[0]    = rf_wdata_id_i;
+     assign rf_wdata_wb_mux_we[0] = rf_we_id_i;
+ 
+-    // Increment instruction retire counters for valid instructions which are not lsu errors.
+-    assign perf_instr_ret_wb_o                 = instr_perf_count_id_i & en_wb_i &
+-                                                 ~(lsu_resp_valid_i & lsu_resp_err_i);
+-    assign perf_instr_ret_compressed_wb_o      = perf_instr_ret_wb_o & instr_is_compressed_id_i;
++    // Increment instruction retire counters only for instructions that actually retire.
++    // DRET in Machine mode traps as an illegal instruction and must not be counted.
++    assign perf_instr_ret_wb_o            = instr_perf_count_id_i & en_wb_i &
++                                           ~lsu_resp_err_i;
++    assign perf_instr_ret_compressed_wb_o = perf_instr_ret_wb_o & instr_is_compressed_id_i;
+ 
+   assign rf_wdata_wb_mux[1]    = rf_wdata_lsu_i;
+   assign rf_wdata_wb_mux_we[1] = rf_we_lsu_i;

@@ -1,0 +1,312 @@
+From 55cda4b8043f4bdd609b188860ea115cc14499bb Mon Sep 17 00:00:00 2001
+From: Christopher Reinwardt <creinwar@ethz.ch>
+Date: Tue, 1 Nov 2022 23:19:43 +0100
+Subject: [PATCH 1/2] [fix] Realign addresses to 64-bit
+
+---
+ debug_rom/debug_rom.S              |  9 +++++---
+ debug_rom/debug_rom.h              | 24 ++++++++++---------
+ debug_rom/debug_rom.sv             | 37 +++++++++++++++---------------
+ debug_rom/debug_rom_one_scratch.h  | 24 ++++++++++---------
+ debug_rom/debug_rom_one_scratch.sv | 29 ++++++++++++-----------
+ src/dm_mem.sv                      |  6 ++---
+ src/dm_pkg.sv                      |  4 ++--
+ 7 files changed, 71 insertions(+), 62 deletions(-)
+
+diff --git a/debug_rom/debug_rom.S b/debug_rom/debug_rom.S
+index 2989c7e..7126ae4 100644
+--- a/debug_rom/debug_rom.S
++++ b/debug_rom/debug_rom.S
+@@ -6,9 +6,9 @@
+ // # define SND_SCRATCH 1
+ // These are implementation-specific addresses in the Debug Module
+ #define HALTED    0x100
+-#define GOING     0x104
+-#define RESUMING  0x108
+-#define EXCEPTION 0x10C
++#define GOING     0x108
++#define RESUMING  0x110
++#define EXCEPTION 0x118
+ 
+ // Region of memory where each hart has 1
+ // byte to read.
+@@ -26,10 +26,13 @@
+ 
+ entry:
+        jal zero, _entry
++       nop
+ resume:
+        jal zero, _resume
++       nop
+ exception:
+        jal zero, _exception
++       nop
+ 
+ 
+ 
+diff --git a/debug_rom/debug_rom.h b/debug_rom/debug_rom.h
+index b4f2d35..9e1d73d 100644
+--- a/debug_rom/debug_rom.h
++++ b/debug_rom/debug_rom.h
+@@ -1,11 +1,14 @@
+ // Auto-generated code
+ 
+-const int reset_vec_size = 38;
++const int reset_vec_size = 40;
+ 
+ uint32_t reset_vec[reset_vec_size] = {
+-    0x00c0006f,
+-    0x07c0006f,
+-    0x04c0006f,
++    0x0180006f,
++    0x00000013,
++    0x0840006f,
++    0x00000013,
++    0x0500006f,
++    0x00000013,
+     0x0ff0000f,
+     0x7b241073,
+     0x7b351073,
+@@ -22,23 +25,22 @@ uint32_t reset_vec[reset_vec_size] = {
+     0x00a40433,
+     0x40044403,
+     0x00247413,
+-    0xfa041ce3,
++    0xfa0418e3,
+     0xfd5ff06f,
+     0x00000517,
+     0x00c55513,
+     0x00c51513,
+-    0x10052623,
++    0x10052c23,
+     0x7b302573,
+     0x7b202473,
+     0x00100073,
+-    0x10052223,
++    0x10052423,
+     0x7b302573,
+     0x7b202473,
+-    0xa85ff06f,
++    0xa79ff06f,
+     0xf1402473,
+-    0x10852423,
++    0x10852823,
+     0x7b302573,
+     0x7b202473,
+-    0x7b200073,
+-    0x00000000
++    0x7b200073
+ };
+diff --git a/debug_rom/debug_rom.sv b/debug_rom/debug_rom.sv
+index 0299db6..407157e 100644
+--- a/debug_rom/debug_rom.sv
++++ b/debug_rom/debug_rom.sv
+@@ -21,29 +21,30 @@ module debug_rom (
+   output logic [63:0]  rdata_o
+ );
+ 
+-  localparam int unsigned RomSize = 19;
++  localparam int unsigned RomSize = 20;
+ 
+   logic [RomSize-1:0][63:0] mem;
+   assign mem = {
+-    64'h00000000_7b200073,
++    64'h7b200073_7b202473,
++    64'h7b302573_10852823,
++    64'hf1402473_a79ff06f,
+     64'h7b202473_7b302573,
+-    64'h10852423_f1402473,
+-    64'ha85ff06f_7b202473,
+-    64'h7b302573_10052223,
+-    64'h00100073_7b202473,
+-    64'h7b302573_10052623,
+-    64'h00c51513_00c55513,
+-    64'h00000517_fd5ff06f,
+-    64'hfa041ce3_00247413,
+-    64'h40044403_00a40433,
+-    64'hf1402473_02041c63,
+-    64'h00147413_40044403,
+-    64'h00a40433_10852023,
+-    64'hf1402473_00c51513,
++    64'h10052423_00100073,
++    64'h7b202473_7b302573,
++    64'h10052c23_00c51513,
+     64'h00c55513_00000517,
+-    64'h7b351073_7b241073,
+-    64'h0ff0000f_04c0006f,
+-    64'h07c0006f_00c0006f
++    64'hfd5ff06f_fa0418e3,
++    64'h00247413_40044403,
++    64'h00a40433_f1402473,
++    64'h02041c63_00147413,
++    64'h40044403_00a40433,
++    64'h10852023_f1402473,
++    64'h00c51513_00c55513,
++    64'h00000517_7b351073,
++    64'h7b241073_0ff0000f,
++    64'h00000013_0500006f,
++    64'h00000013_0840006f,
++    64'h00000013_0180006f
+   };
+ 
+   logic [$clog2(RomSize)-1:0] addr_q;
+diff --git a/debug_rom/debug_rom_one_scratch.h b/debug_rom/debug_rom_one_scratch.h
+index 625d66a..d453971 100644
+--- a/debug_rom/debug_rom_one_scratch.h
++++ b/debug_rom/debug_rom_one_scratch.h
+@@ -1,11 +1,14 @@
+ // Auto-generated code
+ 
+-const int reset_vec_size = 26;
++const int reset_vec_size = 28;
+ 
+ uint32_t reset_vec[reset_vec_size] = {
+-    0x00c0006f,
+-    0x0500006f,
+-    0x0340006f,
++    0x0180006f,
++    0x00000013,
++    0x0580006f,
++    0x00000013,
++    0x0380006f,
++    0x00000013,
+     0x0ff0000f,
+     0x7b241073,
+     0xf1402473,
+@@ -16,17 +19,16 @@ uint32_t reset_vec[reset_vec_size] = {
+     0xf1402473,
+     0x40044403,
+     0x00247413,
+-    0xfc0418e3,
++    0xfc0414e3,
+     0xfddff06f,
+-    0x10002623,
++    0x10002c23,
+     0x7b202473,
+     0x00100073,
+-    0x10002223,
++    0x10002423,
+     0x7b202473,
+-    0xab1ff06f,
++    0xaa5ff06f,
+     0xf1402473,
+-    0x10802423,
++    0x10802823,
+     0x7b202473,
+-    0x7b200073,
+-    0x00000000
++    0x7b200073
+ };
+diff --git a/debug_rom/debug_rom_one_scratch.sv b/debug_rom/debug_rom_one_scratch.sv
+index af7e67c..1fe3850 100644
+--- a/debug_rom/debug_rom_one_scratch.sv
++++ b/debug_rom/debug_rom_one_scratch.sv
+@@ -21,23 +21,24 @@ module debug_rom_one_scratch (
+   output logic [63:0]  rdata_o
+ );
+ 
+-  localparam int unsigned RomSize = 13;
++  localparam int unsigned RomSize = 14;
+ 
+   logic [RomSize-1:0][63:0] mem;
+   assign mem = {
+-    64'h00000000_7b200073,
+-    64'h7b202473_10802423,
+-    64'hf1402473_ab1ff06f,
+-    64'h7b202473_10002223,
+-    64'h00100073_7b202473,
+-    64'h10002623_fddff06f,
+-    64'hfc0418e3_00247413,
+-    64'h40044403_f1402473,
+-    64'h02041263_00147413,
+-    64'h40044403_10802023,
+-    64'hf1402473_7b241073,
+-    64'h0ff0000f_0340006f,
+-    64'h0500006f_00c0006f
++    64'h7b200073_7b202473,
++    64'h10802823_f1402473,
++    64'haa5ff06f_7b202473,
++    64'h10002423_00100073,
++    64'h7b202473_10002c23,
++    64'hfddff06f_fc0414e3,
++    64'h00247413_40044403,
++    64'hf1402473_02041263,
++    64'h00147413_40044403,
++    64'h10802023_f1402473,
++    64'h7b241073_0ff0000f,
++    64'h00000013_0380006f,
++    64'h00000013_0580006f,
++    64'h00000013_0180006f
+   };
+ 
+   logic [$clog2(RomSize)-1:0] addr_q;
+diff --git a/src/dm_mem.sv b/src/dm_mem.sv
+index c1cc0e8..55ac8c6 100755
+--- a/src/dm_mem.sv
++++ b/src/dm_mem.sv
+@@ -78,9 +78,9 @@ module dm_mem #(
+   localparam logic [DbgAddressBits-1:0] FlagsEndAddr  = 'h7FF;
+ 
+   localparam logic [DbgAddressBits-1:0] HaltedAddr    = 'h100;
+-  localparam logic [DbgAddressBits-1:0] GoingAddr     = 'h104;
+-  localparam logic [DbgAddressBits-1:0] ResumingAddr  = 'h108;
+-  localparam logic [DbgAddressBits-1:0] ExceptionAddr = 'h10C;
++  localparam logic [DbgAddressBits-1:0] GoingAddr     = 'h108;
++  localparam logic [DbgAddressBits-1:0] ResumingAddr  = 'h110;
++  localparam logic [DbgAddressBits-1:0] ExceptionAddr = 'h118;
+ 
+   logic [dm::ProgBufSize/2-1:0][63:0]   progbuf;
+   logic [7:0][63:0]   abstract_cmd;
+diff --git a/src/dm_pkg.sv b/src/dm_pkg.sv
+index 9f3c312..cc2e1eb 100644
+--- a/src/dm_pkg.sv
++++ b/src/dm_pkg.sv
+@@ -26,8 +26,8 @@ package dm;
+ 
+   // address to which a hart should jump when it was requested to halt
+   localparam logic [63:0] HaltAddress = 64'h800;
+-  localparam logic [63:0] ResumeAddress = HaltAddress + 4;
+-  localparam logic [63:0] ExceptionAddress = HaltAddress + 8;
++  localparam logic [63:0] ResumeAddress = HaltAddress + 8;
++  localparam logic [63:0] ExceptionAddress = HaltAddress + 16;
+ 
+   // address where data0-15 is shadowed or if shadowed in a CSR
+   // address of the first CSR used for shadowing the data
+
+From 67604c8035fe66686c782d5c9d0de58f90a40620 Mon Sep 17 00:00:00 2001
+From: Christopher Reinwardt <creinwar@ethz.ch>
+Date: Wed, 2 Nov 2022 02:39:16 +0100
+Subject: [PATCH 2/2] Update documentation
+
+---
+ doc/debug-system.md | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/doc/debug-system.md b/doc/debug-system.md
+index 1beca7d..5fbfbe1 100644
+--- a/doc/debug-system.md
++++ b/doc/debug-system.md
+@@ -439,9 +439,9 @@ Address         | Description
+ --------------- | ------------------------------------------------------------------------------------------------------------------------------------------
+ 0x0 to 0x0ff    | _unused_
+ 0x100           | Halted. Write to this address to acknowledge that the core is halted.
+-0x104           | Going. Write to this address to acknowledge that the core is executing.
+-0x108           | Resuming. Write to this address to acknowledge that the core is resuming non-debug operation.
+-0x10c           | Exception. An exception was triggered while the core was in debug mode.
++0x108           | Going. Write to this address to acknowledge that the core is executing.
++0x110           | Resuming. Write to this address to acknowledge that the core is resuming non-debug operation.
++0x118           | Exception. An exception was triggered while the core was in debug mode.
+ 0x300           | WhereTo
+ 0x338 to 0x35f  | AbstractCmd
+ 0x360 to 0x37f  | Program Buffer (8 words)
+@@ -449,8 +449,8 @@ Address         | Description
+ 0x400 to 0x7ff  | Flags
+ 0x800 to 0x1000 | Debug ROM
+ 0x800           | HaltAddress. Entry point into the Debug Module. The core must jump to this address when it was requested to halt.
+-0x804           | ResumeAddress. Entry point into the Debug Module. Jumping to this address instructs the debug module to bring the core out of debug mode and back into normal operation mode.
+-0x808           | ExceptionAddress. Entry point into the Debug Module. The core must jump to this address when it receives an exception while being in debug mode.
++0x808           | ResumeAddress. Entry point into the Debug Module. Jumping to this address instructs the debug module to bring the core out of debug mode and back into normal operation mode.
++0x810           | ExceptionAddress. Entry point into the Debug Module. The core must jump to this address when it receives an exception while being in debug mode.
+ 
+ (Note: The debug memory addressing scheme is adopted from the Rocket Chip Generator.)
+ 

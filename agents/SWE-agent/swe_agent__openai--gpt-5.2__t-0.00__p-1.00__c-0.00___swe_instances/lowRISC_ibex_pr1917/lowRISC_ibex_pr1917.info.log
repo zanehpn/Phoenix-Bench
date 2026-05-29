@@ -1,0 +1,496 @@
+2026-01-19 20:44:03,974 - INFO - rex-deploy - Pulling image 'hwebench/lowrisc_ibex:pr1917'
+2026-01-19 20:44:12,039 - INFO - rex-deploy - Building image hwebench/lowrisc_ibex:pr1917 to install a standalone python to /root. This might take a while (but you only have to do it once). To skip this step, set `python_standalone_dir` to None.
+2026-01-19 20:45:08,471 - INFO - rex-deploy - Starting container hwebenchlowrisc_ibexpr1917-8754381f-4aa8-450c-9f99-1904c0954cf3 with image hwebench/lowrisc_ibex:pr1917 serving on port 40761
+2026-01-19 20:45:08,481 - INFO - rex-deploy - Starting runtime at 40761
+2026-01-19 20:45:09,251 - INFO - rex-deploy - Runtime started in 0.77s
+2026-01-19 20:45:10,035 - INFO - swea-env - Environment Initialized
+2026-01-19 20:45:15,531 - INFO - swea-agent - Setting up agent for instance lowRISC_ibex_pr1917
+2026-01-19 20:45:15,535 - INFO - swea-agent - Trajectory will be saved to /workspace/phoenix-bench/agents/SWE-agent/trajectories/anon/swe_agent__openai--gpt-5.2__t-0.00__p-1.00__c-0.00___swe_instances/lowRISC_ibex_pr1917/lowRISC_ibex_pr1917.traj
+2026-01-19 20:45:18,219 - INFO - swea-tools - Resetting tools
+2026-01-19 20:45:18,574 - INFO - swea-agent - SYSTEM (main)
+You are an expert agent that can interact with a computer to debug SystemVerilog/Verilog repositories. You are in an environment
+with Verilator, Make, Python3 and Spike RISC-V ISA Simulator.
+2026-01-19 20:45:18,719 - INFO - swea-agent - 🤖 MODEL INPUT
+<uploaded_files>
+/testbed
+</uploaded_files>
+I've uploaded a HDL code repository in the directory /testbed. Consider the following PR description:
+
+<pr_description>
+# [dv] Out of bounds access in dside access tracking logic
+
+This line: https://github.com/lowRISC/ibex/blob/056cb44ff75f797898709546ea1b0fd08d862e1a/rtl/ibex_top.sv#L1092
+
+Uses `i - 1` and it's possible to evaluate this condition when `i == 0` giving an out of bounds access. This logic needs refactoring to more explicitly split out the `i == 0` case from the others to ensure this does not occur.
+
+> estimate 1
+
+</pr_description>
+
+Implement the necessary changes to the repository so that the issue specified in the <pr_description> are resolved.
+Your task is to make the minimal changes to files in the /testbed directory to ensure the <pr_description> is fixed.
+Follow these steps to resolve the issue:
+1. As a first step, it might be a good idea to find and read code relevant to the <pr_description>.
+2. Edit the sourcecode of the repo to resolve the issue.
+3. Think about edgecases and make sure your fix handles them as well.
+
+You can use the tools Verilog debugging tools if needed.
+Your thinking should be thorough and so it's fine if it's very long.
+2026-01-19 20:45:18,726 - INFO - swea-agent - ========================= STEP 1 =========================
+2026-01-19 20:45:21,546 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && sed -n '1070,1110p' rtl/ibex_top.sv
+2026-01-19 20:45:21,806 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+  // X check for top-level inputs
+  `ASSERT_KNOWN(IbexTestEnX, test_en_i)
+  `ASSERT_KNOWN(IbexRamCfgX, ram_cfg_i)
+  `ASSERT_KNOWN(IbexHartIdX, hart_id_i)
+  `ASSERT_KNOWN(IbexBootAddrX, boot_addr_i)
+
+  `ASSERT_KNOWN(IbexInstrGntX, instr_gnt_i)
+  `ASSERT_KNOWN(IbexInstrRValidX, instr_rvalid_i)
+  `ASSERT_KNOWN_IF(IbexInstrRPayloadX,
+    {instr_rdata_i, instr_rdata_intg_i, instr_err_i}, instr_rvalid_i)
+
+  `ASSERT_KNOWN(IbexDataGntX, data_gnt_i)
+  `ASSERT_KNOWN(IbexDataRValidX, data_rvalid_i)
+  `ifdef INC_ASSERT
+    // Ibex can have a maximum of 2 accesses outstanding on the DSide. This is because it does not
+    // speculative data accesses so the only requests that can be in flight must relate to a single
+    // ongoing load or store instruction. Due to unaligned access support a single load or store can
+    // generate 2 accesses.
+    localparam int unsigned MaxOutstandingDSideAccesses = 2;
+
+    typedef struct packed {
+      logic valid;
+      logic is_read;
+    } pending_access_t;
+
+    pending_access_t pending_dside_accesses_q[MaxOutstandingDSideAccesses];
+    pending_access_t pending_dside_accesses_d[MaxOutstandingDSideAccesses];
+    pending_access_t pending_dside_accesses_shifted[MaxOutstandingDSideAccesses];
+
+    for (genvar i = 0; i < MaxOutstandingDSideAccesses; i++) begin : g_dside_tracker
+      always_ff @(posedge clk or negedge rst_ni) begin
+        if (!rst_ni) begin
+          pending_dside_accesses_q[i] <= '0;
+        end else begin
+          pending_dside_accesses_q[i] <= pending_dside_accesses_d[i];
+        end
+      end
+
+      always_comb begin
+        pending_dside_accesses_shifted[i] = pending_dside_accesses_q[i];
+
+
+2026-01-19 20:45:21,814 - INFO - swea-agent - ========================= STEP 2 =========================
+2026-01-19 20:45:23,326 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && sed -n '1110,1160p' rtl/ibex_top.sv
+2026-01-19 20:45:23,582 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+
+        if (data_rvalid_i) begin
+          if (i != MaxOutstandingDSideAccesses - 1) begin
+            pending_dside_accesses_shifted[i] = pending_dside_accesses_q[i + 1];
+          end else begin
+            pending_dside_accesses_shifted[i] = '0;
+          end
+        end
+      end
+
+      always_comb begin
+        pending_dside_accesses_d[i] = pending_dside_accesses_shifted[i];
+
+        if (data_req_o && data_gnt_i) begin
+          if (i == 0 && !pending_dside_accesses_shifted[i].valid) begin
+            pending_dside_accesses_d[i].valid = 1'b1;
+            pending_dside_accesses_d[i].is_read = ~data_we_o;
+          end else if (pending_dside_accesses_shifted[i - 1].valid &
+                       !pending_dside_accesses_shifted[i].valid) begin
+            pending_dside_accesses_d[i].valid = 1'b1;
+            pending_dside_accesses_d[i].is_read = ~data_we_o;
+          end
+        end
+      end
+    end
+
+    // We should never start a new data request if we've already got the maximum outstanding. We can
+    // start a new request in the same cycle an old one ends, in which case we'll see all pending
+    // accesses valid but one will be ending this cycle so the empty slot can be immediately used by
+    // the new request.
+    `ASSERT(MaxOutstandingDSideAccessesCorrect,
+        data_req_o |->
+        ~pending_dside_accesses_q[MaxOutstandingDSideAccesses-1].valid | data_rvalid_i)
+
+    // Should only see a request response if we're expecting one
+    `ASSERT(PendingAccessTrackingCorrect, data_rvalid_i |-> pending_dside_accesses_q[0])
+
+    if (SecureIbex) begin : g_secure_ibex_mem_assert
+      // For SecureIbex responses to both writes and reads must specify rdata and rdata_intg (for
+      // writes rdata is effectively ignored by rdata_intg still checked against rdata)
+      `ASSERT_KNOWN_IF(IbexDataRPayloadX, {data_rdata_i, data_rdata_intg_i},
+          data_rvalid_i)
+    end else begin : g_no_secure_ibex_mem_assert
+      // Without SecureIbex data_rdata_i and data_rdata_intg_i are only relevant to reads. Check
+      // neither are X on a response to a read.
+      `ASSERT_KNOWN_IF(IbexDataRPayloadX, {data_rdata_i, data_rdata_intg_i},
+          data_rvalid_i & pending_dside_accesses_q[0].is_read)
+    end
+
+    // data_err_i relevant to both reads and writes. Check it isn't X on any response.
+    `ASSERT_KNOWN_IF(IbexDataRErrPayloadX, data_err_i, data_rvalid_i)
+
+2026-01-19 20:45:23,591 - INFO - swea-agent - ========================= STEP 3 =========================
+2026-01-19 20:45:29,677 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+str_replace_editor str_replace /testbed/rtl/ibex_top.sv   --old_str '        if (data_req_o && data_gnt_i) begin
+          if (i == 0 && !pending_dside_accesses_shifted[i].valid) begin
+            pending_dside_accesses_d[i].valid = 1'"'"'b1;
+            pending_dside_accesses_d[i].is_read = ~data_we_o;
+          end else if (pending_dside_accesses_shifted[i - 1].valid &
+                       !pending_dside_accesses_shifted[i].valid) begin
+            pending_dside_accesses_d[i].valid = 1'"'"'b1;
+            pending_dside_accesses_d[i].is_read = ~data_we_o;
+          end
+        end' --new_str '        if (data_req_o && data_gnt_i) begin
+          // Insert new request into the first free slot. Split out i==0 case to avoid
+          // out-of-bounds access of pending_dside_accesses_shifted[i-1].
+          if (i == 0) begin
+            if (!pending_dside_accesses_shifted[i].valid) begin
+              pending_dside_accesses_d[i].valid = 1'"'"'b1;
+              pending_dside_accesses_d[i].is_read = ~data_we_o;
+            end
+          end else begin
+            if (pending_dside_accesses_shifted[i - 1].valid &&
+                !pending_dside_accesses_shifted[i].valid) begin
+              pending_dside_accesses_d[i].valid = 1'"'"'b1;
+              pending_dside_accesses_d[i].is_read = ~data_we_o;
+            end
+          end
+        end'
+2026-01-19 20:45:29,981 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+The file /testbed/rtl/ibex_top.sv has been edited. Here's the result of running `cat -n` on a snippet of /testbed/rtl/ibex_top.sv:
+  1118	      end
+  1119	
+  1120	      always_comb begin
+  1121	        pending_dside_accesses_d[i] = pending_dside_accesses_shifted[i];
+  1122	
+  1123	        if (data_req_o && data_gnt_i) begin
+  1124	          // Insert new request into the first free slot. Split out i==0 case to avoid
+  1125	          // out-of-bounds access of pending_dside_accesses_shifted[i-1].
+  1126	          if (i == 0) begin
+  1127	            if (!pending_dside_accesses_shifted[i].valid) begin
+  1128	              pending_dside_accesses_d[i].valid = 1'b1;
+  1129	              pending_dside_accesses_d[i].is_read = ~data_we_o;
+  1130	            end
+  1131	          end else begin
+  1132	            if (pending_dside_accesses_shifted[i - 1].valid &&
+  1133	                !pending_dside_accesses_shifted[i].valid) begin
+  1134	              pending_dside_accesses_d[i].valid = 1'b1;
+  1135	              pending_dside_accesses_d[i].is_read = ~data_we_o;
+  1136	            end
+  1137	          end
+  1138	        end
+  1139	      end
+  1140	    end
+  1141	
+Review the changes and make sure they are as expected. Edit the file again if necessary.
+
+2026-01-19 20:45:29,990 - INFO - swea-agent - ========================= STEP 4 =========================
+2026-01-19 20:45:33,376 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+cd /testbed && verilator -Wall -Wno-fatal -cc rtl/ibex_top.sv --top-module ibex_top >/dev/null
+2026-01-19 20:45:33,671 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+%Error: rtl/ibex_top.sv:10:10: Cannot find include file: prim_assert.sv
+   10 | `include "prim_assert.sv"
+      |          ^~~~~~~~~~~~~~~~
+%Error: rtl/ibex_top.sv:10:10: This may be because there's no search path specified with -I<dir>.
+   10 | `include "prim_assert.sv"
+      |          ^~~~~~~~~~~~~~~~
+        ... Looked in:
+             prim_assert.sv
+             prim_assert.sv.v
+             prim_assert.sv.sv
+             obj_dir/prim_assert.sv
+             obj_dir/prim_assert.sv.v
+             obj_dir/prim_assert.sv.sv
+%Error: rtl/ibex_top.sv:15:24: Package/class 'ibex_pkg' not found, and needs to be predeclared (IEEE 1800-2017 26.3)
+   15 | module ibex_top import ibex_pkg::*; #(
+      |                        ^~~~~~~~
+%Error: rtl/ibex_top.sv:15:24: Importing from missing package 'ibex_pkg'
+   15 | module ibex_top import ibex_pkg::*; #(
+      |                        ^~~~~~~~
+%Error: rtl/ibex_top.sv:22:26: syntax error, unexpected IDENTIFIER, expecting ')' or ','
+   22 |   parameter rv32m_e      RV32M            = RV32MFast,
+      |                          ^~~~~
+%Error: rtl/ibex_top.sv:26:3: syntax error, unexpected parameter, expecting IDENTIFIER or randomize
+   26 |   parameter bit          WritebackStage   = 1'b0,
+      |   ^~~~~~~~~
+%Error: rtl/ibex_top.sv:27:3: syntax error, unexpected parameter, expecting IDENTIFIER or randomize
+   27 |   parameter bit          ICache           = 1'b0,
+      |   ^~~~~~~~~
+%Error: rtl/ibex_top.sv:28:3: syntax error, unexpected parameter, expecting IDENTIFIER or randomize
+   28 |   parameter bit          ICacheECC        = 1'b0,
+      |   ^~~~~~~~~
+%Error: rtl/ibex_top.sv:29:3: syntax error, unexpected parameter, expecting IDENTIFIER or randomize
+   29 |   parameter bit          BranchPredictor  = 1'b0,
+      |   ^~~~~~~~~
+%Error: rtl/ibex_top.sv:30:3: syntax error, unexpected parameter, expecting IDENTIFIER or randomize
+   30 |   parameter bit          DbgTriggerEn     = 1'b0,
+      |   ^~~~~~~~~
+%Error: rtl/ibex_top.sv:31:3: syntax error, unexpected parameter, expecting IDENTIFIER or randomize
+   31 |   parameter int unsigned DbgHwBreakNum    = 1,
+      |   ^~~~~~~~~
+%Error: rtl/ibex_top.sv:32:3: syntax error, unexpected parameter, expecting IDENTIFIER or randomize
+   32 |   parameter bit          SecureIbex       = 1'b0,
+      |   ^~~~~~~~~
+%Error: rtl/ibex_top.sv:33:3: syntax error, unexpected parameter, expecting IDENTIFIER or randomize
+   33 |   parameter bit          ICacheScramble   = 1'b0,
+      |   ^~~~~~~~~
+%Error: rtl/ibex_top.sv:34:3: syntax error, unexpected parameter, expecting IDENTIFIER or randomize
+   34 |   parameter lfsr_seed_t  RndCnstLfsrSeed  = RndCnstLfsrSeedDefault,
+      |   ^~~~~~~~~
+%Error: rtl/ibex_top.sv:37:3: syntax error, unexpected parameter, expecting IDENTIFIER or randomize
+   37 |   parameter int unsigned DmExceptionAddr  = 32'h1A110808,
+      |   ^~~~~~~~~
+%Error: rtl/ibex_top.sv:39:3: syntax error, unexpected parameter, expecting IDENTIFIER or randomize
+   39 |   parameter logic [SCRAMBLE_KEY_W-1:0]   RndCnstIbexKey   = RndCnstIbexKeyDefault,
+      |   ^~~~~~~~~
+%Error: rtl/ibex_top.sv:40:3: syntax error, unexpected parameter, expecting IDENTIFIER or randomize
+   40 |   parameter logic [SCRAMBLE_NONCE_W-1:0] RndCnstIbexNonce = RndCnstIbexNonceDefault
+      |   ^~~~~~~~~
+%Error: rtl/ibex_top.sv:41:1: syntax error, unexpected ')', expecting ';'
+   41 | ) (
+      | ^
+%Error: rtl/ibex_top.sv:44:3: syntax error, unexpected input
+   44 |   input  logic                         rst_ni,
+      |   ^~~~~
+%Error: rtl/ibex_top.sv:46:3: syntax error, unexpected input
+   46 |   input  logic                         test_en_i,      
+      |   ^~~~~
+%Error: rtl/ibex_top.sv:47:3: syntax error, unexpected input
+   47 |   input  prim_ram_1p_pkg::ram_1p_cfg_t ram_cfg_i,
+      |   ^~~~~
+%Error: rtl/ibex_top.sv:50:3: syntax error, unexpected input
+   50 |   input  logic [31:0]                  boot_addr_i,
+      |   ^~~~~
+%Error: rtl/ibex_top.sv:53:3: syntax error, unexpected output
+   53 |   output logic                         instr_req_o,
+      |   ^~~~~~
+%Error: rtl/ibex_top.sv:54:3: syntax error, unexpected input
+   54 |   input  logic                         instr_gnt_i,
+      |   ^~~~~
+%Error: rtl/ibex_top.sv:55:3: syntax error, unexpected input
+   55 |   input  logic                         instr_rvalid_i,
+      |   ^~~~~
+%Error: rtl/ibex_top.sv:56:3: syntax error, unexpected output
+   56 |   output logic [31:0]                  instr_addr_o,
+      |   ^~~~~~
+%Error: rtl/ibex_top.sv:57:3: syntax error, unexpected input
+   57 |   input  logic [31:0]                  instr_rdata_i,
+      |   ^~~~~
+%Error: rtl/ibex_top.sv:58:3: syntax error, unexpected input
+   58 |   input  logic [6:0]                   instr_rdata_intg_i,
+      |   ^~~~~
+%Error: rtl/ibex_top.sv:59:3: syntax error, unexpected input
+   59 |   input  logic                         instr_err_i,
+      |   ^~~~~
+%Error: rtl/ibex_top.sv:62:3: syntax error, unexpected output
+   62 |   output logic                         data_req_o,
+      |   ^~~~~~
+%Error: rtl/ibex_top.sv:63:3: syntax error, unexpected input
+   63 |   input  logic                         data_gnt_i,
+      |   ^~~~~
+%Error: rtl/ibex_top.sv:64:3: syntax error, unexpected input
+   64 |   input  logic                         data_rvalid_i,
+      |   ^~~~~
+%Error: rtl/ibex_top.sv:65:3: syntax error, unexpected output
+   65 |   output logic                         data_we_o,
+      |   ^~~~~~
+%Error: rtl/ibex_top.sv:66:3: syntax error, unexpected output
+   66 |   output logic [3:0]                   data_be_o,
+      |   ^~~~~~
+%Error: rtl/ibex_top.sv:67:3: syntax error, unexpected output
+   67 |   output logic [31:0]                  data_addr_o,
+      |   ^~~~~~
+%Error: rtl/ibex_top.sv:68:3: syntax error, unexpected output
+   68 |   output logic [31:0]                  data_wdata_o,
+      |   ^~~~~~
+%Error: rtl/ibex_top.sv:69:3: syntax error, unexpected output
+   69 |   output logic [6:0]                   data_wdata_intg_o,
+      |   ^~~~~~
+%Error: rtl/ibex_top.sv:70:3: syntax error, unexpected input
+   70 |   input  logic [31:0]                  data_rdata_i,
+      |   ^~~~~
+%Error: rtl/ibex_top.sv:71:3: syntax error, unexpected input
+   71 |   input  logic [6:0]                   data_rdata_intg_i,
+      |   ^~~~~
+%Error: rtl/ibex_top.sv:72:3: syntax error, unexpected input
+   72 |   input  logic                         data_err_i,
+      |   ^~~~~
+%Error: rtl/ibex_top.sv:75:3: syntax error, unexpected input
+   75 |   input  logic                         irq_software_i,
+      |   ^~~~~
+%Error: rtl/ibex_top.sv:76:3: syntax error, unexpected input
+   76 |   input  logic                         irq_timer_i,
+      |   ^~~~~
+%Error: rtl/ibex_top.sv:77:3: syntax error, unexpected input
+   77 |   input  logic                         irq_external_i,
+      |   ^~~~~
+%Error: rtl/ibex_top.sv:78:3: syntax error, unexpected input
+   78 |   input  logic [14:0]                  irq_fast_i,
+      |   ^~~~~
+%Error: rtl/ibex_top.sv:79:3: syntax error, unexpected input
+   79 |   input  logic                         irq_nm_i,        
+      |   ^~~~~
+%Error: rtl/ibex_top.sv:82:3: syntax error, unexpected input
+   82 |   input  logic                         scramble_key_valid_i,
+      |   ^~~~~
+%Error: rtl/ibex_top.sv:83:3: syntax error, unexpected input
+   83 |   input  logic [SCRAMBLE_KEY_W-1:0]    scramble_key_i,
+      |   ^~~~~
+%Error: rtl/ibex_top.sv:84:3: syntax error, unexpected input
+   84 |   input  logic [SCRAMBLE_NONCE_W-1:0]  scramble_nonce_i,
+      |   ^~~~~
+%Error: rtl/ibex_top.sv:85:3: syntax error, unexpected output
+   85 |   output logic                         scramble_req_o,
+      |   ^~~~~~
+%Error: rtl/ibex_top.sv:88:3: syntax error, unexpected input
+   88 |   input  logic                         debug_req_i,
+      |   ^~~~~
+%Error: Exiting due to too many errors encountered; --error-limit=50
+
+2026-01-19 20:45:33,688 - INFO - swea-agent - ========================= STEP 5 =========================
+2026-01-19 20:45:36,977 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+submit
+2026-01-19 20:45:37,274 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+Thank you for your work on this issue. Please review your changes and run the submit command again to confirm.
+
+Here is a list of all of your changes:
+
+<diff>
+diff --git a/rtl/ibex_top.sv b/rtl/ibex_top.sv
+index 84b0f9cd..87cee52f 100644
+--- a/rtl/ibex_top.sv
++++ b/rtl/ibex_top.sv
+@@ -1121,13 +1121,19 @@ module ibex_top import ibex_pkg::*; #(
+         pending_dside_accesses_d[i] = pending_dside_accesses_shifted[i];
+ 
+         if (data_req_o && data_gnt_i) begin
+-          if (i == 0 && !pending_dside_accesses_shifted[i].valid) begin
+-            pending_dside_accesses_d[i].valid = 1'b1;
+-            pending_dside_accesses_d[i].is_read = ~data_we_o;
+-          end else if (pending_dside_accesses_shifted[i - 1].valid &
+-                       !pending_dside_accesses_shifted[i].valid) begin
+-            pending_dside_accesses_d[i].valid = 1'b1;
+-            pending_dside_accesses_d[i].is_read = ~data_we_o;
++          // Insert new request into the first free slot. Split out i==0 case to avoid
++          // out-of-bounds access of pending_dside_accesses_shifted[i-1].
++          if (i == 0) begin
++            if (!pending_dside_accesses_shifted[i].valid) begin
++              pending_dside_accesses_d[i].valid = 1'b1;
++              pending_dside_accesses_d[i].is_read = ~data_we_o;
++            end
++          end else begin
++            if (pending_dside_accesses_shifted[i - 1].valid &&
++                !pending_dside_accesses_shifted[i].valid) begin
++              pending_dside_accesses_d[i].valid = 1'b1;
++              pending_dside_accesses_d[i].is_read = ~data_we_o;
++            end
+           end
+         end
+       end
+
+</diff>
+
+
+2026-01-19 20:45:37,283 - INFO - swea-agent - ========================= STEP 6 =========================
+2026-01-19 20:45:40,463 - INFO - swea-agent - 💭 THOUGHT
+
+
+🎬 ACTION
+submit
+2026-01-19 20:45:40,770 - INFO - swea-agent - Found submission: diff --git a/rtl/ibex_top.sv b/rtl/ibex_top.sv
+index 84b0f9cd..87cee52f 100644
+--- a/rtl/ibex_top.sv
++++ b/rtl/ibex_top.sv
+@@ -1121,13 +1121,19 @@ module ibex_top import ibex_pkg::*; #(
+         pending_dside_accesses_d[i] = pending_dside_accesses_shifted[i];
+ 
+         if (data_req_o && data_gnt_i) begin
+-          if (i == 0 && !pending_dside_accesses_shifted[i].valid) begin
+-            pending_dside_accesses_d[i].valid = 1'b1;
+-            pending_dside_accesses_d[i].is_read = ~data_we_o;
+-          end else if (pending_dside_accesses_shifted[i - 1].valid &
+-                       !pending_dside_accesses_shifted[i].valid) begin
+-            pending_dside_accesses_d[i].valid = 1'b1;
+-            pending_dside_accesses_d[i].is_read = ~data_we_o;
++          // Insert new request into the first free slot. Split out i==0 case to avoid
++          // out-of-bounds access of pending_dside_accesses_shifted[i-1].
++          if (i == 0) begin
++            if (!pending_dside_accesses_shifted[i].valid) begin
++              pending_dside_accesses_d[i].valid = 1'b1;
++              pending_dside_accesses_d[i].is_read = ~data_we_o;
++            end
++          end else begin
++            if (pending_dside_accesses_shifted[i - 1].valid &&
++                !pending_dside_accesses_shifted[i].valid) begin
++              pending_dside_accesses_d[i].valid = 1'b1;
++              pending_dside_accesses_d[i].is_read = ~data_we_o;
++            end
+           end
+         end
+       end
+
+2026-01-19 20:45:40,781 - INFO - swea-agent - 🤖 MODEL INPUT
+OBSERVATION:
+diff --git a/rtl/ibex_top.sv b/rtl/ibex_top.sv
+index 84b0f9cd..87cee52f 100644
+--- a/rtl/ibex_top.sv
++++ b/rtl/ibex_top.sv
+@@ -1121,13 +1121,19 @@ module ibex_top import ibex_pkg::*; #(
+         pending_dside_accesses_d[i] = pending_dside_accesses_shifted[i];
+ 
+         if (data_req_o && data_gnt_i) begin
+-          if (i == 0 && !pending_dside_accesses_shifted[i].valid) begin
+-            pending_dside_accesses_d[i].valid = 1'b1;
+-            pending_dside_accesses_d[i].is_read = ~data_we_o;
+-          end else if (pending_dside_accesses_shifted[i - 1].valid &
+-                       !pending_dside_accesses_shifted[i].valid) begin
+-            pending_dside_accesses_d[i].valid = 1'b1;
+-            pending_dside_accesses_d[i].is_read = ~data_we_o;
++          // Insert new request into the first free slot. Split out i==0 case to avoid
++          // out-of-bounds access of pending_dside_accesses_shifted[i-1].
++          if (i == 0) begin
++            if (!pending_dside_accesses_shifted[i].valid) begin
++              pending_dside_accesses_d[i].valid = 1'b1;
++              pending_dside_accesses_d[i].is_read = ~data_we_o;
++            end
++          end else begin
++            if (pending_dside_accesses_shifted[i - 1].valid &&
++                !pending_dside_accesses_shifted[i].valid) begin
++              pending_dside_accesses_d[i].valid = 1'b1;
++              pending_dside_accesses_d[i].is_read = ~data_we_o;
++            end
+           end
+         end
+       end
+
+2026-01-19 20:45:40,797 - INFO - swea-agent - Trajectory saved to /workspace/phoenix-bench/agents/SWE-agent/trajectories/anon/swe_agent__openai--gpt-5.2__t-0.00__p-1.00__c-0.00___swe_instances/lowRISC_ibex_pr1917/lowRISC_ibex_pr1917.traj
+2026-01-19 20:45:40,802 - INFO - swea-env - Beginning environment shutdown...

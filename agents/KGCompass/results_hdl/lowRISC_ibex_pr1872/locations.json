@@ -1,0 +1,22 @@
+[
+  {
+    "file_path": "rtl/ibex_id_stage.sv",
+    "reason": "The coverpoint condition directly references `instr_id_matches_trigger_q` and `id_stage_i.controller_i.fcov_pipe_flush`; the ID stage is the most likely place where the trigger-match/flush timing or pulse generation is implemented incorrectly."
+  },
+  {
+    "file_path": "rtl/ibex_controller.sv",
+    "reason": "The coverpoint depends on `fcov_pipe_flush`, which is a controller signal. If the flush pulse is missing, delayed, or not asserted on trigger exceptions, the bug is likely in controller logic."
+  },
+  {
+    "file_path": "rtl/ibex_ex_block.sv",
+    "reason": "Trigger exceptions are often detected/qualified in the execution block or nearby pipeline logic, which can affect whether the ID-stage match and subsequent flush are observable for coverage."
+  },
+  {
+    "file_path": "rtl/ibex_core.sv",
+    "reason": "This top-level core integration file wires the ID stage, controller, and trigger-related signals together; a connectivity or signal-timing issue here could prevent the coverpoint expression from ever becoming true."
+  },
+  {
+    "file_path": "rtl/ibex_decoder.sv",
+    "reason": "If the instruction under test is not being classified or tracked in a way that sets up `instr_id_matches_trigger_q`, the root cause could be in decode logic that feeds the ID-stage trigger-match path."
+  }
+]

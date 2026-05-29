@@ -1,0 +1,31 @@
+diff --git a/rtl/ibex_if_stage.sv b/rtl/ibex_if_stage.sv
+index 392980d8..5b378e70 100644
+--- a/rtl/ibex_if_stage.sv
++++ b/rtl/ibex_if_stage.sv
+@@ -383,17 +383,21 @@ module ibex_if_stage import ibex_pkg::*; #(
+   assign if_busy_o   = prefetch_busy;
+ 
+   // PMP errors
+-  // An error can come from the instruction address, or the next instruction address for unaligned,
+-  // uncompressed instructions.
++  // For an instruction fetch, Ibex can need two 16-bit-aligned accesses:
++  //   - the access at the current fetch address
++  //   - for an uncompressed instruction that starts at PC+2 (i.e. PC[2]==1), the access at PC+2
++  // A PMP failure on the second half must still raise an instruction access fault.
++  // Also propagate whether the +2 half faulted so mtval can report the correct address.
+   assign if_instr_pmp_err = pmp_err_if_i |
+                             (if_instr_addr[2] & ~instr_is_compressed & pmp_err_if_plus2_i);
+ 
+   // Combine bus errors and pmp errors
+   assign if_instr_err = if_instr_bus_err | if_instr_pmp_err;
+ 
+-  // Capture the second half of the address for errors on the second part of an instruction
+-  assign if_instr_err_plus2 = ((if_instr_addr[2] & ~instr_is_compressed & pmp_err_if_plus2_i) |
+-                               fetch_err_plus2) & ~pmp_err_if_i;
++  // Capture the second half address error for mtval. This must assert for either a PMP error
++  // or a bus error on the +2 half, independent of whether the first half had a PMP error.
++  assign if_instr_err_plus2 = (if_instr_addr[2] & ~instr_is_compressed) &
++                              (pmp_err_if_plus2_i | fetch_err_plus2);
+ 
+   // compressed instruction decoding, or more precisely compressed instruction
+   // expander

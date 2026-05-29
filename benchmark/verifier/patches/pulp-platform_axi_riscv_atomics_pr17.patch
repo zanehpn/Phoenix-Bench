@@ -1,0 +1,243 @@
+From d5674b51d5da8821192f655db07fc3b72dbe3c5b Mon Sep 17 00:00:00 2001
+From: Samuel Riedel <sriedel@iis.ee.ethz.ch>
+Date: Mon, 14 Mar 2022 14:38:58 +0100
+Subject: [PATCH 1/3] axi_riscv_amos: Use ATOP_R_RESP to determine the need for
+ an R response
+
+---
+ CHANGELOG.md          | 10 ++++++++++
+ src/axi_riscv_amos.sv | 13 +++++++++++--
+ test/tb_axi_pkg.sv    |  3 +--
+ 3 files changed, 22 insertions(+), 4 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 0d1ae14..1f8e393 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/), and this
+ [Semantic Versioning](http://semver.org).
+ 
+ 
++## Unreleased
++
++### Added
++
++### Changed
++
++### Fixed
++- `axi_riscv_amos`: Use `axi_pkg::ATOP_R_RESP` to determine the need for an R response.
++
++
+ ## 0.3.0 - 2022-03-11
+ 
+ ### Added
+diff --git a/src/axi_riscv_amos.sv b/src/axi_riscv_amos.sv
+index d55032e..e3fd55f 100644
+--- a/src/axi_riscv_amos.sv
++++ b/src/axi_riscv_amos.sv
+@@ -192,6 +192,7 @@ module axi_riscv_amos #(
+     // States
+     logic                               adapter_ready;
+     logic                               transaction_collision;
++    logic                               atop_r_resp_d,  atop_r_resp_q;
+     logic                               force_wf_d,     force_wf_q;
+     logic                               start_wf_d,     start_wf_q;
+     logic                               b_resp_valid;
+@@ -266,8 +267,10 @@ module axi_riscv_amos #(
+ 
+     always_comb begin : calc_atop_valid
+         atop_valid_d = atop_valid_q;
++        atop_r_resp_d = atop_r_resp_q;
+         if (adapter_ready) begin
+             atop_valid_d = NONE;
++            atop_r_resp_d = 1'b0;
+             if (slv_aw_valid_i && slv_aw_atop_i) begin
+                 // Default is invalid request
+                 atop_valid_d = INVALID;
+@@ -289,6 +292,10 @@ module axi_riscv_amos #(
+                 if (slv_aw_size_i > $clog2(RISCV_WORD_WIDTH/8)) begin
+                     atop_valid_d = INVALID;
+                 end
++                // Do we have to issue a r_resp?
++                if (slv_aw_atop_i[axi_pkg::ATOP_R_RESP]) begin
++                    atop_r_resp_d = 1'b1;
++                end
+             end
+         end
+     end
+@@ -296,8 +303,10 @@ module axi_riscv_amos #(
+     always_ff @(posedge clk_i or negedge rst_ni) begin : proc_atop_valid
+         if(~rst_ni) begin
+             atop_valid_q <= NONE;
++            atop_r_resp_q <= 1'b0;
+         end else begin
+             atop_valid_q <= atop_valid_d;
++            atop_r_resp_q <= atop_r_resp_d;
+         end
+     end
+ 
+@@ -878,7 +887,7 @@ module axi_riscv_amos #(
+                     if (atop_valid_d == LOAD || atop_valid_d == STORE) begin
+                         // Wait for R response to read data
+                         r_state_d = WAIT_DATA_R;
+-                    end else if (atop_valid_d == INVALID) begin
++                    end else if (atop_valid_d == INVALID && atop_r_resp_d) begin
+                         // Send R response once channel is free
+                         if (r_free) begin
+                             // Acquire the R channel
+@@ -939,7 +948,7 @@ module axi_riscv_amos #(
+                     slv_r_last_o  = 1'b1;
+                     slv_r_resp_o  = r_resp_q;
+                     slv_r_user_o  = r_user_q;
+-                    if (atop_valid_q == INVALID) begin
++                    if (atop_valid_q == INVALID && atop_r_resp_q) begin
+                         slv_r_data_o = '0;
+                         slv_r_resp_o = axi_pkg::RESP_SLVERR;
+                         slv_r_user_o = '0;
+diff --git a/test/tb_axi_pkg.sv b/test/tb_axi_pkg.sv
+index 3ee23a5..7b17cb3 100644
+--- a/test/tb_axi_pkg.sv
++++ b/test/tb_axi_pkg.sv
+@@ -117,8 +117,7 @@ package tb_axi_pkg;
+                 end
+                 // R response if atop
+                 begin
+-                    if ((atop != 0) && (atop[5:3] != {axi_pkg::ATOP_ATOMICSTORE, axi_pkg::ATOP_LITTLE_END}) &&
+-                        (atop != 6'b000111)) begin // Atomic operations with read response
++                    if (atop[axi_pkg::ATOP_R_RESP]) begin // Atomic operations with read response
+                         rand_delay(0,RAND_DELAY);
+                         recv_r(r_beat);
+                         result = r_beat.r_data;
+
+From 2b0ee8ef79b73f156de4698d84a657fe8b1cd7b7 Mon Sep 17 00:00:00 2001
+From: Samuel Riedel <sriedel@iis.ee.ethz.ch>
+Date: Wed, 16 Mar 2022 17:13:21 +0100
+Subject: [PATCH 2/3] axi_riscv_amos: Only treat requests as ATOPs if the two
+ MSBs are nonzero
+
+The AXI specification does not make it fully clear how to handle
+undefined atop encodings. To be consistent with the AXI infrastructure
+at ETH, we consider a transaction to be an ATOP iff
+atop[5:4] != axi_pkg::ATOP_NONE
+---
+ CHANGELOG.md          |  1 +
+ src/axi_riscv_amos.sv |  6 +++---
+ test/golden_memory.sv | 32 ++++++++++++++++----------------
+ 3 files changed, 20 insertions(+), 19 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 1f8e393..999adc5 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/), and this
+ 
+ ### Fixed
+ - `axi_riscv_amos`: Use `axi_pkg::ATOP_R_RESP` to determine the need for an R response.
++- `axi_riscv_amos`: Only treat requests as ATOPs if the two MSBs are nonzero.
+ 
+ 
+ ## 0.3.0 - 2022-03-11
+diff --git a/src/axi_riscv_amos.sv b/src/axi_riscv_amos.sv
+index e3fd55f..9657668 100644
+--- a/src/axi_riscv_amos.sv
++++ b/src/axi_riscv_amos.sv
+@@ -271,7 +271,7 @@ module axi_riscv_amos #(
+         if (adapter_ready) begin
+             atop_valid_d = NONE;
+             atop_r_resp_d = 1'b0;
+-            if (slv_aw_valid_i && slv_aw_atop_i) begin
++            if (slv_aw_valid_i && (slv_aw_atop_i[5:4] != axi_pkg::ATOP_NONE)) begin
+                 // Default is invalid request
+                 atop_valid_d = INVALID;
+                 // Valid load operation
+@@ -346,7 +346,7 @@ module axi_riscv_amos #(
+         aw_state_d      = aw_state_q;
+ 
+         // Default control: Block AW channel if...
+-        if (slv_aw_valid_i && slv_aw_atop_i) begin
++        if (slv_aw_valid_i && (slv_aw_atop_i[5:4] != axi_pkg::ATOP_NONE)) begin
+             // Block if atomic request
+             mst_aw_valid_o = 1'b0;
+             slv_aw_ready_o = 1'b0;
+@@ -377,7 +377,7 @@ module axi_riscv_amos #(
+ 
+             FEEDTHROUGH_AW: begin
+                 // Feedthrough slave to master until atomic operation is detected
+-                if (slv_aw_valid_i && slv_aw_atop_i && adapter_ready) begin
++                if (slv_aw_valid_i && (slv_aw_atop_i[5:4] != axi_pkg::ATOP_NONE) && adapter_ready) begin
+                     // Acknowledge atomic transaction
+                     slv_aw_ready_o = 1'b1;
+                     // Remember request
+diff --git a/test/golden_memory.sv b/test/golden_memory.sv
+index f50a07b..27e0240 100644
+--- a/test/golden_memory.sv
++++ b/test/golden_memory.sv
+@@ -209,7 +209,22 @@ package golden_model_pkg;
+ 
+             b_resp = axi_pkg::RESP_OKAY;
+ 
+-            if (atop == 0) begin
++            if (atop == 6'b000111) begin
++                // LR/SC pair
++                // Wait for LR
++                read(addr, r_data, size, m_id, master);
++
++                // Check reservation
++                wait_write(addr, size, id, trans_id);
++                if (trans_id != id) begin
++                    // SC failed
++                    b_resp = axi_pkg::RESP_OKAY;
++                end else begin
++                    // Success
++                    set_memory(address, w_data, size);
++                    b_resp = axi_pkg::RESP_EXOKAY;
++                end
++            end else if (atop[5:4] == axi_pkg::ATOP_NONE) begin
+                 // Wait for the write
+                 wait_b(id);
+                 set_memory(address, w_data, size);
+@@ -262,21 +277,6 @@ package golden_model_pkg;
+ 
+                 set_memory(address, w_data, size);
+ 
+-            end else if (atop == 6'b000111) begin
+-                // LR/SC pair
+-                // Wait for LR
+-                read(addr, r_data, size, m_id, master);
+-
+-                // Check reservation
+-                wait_write(addr, size, id, trans_id);
+-                if (trans_id != id) begin
+-                    // SC failed
+-                    b_resp = axi_pkg::RESP_OKAY;
+-                end else begin
+-                    // Success
+-                    set_memory(address, w_data, size);
+-                    b_resp = axi_pkg::RESP_EXOKAY;
+-                end
+             end else begin
+                 b_resp = axi_pkg::RESP_SLVERR;
+                 r_data = '0;
+
+From aa19ffe5eecba9af8d2156d73c501fdd22dbc794 Mon Sep 17 00:00:00 2001
+From: Samuel Riedel <sriedel@iis.ee.ethz.ch>
+Date: Fri, 1 Apr 2022 12:30:21 +0200
+Subject: [PATCH 3/3] Upgrade `axi` to v0.35.1
+
+---
+ Bender.yml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Bender.yml b/Bender.yml
+index a1c06c3..057ac51 100644
+--- a/Bender.yml
++++ b/Bender.yml
+@@ -3,7 +3,7 @@ package:
+   authors: ["Andreas Kurth <akurth@iis.ee.ethz.ch>", "Samuel Riedel <sriedel@student.ethz.ch>"]
+ 
+ dependencies:
+-  axi: { git: "https://github.com/pulp-platform/axi.git", version: 0.35.0 }
++  axi: { git: "https://github.com/pulp-platform/axi.git", version: 0.35.1 }
+   common_cells: { git: "https://github.com/pulp-platform/common_cells.git", version: 1.11.0 }
+   common_verification: { git: "https://github.com/pulp-platform/common_verification.git", version: 0.2.1 }
+ 

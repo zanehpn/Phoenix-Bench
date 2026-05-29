@@ -1,0 +1,236 @@
+From 10e5b3180a316c8831f60a07419d4193d05e8ff6 Mon Sep 17 00:00:00 2001
+From: Caleb Whitehead <cwhitehead@microsoft.com>
+Date: Mon, 14 Jul 2025 18:12:38 -0700
+Subject: [PATCH 1/7] Drive 0 wdata for read commands
+
+---
+ src/axi2tlul/rtl/sub2tlul.sv | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/axi2tlul/rtl/sub2tlul.sv b/src/axi2tlul/rtl/sub2tlul.sv
+index 9a9899aa4..8358864a9 100644
+--- a/src/axi2tlul/rtl/sub2tlul.sv
++++ b/src/axi2tlul/rtl/sub2tlul.sv
+@@ -120,7 +120,7 @@ module sub2tlul
+     assign tl_o.a_opcode    = opcode;
+     assign tl_o.a_source    = id;
+     assign tl_o.a_mask      = mask_local;
+-    assign tl_o.a_data      = wdata;
++    assign tl_o.a_data      = write ? wdata : 'h0;
+     assign tl_o.a_size      = size[top_pkg::TL_SZW-1:0];
+ 
+     // TL-UL TO AXI SUB RESPONSE
+@@ -145,7 +145,7 @@ module sub2tlul
+         .addr_i         (addr),
+         .opcode_i       (opcode),
+         .mask_i         (mask_local),
+-        .data_i         (wdata),
++        .data_i         (tl_o.a_data),
+         .cmd_intg       (cmd_intg),
+         .data_intg      (data_intg) 
+     );
+
+From bb05426d942876beff48c3b41b66a9256abd54a9 Mon Sep 17 00:00:00 2001
+From: Caleb Whitehead <cwhitehead@microsoft.com>
+Date: Tue, 15 Jul 2025 11:04:54 -0700
+Subject: [PATCH 2/7] Match the conditional assignment convention elsewhere in
+ file
+
+---
+ src/axi2tlul/rtl/sub2tlul.sv | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/axi2tlul/rtl/sub2tlul.sv b/src/axi2tlul/rtl/sub2tlul.sv
+index 8358864a9..66a242efb 100644
+--- a/src/axi2tlul/rtl/sub2tlul.sv
++++ b/src/axi2tlul/rtl/sub2tlul.sv
+@@ -120,7 +120,7 @@ module sub2tlul
+     assign tl_o.a_opcode    = opcode;
+     assign tl_o.a_source    = id;
+     assign tl_o.a_mask      = mask_local;
+-    assign tl_o.a_data      = write ? wdata : 'h0;
++    assign tl_o.a_data      = !write ? TL_DW'(0) : wdata;
+     assign tl_o.a_size      = size[top_pkg::TL_SZW-1:0];
+ 
+     // TL-UL TO AXI SUB RESPONSE
+
+From c047d12c444db6130c28cbe21d2c299ec8f0af1d Mon Sep 17 00:00:00 2001
+From: Caleb Whitehead <cwhitehead@microsoft.com>
+Date: Tue, 15 Jul 2025 11:05:30 -0700
+Subject: [PATCH 3/7] Fix a force statement on sub2tlul wdata signal so it's
+ not always driven
+
+---
+ src/integration/testbench/fc_lcc_tb_services.sv | 13 +++++++------
+ 1 file changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/src/integration/testbench/fc_lcc_tb_services.sv b/src/integration/testbench/fc_lcc_tb_services.sv
+index 2fb90c847..876d13ea9 100644
+--- a/src/integration/testbench/fc_lcc_tb_services.sv
++++ b/src/integration/testbench/fc_lcc_tb_services.sv
+@@ -26,6 +26,7 @@ module fc_lcc_tb_services (
+   // Include the command list definitions (e.g., CMD_FORCE_AWUSER_0, CMD_FORCE_AWUSER_1, etc.)
+   `include "caliptra_ss_tb_cmd_list.svh"
+   `include "caliptra_ss_includes.svh"
++  `include "soc_address_map_defines.svh"
+ 
+   import otp_ctrl_reg_pkg::*;
+ 
+@@ -166,18 +167,18 @@ module fc_lcc_tb_services (
+ 
+   // Toggle a bit when observing a fuse_ctrl DAI write.
+   always_comb begin
+-    if (ecc_fault_en == 1'b1 && `FC_PATH.u_core_axi2tlul.i_sub2tlul.write == 1'b1 && `FC_PATH.u_core_axi2tlul.i_sub2tlul.addr == 32'h7000_0068) begin
+-      force `FC_PATH.u_core_axi2tlul.i_sub2tlul.tl_o.a_data[0] = '0;
++    if (ecc_fault_en == 1'b1 && `FC_PATH.u_core_axi2tlul.i_sub2tlul.write == 1'b1 && `FC_PATH.u_core_axi2tlul.i_sub2tlul.addr == `SOC_OTP_CTRL_DAI_WDATA_RF_START) begin
++      force `FC_PATH.u_core_axi2tlul.i_sub2tlul.tl_o.a_data[0] = `FC_PATH.u_core_axi2tlul.i_sub2tlul.wdata ^ 1;
+     end else begin
+-      force `FC_PATH.u_core_axi2tlul.i_sub2tlul.tl_o.a_data = `FC_PATH.u_core_axi2tlul.i_sub2tlul.wdata;
++      release `FC_PATH.u_core_axi2tlul.i_sub2tlul.tl_o.a_data;
+     end
+   end
+ 
+   always_comb begin
+-  if (lcc_bus_error_en == 1'b1 && `LCC_PATH.u_lc_axi2tlul.i_sub2tlul.write == 1'b1 && `LCC_PATH.u_lc_axi2tlul.i_sub2tlul.addr == 32'h7000_0400) begin
+-      force `LCC_PATH.u_lc_axi2tlul.i_sub2tlul.tl_o.a_data[0] = '0;
++  if (lcc_bus_error_en == 1'b1 && `LCC_PATH.u_lc_axi2tlul.i_sub2tlul.write == 1'b1 && `LCC_PATH.u_lc_axi2tlul.i_sub2tlul.addr == `SOC_LC_CTRL_ALERT_TEST) begin
++      force `LCC_PATH.u_lc_axi2tlul.i_sub2tlul.tl_o.a_data[0] = `LCC_PATH.u_lc_axi2tlul.i_sub2tlul.wdata ^ 1;
+     end else begin
+-      force `LCC_PATH.u_lc_axi2tlul.i_sub2tlul.tl_o.a_data = `LCC_PATH.u_lc_axi2tlul.i_sub2tlul.wdata;
++      release `LCC_PATH.u_lc_axi2tlul.i_sub2tlul.tl_o.a_data;
+     end
+   end
+ 
+
+From 57af68c9de065788a857910854ffe896b79ef38d Mon Sep 17 00:00:00 2001
+From: Caleb Whitehead <cwhitehead@microsoft.com>
+Date: Tue, 15 Jul 2025 11:11:05 -0700
+Subject: [PATCH 4/7] Use more precise reg addr
+
+---
+ src/integration/testbench/fc_lcc_tb_services.sv | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/integration/testbench/fc_lcc_tb_services.sv b/src/integration/testbench/fc_lcc_tb_services.sv
+index 876d13ea9..f77e1bf6e 100644
+--- a/src/integration/testbench/fc_lcc_tb_services.sv
++++ b/src/integration/testbench/fc_lcc_tb_services.sv
+@@ -167,7 +167,7 @@ module fc_lcc_tb_services (
+ 
+   // Toggle a bit when observing a fuse_ctrl DAI write.
+   always_comb begin
+-    if (ecc_fault_en == 1'b1 && `FC_PATH.u_core_axi2tlul.i_sub2tlul.write == 1'b1 && `FC_PATH.u_core_axi2tlul.i_sub2tlul.addr == `SOC_OTP_CTRL_DAI_WDATA_RF_START) begin
++    if (ecc_fault_en == 1'b1 && `FC_PATH.u_core_axi2tlul.i_sub2tlul.write == 1'b1 && `FC_PATH.u_core_axi2tlul.i_sub2tlul.addr == `SOC_OTP_CTRL_DAI_WDATA_RF_DIRECT_ACCESS_WDATA_0) begin
+       force `FC_PATH.u_core_axi2tlul.i_sub2tlul.tl_o.a_data[0] = `FC_PATH.u_core_axi2tlul.i_sub2tlul.wdata ^ 1;
+     end else begin
+       release `FC_PATH.u_core_axi2tlul.i_sub2tlul.tl_o.a_data;
+
+From 272d3f9f01d6dc0b192859fa2a45f9ccf8e45107 Mon Sep 17 00:00:00 2001
+From: Caleb Whitehead <cwhitehead@microsoft.com>
+Date: Tue, 15 Jul 2025 11:25:22 -0700
+Subject: [PATCH 5/7] Actually fail the test when an error is observed
+
+---
+ .../caliptra_ss_fuse_ctrl_bus_ecc_error.c                   | 6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/src/integration/test_suites/caliptra_ss_fuse_ctrl_bus_ecc_error/caliptra_ss_fuse_ctrl_bus_ecc_error.c b/src/integration/test_suites/caliptra_ss_fuse_ctrl_bus_ecc_error/caliptra_ss_fuse_ctrl_bus_ecc_error.c
+index 4068eb4ab..5056e1688 100644
+--- a/src/integration/test_suites/caliptra_ss_fuse_ctrl_bus_ecc_error/caliptra_ss_fuse_ctrl_bus_ecc_error.c
++++ b/src/integration/test_suites/caliptra_ss_fuse_ctrl_bus_ecc_error/caliptra_ss_fuse_ctrl_bus_ecc_error.c
+@@ -57,12 +57,10 @@ void main (void) {
+ 
+     uint32_t status = lsu_read_32(SOC_OTP_CTRL_STATUS);
+     if (!((status >> OTP_CTRL_STATUS_BUS_INTEG_ERROR_LOW) & 0x1)) {
+-        VPRINTF(LOW, "ERROR: bus integrity error is not set %08X\n", status);
++        handle_error("ERROR: bus integrity error is not set %08X\n", status);
+     }
+ 
+-    for (uint8_t ii = 0; ii < 160; ii++) {
+-        __asm__ volatile ("nop"); // Sleep loop as "nop"
+-    }
++    mcu_sleep(160);
+ 
+     SEND_STDOUT_CTRL(0xff);
+ }
+
+From e570e2f74b18a567c78eccb8299fa4ba6241eaaa Mon Sep 17 00:00:00 2001
+From: Caleb Whitehead <cwhitehead@microsoft.com>
+Date: Tue, 15 Jul 2025 11:37:19 -0700
+Subject: [PATCH 6/7] Use a local a_data signal to allow TB to inject ECC
+ errors at TL a_data
+
+---
+ src/axi2tlul/rtl/sub2tlul.sv | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/src/axi2tlul/rtl/sub2tlul.sv b/src/axi2tlul/rtl/sub2tlul.sv
+index 66a242efb..be769e940 100644
+--- a/src/axi2tlul/rtl/sub2tlul.sv
++++ b/src/axi2tlul/rtl/sub2tlul.sv
+@@ -73,6 +73,7 @@ module sub2tlul
+     logic       pending_txn;
+     tl_a_op_e   opcode;
+     logic [3:0] mask_local;
++    logic [TL_DW-1:0] a_data_local;
+ 
+     typedef enum logic [1:0] { 
+         no_txn = 2'b00, 
+@@ -113,14 +114,15 @@ module sub2tlul
+     end
+ 
+     assign opcode = !write ? Get : ((wstrb == '1) ? PutFullData : PutPartialData);
+-    assign mask_local = !write ? user[21:18] : wstrb;
++    assign mask_local   = !write ? user[21:18] : wstrb;
++    assign a_data_local = !write ? TL_DW'(0)   : wdata;
+ 
+     assign tl_o.a_address   = addr;
+     assign tl_o.a_valid     = dv &  ~pending_txn;
+     assign tl_o.a_opcode    = opcode;
+     assign tl_o.a_source    = id;
+     assign tl_o.a_mask      = mask_local;
+-    assign tl_o.a_data      = !write ? TL_DW'(0) : wdata;
++    assign tl_o.a_data      = a_data_local;
+     assign tl_o.a_size      = size[top_pkg::TL_SZW-1:0];
+ 
+     // TL-UL TO AXI SUB RESPONSE
+@@ -145,7 +147,7 @@ module sub2tlul
+         .addr_i         (addr),
+         .opcode_i       (opcode),
+         .mask_i         (mask_local),
+-        .data_i         (tl_o.a_data),
++        .data_i         (a_data_local),
+         .cmd_intg       (cmd_intg),
+         .data_intg      (data_intg) 
+     );
+
+From dffc74daa37ca609317baf5133f28713dc26016f Mon Sep 17 00:00:00 2001
+From: Caleb Whitehead <cwhitehead@microsoft.com>
+Date: Tue, 15 Jul 2025 20:24:08 +0000
+Subject: [PATCH 7/7] MICROSOFT AUTOMATED PIPELINE: Stamp
+ 'cwhitehead-msft-tlul-X-fix' with updated timestamp and hash after successful
+ run
+
+---
+ .github/workflow_metadata/pr_hash      | 2 +-
+ .github/workflow_metadata/pr_timestamp | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/.github/workflow_metadata/pr_hash b/.github/workflow_metadata/pr_hash
+index 940f29f41..c4d7c88ba 100644
+--- a/.github/workflow_metadata/pr_hash
++++ b/.github/workflow_metadata/pr_hash
+@@ -1 +1 @@
+-ef8a0fc30a33dd8529fb327082f641f1826893b62ac40bfd9f82ec7e806e7f16909aff5f9e587b727bb966d8b107f32a
+\ No newline at end of file
++d5fa8aee8d728178033d837319b439055ae17f1042b0f73ce9ce780eeab25ed5a9c5f087265326095417e707915980f3
+\ No newline at end of file
+diff --git a/.github/workflow_metadata/pr_timestamp b/.github/workflow_metadata/pr_timestamp
+index d793127b9..9690e4f3c 100644
+--- a/.github/workflow_metadata/pr_timestamp
++++ b/.github/workflow_metadata/pr_timestamp
+@@ -1 +1 @@
+-1752599326
+\ No newline at end of file
++1752611031
+\ No newline at end of file

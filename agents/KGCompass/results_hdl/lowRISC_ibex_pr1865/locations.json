@@ -1,0 +1,22 @@
+[
+  {
+    "file_path": "rtl/ibex_top.sv",
+    "reason": "This is where the shared clock gating and instantiation of both the regular core and lockstep core happen; the bug likely stems from using non-lockstep core_busy_o directly to gate the clock for both cores."
+  },
+  {
+    "file_path": "rtl/ibex_lockstep.sv",
+    "reason": "The lockstep comparison logic determines when output mismatches trigger alerts, so it may need to be adjusted to compare core_busy_o in a way that is robust against clock gating or to sample it earlier/later."
+  },
+  {
+    "file_path": "rtl/ibex_core.sv",
+    "reason": "core_busy_o is produced by the core, and the timing/registered behavior of this signal may need review to ensure it cannot glitch in a way that defeats lockstep checking."
+  },
+  {
+    "file_path": "rtl/ibex_controller.sv",
+    "reason": "core_busy_o is typically driven by controller state; if the signal is glitching low, the controller's generation of the busy indication may be the root cause."
+  },
+  {
+    "file_path": "rtl/ibex_top_tracing.sv",
+    "reason": "If output port ordering or tracing feeds lockstep comparison inputs, this file could be involved in how core_busy_o is exposed, though it is less likely than the main top-level and lockstep RTL."
+  }
+]

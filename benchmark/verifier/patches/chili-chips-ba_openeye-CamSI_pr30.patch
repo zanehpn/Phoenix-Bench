@@ -1,0 +1,431 @@
+From d6b71f52af664f31b0916d8b2feffe94b64e0c70 Mon Sep 17 00:00:00 2001
+From: Juninho99 <azunic1@etf.unsa.ba>
+Date: Tue, 29 Oct 2024 19:10:59 +0100
+Subject: [PATCH 1/2] Updated i2c part according to issue
+
+---
+ 1.hw/lib/ip/i2c_master/i2c_ctrl.sv | 35 +++++++++++++++++++++---
+ 1.hw/lib/ip/i2c_master/i2c_top.sv  | 43 +++++++++++++++++++++---------
+ 2.sim/cocotb/top/i2c.gtkw          | 19 +++++++------
+ 3 files changed, 71 insertions(+), 26 deletions(-)
+
+diff --git a/1.hw/lib/ip/i2c_master/i2c_ctrl.sv b/1.hw/lib/ip/i2c_master/i2c_ctrl.sv
+index 84c927c..fc8d6b8 100644
+--- a/1.hw/lib/ip/i2c_master/i2c_ctrl.sv
++++ b/1.hw/lib/ip/i2c_master/i2c_ctrl.sv
+@@ -55,7 +55,9 @@ module i2c_ctrl (
+    input  logic        scl_di,
+    
+    output logic        sda_oe,
+-   input  logic        sda_di
++   input  logic        sda_di,
++
++   input  logic [7:0] pause_duration
+ );
+ 
+    typedef enum logic [3:0] {
+@@ -67,7 +69,8 @@ module i2c_ctrl (
+       WRITE_REG_ADDR     = 4'd5,
+       WRITE_REG_DATA     = 4'd6,
+       STOP               = 4'd7,
+-      RESTART            = 4'd8
++      RESTART            = 4'd8,
++      WAIT               = 4'd9
+    } state_t;
+    
+    state_t state;
+@@ -79,6 +82,8 @@ module i2c_ctrl (
+    logic [3:0] bit_cnt, bit_cnt_dec;
+    logic       post_serial_data;
+    logic       acknowledge_bit;
++   logic [7:0] outer_counter;
++   logic [8:0] inner_counter;
+    
+    assign bit_cnt_dec = 4'(bit_cnt - 4'd1);
+    
+@@ -97,6 +102,8 @@ module i2c_ctrl (
+          acknowledge_bit       <= 1'b0;
+          scl_do                <= 1'b1;
+          sda_do                <= 1'b1;
++         outer_counter         <= '0;
++         inner_counter         <= '0;
+       end 
+       else begin
+ `ifndef ICARUS
+@@ -112,9 +119,9 @@ module i2c_ctrl (
+                slave_address_plus_rw <= {slave_address, 1'b0};
+                scl_do                <= 1'b1;
+                sda_do                <= 1'b1;
++               register_done         <= 1'b0;
+ 
+                if (enable == 1'b1) begin
+-                  register_done   <= 1'b0;
+                   state           <= START;
+                   post_state      <= WRITE_SLAVE_ADDR;
+                end
+@@ -333,11 +340,31 @@ module i2c_ctrl (
+                      register_done <= 1'b1;
+                   end
+                   2'd3: begin
+-                     state <= IDLE;
++                     outer_counter <= pause_duration;
++                     inner_counter <= 9'd400;
++                     process_cnt   <= 2'd0;
++                     register_done <= 1'b0;
++                     state         <= WAIT;
+                   end
+                endcase
+             end
+ 
++         //----------------------
++            WAIT: if (strobe_400kHz == 1'b1) begin
++               scl_do <= 1'b1;
++               sda_do <= 1'b1;
++               if (outer_counter > 8'd0) begin
++                  if (inner_counter > 9'd0) begin
++                     inner_counter <= 9'(inner_counter - 9'(1));
++                  end else begin
++                     inner_counter <= 9'd400;
++                     outer_counter <= 8'(outer_counter - 8'(1));
++                  end
++               end else begin
++                  state         <= IDLE;
++               end
++            end
++
+          //----------------------
+             RESTART: if (strobe_400kHz == 1'b1) begin
+                unique case (process_cnt)
+diff --git a/1.hw/lib/ip/i2c_master/i2c_top.sv b/1.hw/lib/ip/i2c_master/i2c_top.sv
+index 43e52e5..44559b2 100644
+--- a/1.hw/lib/ip/i2c_master/i2c_top.sv
++++ b/1.hw/lib/ip/i2c_master/i2c_top.sv
+@@ -42,8 +42,9 @@
+ //   - for most part operates in sync with external 400kHz strobe
+ //========================================================================
+ 
++import top_pkg::*;
+ module i2c_top #(
+-   parameter I2C_SLAVE_ADDR = 7'd16 
++   parameter I2C_SLAVE_ADDR = 7'd26
+ )(
+ 
+  //clocks and resets
+@@ -53,9 +54,13 @@ module i2c_top #(
+ 
+  //I/O pads
+    inout  wire   i2c_scl,
+-   inout  wire   i2c_sda
++   inout  wire   i2c_sda,
++
++ //Misc/Debug
++   output bus8_t debug_pins
+ );
+-   
++
++   parameter NUM_REGISTERS = 56;
+ 
+ //--------------------------------
+ // I2C Master
+@@ -63,10 +68,10 @@ module i2c_top #(
+    logic        i2c_enable;
+ 
+    logic [15:0] i2c_reg_addr;
+-   logic [6:0]  i2c_reg_cnt;
++   logic [5:0]  i2c_reg_cnt;
+    logic        i2c_reg_done;
+ 
+-   logic [23:0] i2c_data_init[65];
++   logic [31:0] i2c_data_init[NUM_REGISTERS];
+    logic [7:0]  i2c_data_in;
+ 
+    logic        i2c_scl_do;
+@@ -76,6 +81,8 @@ module i2c_top #(
+    logic        i2c_sda_do; 
+    logic        i2c_sda_di;
+    logic        i2c_sda_oe;
++   
++   logic [7:0]  i2c_pause;
+ 
+    i2c_ctrl u_ctrl (
+       .clk              (clk),            //i 
+@@ -92,8 +99,8 @@ module i2c_top #(
+       .scl_di           (i2c_scl_di),     //i
+       
+       .sda_oe           (i2c_sda_oe),     //o
+-      .sda_di           (i2c_sda_di)      //i
+-      
++      .sda_di           (i2c_sda_di),     //i
++      .pause_duration   (i2c_pause)       //i[7:0]
+    );
+ 
+ 
+@@ -113,9 +120,10 @@ module i2c_top #(
+    end
+ `endif
+ 
+-   assign i2c_enable   = (i2c_reg_cnt < 7'd65);
+-   assign i2c_reg_addr = i2c_data_init[i2c_reg_cnt][23:8];
+-   assign i2c_data_in  = i2c_data_init[i2c_reg_cnt][7:0];
++   assign i2c_enable   = (i2c_reg_cnt < NUM_REGISTERS);
++   assign i2c_reg_addr = i2c_data_init[i2c_reg_cnt][31:16];
++   assign i2c_data_in  = i2c_data_init[i2c_reg_cnt][15:8];
++   assign i2c_pause    = i2c_data_init[i2c_reg_cnt][7:0];
+ 
+    always_ff @(negedge areset_n or posedge clk) begin
+       if (areset_n == 1'b0) begin
+@@ -123,8 +131,8 @@ module i2c_top #(
+       end 
+       else if ({strobe_400kHz, i2c_enable} == 2'b11) begin
+          if (i2c_reg_done == 1'd1) begin
+-            if (i2c_reg_cnt < 7'd65) begin
+-               i2c_reg_cnt <= 7'(i2c_reg_cnt + 7'd1);
++            if (i2c_reg_cnt < NUM_REGISTERS) begin
++               i2c_reg_cnt <= 6'(i2c_reg_cnt + 6'd1);
+             end
+          end
+       end 
+@@ -142,6 +150,17 @@ module i2c_top #(
+       .I  ({ 1'b0,        1'b0       }), //i
+       .T  ({ ~i2c_sda_oe, ~i2c_scl_oe })  //i: 3-state enable: 1=input, 0=output
+    );
++
++   assign debug_pins = {
++      i2c_sda_di, 
++      i2c_scl_di, 
++      i2c_sda_oe, 
++      i2c_scl_oe, 
++      i2c_enable, 
++      areset_n,
++      i2c_reg_done,
++      strobe_400kHz
++   };
+    
+ endmodule: i2c_top
+ 
+diff --git a/2.sim/cocotb/top/i2c.gtkw b/2.sim/cocotb/top/i2c.gtkw
+index 8b47922..b95f4eb 100644
+--- a/2.sim/cocotb/top/i2c.gtkw
++++ b/2.sim/cocotb/top/i2c.gtkw
+@@ -1,20 +1,20 @@
+ [*]
+ [*] GTKWave Analyzer v3.3.104 (w)1999-2020 BSI
+-[*] Wed Jun  5 21:41:45 2024
++[*] Fri Oct 25 09:34:30 2024
+ [*]
+ [dumpfile] "/mnt/c/Users/Armin/Desktop/openeye/2.sim/cocotb/top/sim_build/top.fst"
+-[dumpfile_mtime] "Wed Jun  5 21:20:43 2024"
+-[dumpfile_size] 11807435
++[dumpfile_mtime] "Fri Oct 25 09:33:45 2024"
++[dumpfile_size] 785597
+ [savefile] "/mnt/c/Users/Armin/Desktop/openeye/2.sim/cocotb/top/i2c.gtkw"
+ [timestart] 0
+-[size] 1588 827
+-[pos] 32767 32767
++[size] 1000 600
++[pos] -1 -1
+ *-28.586885 2054290000 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+ [treeopen] top.
+ [sst_width] 214
+ [signals_width] 238
+ [sst_expanded] 1
+-[sst_vpaned_height] 488
++[sst_vpaned_height] 319
+ @200
+ -top
+ @28
+@@ -22,20 +22,19 @@ top.u_i2c.areset_n
+ top.u_i2c.strobe_400kHz
+ @200
+ -top/u_i2c
++@420
++top.u_i2c.I2C_SLAVE_ADDR
+ @22
+ top.u_i2c.i2c_data_in[7:0]
+ top.u_i2c.i2c_reg_addr[15:0]
+ @28
+-top.u_i2c.i2c_read_write
+ top.u_i2c.i2c_scl
+ top.u_i2c.i2c_scl_di
+-top.u_i2c.i2c_scl_do
+ top.u_i2c.i2c_sda
+ top.u_i2c.i2c_sda_di
+-top.u_i2c.i2c_sda_do
+ top.u_i2c.i2c_enable
+ @23
+-top.u_i2c.i2c_reg_cnt[6:0]
++top.u_i2c.i2c_pause[7:0]
+ @200
+ -top/u_i2c/u_ctrl
+ @28
+
+From 3c69f4b771d95b4f1772a454fa49b0a6eab889e0 Mon Sep 17 00:00:00 2001
+From: Juninho99 <azunic1@etf.unsa.ba>
+Date: Tue, 29 Oct 2024 21:54:44 +0100
+Subject: [PATCH 2/2] Changed names of .mem files
+
+---
+ 1.hw/lib/ip/i2c_master/i2c_init_IMX219.mem | 65 ++++++++++++++++++++++
+ 1.hw/lib/ip/i2c_master/i2c_init_IMX283.mem | 56 +++++++++++++++++++
+ 1.hw/lib/ip/i2c_master/i2c_top.sv          |  4 +-
+ 3 files changed, 123 insertions(+), 2 deletions(-)
+ create mode 100644 1.hw/lib/ip/i2c_master/i2c_init_IMX219.mem
+ create mode 100644 1.hw/lib/ip/i2c_master/i2c_init_IMX283.mem
+
+diff --git a/1.hw/lib/ip/i2c_master/i2c_init_IMX219.mem b/1.hw/lib/ip/i2c_master/i2c_init_IMX219.mem
+new file mode 100644
+index 0000000..a183173
+--- /dev/null
++++ b/1.hw/lib/ip/i2c_master/i2c_init_IMX219.mem
+@@ -0,0 +1,65 @@
++01030100
++01000000
++30eb0c00
++30eb0500
++300aff00
++300bff00
++30eb0500
++30eb0900
++03010400
++03030100
++03040300
++03050300
++03060000
++03072c00
++030b0100
++030c0000
++030d7200
++455e0000
++471e4b00
++47670f00
++47501400
++45400000
++47b41400
++47133000
++478b1000
++478f1000
++47931000
++47970e00
++479b0e00
++01700100
++01710100
++01140100
++01280000
++012a1800
++012b0000
++015a0300
++015b4e00
++01600300
++01615200
++01640200
++0165a800
++01660a00
++01672700
++01680200
++0169b400
++016a0600
++016beb00
++016c0500
++016d0000
++016e0200
++016fd000
++01580f00
++0159d900
++06000000
++06010200
++06240500
++06250000
++06260200
++0627d000
++018c0800
++018d0800
++03090800
++01000100
++01000100
++01000100
+\ No newline at end of file
+diff --git a/1.hw/lib/ip/i2c_master/i2c_init_IMX283.mem b/1.hw/lib/ip/i2c_master/i2c_init_IMX283.mem
+new file mode 100644
+index 0000000..1b1f198
+--- /dev/null
++++ b/1.hw/lib/ip/i2c_master/i2c_init_IMX283.mem
+@@ -0,0 +1,56 @@
++30000a00
++36c10200
++36c2f000
++36c30000
++36f70200
++36f8c000
++30037700
++36aa0000
++320b0002
++30000014
++30011000
++31050000
++3107a200
++30040d00
++30051100
++30065000
++30070000
++30090000
++300a0000
++302f2000
++30300700
++30312400
++30320700
++30330400
++300b3000
++30582800
++30590000
++305a8900
++305b1500
++30367700
++30370100
++30380000
++30390f00
++303a0000
++303b0c00
++303c0000
++3a540000
++3a550000
++3038c500
++30391100
++303a0000
++303b3e00
++303c1100
++30420000
++30430000
++30440000
++31560000
++303b0d00
++303c0000
++30420000
++30430700
++3042ab00
++30430500
++30420000
++30430700
++30000200
+\ No newline at end of file
+diff --git a/1.hw/lib/ip/i2c_master/i2c_top.sv b/1.hw/lib/ip/i2c_master/i2c_top.sv
+index 44559b2..945975e 100644
+--- a/1.hw/lib/ip/i2c_master/i2c_top.sv
++++ b/1.hw/lib/ip/i2c_master/i2c_top.sv
+@@ -105,7 +105,7 @@ module i2c_top #(
+ 
+ 
+ `ifndef SIM_ONLY
+-   initial $readmemh("i2c_init.mem", i2c_data_init);
++   initial $readmemh("i2c_init_IMX283.mem", i2c_data_init);
+ 
+ `else
+    string i2c_init_mem_file;
+@@ -115,7 +115,7 @@ module i2c_top #(
+          $readmemh(i2c_init_mem_file, i2c_data_init);
+       end
+       else begin
+-         $readmemh("../../../1.hw/lib/ip/i2c_master/i2c_init.mem", i2c_data_init);
++         $readmemh("../../../1.hw/lib/ip/i2c_master/i2c_init_IMX283.mem", i2c_data_init);
+       end
+    end
+ `endif

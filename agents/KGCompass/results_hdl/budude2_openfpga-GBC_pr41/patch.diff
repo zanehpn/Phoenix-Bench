@@ -1,0 +1,18 @@
+diff --git a/src/gb/sound_i2s.sv b/src/gb/sound_i2s.sv
+index e98ce73..8231006 100644
+--- a/src/gb/sound_i2s.sv
++++ b/src/gb/sound_i2s.sv
+@@ -91,8 +91,11 @@ module sound_i2s #(
+ 
+   wire [31:0] audgen_sampdata;
+ 
+-  assign audgen_sampdata[CHANNEL_LEFT_HIGH-1:CHANNEL_LEFT_HIGH-CHANNEL_WIDTH]   = SIGNED_INPUT ? audio_l : sign_converted_audio_l;
+-  assign audgen_sampdata[CHANNEL_RIGHT_HIGH-1:CHANNEL_RIGHT_HIGH-CHANNEL_WIDTH] = SIGNED_INPUT ? audio_r : sign_converted_audio_r;
++  // Pack samples in I2S order: left channel first, then right channel.
++  // Some Pocket audio paths interpret the serialized frame opposite to the
++  // original core assumption, so keep the logical left/right mapping explicit.
++  assign audgen_sampdata[CHANNEL_LEFT_HIGH-1:CHANNEL_LEFT_HIGH-CHANNEL_WIDTH]   = SIGNED_INPUT ? audio_r : sign_converted_audio_r;
++  assign audgen_sampdata[CHANNEL_RIGHT_HIGH-1:CHANNEL_RIGHT_HIGH-CHANNEL_WIDTH] = SIGNED_INPUT ? audio_l : sign_converted_audio_l;
+ 
+   generate
+     if (15 - SIGNED_CHANNEL_WIDTH > 0) begin

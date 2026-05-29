@@ -1,0 +1,96 @@
+# Internal Error: ../V3Scope.cpp:69: Can't locate package scope
+
+- Source URL: https://github.com/verilator/verilator/issues/6741
+
+Thanks for taking the time to report this.
+
+Can you please attach an example that shows the issue or missing feature?  (Must be openly licensed, completely self-contained so can directly run what you provide. Ideally use test_regress format, see https://veripool.org/guide/latest/contributing.html?highlight=test_regress#reporting-bugs)
+
+```
+module tb_fifo_2in;
+  parameter int unsigned DEPTH = 8;
+  parameter int unsigned DATA_W = 32;
+  parameter int unsigned RUN_CYCLES = 50_000;
+  typedef logic [DATA_W-1:0] data_t;
+  logic clk;
+  logic full, not_full;
+  logic        enq0, enq1, deq;
+   data_t      enq0_data; 
+  data_t golden_queue[$];
+  task automatic push(input data_t data, input string port);
+    golden_queue.push_back(data);
+  endtask
+  class Transaction;
+    rand bit        enq0;
+    rand bit        enq1;
+    rand bit        deq;
+    rand data_t     enq0_data;
+    constraint valid_enq {
+      if (golden_queue.size() >= DEPTH) {
+        enq0 == 0;
+        enq1 == 0;
+      } else if (golden_queue.size() == DEPTH-1) {
+	(enq0 && enq1) == 0;
+      }
+      if (golden_queue.size() == 0) {
+        deq == 0;  
+      }
+    }
+  endclass
+  Transaction tr;
+  initial begin
+    tr = new();
+    repeat (RUN_CYCLES) begin
+      @(posedge clk);
+      if (tr.randomize() == 0) begin
+        $error("Randomization failed!");
+        break;
+      end
+      enq0 <= tr.enq0;
+      deq  <= tr.deq;
+      enq0_data <= tr.enq0 ? tr.enq0_data : 'x;
+      if (tr.enq0 && not_full) begin
+        push(tr.enq0_data, "P0");
+      end
+    end
+    $finish; 
+  end
+  property p_full_flag;
+    @(posedge clk)  
+    full == (golden_queue.size() == DEPTH);
+  endproperty
+endmodule
+```
+
+What output from that test indicates it is wrong, and what is the correct or expected output?  (Or, please make test self-checking if possible.)
+
+```
+verilator --binary test.sv
+%Error: Internal Error: test4.sv:20:11: ../V3Scope.cpp:69: Can't locate package scope
+                                      : ... note: In instance 'tb_fifo_2in.Transaction'
+   20 |       if (golden_queue.size() >= DEPTH) {
+      |           ^~~~~~~~~~~~
+                        ... See the manual at https://verilator.org/verilator_doc.html?v=5.043 for more assistance.
+```
+
+What 'verilator' command line do we use to run your example?
+
+```
+verilator --binary test.sv
+```
+
+What 'verilator --version' are you using?  Did you try it with the git master version?  Did you try it with other simulators?
+
+```
+Verilator 5.043 devel rev v5.042-110-gf2e05bc0b
+```
+
+What OS and distribution are you using?
+
+```
+Linux 5.14.0-570.37.1.el9_6.x86_64
+```
+
+May we assist you in trying to fix this in Verilator yourself?
+
+(Please avoid attaching screenshots that show text - you can convert images to text using e.g. https://ocr.space)

@@ -1,0 +1,81 @@
+diff --git a/src/clic_reg_top.sv b/src/clic_reg_top.sv
+index 08727b8..acdce7b 100644
+--- a/src/clic_reg_top.sv
++++ b/src/clic_reg_top.sv
+@@ -91,14 +91,14 @@ module clic_reg_top #(
+   logic [7:0] clicinfo_version_qs;
+   logic [3:0] clicinfo_clicintctlbits_qs;
+   logic [5:0] clicinfo_num_trigger_qs;
+-  logic [NumSrc-1:0] clicintip_qs;
+-  logic [NumSrc-1:0] clicintip_wd;
++  logic [NumSrc-1:0][7:0] clicintip_qs;
++  logic [NumSrc-1:0][7:0] clicintip_wd;
+   logic [NumSrc-1:0] clicintip_we;
+-  logic [NumSrc-1:0] clicintie_qs;
+-  logic [NumSrc-1:0] clicintie_wd;
++  logic [NumSrc-1:0][7:0] clicintie_qs;
++  logic [NumSrc-1:0][7:0] clicintie_wd;
+   logic [NumSrc-1:0] clicintie_we;
+-  logic [NumSrc-1:0] clicintattr_shv_qs;
+-  logic [NumSrc-1:0] clicintattr_shv_wd;
++  logic [NumSrc-1:0][7:0] clicintattr_shv_qs;
++  logic [NumSrc-1:0][7:0] clicintattr_shv_wd;
+   logic [NumSrc-1:0] clicintattr_shv_we;
+   logic [NumSrc-1:0][1:0] clicintattr_trig_qs;
+   logic [NumSrc-1:0][1:0] clicintattr_trig_wd;
+@@ -115,9 +115,9 @@ module clic_reg_top #(
+ 
+   //   F[nvbits]: 0:0
+   prim_subreg #(
+-    .DW      (1),
++    .DW      (8),
+     .SWACCESS("RW"),
+-    .RESVAL  (1'h0)
++    .RESVAL  (8'h0)
+   ) u_cliccfg_nvbits (
+     .clk_i   (clk_i    ),
+     .rst_ni  (rst_ni  ),
+@@ -498,19 +498,19 @@ module clic_reg_top #(
+ 
+   for (genvar i = 0; i < NumSrc; i++) begin
+     assign clicintip_we[i] = addr_hit_int[0 + 4*i] & reg_we & !reg_error;
+-    assign clicintip_wd[i] = reg_wdata[0];
++    assign clicintip_wd[i] = reg_wdata[7:0];
+ 
+     assign clicintie_we[i] = addr_hit_int[1 + 4*i] & reg_we & !reg_error;
+-    assign clicintie_wd[i] = reg_wdata[0];
++    assign clicintie_wd[i] = reg_wdata[7:0];
+ 
+     assign clicintattr_shv_we[i] = addr_hit_int[2 + 4*i] & reg_we & !reg_error;
+-    assign clicintattr_shv_wd[i] = reg_wdata[0];
++    assign clicintattr_shv_wd[i] = reg_wdata[7:0];
+ 
+     assign clicintattr_trig_we[i] = addr_hit_int[2 + 4*i] & reg_we & !reg_error;
+-    assign clicintattr_trig_wd[i] = reg_wdata[2:1];
++    assign clicintattr_trig_wd[i] = reg_wdata[7:0];
+ 
+     assign clicintattr_mode_we[i] = addr_hit_int[2 + 4*i] & reg_we & !reg_error;
+-    assign clicintattr_mode_wd[i] = reg_wdata[7:6];
++    assign clicintattr_mode_wd[i] = reg_wdata[7:0];
+ 
+     assign clicintctrl_we[i] = addr_hit_int[3 + 4*i] & reg_we & !reg_error;
+     assign clicintctrl_wd[i] = reg_wdata[7:0];
+@@ -534,15 +534,15 @@ module clic_reg_top #(
+       end
+ 
+       CLIC_CLICINTIP_MASK: begin
+-        reg_rdata_next[0] = clicintip_qs[reg_addr[11:4]];
++        reg_rdata_next[0] = clicintip_qs[reg_addr[11:4]][0];
+       end
+ 
+       CLIC_CLICINTIE_MASK: begin
+-        reg_rdata_next[0] = clicintie_qs[reg_addr[11:4]];
++        reg_rdata_next[0] = clicintie_qs[reg_addr[11:4]][0];
+       end
+ 
+       CLIC_CLICINTATTR_MASK: begin
+-        reg_rdata_next[0] = clicintattr_shv_qs[reg_addr[11:4]];
++        reg_rdata_next[0] = clicintattr_shv_qs[reg_addr[11:4]][0];
+         reg_rdata_next[2:1] = clicintattr_trig_qs[reg_addr[11:4]];
+         reg_rdata_next[7:6] = clicintattr_mode_qs[reg_addr[11:4]];
+       end

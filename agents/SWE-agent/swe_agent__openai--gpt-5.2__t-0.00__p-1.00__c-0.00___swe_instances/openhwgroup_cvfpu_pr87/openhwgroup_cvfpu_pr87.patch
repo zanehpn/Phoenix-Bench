@@ -1,0 +1,24 @@
+diff --git a/src/fpnew_opgroup_multifmt_slice.sv b/src/fpnew_opgroup_multifmt_slice.sv
+index 08facb8..bd456c0 100644
+--- a/src/fpnew_opgroup_multifmt_slice.sv
++++ b/src/fpnew_opgroup_multifmt_slice.sv
+@@ -177,9 +177,18 @@ module fpnew_opgroup_multifmt_slice #(
+       assign in_valid = in_valid_i & ((lane == 0) | vectorial_op); // upper lanes only for vectors
+ 
+       // Slice out the operands for this lane, upper bits are ignored in the unit
++      //
++      // Note: for the ADDMUL opgroup, operand 2 (addend) is in the destination format.
++      // See fpnew_fma_multi: operands[0] and operands[1] are src_fmt, operands[2] and the
++      // result are dst_fmt.
+       always_comb begin : prepare_input
+         for (int unsigned i = 0; i < NUM_OPERANDS; i++) begin
+-          local_operands[i] = operands_i[i] >> LANE*fpnew_pkg::fp_width(src_fmt_i);
++          automatic int unsigned op_width;
++          op_width = fpnew_pkg::fp_width(src_fmt_i);
++          if ((OpGroup == fpnew_pkg::ADDMUL) && (i == 2)) begin
++            op_width = fpnew_pkg::fp_width(dst_fmt_i);
++          end
++          local_operands[i] = operands_i[i] >> (LANE * op_width);
+         end
+ 
+         // override operand 0 for some conversions

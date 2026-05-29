@@ -1,0 +1,341 @@
+From c1cd3b5b919d6a2571acfdb4ef7b2815e7266826 Mon Sep 17 00:00:00 2001
+From: Mark Gottscho <mgottscho@ucla.edu>
+Date: Wed, 5 Nov 2025 11:44:34 -0800
+Subject: [PATCH 1/3] Allow single requester br_arb_fixed
+
+---
+ arb/fpv/arb_basic_fpv_monitor.sv          | 17 ++++++++++++++---
+ arb/fpv/br_arb_fixed_fpv_monitor.sv       | 17 ++++++++++++++---
+ arb/rtl/br_arb_fixed.sv                   |  2 +-
+ arb/rtl/internal/br_arb_fixed_internal.sv |  4 ++--
+ 4 files changed, 31 insertions(+), 9 deletions(-)
+
+diff --git a/arb/fpv/arb_basic_fpv_monitor.sv b/arb/fpv/arb_basic_fpv_monitor.sv
+index f67a902e..b23ae485 100644
+--- a/arb/fpv/arb_basic_fpv_monitor.sv
++++ b/arb/fpv/arb_basic_fpv_monitor.sv
+@@ -8,7 +8,7 @@
+ `include "br_fv.svh"
+ 
+ module arb_basic_fpv_monitor #(
+-    // Must be at least 2
++    // Must be at least 1
+     parameter int NumRequesters = 2
+ ) (
+     input logic clk,
+@@ -19,8 +19,19 @@ module arb_basic_fpv_monitor #(
+ );
+ 
+   // ----------FV Modeling Code----------
+-  logic [$clog2(NumRequesters)-1:0] i, j;
+-  `BR_FV_2RAND_IDX(i, j, NumRequesters)
++  localparam int IdxWidth = (NumRequesters > 1) ? $clog2(NumRequesters) : 1;
++  logic [IdxWidth-1:0] i, j;
++
++  generate
++    if (NumRequesters > 1) begin : gen_multi_requester_idxs
++      `BR_FV_2RAND_IDX(i, j, NumRequesters)
++    end else begin : gen_single_requester_idx
++      always_comb begin
++        i = '0;
++        j = '0;
++      end
++    end
++  endgenerate
+ 
+   // ----------Sanity Check----------
+   `BR_ASSERT(onehot_grant_a, $onehot0(grant))
+diff --git a/arb/fpv/br_arb_fixed_fpv_monitor.sv b/arb/fpv/br_arb_fixed_fpv_monitor.sv
+index aa172ec8..a9fdb80e 100644
+--- a/arb/fpv/br_arb_fixed_fpv_monitor.sv
++++ b/arb/fpv/br_arb_fixed_fpv_monitor.sv
+@@ -7,7 +7,7 @@
+ `include "br_fv.svh"
+ 
+ module br_arb_fixed_fpv_monitor #(
+-    // Must be at least 2
++    // Must be at least 1
+     parameter int NumRequesters = 2
+ ) (
+     input logic clk,
+@@ -28,8 +28,19 @@ module br_arb_fixed_fpv_monitor #(
+   );
+ 
+   // ----------Fixed-Priority Check----------
+-  logic [$clog2(NumRequesters)-1:0] i, j;
+-  `BR_FV_2RAND_IDX(i, j, NumRequesters)
++  localparam int IdxWidth = (NumRequesters > 1) ? $clog2(NumRequesters) : 1;
++  logic [IdxWidth-1:0] i, j;
++
++  generate
++    if (NumRequesters > 1) begin : gen_multi_requester_idxs
++      `BR_FV_2RAND_IDX(i, j, NumRequesters)
++    end else begin : gen_single_requester_idx
++      always_comb begin
++        i = '0;
++        j = '0;
++      end
++    end
++  endgenerate
+ 
+   `BR_ASSERT(strict_priority_a, (i < j) && request[i] && request[j] |-> !grant[j])
+ 
+diff --git a/arb/rtl/br_arb_fixed.sv b/arb/rtl/br_arb_fixed.sv
+index 8abc469c..1d14fdb1 100644
+--- a/arb/rtl/br_arb_fixed.sv
++++ b/arb/rtl/br_arb_fixed.sv
+@@ -9,7 +9,7 @@
+ `include "br_asserts_internal.svh"
+ 
+ module br_arb_fixed #(
+-    // Must be at least 2
++    // Must be at least 1
+     parameter int NumRequesters = 2
+ ) (
+     // ri lint_check_waive HIER_NET_NOT_READ HIER_BRANCH_NOT_READ INPUT_NOT_READ
+diff --git a/arb/rtl/internal/br_arb_fixed_internal.sv b/arb/rtl/internal/br_arb_fixed_internal.sv
+index f12a53c5..ba6e3afd 100644
+--- a/arb/rtl/internal/br_arb_fixed_internal.sv
++++ b/arb/rtl/internal/br_arb_fixed_internal.sv
+@@ -13,7 +13,7 @@
+ `include "br_asserts_internal.svh"
+ 
+ module br_arb_fixed_internal #(
+-    // Must be at least 2
++    // Must be at least 1
+     parameter int NumRequesters = 2
+ ) (
+     input  logic [NumRequesters-1:0] request,
+@@ -21,7 +21,7 @@ module br_arb_fixed_internal #(
+     output logic [NumRequesters-1:0] grant
+ );
+ 
+-  `BR_ASSERT_STATIC(num_requesters_gte_2_A, NumRequesters >= 2)
++  `BR_ASSERT_STATIC(num_requesters_gte_1_A, NumRequesters >= 1)
+ 
+   //------------------------------------------
+   // Implementation
+
+From d934dee9328629c203f5adca898c2937aec9b1d7 Mon Sep 17 00:00:00 2001
+From: Mark Gottscho <mgottscho@openai.com>
+Date: Wed, 5 Nov 2025 19:49:33 +0000
+Subject: [PATCH 2/3] manual fixes
+
+---
+ arb/fpv/BUILD.bazel                       |  2 ++
+ arb/fpv/arb_basic_fpv_monitor.sv          | 20 ++++++++------------
+ arb/fpv/br_arb_fixed_fpv_monitor.sv       | 20 ++++++++------------
+ arb/rtl/br_arb_fixed.sv                   |  6 ++++--
+ arb/rtl/internal/br_arb_fixed_internal.sv |  2 +-
+ 5 files changed, 23 insertions(+), 27 deletions(-)
+
+diff --git a/arb/fpv/BUILD.bazel b/arb/fpv/BUILD.bazel
+index d2b49fc7..4a03fc04 100644
+--- a/arb/fpv/BUILD.bazel
++++ b/arb/fpv/BUILD.bazel
+@@ -12,6 +12,7 @@ verilog_library(
+     srcs = ["arb_basic_fpv_monitor.sv"],
+     deps = [
+         "//macros:br_registers",
++        "//pkg:br_math",
+     ],
+ )
+ 
+@@ -39,6 +40,7 @@ verilog_library(
+         ":arb_basic_fpv_monitor",
+         "//arb/rtl:br_arb_fixed",
+         "//macros:br_fv",
++        "//pkg:br_math",
+     ],
+ )
+ 
+diff --git a/arb/fpv/arb_basic_fpv_monitor.sv b/arb/fpv/arb_basic_fpv_monitor.sv
+index b23ae485..a741a465 100644
+--- a/arb/fpv/arb_basic_fpv_monitor.sv
++++ b/arb/fpv/arb_basic_fpv_monitor.sv
+@@ -9,7 +9,7 @@
+ 
+ module arb_basic_fpv_monitor #(
+     // Must be at least 1
+-    parameter int NumRequesters = 2
++    parameter int NumRequesters = 1
+ ) (
+     input logic clk,
+     input logic rst,
+@@ -19,19 +19,15 @@ module arb_basic_fpv_monitor #(
+ );
+ 
+   // ----------FV Modeling Code----------
+-  localparam int IdxWidth = (NumRequesters > 1) ? $clog2(NumRequesters) : 1;
++  localparam int IdxWidth = br_math::clamped_clog2(NumRequesters);
+   logic [IdxWidth-1:0] i, j;
+ 
+-  generate
+-    if (NumRequesters > 1) begin : gen_multi_requester_idxs
+-      `BR_FV_2RAND_IDX(i, j, NumRequesters)
+-    end else begin : gen_single_requester_idx
+-      always_comb begin
+-        i = '0;
+-        j = '0;
+-      end
+-    end
+-  endgenerate
++  if (NumRequesters > 1) begin : gen_multi_requester_idxs
++    `BR_FV_2RAND_IDX(i, j, NumRequesters)
++  end else begin : gen_single_requester_idx
++    assign i = 1'b0;
++    assign j = 1'b0;
++  end
+ 
+   // ----------Sanity Check----------
+   `BR_ASSERT(onehot_grant_a, $onehot0(grant))
+diff --git a/arb/fpv/br_arb_fixed_fpv_monitor.sv b/arb/fpv/br_arb_fixed_fpv_monitor.sv
+index a9fdb80e..6b8c7474 100644
+--- a/arb/fpv/br_arb_fixed_fpv_monitor.sv
++++ b/arb/fpv/br_arb_fixed_fpv_monitor.sv
+@@ -8,7 +8,7 @@
+ 
+ module br_arb_fixed_fpv_monitor #(
+     // Must be at least 1
+-    parameter int NumRequesters = 2
++    parameter int NumRequesters = 1
+ ) (
+     input logic clk,
+     input logic rst,
+@@ -28,19 +28,15 @@ module br_arb_fixed_fpv_monitor #(
+   );
+ 
+   // ----------Fixed-Priority Check----------
+-  localparam int IdxWidth = (NumRequesters > 1) ? $clog2(NumRequesters) : 1;
++  localparam int IdxWidth = br_math::clamped_clog2(NumRequesters);
+   logic [IdxWidth-1:0] i, j;
+ 
+-  generate
+-    if (NumRequesters > 1) begin : gen_multi_requester_idxs
+-      `BR_FV_2RAND_IDX(i, j, NumRequesters)
+-    end else begin : gen_single_requester_idx
+-      always_comb begin
+-        i = '0;
+-        j = '0;
+-      end
+-    end
+-  endgenerate
++  if (NumRequesters > 1) begin : gen_multi_requester_idxs
++    `BR_FV_2RAND_IDX(i, j, NumRequesters)
++  end else begin : gen_single_requester_idx
++    assign i = 1'b0;
++    assign j = 1'b0;
++  end
+ 
+   `BR_ASSERT(strict_priority_a, (i < j) && request[i] && request[j] |-> !grant[j])
+ 
+diff --git a/arb/rtl/br_arb_fixed.sv b/arb/rtl/br_arb_fixed.sv
+index 1d14fdb1..49032bcc 100644
+--- a/arb/rtl/br_arb_fixed.sv
++++ b/arb/rtl/br_arb_fixed.sv
+@@ -10,7 +10,7 @@
+ 
+ module br_arb_fixed #(
+     // Must be at least 1
+-    parameter int NumRequesters = 2
++    parameter int NumRequesters = 1
+ ) (
+     // ri lint_check_waive HIER_NET_NOT_READ HIER_BRANCH_NOT_READ INPUT_NOT_READ
+     input logic clk,  // Only used for assertions
+@@ -23,7 +23,9 @@ module br_arb_fixed #(
+   //------------------------------------------
+   // Integration checks
+   //------------------------------------------
+-  `BR_COVER_INTG(request_multihot_c, !$onehot0(request))
++  if (NumRequesters > 1) begin : gen_multi_requester_checks
++    `BR_COVER_INTG(request_multihot_c, !$onehot0(request))
++  end
+ 
+   //------------------------------------------
+   // Implementation
+diff --git a/arb/rtl/internal/br_arb_fixed_internal.sv b/arb/rtl/internal/br_arb_fixed_internal.sv
+index ba6e3afd..a6641871 100644
+--- a/arb/rtl/internal/br_arb_fixed_internal.sv
++++ b/arb/rtl/internal/br_arb_fixed_internal.sv
+@@ -14,7 +14,7 @@
+ 
+ module br_arb_fixed_internal #(
+     // Must be at least 1
+-    parameter int NumRequesters = 2
++    parameter int NumRequesters = 1
+ ) (
+     input  logic [NumRequesters-1:0] request,
+     output logic [NumRequesters-1:0] can_grant,
+
+From 29a62802452fd14d1781fa642f67097f78e62593 Mon Sep 17 00:00:00 2001
+From: Mark Gottscho <mgottscho@openai.com>
+Date: Wed, 5 Nov 2025 19:58:45 +0000
+Subject: [PATCH 3/3] fixes
+
+---
+ arb/fpv/BUILD.bazel                 | 5 +++--
+ arb/fpv/br_arb_fixed_fpv_monitor.sv | 3 +--
+ arb/rtl/BUILD.bazel                 | 1 +
+ 3 files changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/arb/fpv/BUILD.bazel b/arb/fpv/BUILD.bazel
+index 4a03fc04..d5c734fa 100644
+--- a/arb/fpv/BUILD.bazel
++++ b/arb/fpv/BUILD.bazel
+@@ -12,7 +12,7 @@ verilog_library(
+     srcs = ["arb_basic_fpv_monitor.sv"],
+     deps = [
+         "//macros:br_registers",
+-        "//pkg:br_math",
++        "//pkg:br_math_pkg",
+     ],
+ )
+ 
+@@ -40,7 +40,7 @@ verilog_library(
+         ":arb_basic_fpv_monitor",
+         "//arb/rtl:br_arb_fixed",
+         "//macros:br_fv",
+-        "//pkg:br_math",
++        "//pkg:br_math_pkg",
+     ],
+ )
+ 
+@@ -54,6 +54,7 @@ br_verilog_fpv_test_tools_suite(
+     name = "br_arb_fixed_fpv_test_tools_suite",
+     params = {
+         "NumRequesters": [
++            "1",
+             "2",
+             "5",
+             "6",
+diff --git a/arb/fpv/br_arb_fixed_fpv_monitor.sv b/arb/fpv/br_arb_fixed_fpv_monitor.sv
+index 6b8c7474..8b2044c6 100644
+--- a/arb/fpv/br_arb_fixed_fpv_monitor.sv
++++ b/arb/fpv/br_arb_fixed_fpv_monitor.sv
+@@ -33,13 +33,12 @@ module br_arb_fixed_fpv_monitor #(
+ 
+   if (NumRequesters > 1) begin : gen_multi_requester_idxs
+     `BR_FV_2RAND_IDX(i, j, NumRequesters)
++    `BR_ASSERT(strict_priority_a, (i < j) && request[i] && request[j] |-> !grant[j])
+   end else begin : gen_single_requester_idx
+     assign i = 1'b0;
+     assign j = 1'b0;
+   end
+ 
+-  `BR_ASSERT(strict_priority_a, (i < j) && request[i] && request[j] |-> !grant[j])
+-
+ endmodule : br_arb_fixed_fpv_monitor
+ 
+ bind br_arb_fixed br_arb_fixed_fpv_monitor #(.NumRequesters(NumRequesters)) monitor (.*);
+diff --git a/arb/rtl/BUILD.bazel b/arb/rtl/BUILD.bazel
+index 2506a801..7a816871 100644
+--- a/arb/rtl/BUILD.bazel
++++ b/arb/rtl/BUILD.bazel
+@@ -80,6 +80,7 @@ verilog_library(
+ br_verilog_elab_and_lint_test_suite(
+     name = "br_arb_fixed_test_suite",
+     params = {"NumRequesters": [
++        "1",
+         "2",
+         "5",
+     ]},

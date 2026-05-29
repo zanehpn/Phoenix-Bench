@@ -1,0 +1,39 @@
+diff --git a/rtl/pulp_soc/l2_ram_multi_bank.sv b/rtl/pulp_soc/l2_ram_multi_bank.sv
+index 86ba415..19b377d 100755
+--- a/rtl/pulp_soc/l2_ram_multi_bank.sv
++++ b/rtl/pulp_soc/l2_ram_multi_bank.sv
+@@ -55,20 +55,20 @@ module l2_ram_multi_bank #(
+            This model the hybrid SRAM and SCM configuration
+            that has been tape-out.
+            */
+-          generic_memory #(
+-                           .ADDR_WIDTH ( INTL_MEM_ADDR_WIDTH ),
+-                           .DATA_WIDTH ( 32                  )
+-                           ) bank_i (
+-                                               .CLK   ( clk_i                                             ),
+-                                               .INITN ( 1'b1                                              ),
+-                                               .CEN   ( ~mem_slave[i].req                                 ),
+-                                               .BEN   ( ~mem_slave[i].be                                  ),
+-                                               .WEN   ( mem_slave[i].wen                                  ),
+-                                               .A     ( interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+1:2] ), //Convert from
+-                                                                                                             //byte to word addressing
+-                                               .D     ( mem_slave[i].wdata                                ),
+-                                               .Q     ( mem_slave[i].r_rdata                              )
+-                                               );
++        generic_memory #(
++                         .ADDR_WIDTH ( INTL_MEM_ADDR_WIDTH ),
++                         .DATA_WIDTH ( 32                  )
++                         ) bank_i (
++                                             .CLK   ( clk_i                                             ),
++                                             .INITN ( 1'b1                                              ),
++                                             .CEN   ( ~mem_slave[i].req                                 ),
++                                             .BEN   ( ~mem_slave[i].be                                  ),
++                                             .WEN   ( mem_slave[i].wen                                  ),
++                                             .A     ( interleaved_addresses[i][INTL_MEM_ADDR_WIDTH+$clog2(NB_BANKS)+1:$clog2(NB_BANKS)+2] ), //Convert from
++                                                                                                                                    //byte to word addressing and remove bank select bits
++                                             .D     ( mem_slave[i].wdata                                ),
++                                             .Q     ( mem_slave[i].r_rdata                              )
++                                             );
+ 
+       `else // !`ifndef PULP_FPGA_EMUL
+           fpga_interleaved_ram #(.ADDR_WIDTH(INTL_MEM_ADDR_WIDTH)) bank_i

@@ -1,0 +1,11 @@
+The dead code is in `rtl/ibex_decoder.sv`, in the `OPCODE_OP` decode path for the RISC-V “OP” major opcode.
+
+### Why this is a bug
+The issue describes an `else` branch that is unreachable because an outer condition already excludes `instr[26] == 1`. In Ibex, this kind of pattern is typically in the RV32B / bitmanip decode section, where a nested `if` checks bitfields that are already constrained by a surrounding `if (!instr[26]) ... else ...` split. That means one of the assignments in the later `else` branch is dead code and should be removed or merged.
+
+Since the provided snippet is truncated before the `OPCODE_OP` body, I can’t quote the exact lines from the current file text here. But the fix should be made in `rtl/ibex_decoder.sv` around the decode logic for `OPCODE_OP`, in the section that branches on `instr[26]`.
+
+### Intended fix
+Remove the unreachable `else` branch or fold its assignment into the reachable branch, so there is no assignment guarded by a condition that can never be true.
+
+If you want, I can help you craft the exact `SEARCH/REPLACE` patch once you provide the `OPCODE_OP` decode block around line ~406–439.

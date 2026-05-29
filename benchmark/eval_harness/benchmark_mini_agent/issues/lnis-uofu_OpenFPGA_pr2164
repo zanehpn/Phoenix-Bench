@@ -1,0 +1,46 @@
+# Support don't care bit 'x' in the mode bits definition of OpenFPGA Architecture Language
+
+- Source URL: https://github.com/lnis-uofu/OpenFPGA/issues/2161
+
+**Is your feature request related to a problem? Please describe.**
+When integrating custom blocks containing fracturable mode selection bits, it happens that a pb_type in a operating mode only requires to update partial mode-selection bits. 
+For example, a multiplier with the following fracturable operating modes:
+
+- Single 18x18 - Combinational
+- Single 18x18 with input registers
+- Dual 9x9 - Combinational
+- Dual 9x9 with input registers, each 9x9 can operate separately.
+
+In the case, when users try to map two multiplier primitives
+
+- 9x9 combinational
+- 9x9 with input register
+
+into a logic block (assume each logic block contains only 1 fracturable multiplier)
+
+We want VPR to select the best location for each primitive in the logic block.
+Therefore, the mode selection bits for each primitive 9x9 with input register should require to update only part of the mode-selection bits of its physical pb_type.
+
+```
+<pb_type name="mult_16" physical_mode_name="mult_16x16"/>
+<!-- The first bit switches between 9x9 and 18x18 mode -->
+<!-- The second bit switches between enable/disable input register for the first 9x9 -->
+<!-- The third bit switches between enable/disable input register for the second 9x9 -->
+<pb_type name="mult_16[mult_16x16].mult_16x16_slice.mult_16x16" circuit_model_name="frac_mult_16x16" mode_bits="100"/>
+<!-- The first 9x9 with register should only alter the second bit -->
+<pb_type name="mult_16[mult_8x8].mult_8x8_slice.mult_8x8_regin_0" physical_pb_type_name="mult_16[mult_16x16].mult_16x16_slice.mult_16x16" mode_bits="01x"/>
+<!-- The first 9x9 with register should only alter the second bit -->
+<pb_type name="mult_16[mult_8x8].mult_8x8_slice.mult_8x8_comb_0" physical_pb_type_name="mult_16[mult_16x16].mult_16x16_slice.mult_16x16" mode_bits="00x"/>
+<!-- The second 9x9 with register should only alter the third bit -->
+<pb_type name="mult_16[mult_8x8].mult_8x8_slice.mult_8x8_regin_1" physical_pb_type_name="mult_16[mult_16x16].mult_16x16_slice.mult_16x16" mode_bits="0x1"/>
+<!-- The second 9x9 with register should only alter the third bit -->
+<pb_type name="mult_16[mult_8x8].mult_8x8_slice.mult_8x8_comb_1" physical_pb_type_name="mult_16[mult_16x16].mult_16x16_slice.mult_16x16" mode_bits="0x0"/>
+```
+
+**Describe the solution you'd like**
+
+
+The mode bits should support the don't care bit ``x``.
+When a bit is defined as 'x', the mode-selection bit of operating pb_type will not update the corresponding bit of its physical pb_type.
+As such, partial mode bit mapping is achieved.
+**Only the operating modes allow don't care bits**

@@ -1,0 +1,304 @@
+From dee6f8f74aa16712d37372ad02b27dd3d652f2ee Mon Sep 17 00:00:00 2001
+From: Steven Herbst <sherbst@stanford.edu>
+Date: Thu, 14 May 2020 14:18:31 -0700
+Subject: [PATCH 1/2] add basic test for mdll
+
+---
+ tests/new_tests/MDLL/test.sv      | 157 ++++++++++++++++++++++++++++++
+ tests/new_tests/MDLL/test_mdll.py |  44 +++++++++
+ 2 files changed, 201 insertions(+)
+ create mode 100644 tests/new_tests/MDLL/test.sv
+ create mode 100644 tests/new_tests/MDLL/test_mdll.py
+
+diff --git a/tests/new_tests/MDLL/test.sv b/tests/new_tests/MDLL/test.sv
+new file mode 100644
+index 00000000..a85c4b91
+--- /dev/null
++++ b/tests/new_tests/MDLL/test.sv
+@@ -0,0 +1,157 @@
++`include "mLingua_pwl.vh"
++
++`define FORCE_ADBG(name, value) force top_i.iacore.adbg_intf_i.``name`` = ``value``
++`define FORCE_DDBG(name, value) force top_i.idcore.ddbg_intf_i.``name`` = ``value``
++`define FORCE_MDBG(name, value) force top_i.mdbg_intf_i.``name`` = ``value``
++
++module test;
++
++	import test_pack::*;
++	import checker_pack::*;
++
++	// clock inputs
++	logic ext_mdll_clk_refp;
++	logic ext_mdll_clk_refn;
++
++	// clock outputs
++	logic clk_out_p;
++	logic clk_out_n;
++
++	// dump control
++	logic dump_start;
++
++	// reset
++	logic rstb;
++
++	// JTAG driver
++	jtag_intf jtag_intf_i ();
++	jtag_drv jtag_drv_i (jtag_intf_i);
++
++	// instantiate top module
++	dragonphy_top top_i (
++        // clock inputs
++		.ext_mdll_clk_refp(ext_mdll_clk_refp),
++	    .ext_mdll_clk_refn(ext_mdll_clk_refn),
++
++        // clock outputs
++		.clk_out_p(clk_out_p),
++		.clk_out_n(clk_out_n),
++
++		// reset
++        .ext_rstb(rstb),
++
++        // JTAG
++		.jtag_intf_i(jtag_intf_i)
++
++		// other I/O not used..
++	);
++
++	// External clocks
++
++	clock #(
++		.freq(125.0e6),
++		.duty(0.5),
++		.td(0)
++	) ext_clk_i (
++		.ckout(ext_mdll_clk_refp),
++		.ckoutb(ext_mdll_clk_refn)
++	);
++
++	// Frequency measurement
++
++	pwl clk_in_pi_period;
++	meas_clock meas_clk_in_pi (
++		.clk(top_i.iacore.clk_in_pi),
++		.period(clk_in_pi_period)
++	);
++
++	pwl clk_out_period_p;
++	meas_clock meas_clk_out_p (
++		.clk(clk_out_p),
++		.period(clk_out_period_p)
++	);
++
++	pwl clk_out_period_n;
++	meas_clock meas_clk_out_n (
++		.clk(clk_out_n),
++		.period(clk_out_period_n)
++	);
++
++	// Main test
++
++	initial begin
++		`ifdef DUMP_WAVEFORMS
++	        $shm_open("waves.shm");
++	        $shm_probe("ASMC");
++        `endif
++
++        // initialize control signals
++		rstb = 1'b0;
++        #(1ns);
++
++		// Release reset
++		$display("Releasing external reset...");
++		rstb = 1'b1;
++        #(1ns);
++
++        // Initialize JTAG
++        $display("Initializing JTAG...");
++        jtag_drv_i.init();
++
++        // Soft reset sequence
++        $display("Soft reset sequence...");
++        `FORCE_DDBG(int_rstb, 1);
++        #(1ns);
++        `FORCE_ADBG(en_inbuf, 1);
++		#(1ns);
++        `FORCE_ADBG(en_gf, 1);
++        #(1ns);
++        `FORCE_ADBG(en_v2t, 1);
++        #(1ns);
++
++        // Enable input buffer for the MDLL reference clock
++        $display("Enable input buffer for the MDLL reference clock...");
++        `FORCE_ADBG(disable_ibuf_mdll_ref, 0);
++        #(1ns);
++
++        // Take the MDLL out of reset and enable the oscillator
++        $display("Take the MDLL out of reset and enable the oscillator...");
++        `FORCE_MDBG(rstn_jtag, 1);
++        #(25ns);
++        `FORCE_MDBG(en_osc_jtag, 1);
++        #(25ns);
++
++        // Use the MDLL clock in the analog core
++        $display("Use the MDLL clock in the analog core...");
++        `FORCE_ADBG(sel_clk_source, 1);
++        #(25ns);
++
++        // Bypass the initial divide-by-two in the analog core
++        $display("Bypass the initial divide-by-two in the analog core...");
++        `FORCE_ADBG(bypass_inbuf_div2, 1);
++        #(25ns);
++
++		// Set up the output buffer
++		$display("Set up the output buffer...");
++		`FORCE_DDBG(en_outbuff, 1);
++        #(1ns);
++        `FORCE_DDBG(sel_outbuff, 13);  // MDLL output clock
++        #(1ns);
++
++		// Wait a little bit to measure frequencies
++		#(100ns);
++
++		// run assertions
++		$display("Testing PI input clock");
++		$display("CLK_IN_PI period: ", clk_in_pi_period.a);
++		check_rel_tol(1.0/clk_in_pi_period.a, 4e9, 0.05);
++
++		$display("Testing output clock");
++		$display("CLK_OUT period: ", clk_out_period_p.a);
++		check_rel_tol(1.0/clk_out_period_p.a, 4e9, 0.05);
++		check_rel_tol(1.0/clk_out_period_n.a, 4e9, 0.05);
++		
++		$finish;
++	end
++
++endmodule
+diff --git a/tests/new_tests/MDLL/test_mdll.py b/tests/new_tests/MDLL/test_mdll.py
+new file mode 100644
+index 00000000..fd0296a6
+--- /dev/null
++++ b/tests/new_tests/MDLL/test_mdll.py
+@@ -0,0 +1,44 @@
++# general imports
++import os
++import pytest
++from pathlib import Path
++
++# DragonPHY imports
++from dragonphy import *
++
++THIS_DIR = Path(__file__).parent.resolve()
++BUILD_DIR = THIS_DIR / 'build'
++if 'FPGA_SERVER' in os.environ:
++    SIMULATOR = 'vivado'
++else:
++    SIMULATOR = 'ncsim'
++
++# Set DUMP_WAVEFORMS to True if you want to dump all waveforms for this
++# test.  The waveforms are stored in tests/new_tests/MDLL/build/waves.shm
++DUMP_WAVEFORMS = False
++
++@pytest.mark.parametrize((), [pytest.param(marks=pytest.mark.slow) if SIMULATOR=='vivado' else ()])
++def test_sim():
++    deps = get_deps_cpu_sim_new(impl_file=THIS_DIR / 'test.sv')
++    print(deps)
++
++    defines = {
++        'DAVE_TIMEUNIT': '1fs',
++        'NCVLOG': None,
++        'SIMULATION': None
++    }
++
++    flags = ['-unbuffered']
++    if DUMP_WAVEFORMS:
++        defines['DUMP_WAVEFORMS'] = None
++        flags += ['-access', '+r']
++
++    DragonTester(
++        ext_srcs=deps,
++        directory=BUILD_DIR,
++        top_module='test',
++        inc_dirs=[get_mlingua_dir() / 'samples', get_dir('inc/new_cpu')],
++        defines=defines,
++        flags=flags,
++        simulator=SIMULATOR
++    ).run()
+\ No newline at end of file
+
+From 919ce1e7958136e196d7a43081a2bcfd6fb76a1a Mon Sep 17 00:00:00 2001
+From: Steven Herbst <sherbst@stanford.edu>
+Date: Fri, 15 May 2020 09:44:25 -0700
+Subject: [PATCH 2/2] updates for change in interface to buffers
+
+---
+ tests/new_tests/MDLL/test.sv | 26 ++++++++++++--------------
+ 1 file changed, 12 insertions(+), 14 deletions(-)
+
+diff --git a/tests/new_tests/MDLL/test.sv b/tests/new_tests/MDLL/test.sv
+index a85c4b91..a198c0fc 100644
+--- a/tests/new_tests/MDLL/test.sv
++++ b/tests/new_tests/MDLL/test.sv
+@@ -1,8 +1,6 @@
+ `include "mLingua_pwl.vh"
+ 
+-`define FORCE_ADBG(name, value) force top_i.iacore.adbg_intf_i.``name`` = ``value``
+-`define FORCE_DDBG(name, value) force top_i.idcore.ddbg_intf_i.``name`` = ``value``
+-`define FORCE_MDBG(name, value) force top_i.mdbg_intf_i.``name`` = ``value``
++`define FORCE_JTAG(name, value) force top_i.idcore.jtag_i.rjtag_intf_i.``name`` = ``value``
+ 
+ module test;
+ 
+@@ -100,42 +98,42 @@ module test;
+ 
+         // Soft reset sequence
+         $display("Soft reset sequence...");
+-        `FORCE_DDBG(int_rstb, 1);
++        `FORCE_JTAG(int_rstb, 1);
+         #(1ns);
+-        `FORCE_ADBG(en_inbuf, 1);
++        `FORCE_JTAG(en_inbuf, 1);
+ 		#(1ns);
+-        `FORCE_ADBG(en_gf, 1);
++        `FORCE_JTAG(en_gf, 1);
+         #(1ns);
+-        `FORCE_ADBG(en_v2t, 1);
++        `FORCE_JTAG(en_v2t, 1);
+         #(1ns);
+ 
+         // Enable input buffer for the MDLL reference clock
+         $display("Enable input buffer for the MDLL reference clock...");
+-        `FORCE_ADBG(disable_ibuf_mdll_ref, 0);
++        `FORCE_JTAG(disable_ibuf_mdll_ref, 0);
+         #(1ns);
+ 
+         // Take the MDLL out of reset and enable the oscillator
+         $display("Take the MDLL out of reset and enable the oscillator...");
+-        `FORCE_MDBG(rstn_jtag, 1);
++        `FORCE_JTAG(rstn_jtag, 1);
+         #(25ns);
+-        `FORCE_MDBG(en_osc_jtag, 1);
++        `FORCE_JTAG(en_osc_jtag, 1);
+         #(25ns);
+ 
+         // Use the MDLL clock in the analog core
+         $display("Use the MDLL clock in the analog core...");
+-        `FORCE_ADBG(sel_clk_source, 1);
++        `FORCE_JTAG(sel_clk_source, 1);
+         #(25ns);
+ 
+         // Bypass the initial divide-by-two in the analog core
+         $display("Bypass the initial divide-by-two in the analog core...");
+-        `FORCE_ADBG(bypass_inbuf_div2, 1);
++        `FORCE_JTAG(bypass_inbuf_div2, 1);
+         #(25ns);
+ 
+ 		// Set up the output buffer
+ 		$display("Set up the output buffer...");
+-		`FORCE_DDBG(en_outbuff, 1);
++		`FORCE_JTAG(en_outbuff, 1);
+         #(1ns);
+-        `FORCE_DDBG(sel_outbuff, 13);  // MDLL output clock
++        `FORCE_JTAG(sel_outbuff, 13);  // MDLL output clock
+         #(1ns);
+ 
+ 		// Wait a little bit to measure frequencies

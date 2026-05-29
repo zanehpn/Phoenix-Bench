@@ -1,0 +1,53 @@
+The bug is in `src/dm_sba.sv`.
+
+### Localization
+`sbdata_valid_o` is currently tied directly to `master_r_valid_i`:
+
+```systemverilog
+assign sbdata_valid_o  = master_r_valid_i;
+```
+
+This means the SBA state machine advances as soon as the bus response is available, but `dmi_resp_valid_o` in the higher-level DM path can still be produced independently of the actual master read completion. In fast/slow simulation mismatches, this can cause burst read data to be observed too early, resulting in dropped/interleaved reads as described.
+
+The fix is to defer completion of the SBA read transaction until the master read data is actually valid, so the response presented to the DMI side only advances when `master_r_valid_i` is asserted.
+
+### SEARCH/REPLACE edit
+
+```systemverilog
+### src/dm_sba.sv
+<<<<<<< SEARCH
+      WaitRead: begin
+        if (sbdata_valid_o) begin
+          state_d = Idle;
+          // auto-increment address
+          if (sbautoincrement_i) sbaddress_o = sbaddress_i + (32'b1 << sbaccess_i);
+        end
+      end
+
+      WaitWrite: begin
+        if (sbdata_valid_o) begin
+          state_d = Idle;
+          // auto-increment address
+          if (sbautoincrement_i) sbaddress_o = sbaddress_i + (32'b1 << sbaccess_i);
+        end
+      end
+=======
+      WaitRead: begin
+        if (master_r_valid_i) begin
+          state_d = Idle;
+          // auto-increment address
+          if (sbautoincrement_i) sbaddress_o = sbaddress_i + (32'b1 << sbaccess_i);
+        end
+      end
+
+      WaitWrite: begin
+        if (sbdata_valid_o) begin
+          state_d = Idle;
+          // auto-increment address
+          if (sbautoincrement_i) sbaddress_o = sbaddress_i + (32'b1 << sbaccess_i);
+        end
+      end
+>>>>>>> REPLACE
+```
+
+If you want, I can also check whether `sbdata_valid_o` should be generated from a registered copy of `master_r_valid_i` instead, to make the timing behavior cleaner across simulators.

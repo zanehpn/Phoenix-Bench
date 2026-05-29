@@ -1,0 +1,31 @@
+diff --git a/src/dmi_jtag_tap.sv b/src/dmi_jtag_tap.sv
+index 01153ec..b8f6c27 100644
+--- a/src/dmi_jtag_tap.sv
++++ b/src/dmi_jtag_tap.sv
+@@ -197,14 +197,13 @@ module dmi_jtag_tap #(
+     end
+   end
+ 
+-logic trst_sync1, trst_sync2;
++logic trst_no;
+ 
+ always_ff @(posedge tck_i or negedge trst_ni) begin
+   if (!trst_ni) begin
+-    trst_sync2 <= 1'b0;
++    trst_no <= 1'b0;
+   end else begin
+-    trst_sync2 <= trst_sync1;
+-    trst_no    <= trst_sync2;
++    trst_no <= (tap_state_q == TestLogicReset);
+   end
+ end
+ 
+@@ -214,8 +213,6 @@ end
+   // Determination of next state; purely combinatorial
+   always_comb begin : p_tap_fsm
+ 
+-    trst_sync1         = trst_ni;
+-
+     capture_dr         = 1'b0;
+     shift_dr           = 1'b0;
+     update_dr          = 1'b0;

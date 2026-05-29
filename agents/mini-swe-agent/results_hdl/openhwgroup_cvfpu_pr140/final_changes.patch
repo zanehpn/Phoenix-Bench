@@ -1,0 +1,14 @@
+diff --git a/src/fpnew_cast_multi.sv b/src/fpnew_cast_multi.sv
+index 04692ca..776b64d 100644
+--- a/src/fpnew_cast_multi.sv
++++ b/src/fpnew_cast_multi.sv
+@@ -725,7 +725,8 @@ module fpnew_cast_multi #(
+   assign fp_regular_status.OF = ~src_is_int_q & (~info_q.is_inf & (of_before_round | of_after_round)); // inf casts no OF
+   assign fp_regular_status.UF = uf_after_round & fp_regular_status.NX;
+   assign fp_regular_status.NX = src_is_int_q ? (| fp_round_sticky_bits) // overflow is invalid in i2f
+-            : (| fp_round_sticky_bits) | (~info_q.is_inf & (of_before_round | of_after_round));
++            : ((| fp_round_sticky_bits) | (~info_q.is_inf & (of_before_round | of_after_round)))
++              & ~info_q.is_inf;
+   assign int_regular_status = '{NX: (| int_round_sticky_bits), default: 1'b0};
+ 
+   assign fp_result  = fp_result_is_special  ? fp_special_result  : fmt_result[dst_fmt_q2];

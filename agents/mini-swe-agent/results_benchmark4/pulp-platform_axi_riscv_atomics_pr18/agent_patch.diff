@@ -1,0 +1,73 @@
+diff --git a/src/axi_riscv_lrsc.sv b/src/axi_riscv_lrsc.sv
+index 2fd7f11..135273c 100644
+--- a/src/axi_riscv_lrsc.sv
++++ b/src/axi_riscv_lrsc.sv
+@@ -40,6 +40,9 @@ module axi_riscv_lrsc #(
+     parameter int unsigned AXI_MAX_WRITE_TXNS = 0, // Maximum number of in-flight write transactions
+     /// Enable debug prints (not synthesizable).
+     parameter bit DEBUG = 1'b0,
++    parameter bit AXI_USER_AS_ID = 1'b0,
++    parameter int unsigned AXI_USER_ID_MSB = AXI_USER_WIDTH-1,
++    parameter int unsigned AXI_USER_ID_LSB = 0,
+     /// Derived Parameters (do NOT change manually!)
+     localparam int unsigned AXI_STRB_WIDTH = AXI_DATA_WIDTH / 8
+ ) (
+@@ -156,6 +159,7 @@ module axi_riscv_lrsc #(
+     typedef logic [AXI_ID_WIDTH-1:0]    axi_id_t;
+     typedef logic [1:0]                 axi_resp_t;
+     typedef logic [AXI_USER_WIDTH-1:0]  axi_user_t;
++    typedef logic [AXI_USER_ID_MSB-AXI_USER_ID_LSB:0] axi_res_id_t;
+     typedef logic [AXI_ADDR_WIDTH-3:0]  res_addr_t; // Track reservations word wise.
+ 
+     typedef enum logic [1:0] {
+@@ -529,7 +533,7 @@ module axi_riscv_lrsc #(
+     ) i_write_in_flight_queue (
+         .clk_i              (clk_i),
+         .rst_ni             (rst_ni),
+-        .inp_id_i           (mst_aw_id_o),
++        .inp_id_i           (AXI_USER_AS_ID ? mst_aw_user_o[AXI_USER_ID_MSB:AXI_USER_ID_LSB] : mst_aw_id_o),
+         .inp_data_i         ({mst_aw_addr_o[AXI_ADDR_WIDTH-1:2], slv_aw_lock_i}),
+         .inp_req_i          (mst_aw_valid && mst_aw_ready),
+         .inp_gnt_o          (wifq_inp_gnt),
+@@ -626,8 +630,6 @@ module axi_riscv_lrsc #(
+             mst_aw_qos_o,
+             mst_aw_id_o,
+             mst_aw_user_o} = mst_aw;
+-
+-
+     fall_through_register #(
+         .T (aw_chan_t)
+     ) i_aw_trans_reg (
+@@ -687,7 +689,7 @@ module axi_riscv_lrsc #(
+                             if (aw_wifq_exists_gnt && !wifq_exists) begin
+                                 // Check reservation and clear identical addresses.
+                                 art_check_clr_addr  = slv_aw_addr_i[AXI_ADDR_WIDTH-1:2];
+-                                art_check_id        = slv_aw_id_i;
++                                art_check_id        = AXI_USER_AS_ID ? slv_aw_user_i[AXI_USER_ID_MSB:AXI_USER_ID_LSB] : slv_aw_id_i;
+                                 art_check_clr_excl  = slv_aw_lock_i;
+                                 if (mst_aw_ready) begin
+                                     art_check_clr_req = 1'b1;
+@@ -707,7 +709,7 @@ module axi_riscv_lrsc #(
+                                             slv_aw_ready_o = 1'b1;
+                                         end
+                                         // Store command to forward or drop W burst.
+-                                        w_cmd_inp = '{forward: art_check_res, id: slv_aw_id_i,
++                                        w_cmd_inp = '{forward: art_check_res, id: AXI_USER_AS_ID ? axi_id_t'(slv_aw_user_i[AXI_USER_ID_MSB:AXI_USER_ID_LSB]) : slv_aw_id_i,
+                                                 user: slv_aw_user_i};
+                                         w_cmd_push = 1'b1;
+                                         // Add B status for this ID (exclusive if there is a
+@@ -741,7 +743,7 @@ module axi_riscv_lrsc #(
+                             w_cmd_inp = '{forward: 1'b1, id: '0, user: '0};
+                             w_cmd_push = 1'b1;
+                             // Track B response as regular-okay.
+-                            b_status_inp_id  = slv_aw_id_i;
++                            b_status_inp_id  = AXI_USER_AS_ID ? axi_id_t'(slv_aw_user_i[AXI_USER_ID_MSB:AXI_USER_ID_LSB]) : slv_aw_id_i;
+                             b_status_inp_cmd = B_REGULAR;
+                             b_status_inp_req = 1'b1;
+                         end
+@@ -995,5 +997,4 @@ module axi_riscv_lrsc #(
+     end
+ `endif
+ // pragma translate_on
+-
+ endmodule

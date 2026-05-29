@@ -1,0 +1,29 @@
+diff --git a/hw/xilinx/rtl/rv_socket.sv b/hw/xilinx/rtl/rv_socket.sv
+index 6b36829..285231f 100644
+--- a/hw/xilinx/rtl/rv_socket.sv
++++ b/hw/xilinx/rtl/rv_socket.sv
+@@ -44,8 +44,8 @@ module rv_socket # (
+     localparam logic [31:0] DEBUG_START   = 32'h10000; // From config
+ 
+     // From dm_pkg
+-    localparam logic [31:0] dm_HaltAddress = 64'h800;
+-    localparam logic [31:0] dm_ExceptionAddress = dm_HaltAddress + 16;
++    localparam logic [63:0] dm_HaltAddress = 64'h800;
++    localparam logic [63:0] dm_ExceptionAddress = dm_HaltAddress + 16;
+ 
+     //////////////////////////////////////
+     //    ___ _                _        //
+@@ -55,6 +55,13 @@ module rv_socket # (
+     //         |___/                    //
+     //////////////////////////////////////
+ 
++    // Enforce XLEN/core compatibility for 64-bit systems
++    initial begin
++        if (ADDR_WIDTH == 64 && CORE_SELECTOR != CORE_MICROBLAZEV) begin
++            $fatal(1, "RV64 requires a 64-bit core selector");
++        end
++    end
++
+     // Core reset
+     logic core_resetn_internal;
+     assign core_resetn_internal = rst_ni & core_resetn_i;

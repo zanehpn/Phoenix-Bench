@@ -1,0 +1,25 @@
+diff --git a/src/fpga/tc_sram_xilinx.sv b/src/fpga/tc_sram_xilinx.sv
+index e297186..5b82f02 100755
+--- a/src/fpga/tc_sram_xilinx.sv
++++ b/src/fpga/tc_sram_xilinx.sv
+@@ -55,7 +55,7 @@ module tc_sram #(
+   localparam int unsigned Size             = NumWords * DataWidthAligned;
+ 
+   typedef logic [DataWidthAligned-1:0]     data_aligned_t;
+-  typedef logic [BytesPerByte*BeWidth-1:0] be_aligned_t;
++  typedef logic [DataWidthAligned-1:0] be_aligned_t;
+ 
+   data_aligned_t [NumPorts-1:0] wdata_pad;
+   data_aligned_t [NumPorts-1:0] rdata_pad;
+@@ -72,9 +72,9 @@ module tc_sram #(
+         // Unpack data
+         assign wdata_al[i][j*ByteWidthAligned+:ByteWidthAligned] = ByteWidthAligned'(wdata_pad[i][j*ByteWidth+:ByteWidth]);
+         assign rdata_pad[i][j*ByteWidth+:ByteWidth]              = ByteWidth'(rdata_al[i][j*ByteWidthAligned+:ByteWidthAligned]);
+-        // In case ByteWidth > 8, let each be_i drive the corresponding number of memory be
+-        assign be_al[i][j*BytesPerByte+:BytesPerByte]            = be_i[i][j];
+-        assign we_al[i][j*BytesPerByte+:BytesPerByte]            = be_i[i][j] & we_i[i];
++        // In case ByteWidth > 8, replicate each byte-enable across the aligned storage width.
++        assign be_al[i][j*ByteWidthAligned+:ByteWidthAligned]     = {ByteWidthAligned{be_i[i][j]}};
++        assign we_al[i][j*ByteWidthAligned+:ByteWidthAligned]     = {ByteWidthAligned{be_i[i][j] & we_i[i]}};
+     end
+   end

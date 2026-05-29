@@ -1,0 +1,69 @@
+{
+  "case_name": "pulp-platform_snitch_pr394",
+  "status": "completed",
+  "num_patches": 3,
+  "bug_locs": [
+    [
+      {
+        "rel_file_path": "hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_snitch_pr394/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv",
+        "start": 129,
+        "end": 162,
+        "class_name": null,
+        "method_name": null,
+        "code": "129   //\n130   // That said there are then two copies of the FSM state variable\n131   // Actual:   The true state of the FSM, which controls the peripheral IOs and the interactions with\n132   //           the other blocks.\n133   // Prestall: The \"tentative\" state of the FSM, which can be overridden by stall events. Normally\n134   //           this matches the actual state. However when a stall event is recieved, the actual\n135   //           state remains unchanged.  Once the stall event is resolved, the actual state is\n136   //           updated to match the prestall state.\n137   //\n138   // The prestall state variable has no combinational logic dependency on the stall signal.\n139 \n140   spi_host_st_e prestall_st_q, prestall_st_d, actual_st_d, actual_st_q;\n141 \n142   assign new_command     = command_valid_i && command_ready_o;\n143   assign switch_required = command_valid_i && (command_i.csid != csid_q);\n144 \n145   always_comb begin\n146     csid      = new_command ? command_i.csid : csid_q;\n147     cpol      = new_command ? command_i.configopts.cpol : cpol_q;\n148     cpha      = new_command ? command_i.configopts.cpha : cpha_q;\n149     full_cyc  = new_command ? command_i.configopts.full_cyc : full_cyc_q;\n150     csnidle   = new_command ? command_i.configopts.csnidle : csnidle_q;\n151     csnlead   = new_command ? command_i.configopts.csnlead : csnlead_q;\n152     csntrail  = new_command ? command_i.configopts.csntrail : csntrail_q;\n153     clkdiv    = new_command ? command_i.configopts.clkdiv : clkdiv_q;\n154     csaat     = new_command ? command_i.segment.csaat : csaat_q;\n155     // cmd_len needs no data latching as it is only used at the very start of a command.\n156     cmd_len   = command_i.segment.len;\n157     cmd_rd_en = new_command ? command_i.segment.cmd_rd_en : cmd_rd_en_q;\n158     cmd_wr_en = new_command ? command_i.segment.cmd_wr_en : cmd_wr_en_q;\n159     cmd_speed = new_command ? command_i.segment.speed : cmd_speed_q;\n160   end\n161 \n162   always_ff @(posedge clk_i or negedge rst_ni) begin\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_snitch_pr394/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv",
+        "start": 255,
+        "end": 314,
+        "class_name": null,
+        "method_name": null,
+        "code": "255             prestall_st_d = WaitTrail;\n256           end else if (!command_valid_i) begin\n257             prestall_st_d = IdleCSBActive;\n258           end else if (command_i.csid != csid_q) begin\n259             prestall_st_d = WaitTrail;\n260           end else begin\n261             command_ready_o  = 1'b1;\n262             prestall_st_d = InternalClkLow;\n263           end\n264         end\n265         WaitTrail: begin\n266           // Prepare to enter CSB high idle state by waiting csntrail cycles.\n267           if (trail_cntr_q == 4'h0) begin\n268             prestall_st_d = WaitIdle;\n269           end\n270         end\n271         WaitIdle: begin\n272           // Once CSB is high, wait for the designated number of cyclse before accepting commands.\n273           if (idle_cntr_q == 4'h0) begin\n274             // ready to accept new command\n275             command_ready_o = 1'b1;\n276             if (command_valid_i) begin\n277               if (switch_required) begin\n278                  prestall_st_d = CSBSwitch;\n279               end else begin\n280                  prestall_st_d = WaitLead;\n281               end\n282             end else begin\n283               prestall_st_d = Idle;\n284             end\n285           end\n286         end\n287         CSBSwitch: begin\n288           // Insert extra idle cycles when swtiching between CSID, this allows time to switch CPHA,\n289           // CPOL and clkdiv settings, as well as guarantee that the idle delay requirements have\n290           // been observed for the new device.\n291           if (idle_cntr_q == 4'h0) begin\n292             prestall_st_d = WaitLead;\n293           end else begin\n294             prestall_st_d = WaitIdle;\n295           end\n296         end\n297         IdleCSBActive: begin\n298           // Wait for new commands, but with CSB held active low.\n299           if (command_valid_i) begin\n300             if (command_i.csid != csid_q) begin\n301               // New command received, but for a different CSID than the last.  Deactivate CSB,\n302               // while still adhering to trail and idle time requirements\n303               prestall_st_d = WaitTrail;\n304               // Explicitly delay command_ready until the end of WaitIdle.  We need to observe\n305               // the trail time requirements for the current CSID, so we can't update our\n306               // configopts until CSB is high.\n307               command_ready_o = 1'b0;\n308             end else begin\n309               command_ready_o = 1'b1;\n310               prestall_st_d = InternalClkLow;\n311             end\n312           end else begin\n313             command_ready_o = 1'b1;\n314           end\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_snitch_pr394/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host_fsm.sv",
+        "start": 277,
+        "end": 304,
+        "class_name": null,
+        "method_name": null,
+        "code": "277               if (switch_required) begin\n278                  prestall_st_d = CSBSwitch;\n279               end else begin\n280                  prestall_st_d = WaitLead;\n281               end\n282             end else begin\n283               prestall_st_d = Idle;\n284             end\n285           end\n286         end\n287         CSBSwitch: begin\n288           // Insert extra idle cycles when swtiching between CSID, this allows time to switch CPHA,\n289           // CPOL and clkdiv settings, as well as guarantee that the idle delay requirements have\n290           // been observed for the new device.\n291           if (idle_cntr_q == 4'h0) begin\n292             prestall_st_d = WaitLead;\n293           end else begin\n294             prestall_st_d = WaitIdle;\n295           end\n296         end\n297         IdleCSBActive: begin\n298           // Wait for new commands, but with CSB held active low.\n299           if (command_valid_i) begin\n300             if (command_i.csid != csid_q) begin\n301               // New command received, but for a different CSID than the last.  Deactivate CSB,\n302               // while still adhering to trail and idle time requirements\n303               prestall_st_d = WaitTrail;\n304               // Explicitly delay command_ready until the end of WaitIdle.  We need to observe\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_snitch_pr394/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host.sv",
+        "start": 122,
+        "end": 165,
+        "class_name": null,
+        "method_name": null,
+        "code": "122       end\n123       Bidir: begin\n124         command.segment.cmd_rd_en = 1'b1;\n125         command.segment.cmd_wr_en = 1'b1;\n126       end\n127       default: begin\n128       end\n129     endcase\n130   end\n131 \n132   assign error_csid_inval = command_valid & ~command_busy &\n133                             test_csid_inval;\n134   assign error_cmd_inval  = command_valid & ~command_busy &\n135                             (test_speed_inval | test_dir_inval);\n136 \n137   spi_host_reg_pkg::spi_host_reg2hw_configopts_mreg_t configopts;\n138 \n139   if (NumCS == 1) begin : gen_single_device\n140     assign configopts   = reg2hw.configopts[0];\n141     assign command.csid = '0;\n142   end else begin : gen_multiple_devices\n143     logic [CSW-1:0] csid;\n144     assign csid         = (test_csid_inval) ? '0 : reg2hw.csid.q[CSW-1:0];\n145     assign configopts   = reg2hw.configopts[csid];\n146     assign command.csid = csid;\n147   end : gen_multiple_devices\n148 \n149   assign command.configopts.clkdiv   = configopts.clkdiv.q;\n150   assign command.configopts.csnidle  = configopts.csnidle.q;\n151   assign command.configopts.csnlead  = configopts.csnlead.q;\n152   assign command.configopts.csntrail = configopts.csntrail.q;\n153   assign command.configopts.full_cyc = configopts.fullcyc.q;\n154   assign command.configopts.cpha     = configopts.cpha.q;\n155   assign command.configopts.cpol     = configopts.cpol.q;\n156 \n157   assign command.segment.len         = reg2hw.command.len.q;\n158   assign command.segment.csaat       = reg2hw.command.csaat.q;\n159   assign command.segment.speed       = reg2hw.command.speed.q;\n160 \n161 \n162   logic [3:0] cmd_qes;\n163 \n164   assign cmd_qes = {\n165       reg2hw.command.len.qe,\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_snitch_pr394/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host.sv",
+        "start": 151,
+        "end": 188,
+        "class_name": null,
+        "method_name": null,
+        "code": "151   assign command.configopts.csnlead  = configopts.csnlead.q;\n152   assign command.configopts.csntrail = configopts.csntrail.q;\n153   assign command.configopts.full_cyc = configopts.fullcyc.q;\n154   assign command.configopts.cpha     = configopts.cpha.q;\n155   assign command.configopts.cpol     = configopts.cpol.q;\n156 \n157   assign command.segment.len         = reg2hw.command.len.q;\n158   assign command.segment.csaat       = reg2hw.command.csaat.q;\n159   assign command.segment.speed       = reg2hw.command.speed.q;\n160 \n161 \n162   logic [3:0] cmd_qes;\n163 \n164   assign cmd_qes = {\n165       reg2hw.command.len.qe,\n166       reg2hw.command.speed.qe,\n167       reg2hw.command.direction.qe,\n168       reg2hw.command.csaat.qe\n169   };\n170 \n171   // Any qe pin from COMMAND will suffice.\n172   assign command_valid = |cmd_qes;\n173 \n174   // TODO: Determine the correct way to trigger a command.\n175   // The following assertion confirms that at lease in\n176   // some cases, the writes to COMMAND are not atomic.\n177   //\n178   // Disabling this assertion for now\n179   //`ASSERT(CmdAtomicity_A, &cmd_qes ^ |cmd_qes, clk_i, rst_ni);\n180 \n181   logic active, core_active;\n182   logic rx_stall, core_rx_stall;\n183   logic tx_stall, core_tx_stall;\n184 \n185   assign hw2reg.status.ready.d    = ~command_busy;\n186   assign hw2reg.status.active.d   = active;\n187   assign hw2reg.status.rxstall.d  = rx_stall;\n188   assign hw2reg.status.txstall.d  = tx_stall;\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": "hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host.sv",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_snitch_pr394/hw/vendor/lowrisc_opentitan/spi_host/rtl/spi_host.sv",
+        "start": 338,
+        "end": 393,
+        "class_name": null,
+        "method_name": null,
+        "code": "338   assign en_sw      = reg2hw.control.spien.q;\n339 \n340   prim_flop_2sync #(\n341     .Width(3)\n342   ) u_sync_stat_from_core (\n343     .clk_i,\n344     .rst_ni,\n345     .d_i      ({core_rx_stall, core_tx_stall, core_active}),\n346     .q_o      ({     rx_stall,      tx_stall,      active})\n347   );\n348 \n349   prim_flop_2sync #(\n350     .Width(2)\n351   ) u_sync_en_to_core (\n352     .clk_i    (clk_core_i),\n353     .rst_ni   (rst_core_ni),\n354     .d_i      ({en,      sw_rst}),\n355     .q_o      ({core_en, core_sw_rst})\n356   );\n357 \n358   spi_host_core #(\n359     .NumCS(NumCS)\n360   ) u_spi_core (\n361     .clk_i           (clk_core_i),\n362     .rst_ni          (rst_core_ni),\n363 \n364     .command_i       (core_command),\n365     .command_valid_i (core_command_valid),\n366     .command_ready_o (core_command_ready),\n367     .en_i            (core_en),\n368     .tx_data_i       (core_tx_data),\n369     .tx_be_i         (core_tx_be),\n370     .tx_valid_i      (core_tx_valid),\n371     .tx_ready_o      (core_tx_ready),\n372     .rx_data_o       (core_rx_data),\n373     .rx_valid_o      (core_rx_valid),\n374     .rx_ready_i      (core_rx_ready),\n375     .sck_o           (sck),\n376     .csb_o           (csb),\n377     .sd_o            (sd_out),\n378     .sd_en_o         (sd_en),\n379     .sd_i,\n380     .rx_stall_o      (core_rx_stall),\n381     .tx_stall_o      (core_tx_stall),\n382     .sw_rst_i        (core_sw_rst),\n383     .active_o        (core_active)\n384   );\n385 \n386   logic event_error;\n387 \n388   logic [4:0] error_vec;\n389   logic [4:0] error_mask;\n390   logic [4:0] sw_error_status;\n391 \n392   assign error_vec  = {\n393       error_csid_inval,\n",
+        "intended_behavior": ""
+      }
+    ]
+  ]
+}

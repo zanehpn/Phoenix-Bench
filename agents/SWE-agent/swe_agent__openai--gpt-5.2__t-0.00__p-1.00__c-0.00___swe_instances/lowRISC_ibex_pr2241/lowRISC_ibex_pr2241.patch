@@ -1,0 +1,18 @@
+diff --git a/rtl/ibex_register_file_fpga.sv b/rtl/ibex_register_file_fpga.sv
+index 73e0afab..bc246f42 100644
+--- a/rtl/ibex_register_file_fpga.sv
++++ b/rtl/ibex_register_file_fpga.sv
+@@ -52,6 +52,13 @@ module ibex_register_file_fpga #(
+ 
+   // WE strobe and one-hot encoded raddr alert.
+   logic oh_raddr_a_err, oh_raddr_b_err, oh_we_err;
++
++  // The one-hot address checkers are only instantiated when RdataMuxCheck is enabled.
++  // When disabled, tie the corresponding error outputs off to avoid undriven signals
++  // (and to keep err_o well-defined for lint/simulation).
++  assign oh_raddr_a_err = 1'b0;
++  assign oh_raddr_b_err = 1'b0;
++
+   assign err_o = oh_raddr_a_err || oh_raddr_b_err || oh_we_err;
+ 
+   if (RdataMuxCheck) begin : gen_rdata_mux_check

@@ -1,0 +1,52 @@
+diff --git a/src/stream_join.sv b/src/stream_join.sv
+index 2f210bc..abd2e25 100755
+--- a/src/stream_join.sv
++++ b/src/stream_join.sv
+@@ -11,10 +11,11 @@
+ // Authors:
+ // - Andreas Kurth <akurth@iis.ee.ethz.ch>
+ 
+-/// Stream join: Joins a parametrizable number of input streams (i.e., valid-ready handshaking with
+-/// dependency rules as in AXI4) to a single output stream.  The output handshake happens only once
+-/// all inputs are valid.  The data channel flows outside of this module.
+-module stream_join #(
++/// Dynamic stream join: Joins a dynamically selected subset of input streams to a single output
++/// stream.  The selection is provided through a bitmask, and selected inputs handshakes are
++/// granted independently.  The output handshake happens only once all selected inputs are valid.
++/// The data channel flows outside of this module.
++module stream_join_dynamic #(
+   /// Number of input streams
+   parameter int unsigned N_INP = 32'd0 // Synopsys DC requires a default value for parameters.
+ ) (
+@@ -22,17 +23,29 @@ module stream_join #(
+   input  logic  [N_INP-1:0] inp_valid_i,
+   /// Input streams ready handshakes
+   output logic  [N_INP-1:0] inp_ready_o,
++  /// Selection mask for the join
++  input  logic  [N_INP-1:0] sel_i,
++  /// Selection mask valid
++  input  logic              sel_valid_i,
++  /// Selection mask ready
++  output logic              sel_ready_o,
+   /// Output stream valid handshake
+   output logic              oup_valid_o,
+   /// Output stream ready handshake
+   input  logic              oup_ready_i
+ );
+ 
+-  assign oup_valid_o = (&inp_valid_i);
++  logic [N_INP-1:0] inp_valid_sel;
++
++  assign inp_valid_sel = inp_valid_i & sel_i;
++  assign oup_valid_o   = sel_valid_i & (&(inp_valid_i | ~sel_i));
++
+   for (genvar i = 0; i < N_INP; i++) begin : gen_inp_ready
+-    assign inp_ready_o[i] = oup_valid_o & oup_ready_i;
++    assign inp_ready_o[i] = sel_valid_i & sel_i[i] & oup_ready_i & oup_valid_o;
+   end
+ 
++  assign sel_ready_o = oup_ready_i & oup_valid_o;
++
+ // pragma translate_off
+ `ifndef VERILATOR
+   initial begin: p_assertions

@@ -1,0 +1,14 @@
+diff --git a/rtl/cv32e40s_pmp.sv b/rtl/cv32e40s_pmp.sv
+index c366814..86b20d4 100644
+--- a/rtl/cv32e40s_pmp.sv
++++ b/rtl/cv32e40s_pmp.sv
+@@ -178,7 +178,8 @@ module cv32e40s_pmp import cv32e40s_pkg::*;
+ 
+         if (csr_pmp_i.mseccfg.mml) begin
+           // When MSECCFG.MML is set use MML specific permission check
+-          access_fault_all[r_c] = !region_mml_perm_check[r_c];
++          // Default deny applies when no PMP region matches.
++          access_fault_all[r_c] = !region_mml_perm_check[r_c] || !region_match_all[r_c];
+         end else begin
+           // Otherwise use original PMP behaviour
+           access_fault_all[r_c] = (priv_lvl_i == PRIV_LVL_M) ?

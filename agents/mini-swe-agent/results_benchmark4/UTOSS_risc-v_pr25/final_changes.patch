@@ -1,0 +1,29 @@
+diff --git a/src/top.v b/src/top.v
+index 66c9758..7cab308 100644
+--- a/src/top.v
++++ b/src/top.v
+@@ -11,6 +11,7 @@ module top ( input wire clk
+   imm_t    imm_ext;
+ 
+   data_t __tmp_ResultData;
++  data_t __tmp_MemRD;
+ 
+   data_t rs1;
+   data_t rs2;
+@@ -70,6 +71,16 @@ module top ( input wire clk
+     , .imm_ext         ( imm_ext          )
+     );
+ 
++  MA data_memory
++    ( .A   ( __tmp_ALUOut     )
++    , .WD  ( rs2              )
++    , .WE  ( __tmp_MemWrite   )
++    , .CLK ( clk              )
++    , .RD  ( __tmp_MemRD      )
++    );
++
++  assign __tmp_ResultData = __tmp_ResultSrc[0] ? __tmp_MemRD : __tmp_ALUOut;
++
+   ALU alu
+     ( .a              ( rs1              )
+     , .b              ( rs2              )

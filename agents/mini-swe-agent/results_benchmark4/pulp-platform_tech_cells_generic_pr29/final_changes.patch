@@ -1,0 +1,33 @@
+diff --git a/src/fpga/tc_sram_xilinx.sv b/src/fpga/tc_sram_xilinx.sv
+index dc88bf3..47baa66 100644
+--- a/src/fpga/tc_sram_xilinx.sv
++++ b/src/fpga/tc_sram_xilinx.sv
+@@ -46,19 +46,25 @@ module tc_sram #(
+ 
+   localparam int unsigned DataWidthAligned = ByteWidth * BeWidth;
+   localparam int unsigned Size             = NumWords * DataWidthAligned;
++  localparam int unsigned ByteRepWidth     = (ByteWidth > 32'd8) ? (ByteWidth / 32'd8) : 32'd1;
+ 
+   typedef logic [DataWidthAligned-1:0] data_aligned_t;
++  typedef logic [BeWidth-1:0]          be_vec_t;
+ 
+   data_aligned_t [NumPorts-1:0] wdata_al;
+   data_aligned_t [NumPorts-1:0] rdata_al;
+-  be_t           [NumPorts-1:0] we;
++  be_vec_t       [NumPorts-1:0] we;
+ 
+-  // pad with 0 to next byte for inferable macro below, as the macro wants
+-  // READ_DATA_WIDTH_A be a multiple of BYTE_WRITE_WIDTH_A
++  // 8-bit align the input bytes for the Xilinx macro and fan out byte enables
++  // when the configured byte width is larger than 8 bits.
+   always_comb begin : p_align
+     wdata_al = '0;
+     for (int unsigned i = 0; i < NumPorts; i++) begin
+-      wdata_al[i][DataWidth-1:0] = wdata_i[i];
++      for (int unsigned j = 0; j < BeWidth; j++) begin
++        for (int unsigned k = 0; k < ByteRepWidth; k++) begin
++          wdata_al[i][j*ByteWidth + k*8 +: 8] = wdata_i[i][j*ByteWidth + k*8 +: 8];
++        end
++      end
+     end
+   end

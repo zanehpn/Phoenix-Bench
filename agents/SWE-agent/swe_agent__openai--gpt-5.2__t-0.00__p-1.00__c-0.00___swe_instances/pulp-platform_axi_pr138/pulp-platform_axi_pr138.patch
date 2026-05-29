@@ -1,0 +1,15 @@
+diff --git a/src/axi_xbar.sv b/src/axi_xbar.sv
+index 5d0b79c7..1edf0206 100644
+--- a/src/axi_xbar.sv
++++ b/src/axi_xbar.sv
+@@ -51,7 +51,9 @@ module axi_xbar #(
+ 
+   // signals into the axi_muxes, are of type slave as the multiplexer extends the ID
+   slv_req_t  [Cfg.NoMstPorts-1:0][Cfg.NoSlvPorts-1:0] mst_reqs;
+-  slv_resp_t [Cfg.NoMstPorts-1:0][Cfg.NoSlvPorts-1:0] mst_resps;
++  // responses coming back from the axi_muxes. These are driven by submodules, hence must be nets.
++  // Declaring them as `wire` avoids vsim (10.6c) complaining about illegal output/inout connections.
++  wire slv_resp_t [Cfg.NoMstPorts-1:0][Cfg.NoSlvPorts-1:0] mst_resps;
+ 
+   for (genvar i = 0; i < Cfg.NoSlvPorts; i++) begin : gen_slv_port_demux
+     logic [$clog2(Cfg.NoMstPorts)-1:0] dec_aw,        dec_ar;

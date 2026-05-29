@@ -1,0 +1,37 @@
+# Comments mismatch with the website instructions and the GPIO_MODE regs might wrong
+
+- Source URL: https://github.com/pulp-platform/gpio/issues/1
+
+1)
+The comments in the code mismatch with the description on the website
+```sv     
+always_comb begin
+          `assert_condition(s_reg2hw.gpio_mode[gpio_idx], rst_ni);
+        case (s_reg2hw.gpio_mode[gpio_idx])
+          2'b00: begin //INPUT_ONLY
+            gpio_tx_en_o[gpio_idx] = 1'b0;
+          end
+          2'b01: begin //OUTPUT_ACTIVE
+            gpio_tx_en_o[gpio_idx] = 1'b1;
+          end
+          2'b10: begin // OPEN_DRAIN0 
+            gpio_tx_en_o[gpio_idx] = s_reg2hw.gpio_out[gpio_idx].q;
+          end
+          2'b11: begin // OPEN_DRAIN1
+            gpio_tx_en_o[gpio_idx] = s_reg2hw.gpio_out[gpio_idx].q;
+          end
+          default: begin
+            gpio_tx_en_o[gpio_idx] = 1'b0;
+          end
+        endcase
+      end
+```
+
+Here, on the website, 2'b10 points to OPEN_DRAIN1 and 2'b11 points to OPEN_DRAIN0.
+
+2)
+I think when the reg_mode is OPEN_DRIVEN0, the code should be
+```sv
+            gpio_tx_en_o[gpio_idx] = ~s_reg2hw.gpio_out[gpio_idx].q;
+```
+otherwise, the s_reg2hw.gpio_out can not output 0.

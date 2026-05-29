@@ -1,0 +1,44 @@
+# [Bug] l.fl1 instruction not decoded
+
+- Source URL: https://github.com/openrisc/mor1kx/issues/102
+
+@lifeasageek
+
+l.fl1 instruction is not decoded correctly.
+Any l.fl1 instruction can reproduce the error.
+
+We can solve this with following change in mor1kx_decode.v
+
+```verilog
+  assign decode_op_ffl1_o = opc_insn == `OR1K_OPCODE_ALU &&
+                        (decode_insn_i[9:8] == 2'b00 || decode_insn_i[9:8] == 2'b01) &&
+                        opc_alu == `OR1K_ALU_OPC_FFL1;
+```
+
+## PR Title
+Fix mor1kx_decode to accept valid l.fl1 (l.ff1) instructions
+
+## PR Description
+The pull request addresses issue #102 regarding the l.fl1 instruction decoding problem. According to the commit messages: "Both l.fl1 and l.ff1 have bit 9 set in the instruction as part of their op codes, mor1kx_decode does not currently properly check this."
+
+## PR Comments
+
+**JaewonHur** (December 19, 2019):
+Opened the PR referencing issue #102.
+
+**skristiansson** (December 19, 2019):
+Requested changes during review.
+
+**JaewonHur** (December 23, 2019):
+Added 3 additional commits with refinements.
+
+**skristiansson** (December 22, 2019):
+Approved the changes and merged the PR.
+
+## Linked Issue
+#102: [Bug] l.fl1 instruction not decoded
+
+## PR Metadata
+- Author: JaewonHur
+- Reviewer/Merger: skristiansson
+- Status: Merged (December 22, 2019)

@@ -1,0 +1,22 @@
+[
+    {
+        "role": "system",
+        "content": "As a software developer maintaining the GitHub repository pulp-platform_carfield_pr41, you are responsible for analyzing a submitted issue and identifying the exact location in the repository where the issue occurs."
+    },
+    {
+        "role": "user",
+        "content": "Here is the issue description:\n# Check `atomics`: `axi_riscv_atomics_structs` before the L2 SPM\nAtomics support is needed towards every memory inside `carfield`. `Cheshire` already instantiates `axi_riscv_atomics_structs` [before the main memory](https://github.com/pulp-platform/cheshire/blob/main/hw/cheshire_soc.sv#L275), the debug module and the `idma` slave port. We need it before the `L2SPM`."
+    },
+    {
+        "role": "user",
+        "content": "Here is the project structure:\n./\n  .gitlab-ci.yml\n  Bender.yml\n  CHANGELOG.md\n  CONTRIBUTING.md\n  README.md\n  bender-common.mk\n  bender-synth.mk\n  carfield.mk\n  requirements.txt\nhw/\n  carfield.sv\n  carfield_pkg.sv\n  carfield_rstgen.sv\n  cheshire_wrap.sv\n  hyperbus_wrap.sv\n  l2_wrap.sv\n  regs/\n    carfield_reg_pkg.sv\n    carfield_reg_top.sv\nscripts/\n  csv_to_json.py\n  env-iis.sh\n  start_carfield.tcl\n  spyglass/\n    src/\n      carfield_wrap.sv\n    scripts/\n      run_lint.tcl\n    sgdc/\ntb/\n  carfield_fix.sv\n  carfield_tb.sv\nutils/\n  generate-makefile-help.sh\n  help.mk\n  venv.mk\n  reggen/\n    regtool.py\n    topgen/\n      __init__.py\n      c.py\n      gen_dv.py\n      intermodule.py\n      lib.py\n      merge.py\n      top.py\n      validate.py\n      templates/\n        README.md\n    reggen/\n      README.md\n      __init__.py\n      access.py\n      alert.py\n      bits.py\n      bus_interfaces.py\n      enum_entry.py\n      field.py\n      gen_cfg_html.py\n      gen_cheader.py\n      gen_dv.py\n      gen_fpv.py\n      gen_html.py\n      gen_json.py\n      gen_rtl.py\n      gen_selfdoc.py\n      html_helpers.py\n      inter_signal.py\n      ip_block.py\n      lib.py\n      multi_register.py\n      params.py\n      reg_base.py\n      reg_block.py\n      register.py\n      signal.py\n      validate.py\n      version.py\n      window.py\nsw/\n  sw.mk\n  link/\n  include/\n    car_memory_map.h\n    car_util.h\n    regs/\n      system_timer.h\n  lib/\n  tests/\n    hostd/\n      addressability_test.c\n      helloworld.c\n      mbox_test.c\n      system_timer_test.c\n    secd/\n      sw.mk"
+    },
+    {
+        "role": "user",
+        "content": "Please review the issue description and thoroughly analyze the issue to uncover all possible causes.\nThen, review the file structure and identify TEN files that are most likely to require edits to resolve the issue.\n\nIMPORTANT:\n1. Select files ONLY FROM THE PROVIDED LIST and specify their FULL PATHS, starting from the root directory. Do not include any test files.\n2. If multiple files share the same name but are in different directories, and the issue description does not specify a particular one, include all relevant ones.\n3. Separate each file path with a new line. Wrap the list in triple backticks (```).\n\nExplain your reasoning, then provide your answer in the following format:\n```\nfull_path1/file1.py\nfull_path2/file2.py\n...\n```"
+    },
+    {
+        "role": "assistant",
+        "content": "You likely need to add/route an AXI atomic adapter (`axi_riscv_atomics_structs`) on the L2 SPM path, similar to how Cheshire does it for main memory/debug/iDMA.  \nThe most probable root causes are:\n\n- **No atomic adapter instance on the L2 path** in top-level integration.\n- **ATOP/atomic-related AXI fields not propagated** through the Carfield\u2194L2 wrapper chain.\n- **Type/struct mismatches** (AXI struct typedefs, user fields, or parameterization) that prevent inserting `axi_riscv_atomics_structs`.\n- **Integration collateral not updated** (build manifest/lint wrapper/docs/changelog), causing compile or CI drift even after RTL fix.\n\nGiven that, these are the **10 most likely files** to touch:\n\n```text\n./hw/carfield.sv\n./hw/l2_wrap.sv\n./hw/cheshire_wrap.sv\n./hw/carfield_pkg.sv\n./Bender.yml\n./scripts/spyglass/src/carfield_wrap.sv\n./hw/hyperbus_wrap.sv\n./hw/regs/carfield_reg_top.sv\n./README.md\n./CHANGELOG.md\n```"
+    }
+]

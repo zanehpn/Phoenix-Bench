@@ -1,0 +1,97 @@
+From 242d1a15ccfdd782fb0ba385abba088a5b2ec1b5 Mon Sep 17 00:00:00 2001
+From: Maciej Bis <mbis@plasteli.net>
+Date: Mon, 5 Jul 2021 14:28:40 +0200
+Subject: [PATCH 1/2] Evaluation of unknown values with FAIL_* macros
+
+This is implementation of https://github.com/tudortimi/svunit/issues/51
+request.
+
+Signed-off-by: Maciej Bis <mbis@plasteli.net>
+---
+ svunit_base/svunit_testcase.sv | 6 +++---
+ test/sim_3/dut_unit_test.sv    | 7 +++++++
+ test/test_sim.py               | 2 ++
+ 3 files changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/svunit_base/svunit_testcase.sv b/svunit_base/svunit_testcase.sv
+index 501eafb4..832107af 100644
+--- a/svunit_base/svunit_testcase.sv
++++ b/svunit_base/svunit_testcase.sv
+@@ -55,7 +55,7 @@ class svunit_testcase extends svunit_base;
+   extern function integer get_error_count();
+   extern task give_up();
+ 
+-  extern function bit fail(string c, bit b, string s, string f, int l, string d = "");
++  extern function bit fail(string c, logic b, string s, string f, int l, string d = "");
+ 
+   extern function void start();
+   extern function void stop();
+@@ -139,9 +139,9 @@ endtask
+ 
+     return 1 if fail else 0
+ */
+-function bit svunit_testcase::fail(string c, bit b, string s, string f, int l, string d = "");
++function bit svunit_testcase::fail(string c, logic b, string s, string f, int l, string d = "");
+   string _d;
+-  if (b) begin
++  if (b !== 0) begin
+     error_count++;
+     if (d != "") begin
+       $sformat(_d, "[ %s ] ", d);
+diff --git a/test/sim_3/dut_unit_test.sv b/test/sim_3/dut_unit_test.sv
+index 290a428a..f46d1752 100755
+--- a/test/sim_3/dut_unit_test.sv
++++ b/test/sim_3/dut_unit_test.sv
+@@ -130,6 +130,13 @@ module dut_unit_test;
+       static logic       select = 1;
+       `FAIL_UNLESS_EQUAL(select ? data_a : data_b, data_a);
+     `SVTEST_END
++
++      // verify FAIL_IF works with 'x as expression (test should fail)
++    `SVTEST(x_as_fail_if_expression)
++      static logic foo = 'x;
++      `FAIL_IF(foo != 1);
++    `SVTEST_END
++
+   `SVUNIT_TESTS_END
+ 
+ 
+diff --git a/test/test_sim.py b/test/test_sim.py
+index 706cd7df..f1c11a8b 100644
+--- a/test/test_sim.py
++++ b/test/test_sim.py
+@@ -71,6 +71,8 @@ def test_sim_3(datafiles, simulator):
+         expect_string(br'INFO:  \[0\]\[dut_ut\]: tenth_test::PASSED', 'run.log')
+         expect_string(br'INFO:  \[0\]\[dut_ut\]: eleventh_test::RUNNING', 'run.log')
+         expect_string(br'INFO:  \[0\]\[dut_ut\]: eleventh_test::PASSED', 'run.log')
++        expect_string(br'ERROR: \[0\]\[dut_ut\]: fail_if: foo != 1 \(at .*dut_unit_test.sv line:.*\)', 'run.log')
++        expect_string(br'INFO:  \[0\]\[dut_ut\]: x_as_fail_if_expression::FAILED', 'run.log')
+         expect_string(br'INFO:  \[0\]\[testrunner\]: FAILED', 'run.log')
+ 
+ 
+
+From d4cd500129914ded6893f6b51ec5157a6718ea09 Mon Sep 17 00:00:00 2001
+From: Maciej Bis <mbis@plasteli.net>
+Date: Tue, 20 Jul 2021 09:43:09 +0200
+Subject: [PATCH 2/2] Changelog update
+
+Signed-off-by: Maciej Bis <mbis@plasteli.net>
+---
+ CHANGELOG.md | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 109092c7..f23b2e27 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
+ ### Added
+ - Generation of (Apache Ant) JUnit XML
+ 
++### Fixed
++- Fixed FAIL_IF and FAIL_UNLESS macros to properly implement SystemVerilog
++  semantics w.r.t. handling of unknown values (#51)
++
+ 
+ ## [3.34.2] - 2020-11-29
+ 

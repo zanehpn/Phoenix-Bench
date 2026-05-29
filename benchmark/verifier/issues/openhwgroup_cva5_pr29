@@ -1,0 +1,31 @@
+# Interrupts can lead to MEPC inconsistent with register state / actually retired operations or pointing to entirely illegal instructions
+
+- Source URL: https://github.com/openhwgroup/cva5/issues/19
+
+When an interrupt, such as a timer interrupt occurs, the captured MEPC does not always reflect the correct address where to continue execution after the interrupt finishes. This can randomly lead to significant corruption and crashes.
+
+I have observed the following 3 inconsistencies::
+ * CSR modifications that were already started will always finish, yet MEPC can point to the CSR operation  (so as not-executed,to resume here after interrupt) 
+ * MEPC can sometimes capture a normal (register-write) instruction that still retires (when the retiring of said instruction falls into the same cycle as the capturing. Same as with CSR-modifications, if the respective operation uses the modified output as input (`addi a0, a0, 1`), erroneous re-execution leads to broken state / MEPC is inconsistent with the register state.
+ *  addresses of prefetched instructions, yet not ever executed / possibly illegal instructions can be captured
+
+Example for the 3rd case:
+```
+jr [label]
+[illegal instruction]
+``` 
+The illegal instruction will be fetched and maybe decoded prior to CVA5 executing the jump and flushing. Gc_unit does not prevent the address from being captured into MEPC when an interrupt hits at the right time.
+
+I have fixes for all 3 cases applied in my fork of CVA5, but my fork includes other changes, such as an FPU, reworked verilator implementation and for example modifying the timer interrupt input to match the RV-Privileged spec  (#20).
+I have also written a test program that recreates all 3 cases for my fork and specific CVA5 configuration, using a timer implemented according to the RV-Priviliged spec. The benchmark arms the timer and expects it to request an interrupt at a specific cycle (and therefor instruction in the benchmark) that is still influenced by the branch predicator (I am using my production CVA5 config to run it).
+
+I am also happy to share said benchmark and timer, but I have only tested them in my environment, which uses my own Picolibc build, runtime/board support library, CMake configuration, new binary input format and conversion tool for the verilator-simulator. So said test-code would probably need to be refactored into a test with specific, more consistent processor config and to only use the vanilla code base.
+
+To outline the scope of fixes I have applied:
+ * decouple MEPC capture from interrupt_taken signal
+ *  delay MEPC capture depending on if a instruction is currently being retired, ongoing CSR modification
+ *  changed oldest_pc from metadata_id block to next_retiring_insn_pc which applies branch_flush events and updates itself to not include illegal or unreachable addresses.
+
+This was the simplest solution to fix the corruption and is probably not the most efficient solution to implementing interrupts. Looking at the timings it seems to be, every instruction that was already issued pre-interrupt could just retire normally instead of being rolled back (unlike when handling jumps/branches). Since we have to wait for all issued ops to retire anyways, it is wasteful to throw that state away (and can also take more cycles). Then some of my modifications would no longer be needed. But I found it too difficult to understand all the ways in which gc_unit needs to stay synchronized to other parts of the core to attempt that modification myself / expected this refactoring to be more work.
+
+I am afraid I do currently not have the time to rebase my changes and test them without my code base so that I could provide a simple, conflict-free and tested patch-set.

@@ -1,0 +1,52 @@
+diff --git a/src/axi_dw_downsizer.sv b/src/axi_dw_downsizer.sv
+index 8000ba4f..8c266823 100644
+--- a/src/axi_dw_downsizer.sv
++++ b/src/axi_dw_downsizer.sv
+@@ -547,7 +547,9 @@ module axi_dw_downsizer #(
+                   automatic addr_t mst_port_offset = AxiMstPortStrbWidth == 1 ? '0 : r_req_q.ar.addr[idx_width(AxiMstPortStrbWidth)-1:0];
+                   automatic addr_t slv_port_offset = AxiSlvPortStrbWidth == 1 ? '0 : r_req_q.ar.addr[idx_width(AxiSlvPortStrbWidth)-1:0];
+ 
+-                  automatic slv_data_t r_data = r_req_d.r.data;
++                  // Start from previous value (or default) and overwrite selected lanes.
++                  slv_data_t r_data;
++                  r_data = r_req_d.r.data;
+ 
+                   // Serialization
+                   for (int b = 0; b < AxiSlvPortStrbWidth; b++)
+@@ -719,7 +721,9 @@ module axi_dw_downsizer #(
+             automatic addr_t mst_port_offset = AxiMstPortStrbWidth == 1 ? '0 : w_req_q.aw.addr[idx_width(AxiMstPortStrbWidth)-1:0];
+             automatic addr_t slv_port_offset = AxiSlvPortStrbWidth == 1 ? '0 : w_req_q.aw.addr[idx_width(AxiSlvPortStrbWidth)-1:0];
+ 
+-            automatic mst_data_t w_data = mst_req.w.data;
++            // Start from previous value (or default) and overwrite selected lanes.
++            mst_data_t w_data;
++            w_data = mst_req.w.data;
+ 
+             // Valid output
+             mst_req.w_valid = 1'b1               ;
+diff --git a/src/axi_dw_upsizer.sv b/src/axi_dw_upsizer.sv
+index 1d39ff8a..9a474690 100644
+--- a/src/axi_dw_upsizer.sv
++++ b/src/axi_dw_upsizer.sv
+@@ -475,7 +475,9 @@ module axi_dw_upsizer #(
+               automatic addr_t mst_port_offset = AxiMstPortStrbWidth == 1 ? '0 : r_req_q.ar.addr[idx_width(AxiMstPortStrbWidth)-1:0];
+               automatic addr_t slv_port_offset = AxiSlvPortStrbWidth == 1 ? '0 : r_req_q.ar.addr[idx_width(AxiSlvPortStrbWidth)-1:0];
+ 
+-              automatic slv_data_t r_data = slv_r_tran[t].data;
++              // Start from previous value (or default) and overwrite selected lanes.
++              slv_data_t r_data;
++              r_data = slv_r_tran[t].data;
+ 
+               // Valid output
+               slv_r_valid_tran[t] = 1'b1                                       ;
+@@ -592,7 +594,9 @@ module axi_dw_upsizer #(
+             automatic addr_t mst_port_offset = AxiMstPortStrbWidth == 1 ? '0 : w_req_q.aw.addr[idx_width(AxiMstPortStrbWidth)-1:0];
+             automatic addr_t slv_port_offset = AxiSlvPortStrbWidth == 1 ? '0 : w_req_q.aw.addr[idx_width(AxiSlvPortStrbWidth)-1:0];
+ 
+-            automatic mst_data_t w_data = w_req_d.w.data;
++            // Start from previous value (or default) and overwrite selected lanes.
++            mst_data_t w_data;
++            w_data = w_req_d.w.data;
+ 
+             // Serialization
+             for (int b = 0; b < AxiMstPortStrbWidth; b++)

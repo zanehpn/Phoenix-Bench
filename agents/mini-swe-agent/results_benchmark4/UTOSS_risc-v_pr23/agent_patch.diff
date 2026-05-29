@@ -1,0 +1,74 @@
+diff --git a/src/Instruction_Decode/ALU_Decoder.v b/src/Instruction_Decode/ALU_Decoder.v
+index d66600a..1fe5912 100644
+--- a/src/Instruction_Decode/ALU_Decoder.v
++++ b/src/Instruction_Decode/ALU_Decoder.v
+@@ -1,21 +1,22 @@
+-`include "params.vh"
+-
+-module ALUdecoder_new (input [2:0] funct3, input [6:0] funct7, reg output alu_op);
+-	always @(*)
+-	begin
+-	case (funct3)
+-		3'b000: 
+-			if (funct7==7'h00) alu_op = ALUAdd;      //ADD
+-			else if (funct7==7'h20) alu_op = ALUSub; //SUB
+-		3'b001: alu_op = ALUSLL;                         //SLL
+-		3'b010: alu_op = ALUSLT;                         //SLT
+-		3'b011: alu_op = ALUSLTU;                         //SLTU
+-		3'b100: alu_op = ALUXOR;			//XOR
+-		3'b101: 
+-			if (funct7==7'h00) alu_op = ALUSRL;      //SRL
+-			else if (funct7==7'h20) alu_op = ALUSRA; //SRA
+-		3'b110: alu_op = ALUOR;                         //OR
+-		3'b111: alu_op = ALUAND;                         //AND
+-		default: alu_op = 4'b0;
+-	endcase
+-endmodule
++`include "params.vh"
++
++module ALUdecoder (input [2:0] funct3, input [6:0] funct7, output reg [3:0] alu_op);
++	always @(*)
++	begin
++	case (funct3)
++		3'b000: 
++			if (funct7==7'h00) alu_op = ALUAdd;      //ADD
++			else if (funct7==7'h20) alu_op = ALUSub; //SUB
++		3'b001: alu_op = ALUSLL;                         //SLL
++		3'b010: alu_op = ALUSLT;                         //SLT
++		3'b011: alu_op = ALUSLTU;                         //SLTU
++		3'b100: alu_op = ALUXOR;			//XOR
++		3'b101: 
++			if (funct7==7'h00) alu_op = ALUSRL;      //SRL
++			else if (funct7==7'h20) alu_op = ALUSRA; //SRA
++		3'b110: alu_op = ALUOR;                         //OR
++		3'b111: alu_op = ALUAND;                         //AND
++		default: alu_op = 4'b0;
++	endcase
++endmodule
++
+diff --git a/src/Instruction_Decode/Instruction_Decode.v b/src/Instruction_Decode/Instruction_Decode.v
+index 0b765d7..48923a1 100644
+--- a/src/Instruction_Decode/Instruction_Decode.v
++++ b/src/Instruction_Decode/Instruction_Decode.v
+@@ -24,7 +24,7 @@ module Instruction_Decode(
+ 	wire [2:0] ALUOp; //wire from Control FSM to ALU Decoder
+ 	wire RegWrite;
+ 	reg [2:0] funct3;
+-	reg [6:0] funct7
++	reg [6:0] funct7;
+ 	reg [4:0] rd, rs1, rs2;
+ 	wire [3:0] state;
+ 	
+diff --git a/src/params.vh b/src/params.vh
+index 7eefee7..ff90d44 100644
+--- a/src/params.vh
++++ b/src/params.vh
+@@ -14,7 +14,7 @@ parameter ALUAdd = 4'b0000;
+ parameter ALUSub = 4'b0001;
+ parameter ALUSLL =  4'b0010; 
+ parameter ALUSLT = 4'b0011;
+-parameter ALUSLTU = = 4'b0100; 
++parameter ALUSLTU = 4'b0100; 
+ parameter ALUXOR = 4'b0101;
+ parameter ALUSRL = 4'b0110; 
+ parameter ALUSRA = 4'b0111;

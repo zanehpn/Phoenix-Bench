@@ -1,0 +1,32 @@
+diff --git a/py_src/pyslint.py b/py_src/pyslint.py
+index 0c2acb3..d66f94f 100644
+--- a/py_src/pyslint.py
++++ b/py_src/pyslint.py
+@@ -114,6 +114,19 @@ def VLT_NO_GENERIC_MBX(lv_cu_scope):
+           pyslint_msg(lv_rule_id, msg)
+ 
+ 
++
++def VLT_NO_CLOCKING_BLOCK_IN_INTF(lv_cu_scope):
++  if (lv_cu_scope.kind.name == 'InterfaceDeclaration'):
++    for lv_if_mem_i in lv_cu_scope.members:
++      if (lv_if_mem_i.kind.name == 'ClockingDeclaration'):
++        lv_code_s = str(lv_if_mem_i)
++        msg = 'A clocking block was found inside an interface. '
++        msg += 'Verilator does not support clocking block based driving. '
++        msg += 'Please move the clocking block out of the interface.'
++        msg += str(lv_code_s)
++        lv_rule_id = 'VLT_NO_CLOCKING_BLOCK_IN_INTF'
++        pyslint_msg(lv_rule_id, msg)
++
+ def COMPAT_PRE_RAND_NON_VOID(lv_cu_scope):
+   if (lv_cu_scope.kind.name == 'ClassDeclaration'):
+     for cl_item in (lv_cu_scope.items):
+@@ -1041,6 +1054,7 @@ for scope_i in (tree.root.members):
+ 
+   CL_METHOD_NOT_EXTERN(scope_i)
+   VLT_NO_GENERIC_MBX(scope_i)
++  VLT_NO_CLOCKING_BLOCK_IN_INTF(scope_i)
+   COMPAT_PRE_RAND_NON_VOID(scope_i)
+   COMPAT_POST_RAND_NON_VOID(scope_i)
+   FUNC_CNST_MISSING_CAST(scope_i)

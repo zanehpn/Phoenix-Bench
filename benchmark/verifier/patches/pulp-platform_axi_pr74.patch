@@ -1,0 +1,45 @@
+From fc5fe0a81808ce59a712d3fef2f972004cba8e7b Mon Sep 17 00:00:00 2001
+From: Andreas Kurth <akurth@iis.ee.ethz.ch>
+Date: Fri, 13 Mar 2020 13:14:05 +0100
+Subject: [PATCH] axi_intf: Improve Verilator compatibility by disabling
+ unsupported assertions
+
+---
+ CHANGELOG.md    | 1 +
+ src/axi_intf.sv | 4 ++++
+ 2 files changed, 5 insertions(+)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 5b59b4628..819ea98e2 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
+ 
+ ### Fixed
+ - Remove whitespace in and semicolon after macro calls.
++- `axi_intf`: Improve Verilator compatibility by disabling unsupported assertions.
+ 
+ 
+ ## 0.16.0 - 2020-03-11
+diff --git a/src/axi_intf.sv b/src/axi_intf.sv
+index ceab110fd..38047fcaa 100644
+--- a/src/axi_intf.sv
++++ b/src/axi_intf.sv
+@@ -184,6 +184,8 @@ interface AXI_BUS_DV #(
+     output r_id, r_data, r_resp, r_last, r_user, r_valid, input r_ready
+   );
+ 
++  // pragma translate_off
++  `ifndef VERILATOR
+   // Single-Channel Assertions: Signals including valid must not change between valid and handshake.
+   // AW
+   assert property (@(posedge clk_i) (aw_valid && !aw_ready |=> $stable(aw_id)));
+@@ -230,6 +232,8 @@ interface AXI_BUS_DV #(
+   assert property (@(posedge clk_i) ( r_valid && ! r_ready |=> $stable(r_last)));
+   assert property (@(posedge clk_i) ( r_valid && ! r_ready |=> $stable(r_user)));
+   assert property (@(posedge clk_i) ( r_valid && ! r_ready |=> r_valid));
++  `endif
++  // pragma translate_on
+ 
+ endinterface
+ 

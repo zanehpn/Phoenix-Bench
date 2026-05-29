@@ -1,0 +1,27 @@
+{
+  "instance_id": "pulp-platform_axi_pr251",
+  "bug_locs": [
+    [
+      {
+        "rel_file_path": ".gitlab-ci.yml",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_axi_pr251/.gitlab-ci.yml",
+        "start": 1,
+        "end": 57,
+        "class_name": null,
+        "method_name": null,
+        "code": "1 variables:\n2   SYNOPSYS_DC: synopsys-2019.12 dc_shell -64bit\n3 \n4 before_script:\n5   - export PATH=~/.cargo/bin:$PATH\n6   - mkdir -p build\n7 \n8 vsim:\n9   stage: build\n10   script:\n11     - export ARTIFACT=\"vsim-$VSIM_VER\"\n12     - >\n13       case $VSIM_VER in 20*)\n14         export VSIM=\"questa-$VSIM_VER vsim -64\";\n15         export VLIB=\"questa-$VSIM_VER vlib\";\n16         export VLOG=\"questa-$VSIM_VER vlog -64\";\n17         ;;\n18       *)\n19         export VSIM=\"vsim-$VSIM_VER -64\";\n20         export VLIB=\"vlib-$VSIM_VER\";\n21         export VLOG=\"vlog-$VSIM_VER -64\";\n22         ;;\n23       esac\n24     - >\n25       if ! $CI_PROJECT_DIR/.gitlab-ci.d/memora_retry.sh lookup $ARTIFACT; then\n26         cd build && ../scripts/compile_vsim.sh && mv work{,-$VSIM_VER}\n27         $CI_PROJECT_DIR/.gitlab-ci.d/memora_retry.sh insert $ARTIFACT\n28       fi\n29   parallel:\n30     matrix:\n31       - VSIM_VER: ['10.7b', '10.7e', '2020.1', '2021.1']\n32 \n33 synopsys_dc:\n34   stage: build\n35   script:\n36     - >\n37       if ! $CI_PROJECT_DIR/.gitlab-ci.d/memora_retry.sh lookup synopsys_dc; then\n38         cd build && ../scripts/synth.sh\n39         $CI_PROJECT_DIR/.gitlab-ci.d/memora_retry.sh insert synopsys_dc\n40       fi\n41 \n42 .run_vsim: &run_vsim\n43   stage: test\n44   script:\n45     - export ARTIFACT=\"$TEST_MODULE-vsim_$VSIM_VER\"\n46     - >\n47       case $VSIM_VER in 20*)\n48         export VSIM=\"questa-$VSIM_VER vsim -64\";\n49         ;;\n50       *)\n51         export VSIM=\"vsim-$VSIM_VER -64\";\n52         ;;\n53       esac\n54     - >\n55       if ! $CI_PROJECT_DIR/.gitlab-ci.d/memora_retry.sh lookup $ARTIFACT; then\n56         $CI_PROJECT_DIR/.gitlab-ci.d/memora_retry.sh get vsim-$VSIM_VER\n57         cd build\n",
+        "intended_behavior": ""
+      },
+      {
+        "rel_file_path": ".gitlab-ci.yml",
+        "abs_file_path": "/workspace/phoenix-bench/HDL_verified_new/snapshots/pulp-platform_axi_pr251/.gitlab-ci.yml",
+        "start": 129,
+        "end": 153,
+        "class_name": null,
+        "method_name": null,
+        "code": "129     TEST_MODULE: axi_lite_xbar\n130 \n131 axi_modify_address:\n132   <<: *run_vsim\n133   variables:\n134     TEST_MODULE: axi_modify_address\n135 \n136 axi_serializer:\n137   <<: *run_vsim\n138   variables:\n139     TEST_MODULE: axi_serializer\n140 \n141 axi_sim_mem:\n142   <<: *run_vsim\n143   variables:\n144     TEST_MODULE: axi_sim_mem\n145 \n146 axi_to_axi_lite:\n147   <<: *run_vsim\n148   variables:\n149     TEST_MODULE: axi_to_axi_lite\n150 \n151 axi_xbar:\n152   <<: *run_vsim\n153   variables:\n",
+        "intended_behavior": ""
+      }
+    ]
+  ]
+}

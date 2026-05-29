@@ -1,0 +1,997 @@
+From a225f40cbbc64417d9ef3ab5345ce1c4b76ef48c Mon Sep 17 00:00:00 2001
+From: Andreas Kurth <akurth@iis.ee.ethz.ch>
+Date: Mon, 3 Jun 2019 17:36:03 +0200
+Subject: [PATCH 01/16] apb_intf: Update stale header
+
+---
+ src/apb_intf.sv | 8 +++-----
+ 1 file changed, 3 insertions(+), 5 deletions(-)
+
+diff --git a/src/apb_intf.sv b/src/apb_intf.sv
+index 70a659c..7fd5044 100644
+--- a/src/apb_intf.sv
++++ b/src/apb_intf.sv
+@@ -1,4 +1,5 @@
+-// Copyright 2014-2018 ETH Zurich and University of Bologna.
++// Copyright (c) 2014 ETH Zurich, University of Bologna
++//
+ // Copyright and related rights are licensed under the Solderpad Hardware
+ // License, Version 0.51 (the "License"); you may not use this file except in
+ // compliance with the License.  You may obtain a copy of the License at
+@@ -7,11 +8,8 @@
+ // this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ // CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ // specific language governing permissions and limitations under the License.
+-//
+-// Fabian Schuiki <zarubaf@iis.ee.ethz.ch>
+-//
+-// This file defines the interfaces we support.
+ 
++// An APB2 interface
+ interface APB_BUS #(
+     parameter int unsigned APB_ADDR_WIDTH = 32,
+     parameter int unsigned APB_DATA_WIDTH = 32
+
+From ade771ddb1be142f9652a07f49126b2397ac9c1b Mon Sep 17 00:00:00 2001
+From: Andreas Kurth <akurth@iis.ee.ethz.ch>
+Date: Mon, 3 Jun 2019 17:38:14 +0200
+Subject: [PATCH 02/16] apb_intf: Rename interface `APB_BUS` to `APB`
+
+The 'B' in 'APB' stands for bus, so there is no need for that suffix.
+---
+ src/apb_intf.sv | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/apb_intf.sv b/src/apb_intf.sv
+index 7fd5044..6c3ee1e 100644
+--- a/src/apb_intf.sv
++++ b/src/apb_intf.sv
+@@ -10,7 +10,8 @@
+ // specific language governing permissions and limitations under the License.
+ 
+ // An APB2 interface
+-interface APB_BUS #(
++interface APB #(
++interface APB;
+     parameter int unsigned APB_ADDR_WIDTH = 32,
+     parameter int unsigned APB_DATA_WIDTH = 32
+ );
+
+From 6a9d29d3f213870b135613fa5fbbd096a3418e45 Mon Sep 17 00:00:00 2001
+From: Andreas Kurth <akurth@iis.ee.ethz.ch>
+Date: Mon, 3 Jun 2019 17:39:44 +0200
+Subject: [PATCH 03/16] apb_intf: Turn parameters into constants
+
+Both address and data signals can be up to 32 bit wide.  Due to the
+simple structure of APB, we can assume a reasonably good synthesizer
+optimizes away unused parts of these signals, so it does not hurt to
+simply fix them at the maximum value.  Besides, this saves problems with
+unsupported interface parametrization in some tools and obviates the
+need for data and address width converters.
+---
+ src/apb_intf.sv | 33 ++++++++++++++++++++-------------
+ 1 file changed, 20 insertions(+), 13 deletions(-)
+
+diff --git a/src/apb_intf.sv b/src/apb_intf.sv
+index 6c3ee1e..fa6c950 100644
+--- a/src/apb_intf.sv
++++ b/src/apb_intf.sv
+@@ -10,20 +10,27 @@
+ // specific language governing permissions and limitations under the License.
+ 
+ // An APB2 interface
+-interface APB #(
+ interface APB;
+-    parameter int unsigned APB_ADDR_WIDTH = 32,
+-    parameter int unsigned APB_DATA_WIDTH = 32
+-);
+-
+-    logic [APB_ADDR_WIDTH-1:0] paddr;
+-    logic [APB_DATA_WIDTH-1:0] pwdata;
+-    logic                      pwrite;
+-    logic                      psel;
+-    logic                      penable;
+-    logic [APB_DATA_WIDTH-1:0] prdata;
+-    logic                      pready;
+-    logic                      pslverr;
++
++  localparam ADDR_WIDTH = 32;
++  localparam DATA_WIDTH = 32;
++  localparam STRB_WIDTH = DATA_WIDTH / 8;
++
++  typedef logic [ADDR_WIDTH-1:0]  addr_t;
++  typedef logic [DATA_WIDTH-1:0]  data_t;
++  typedef logic            [2:0]  prot_t;
++  typedef logic [STRB_WIDTH-1:0]  strb_t;
++
++  addr_t  paddr;
++  prot_t  pprot;
++  logic   psel;
++  logic   penable;
++  logic   pwrite;
++  data_t  pwdata;
++  strb_t  pstrb;
++  logic   pready;
++  data_t  prdata;
++  logic   pslverr;
+ 
+ 
+     // Master Side
+
+From c131a85de9e37222f9d64014fea0a28a5cff5c4b Mon Sep 17 00:00:00 2001
+From: Andreas Kurth <akurth@iis.ee.ethz.ch>
+Date: Mon, 3 Jun 2019 17:46:28 +0200
+Subject: [PATCH 04/16] apb_intf: Remove redundant `in` and `out` modports
+
+Modport `in` was an alias of `Slave` and `out` was an alias of `Master`.
+However, many tools do not recognize such aliases as being identical,
+causing problems when feeding a `Master` to a `out` (and vice-versa).
+To prevent these problems, the redundant `in` and `out` modports have
+been removed.
+---
+ src/apb_intf.sv | 34 +++++++++-------------------------
+ 1 file changed, 9 insertions(+), 25 deletions(-)
+
+diff --git a/src/apb_intf.sv b/src/apb_intf.sv
+index fa6c950..601a0d9 100644
+--- a/src/apb_intf.sv
++++ b/src/apb_intf.sv
+@@ -32,30 +32,14 @@ interface APB;
+   data_t  prdata;
+   logic   pslverr;
+ 
+-
+-    // Master Side
+-    modport Master (
+-        output paddr,  pwdata,  pwrite, psel,  penable,
+-        input  prdata,          pready,        pslverr
+-    );
+-
+-    // Slave Side
+-    modport Slave (
+-        input   paddr,  pwdata,  pwrite, psel,  penable,
+-        output  prdata,          pready,        pslverr
+-    );
+-
+-    /// The interface as an output (issuing requests, initiator, master).
+-    modport out (
+-        output paddr,  pwdata,  pwrite, psel,  penable,
+-        input  prdata,          pready,        pslverr
+-    );
+-
+-    /// The interface as an input (accepting requests, target, slave)
+-    modport in (
+-        input   paddr,  pwdata,  pwrite, psel,  penable,
+-        output  prdata,          pready,        pslverr
+-    );
+-
++  modport Master (
++    output paddr, pprot, psel, penable, pwrite, pwdata, pstrb,
++    input  pready, prdata, pslverr
++  );
++
++  modport Slave (
++    input  paddr, pprot, psel, penable, pwrite, pwdata, pstrb,
++    output pready, prdata, pslverr
++  );
+ 
+ endinterface
+
+From 4e6385e3e83563a4d9735406112ded2fbb5bdcb9 Mon Sep 17 00:00:00 2001
+From: Andreas Kurth <akurth@iis.ee.ethz.ch>
+Date: Mon, 3 Jun 2019 17:47:16 +0200
+Subject: [PATCH 05/16] apb_intf: Add clocked interface for design verification
+
+---
+ src/apb_intf.sv | 37 +++++++++++++++++++++++++++++++++++++
+ 1 file changed, 37 insertions(+)
+
+diff --git a/src/apb_intf.sv b/src/apb_intf.sv
+index 601a0d9..0f14b76 100644
+--- a/src/apb_intf.sv
++++ b/src/apb_intf.sv
+@@ -43,3 +43,40 @@ interface APB;
+   );
+ 
+ endinterface
++
++// A clocked APB2 interface for use in design verification
++interface APB_DV (
++  input logic clk_i
++);
++
++  localparam ADDR_WIDTH = 32;
++  localparam DATA_WIDTH = 32;
++  localparam STRB_WIDTH = DATA_WIDTH / 8;
++
++  typedef logic [ADDR_WIDTH-1:0]  addr_t;
++  typedef logic [DATA_WIDTH-1:0]  data_t;
++  typedef logic            [2:0]  prot_t;
++  typedef logic [STRB_WIDTH-1:0]  strb_t;
++
++  addr_t  paddr;
++  prot_t  pprot;
++  logic   psel;
++  logic   penable;
++  logic   pwrite;
++  data_t  pwdata;
++  strb_t  pstrb;
++  logic   pready;
++  data_t  prdata;
++  logic   pslverr;
++
++  modport Master (
++    output paddr, pprot, psel, penable, pwrite, pwdata, pstrb,
++    input  pready, prdata, pslverr
++  );
++
++  modport Slave (
++    input  paddr, pprot, psel, penable, pwrite, pwdata, pstrb,
++    output pready, prdata, pslverr
++  );
++
++endinterface
+
+From 11636e13027c9ddbb22a6c0fd1488e6cd111e0b7 Mon Sep 17 00:00:00 2001
+From: Andreas Kurth <akurth@iis.ee.ethz.ch>
+Date: Mon, 3 Jun 2019 17:48:01 +0200
+Subject: [PATCH 06/16] Define macros for assigning APB interfaces
+
+---
+ Bender.yml             |  3 +++
+ include/apb/assign.svh | 28 ++++++++++++++++++++++++++++
+ 2 files changed, 31 insertions(+)
+ create mode 100644 include/apb/assign.svh
+
+diff --git a/Bender.yml b/Bender.yml
+index 16b791c..e23332f 100644
+--- a/Bender.yml
++++ b/Bender.yml
+@@ -2,5 +2,8 @@ package:
+   name: apb
+   authors: ["Fabian Schuiki <fschuiki@iis.ee.ethz.ch>"]
+ 
++export_include_dirs:
++  - include
++
+ sources:
+   - src/apb_intf.sv
+diff --git a/include/apb/assign.svh b/include/apb/assign.svh
+new file mode 100644
+index 0000000..d73c37e
+--- /dev/null
++++ b/include/apb/assign.svh
+@@ -0,0 +1,28 @@
++// Copyright (c) 2018 ETH Zurich, University of Bologna
++//
++// Copyright and related rights are licensed under the Solderpad Hardware
++// License, Version 0.51 (the "License"); you may not use this file except in
++// compliance with the License.  You may obtain a copy of the License at
++// http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
++// or agreed to in writing, software, hardware and materials distributed under
++// this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
++// CONDITIONS OF ANY KIND, either express or implied. See the License for the
++// specific language governing permissions and limitations under the License.
++
++`ifndef APB_ASSIGN_SVH_
++`define APB_ASSIGN_SVH_
++
++// Assign an APB2 master interface to a slave interface, as in `assign slv = mst;`.
++`define APB_ASSIGN(slv, mst)          \
++  assign slv.paddr    = mst.paddr;    \
++  assign slv.pprot    = mst.pprot;    \
++  assign slv.psel     = mst.psel;     \
++  assign slv.penable  = mst.penable;  \
++  assign slv.pwrite   = mst.pwrite;   \
++  assign slv.pwdata   = mst.pwdata;   \
++  assign slv.pstrb    = mst.pstrb;    \
++  assign mst.pready   = slv.pready;   \
++  assign mst.prdata   = slv.prdata;   \
++  assign mst.pslverr  = slv.pslverr;
++
++`endif
+
+From 4d47d5807ace457bba48c40a92bb344f160fd9fd Mon Sep 17 00:00:00 2001
+From: Andreas Kurth <akurth@iis.ee.ethz.ch>
+Date: Mon, 3 Jun 2019 17:50:45 +0200
+Subject: [PATCH 07/16] Bender: Update authors
+
+---
+ Bender.yml | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/Bender.yml b/Bender.yml
+index e23332f..783f4a7 100644
+--- a/Bender.yml
++++ b/Bender.yml
+@@ -1,6 +1,8 @@
+ package:
+   name: apb
+-  authors: ["Fabian Schuiki <fschuiki@iis.ee.ethz.ch>"]
++  authors:
++    - "Andreas Kurth <akurth@iis.ee.ethz.ch>" # current maintainer
++    - "Fabian Schuiki <fschuiki@iis.ee.ethz.ch>"
+ 
+ export_include_dirs:
+   - include
+
+From 035904bbc451918b693d54bd0b1363154a3ff83c Mon Sep 17 00:00:00 2001
+From: Andreas Kurth <akurth@iis.ee.ethz.ch>
+Date: Mon, 3 Jun 2019 17:51:53 +0200
+Subject: [PATCH 08/16] Bender: Define structure of `sources`
+
+---
+ Bender.yml | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/Bender.yml b/Bender.yml
+index 783f4a7..aaba243 100644
+--- a/Bender.yml
++++ b/Bender.yml
+@@ -8,4 +8,8 @@ export_include_dirs:
+   - include
+ 
+ sources:
++  # Source files grouped in levels. Files in level 0 have no dependencies on files in this
++  # package. Files in level 1 only depend on files in level 0, files in level 2 on files in
++  # levels 1 and 0, etc. Files within a level are ordered alphabetically.
++  # Level 0
+   - src/apb_intf.sv
+
+From 58ddabbbf0f22553e2edc5fb479f87c48eae1342 Mon Sep 17 00:00:00 2001
+From: Andreas Kurth <akurth@iis.ee.ethz.ch>
+Date: Mon, 3 Jun 2019 17:53:13 +0200
+Subject: [PATCH 09/16] Add APB bus with single master and multiple slave
+ interfaces
+
+---
+ Bender.yml     |   5 ++
+ src/apb_bus.sv | 122 +++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 127 insertions(+)
+ create mode 100644 src/apb_bus.sv
+
+diff --git a/Bender.yml b/Bender.yml
+index aaba243..489c553 100644
+--- a/Bender.yml
++++ b/Bender.yml
+@@ -4,6 +4,9 @@ package:
+     - "Andreas Kurth <akurth@iis.ee.ethz.ch>" # current maintainer
+     - "Fabian Schuiki <fschuiki@iis.ee.ethz.ch>"
+ 
++dependencies:
++  common_cells: { git: "https://github.com/pulp-platform/common_cells.git", version: 1.10.0 }
++
+ export_include_dirs:
+   - include
+ 
+@@ -13,3 +16,5 @@ sources:
+   # levels 1 and 0, etc. Files within a level are ordered alphabetically.
+   # Level 0
+   - src/apb_intf.sv
++  # Level 1
++  - src/apb_bus.sv
+diff --git a/src/apb_bus.sv b/src/apb_bus.sv
+new file mode 100644
+index 0000000..c28562b
+--- /dev/null
++++ b/src/apb_bus.sv
+@@ -0,0 +1,122 @@
++// Copyright 2018 ETH Zurich and University of Bologna.
++// Copyright and related rights are licensed under the Solderpad Hardware
++// License, Version 0.51 (the "License"); you may not use this file except in
++// compliance with the License.  You may obtain a copy of the License at
++// http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
++// or agreed to in writing, software, hardware and materials distributed under
++// this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
++// CONDITIONS OF ANY KIND, either express or implied. See the License for the
++// specific language governing permissions and limitations under the License.
++
++// APB Bus with Single Master and Multiple Slave Interfaces
++// Each slave is accessible at exactly one address segment, and the address ranges of no two slaves
++// may overlap. If the input address of this bus is not in any slave address segment, the bus
++// responds with slverr; otherwise, this bus feeds all signals through to the slave. The slaves see
++// offset-compensated addresses, e.g., if this bus gets ADDR_BEGIN[i] as input address, slave i will
++// get address 0.
++module apb_bus #(
++  // Number of slaves.
++  parameter int unsigned N_SLV  = 0,
++  // Address ranges of the slaves. Slave i is mapped in the inclusive interval from ADDR_BEGIN[i] to
++  // ADDR_END[i].
++  parameter logic [N_SLV-1:0][31:0] ADDR_BEGIN  = '0,
++  parameter logic [N_SLV-1:0][31:0] ADDR_END    = '0
++) (
++  // Input
++  input  logic                    pclk_i,
++  input  logic                    preset_ni,
++  input  logic             [31:0] paddr_i,
++  input  logic              [2:0] pprot_i,
++  input  logic                    psel_i,
++  input  logic                    penable_i,
++  input  logic                    pwrite_i,
++  input  logic             [31:0] pwdata_i,
++  input  logic              [3:0] pstrb_i,
++  output logic                    pready_o,
++  output logic             [31:0] prdata_o,
++  output logic                    pslverr_o,
++
++  // Outputs
++  output logic [N_SLV-1:0]        pclk_o,
++  output logic [N_SLV-1:0]        preset_no,
++  output logic [N_SLV-1:0][31:0]  paddr_o,
++  output logic [N_SLV-1:0] [2:0]  pprot_o,
++  output logic [N_SLV-1:0]        psel_o,
++  output logic [N_SLV-1:0]        penable_o,
++  output logic [N_SLV-1:0]        pwrite_o,
++  output logic [N_SLV-1:0][31:0]  pwdata_o,
++  output logic [N_SLV-1:0] [3:0]  pstrb_o,
++  input  logic [N_SLV-1:0]        pready_i,
++  input  logic [N_SLV-1:0][31:0]  prdata_i,
++  input  logic [N_SLV-1:0]        pslverr_i
++);
++
++  logic [$clog2(N_SLV)-1:0] sel_idx;
++  logic dec_err;
++
++  for (genvar i = 0; i < N_SLV; i++) begin: gen_oup_demux
++    assign pclk_o[i]    = pclk_i;
++    assign preset_no[i] = preset_ni;
++    assign paddr_o[i]   = paddr_i - ADDR_BEGIN[i];
++    assign pprot_o[i]   = pprot_i;
++    assign psel_o[i]    = psel_i & (paddr_i >= ADDR_BEGIN[i] && paddr_i <= ADDR_END[i]);
++    assign penable_o[i] = penable_i;
++    assign pwrite_o[i]  = pwrite_i;
++    assign pwdata_o[i]  = pwdata_i;
++    assign pstrb_o[i]   = pstrb_i;
++  end
++
++  assign dec_err = psel_i & ~(|psel_o);
++
++  onehot_to_bin #(.ONEHOT_WIDTH(N_SLV)) i_sel_idx (
++    .onehot (psel_o),
++    .bin    (sel_idx)
++  );
++
++  always_comb begin
++    if (psel_i) begin
++      if (dec_err) begin
++        pready_o  = 1'b1;
++        prdata_o  = '0;
++        pslverr_o = 1'b1;
++      end else begin
++        pready_o  = pready_i[sel_idx];
++        prdata_o  = prdata_i[sel_idx];
++        pslverr_o = pslverr_i[sel_idx];
++      end
++    end else begin // !psel_i
++      pready_o  = 1'b0;
++      prdata_o  = '0;
++      pslverr_o = 1'b0;
++    end
++  end
++
++// Validate parameters.
++// pragma translate_off
++`ifndef VERILATOR
++  initial begin: p_assertions
++    assert (N_SLV >= 1) else $fatal(1, "The number of slave ports must be at least 1!");
++  end
++  for (genvar i = 0; i < N_SLV; i++) begin: gen_assert_addr_outer
++    initial begin
++      assert (ADDR_BEGIN[i] <= ADDR_END[i])
++        else $fatal(1, "Invalid address range for slave %0d", i);
++    end
++    for (genvar j = 0; j < N_SLV; j++) begin: gen_assert_addr_inner
++      initial begin
++        if (i != j) begin
++          if (ADDR_BEGIN[j] >= ADDR_BEGIN[i]) begin
++            assert (ADDR_BEGIN[j] > ADDR_END[i])
++              else $fatal("Address range of slaves %0d and %0d overlap!", i, j);
++          end else begin
++            assert (ADDR_END[j] < ADDR_BEGIN[i])
++              else $fatal("Address range of slaves %0d and %0d overlap!", i, j);
++          end
++        end
++      end
++    end
++  end
++`endif
++// pragma translate_on
++
++endmodule
+
+From c31a9d624dd6b734da731b25090d9360c0f4a75e Mon Sep 17 00:00:00 2001
+From: Andreas Kurth <akurth@iis.ee.ethz.ch>
+Date: Mon, 3 Jun 2019 17:54:09 +0200
+Subject: [PATCH 10/16] Add APB read-only registers
+
+---
+ Bender.yml         |  1 +
+ src/apb_ro_regs.sv | 64 ++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 65 insertions(+)
+ create mode 100644 src/apb_ro_regs.sv
+
+diff --git a/Bender.yml b/Bender.yml
+index 489c553..b9bca23 100644
+--- a/Bender.yml
++++ b/Bender.yml
+@@ -18,3 +18,4 @@ sources:
+   - src/apb_intf.sv
+   # Level 1
+   - src/apb_bus.sv
++  - src/apb_ro_regs.sv
+diff --git a/src/apb_ro_regs.sv b/src/apb_ro_regs.sv
+new file mode 100644
+index 0000000..ed2d4ef
+--- /dev/null
++++ b/src/apb_ro_regs.sv
+@@ -0,0 +1,64 @@
++// Copyright 2018 ETH Zurich and University of Bologna.
++// Copyright and related rights are licensed under the Solderpad Hardware
++// License, Version 0.51 (the "License"); you may not use this file except in
++// compliance with the License.  You may obtain a copy of the License at
++// http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
++// or agreed to in writing, software, hardware and materials distributed under
++// this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
++// CONDITIONS OF ANY KIND, either express or implied. See the License for the
++// specific language governing permissions and limitations under the License.
++
++// APB Read-Only Registers
++// This module exposes a number of 32-bit registers (provided on the `reg_i` input) read-only on an
++// APB interface.  It responds to reads that are out of range and writes with a slave error.
++module apb_ro_regs #(
++  parameter int unsigned N_REGS = 0
++) (
++  // APB Interface
++  input  logic        pclk_i,
++  input  logic        preset_ni,
++  input  logic [31:0] paddr_i,
++  input  logic  [2:0] pprot_i,
++  input  logic        psel_i,
++  input  logic        penable_i,
++  input  logic        pwrite_i,
++  input  logic [31:0] pwdata_i,
++  input  logic  [3:0] pstrb_i,
++  output logic        pready_o,
++  output logic [31:0] prdata_o,
++  output logic        pslverr_o,
++
++  // Register Interface
++  input  logic [N_REGS-1:0][31:0] reg_i
++);
++
++  always_comb begin
++    prdata_o  = 'x;
++    pslverr_o = 1'b0;
++    if (psel_i) begin
++      if (pwrite_i) begin
++        // Error response to writes
++        pslverr_o = 1'b1;
++      end else begin
++        automatic logic [29:0] word_addr = paddr_i >> 2;
++        if (word_addr >= N_REGS) begin
++          // Error response to reads out of range
++          pslverr_o = 1'b1;
++        end else begin
++          prdata_o = reg_i[word_addr];
++        end
++      end
++    end
++  end
++  assign pready_o = psel_i & penable_i;
++
++// Validate parameters.
++// pragma translate_off
++`ifndef VERILATOR
++  initial begin: p_assertions
++    assert (N_REGS >= 1) else $fatal(1, "The number of registers must be at least 1!");
++  end
++`endif
++// pragma translate_on
++
++endmodule
+
+From 44b1604ae8ef53916b0ab8bde6fdaaa5dbec724d Mon Sep 17 00:00:00 2001
+From: Andreas Kurth <akurth@iis.ee.ethz.ch>
+Date: Mon, 3 Jun 2019 17:54:36 +0200
+Subject: [PATCH 11/16] Add APB read-write registers
+
+---
+ Bender.yml         |  1 +
+ src/apb_rw_regs.sv | 81 ++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 82 insertions(+)
+ create mode 100644 src/apb_rw_regs.sv
+
+diff --git a/Bender.yml b/Bender.yml
+index b9bca23..99a0342 100644
+--- a/Bender.yml
++++ b/Bender.yml
+@@ -19,3 +19,4 @@ sources:
+   # Level 1
+   - src/apb_bus.sv
+   - src/apb_ro_regs.sv
++  - src/apb_rw_regs.sv
+diff --git a/src/apb_rw_regs.sv b/src/apb_rw_regs.sv
+new file mode 100644
+index 0000000..eb289d0
+--- /dev/null
++++ b/src/apb_rw_regs.sv
+@@ -0,0 +1,81 @@
++// Copyright 2018 ETH Zurich and University of Bologna.
++// Copyright and related rights are licensed under the Solderpad Hardware
++// License, Version 0.51 (the "License"); you may not use this file except in
++// compliance with the License.  You may obtain a copy of the License at
++// http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
++// or agreed to in writing, software, hardware and materials distributed under
++// this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
++// CONDITIONS OF ANY KIND, either express or implied. See the License for the
++// specific language governing permissions and limitations under the License.
++
++// APB Read-Write Registers
++// This module exposes a number of 32-bit registers (provided on the `reg_i` input) writable on an
++// APB interface.  It responds to accesses that are out of range with a slave error.
++module apb_rw_regs #(
++  parameter int unsigned N_REGS = 0
++) (
++  // APB Interface
++  input  logic        pclk_i,
++  input  logic        preset_ni,
++  input  logic [31:0] paddr_i,
++  input  logic  [2:0] pprot_i,
++  input  logic        psel_i,
++  input  logic        penable_i,
++  input  logic        pwrite_i,
++  input  logic [31:0] pwdata_i,
++  input  logic  [3:0] pstrb_i,
++  output logic        pready_o,
++  output logic [31:0] prdata_o,
++  output logic        pslverr_o,
++
++  // Register Interface
++  input  logic [N_REGS-1:0][31:0] init_i,
++  output logic [N_REGS-1:0][31:0] q_o
++);
++
++  logic [N_REGS-1:0][31:0] reg_d, reg_q;
++
++  always_comb begin
++    reg_d     = reg_q;
++    prdata_o  = 'x;
++    pslverr_o = 1'b0;
++    if (psel_i) begin
++      automatic logic [29:0] word_addr = paddr_i >> 2;
++      if (word_addr >= N_REGS) begin
++        // Error response to accesses that are out of range
++        pslverr_o = 1'b1;
++      end else begin
++        if (pwrite_i) begin
++          for (int i = 0; i < 4; i++) begin
++            if (pstrb_i[i]) begin
++              reg_d[word_addr][i*8 +: 8] = pwdata_i[i*8 +: 8];
++            end
++          end
++        end else begin
++          prdata_o = reg_q[word_addr];
++        end
++      end
++    end
++  end
++  assign pready_o = psel_i & penable_i;
++
++  assign q_o = reg_q;
++
++  always_ff @(posedge pclk_i or negedge preset_ni) begin
++    if (!preset_ni) begin
++      reg_q <= init_i;
++    end else begin
++      reg_q <= reg_d;
++    end
++  end
++
++// Validate parameters.
++// pragma translate_off
++`ifndef VERILATOR
++  initial begin: p_assertions
++    assert (N_REGS >= 1) else $fatal(1, "The number of registers must be at least 1!");
++  end
++`endif
++// pragma translate_on
++
++endmodule
+
+From e454aef5fa8f3733a4fb7d12d73b7afab2bba78c Mon Sep 17 00:00:00 2001
+From: Andreas Kurth <akurth@iis.ee.ethz.ch>
+Date: Mon, 3 Jun 2019 17:55:05 +0200
+Subject: [PATCH 12/16] Add basic test infrastructure for APB modules
+
+---
+ Bender.yml      |   4 ++
+ src/apb_test.sv | 114 ++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 118 insertions(+)
+ create mode 100644 src/apb_test.sv
+
+diff --git a/Bender.yml b/Bender.yml
+index 99a0342..efcd84a 100644
+--- a/Bender.yml
++++ b/Bender.yml
+@@ -20,3 +20,7 @@ sources:
+   - src/apb_bus.sv
+   - src/apb_ro_regs.sv
+   - src/apb_rw_regs.sv
++
++  - target: simulation
++    files:
++      - src/apb_test.sv
+diff --git a/src/apb_test.sv b/src/apb_test.sv
+new file mode 100644
+index 0000000..7feaaec
+--- /dev/null
++++ b/src/apb_test.sv
+@@ -0,0 +1,114 @@
++// Copyright (c) 2018 ETH Zurich, University of Bologna
++//
++// Copyright and related rights are licensed under the Solderpad Hardware
++// License, Version 0.51 (the "License"); you may not use this file except in
++// compliance with the License.  You may obtain a copy of the License at
++// http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
++// or agreed to in writing, software, hardware and materials distributed under
++// this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
++// CONDITIONS OF ANY KIND, either express or implied. See the License for the
++// specific language governing permissions and limitations under the License.
++
++// Test infrastructure for APB interfaces
++package apb_test;
++
++  // Simple APB driver with thread-safe 32-bit read and write functions
++  class apb_driver #(
++    parameter time TA = 0ns,
++    parameter time TT = 0ns
++  );
++
++    virtual APB_DV apb;
++    semaphore lock;
++
++    function new(virtual APB_DV apb);
++      this.apb = apb;
++      this.lock = new(1);
++    endfunction
++
++    function void reset_master();
++      apb.paddr   <= '0;
++      apb.pprot   <= '0;
++      apb.psel    <= 1'b0;
++      apb.penable <= 1'b0;
++      apb.pwrite  <= 1'b0;
++      apb.pwdata  <= '0;
++      apb.pstrb   <= '0;
++    endfunction
++
++    function void reset_slave();
++      apb.pready  <= 1'b0;
++      apb.prdata  <= '0;
++      apb.pslverr <= 1'b0;
++    endfunction
++
++    task cycle_start;
++      #TT;
++    endtask
++
++    task cycle_end;
++      @(posedge apb.clk_i);
++    endtask
++
++    task read(
++      input  logic [31:0] addr,
++      output logic [31:0] data,
++      output logic err
++    );
++      while (!lock.try_get()) begin
++        cycle_end();
++      end
++      apb.paddr   <= #TA addr;
++      apb.pwrite  <= #TA 1'b0;
++      apb.psel    <= #TA 1'b1;
++      cycle_end();
++      apb.penable <= #TA 1'b1;
++      cycle_start();
++      while (!apb.pready) begin
++        cycle_end();
++        cycle_start();
++      end
++      data  = apb.prdata;
++      err   = apb.pslverr;
++      cycle_end();
++      apb.paddr   <= #TA '0;
++      apb.psel    <= #TA 1'b0;
++      apb.penable <= #TA 1'b0;
++      lock.put();
++    endtask
++
++    task write(
++      input  logic [31:0] addr,
++      input  logic [31:0] data,
++      input  logic  [3:0] strb,
++      output logic err
++    );
++      while (!lock.try_get()) begin
++        cycle_end();
++      end
++      apb.paddr   <= #TA addr;
++      apb.pwdata  <= #TA data;
++      apb.pstrb   <= #TA strb;
++      apb.pwrite  <= #TA 1'b1;
++      apb.psel    <= #TA 1'b1;
++      cycle_end();
++      apb.penable <= #TA 1'b1;
++      cycle_start();
++      while (!apb.pready) begin
++        cycle_end();
++        cycle_start();
++      end
++      err = apb.pslverr;
++      cycle_end();
++      apb.paddr   <= #TA '0;
++      apb.pwdata  <= #TA '0;
++      apb.pstrb   <= #TA '0;
++      apb.pwrite  <= #TA 1'b0;
++      apb.psel    <= #TA 1'b0;
++      apb.penable <= #TA 1'b0;
++      lock.put();
++    endtask
++
++  endclass
++
++endpackage
+
+From 4b29f2cad7503b4a5b359e0e23ef81c384cb035c Mon Sep 17 00:00:00 2001
+From: Andreas Kurth <akurth@iis.ee.ethz.ch>
+Date: Mon, 3 Jun 2019 17:55:59 +0200
+Subject: [PATCH 13/16] Changelog: Add missing newline at EOF
+
+---
+ CHANGELOG.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 6d9827b..7fd5e57 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -11,4 +11,4 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
+ - Open source release.
+ 
+ ### Added
+-- Initial commit.
+\ No newline at end of file
++- Initial commit.
+
+From be0e6b29d79a3780e7c6cae46026f3547b4443e0 Mon Sep 17 00:00:00 2001
+From: Andreas Kurth <akurth@iis.ee.ethz.ch>
+Date: Mon, 3 Jun 2019 17:58:56 +0200
+Subject: [PATCH 14/16] Update Changelog
+
+---
+ CHANGELOG.md | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 7fd5e57..1f0ba4a 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
+ 
+ ## Unreleased
+ 
++### Added
++- Add clocked `APB_DV` interface for design verification.
++- Define macros for assigning APB interfaces.
++- Add read-only and read-write registers with APB interface.
++- Add basic test infrastructure for APB modules.
++
++### Changed
++- Rename `APB_BUS` interface to `APB`, change its parameters to constants, and remove `in` and `out`
++  modports.
++
+ ## 0.1.0 - 2018-09-12
+ ### Changed
+ - Open source release.
+
+From efe7c5627ff5892b853da6798bb96ddc4e1a62fb Mon Sep 17 00:00:00 2001
+From: Andreas Kurth <akurth@iis.ee.ethz.ch>
+Date: Mon, 3 Jun 2019 18:06:27 +0200
+Subject: [PATCH 15/16] Update ReadMe
+
+---
+ README.md | 33 ++++++++++++++++++++++++++++++++-
+ 1 file changed, 32 insertions(+), 1 deletion(-)
+
+diff --git a/README.md b/README.md
+index 9e80224..777857d 100644
+--- a/README.md
++++ b/README.md
+@@ -1,3 +1,34 @@
+ # APB
+ 
+-This repository contains common functions and hardware modules for the Advanced Peripherals Bus (APB).
+\ No newline at end of file
++This is the implementation of the AMBA APB protocol, version 2, developed as part of the PULP
++platform at ETH Zurich.
++
++Maintainer: Andreas Kurth <akurth@iis.ee.ethz.ch>
++
++## Overview
++
++### Interfaces
++
++|           Name            |                     Description                                   |
++|---------------------------|-------------------------------------------------------------------|
++| `APB`                     | APB2 interface with 32-bit address and data channels              |
++| `APB_DV`                  | Clocked variant of `APB` for design verification                  |
++
++### Leaf Modules
++
++|           Name            |                     Description                                   |
++|---------------------------|-------------------------------------------------------------------|
++| `apb_ro_regs`             | Registers with read-only APB interface                            |
++| `apb_rw_regs`             | Registers with read- and writable via APB                         |
++
++### Intermediary Modules
++
++|           Name            |                     Description                                   |
++|---------------------------|-------------------------------------------------------------------|
++| `apb_bus`                 | APB bus with single master and multiple slave interfaces          |
++
++### Verification and Simulation
++
++|           Name            |                     Description                                   |
++|---------------------------|-------------------------------------------------------------------|
++| `apb_driver`              | APB driver (can act as either slave or master)                    |
+
+From a8b9b4cb6e8558dfed7aeca75882ea2ca8ca0ee6 Mon Sep 17 00:00:00 2001
+From: Andreas Kurth <akurth@iis.ee.ethz.ch>
+Date: Mon, 3 Jun 2019 18:20:54 +0200
+Subject: [PATCH 16/16] Add EditorConfig
+
+---
+ .editorconfig | 22 ++++++++++++++++++++++
+ .gitignore    |  1 +
+ 2 files changed, 23 insertions(+)
+ create mode 100644 .editorconfig
+
+diff --git a/.editorconfig b/.editorconfig
+new file mode 100644
+index 0000000..7b1315a
+--- /dev/null
++++ b/.editorconfig
+@@ -0,0 +1,22 @@
++# EditorConfig (http://editorconfig.org/)
++root = true
++
++# Default Settings
++[*]
++charset = utf-8
++end_of_line = lf
++indent_size = 4
++indent_style = space
++insert_final_newline = true
++tab_width = 4
++trim_trailing_whitespace = true
++max_line_length = 100
++
++[Makefile]
++indent_style = tab
++
++[{*.sv,*.svh}]
++indent_size = 2
++
++[*.yml]
++indent_size = 2
+diff --git a/.gitignore b/.gitignore
+index ff59ba3..4ff97c0 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -1,5 +1,6 @@
+ .*
+ !.git*
++!/.editorconfig
+ /build
+ /Bender.lock
+ /Bender.local

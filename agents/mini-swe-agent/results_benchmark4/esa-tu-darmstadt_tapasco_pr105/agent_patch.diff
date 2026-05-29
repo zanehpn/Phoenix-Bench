@@ -1,0 +1,21 @@
+diff --git a/toolflow/scala/src/main/scala/tapasco/base/json/package.scala b/toolflow/scala/src/main/scala/tapasco/base/json/package.scala
+index 2beb115..4ae21fc 100644
+--- a/toolflow/scala/src/main/scala/tapasco/base/json/package.scala
++++ b/toolflow/scala/src/main/scala/tapasco/base/json/package.scala
+@@ -99,12 +99,14 @@ package object json {
+       (JsPath \ "Tapasco API").format[String]
+     ) (LibraryVersions.apply _, unlift(LibraryVersions.unapply _))
+ 
++  private def sanitizeVersion(v: String): String = v.replaceAll("[^0-9A-Za-z.+-]", "")
++
+   implicit val hostFormat: Format[Host] = (
+     (JsPath \ "Machine").format[String] ~
+       (JsPath \ "Node").format[String] ~
+       (JsPath \ "Operating System").format[String] ~
+-      (JsPath \ "Release").format[String] ~
+-      (JsPath \ "Version").format[String]
++      (JsPath \ "Release").format[String].map(sanitizeVersion) ~
++      (JsPath \ "Version").format[String].map(sanitizeVersion)
+     ) (Host.apply _, unlift(Host.unapply _))
+ 
+   implicit val transferSpeedMeasurementFormat: Format[TransferSpeedMeasurement] = (
