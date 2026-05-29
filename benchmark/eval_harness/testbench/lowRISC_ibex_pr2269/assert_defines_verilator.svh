@@ -1,5 +1,0 @@
-`ifndef PRIM_ASSERT_DEFINES
-`define PRIM_ASSERT_DEFINES
-`define ASSERT(NAME_, PROP_)
-`define ASSERT_INIT(NAME_, PROP_)
-`endif
