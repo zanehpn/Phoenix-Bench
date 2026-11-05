@@ -1,8 +1,8 @@
 # HWE — Phoenix-bench Code Release
 
-Code that backs the paper *Phoenix-bench: A Hardware Engineering Benchmark for Agentic AI* (NeurIPS 2026). The companion data (per-instance snapshots, full Verilator testbenches) lives at the project page; this tree holds source code, scripts, agent run artifacts, and lightweight metadata (~2.2 GB).
+Code that backs the paper *Phoenix-bench: A Hardware Engineering Benchmark for Agentic AI* (NeurIPS 2026). The companion data (per-instance snapshots, developer patches, full Verilator testbenches) lives on [Hugging Face](https://huggingface.co/datasets/OvertureMMXXI/Phoenix-Bench); this tree holds source code and scripts.
 
-All paths and identifiers in this release have been anonymized; absolute paths in scripts and logs point at `/workspace/phoenix-bench/`, which the verifier maps to the snapshot/testbench layout described under "Data NOT included" below.
+Absolute paths in the batch scripts point at `/workspace/phoenix-bench/`. Adjust them to your local data location before using those scripts.
 
 ## Layout
 
@@ -19,8 +19,8 @@ HWE/
 │   └── SWE-agent/      # interactive     (Yang et al. 2024)
 └── benchmark/
     ├── construction/   # §3.1 funnel: GitHub crawl → issue/PR filtering
-    ├── verifier/       # §3 Phoenix-Ref harness + gold patches
-    └── eval_harness/   # §4 product+open-source agent evaluation scaffolds
+    ├── verifier/       # §3 F2P/P2P verifier and analysis scripts
+    └── eval_harness/   # §4 Gemini CLI and feedback-run scaffolds
 ```
 
 ## Mapping to the paper
@@ -28,36 +28,38 @@ HWE/
 | Paper element | Code path |
 |---|---|
 | §3.1 Data collection / 4-stage funnel | `benchmark/construction/` |
-| §3 Phoenix-Ref harness (511 instances) | `benchmark/verifier/` |
-| §3 Patch complexity / difficulty tiers (Tab 2, App C) | `benchmark/verifier/classify_patch_complexity.py`, `patch_complexity*` |
+| §3 Verifier scripts (511 instances) | `benchmark/verifier/` |
+| §3 Patch complexity / difficulty tiers (Tab 2, App C) | `benchmark/verifier/classify_patch_complexity.py` |
 | §3 F2P / P2P verification | `benchmark/verifier/count_fail_to_pass.{py,sh}`, `f2p_sweep_one.sh` |
 | §3 Coverage statistics (Tab 2) | `benchmark/verifier/collect_*coverage*.py` |
-| §3 Issue classification (Fig 3) | `benchmark/verifier/classified_issues_full.json`, `classify_missing_issues.py` |
-| §4.1 Four product agents | `benchmark/eval_harness/benchmark_{claude,codex,codex_new,copilot,gemini}/` |
+| §3 Issue classification (Fig 3) | `benchmark/verifier/classify_missing_issues.py` |
+| §4.1 Gemini CLI runs | `benchmark/eval_harness/benchmark_gemini/` |
 | §4.2 Eight open-source agents | `agents/` |
-| §4.2 mini-SWE-agent runs | `benchmark/eval_harness/benchmark_mini_agent/` |
-| §4.3 File-level oracle localization | `benchmark/eval_harness/benchmark_localizations/` |
-| §4.3 Testbench-feedback diagnostic | `benchmark/eval_harness/benchmark_eda/` |
+| §4.3 Testbench-feedback runs | `benchmark/eval_harness/benchmark_eda/agent_runs/run_and_log.sh` |
 
-## Data NOT included (download separately)
+## Data (download separately)
 
-These are required to actually re-run the benchmark; omitted here for size.
+The benchmark data is required to re-run verification and is hosted on [Hugging Face](https://huggingface.co/datasets/OvertureMMXXI/Phoenix-Bench):
 
-| Artifact | Original location | Size |
+| Artifact | Dataset path | Size |
 |---|---|---|
-| Per-instance snapshots (511 × repo HEAD) | `HDL_verified_new/snapshots/` | 21 GB |
-| Per-instance Verilator testbenches | `HDL_verified_new/testbench_verilator/` | 16 GB |
-| OpenHands eval outputs (per-instance logs) | `openhands_eval/benchmarks/eval_outputs/` | 9.5 GB |
-
-`benchmark/verifier/patches/` (122 MB, gold developer patches) IS included — needed for F2P verification once snapshots are restored.
+| Per-instance snapshots (511) | `snapshots/` | 21 GB |
+| Per-instance Verilator testbenches | `testbench/` | 16 GB |
+| Developer patches | `patches/` | 122 MB |
 
 ## Reproducing F2P verification
 
+Install Verilator and Surelog, or set `$OSS_CAD_SUITE` to an OSS CAD Suite installation. Then run one instance from the dataset root:
+
 ```bash
-# After downloading snapshots/ and testbench_verilator/ into benchmark/verifier/
-cd benchmark/verifier
-ls testbench_verilator/ > /tmp/instances.txt
-SWEEP_CSV=/tmp/f2p.csv xargs -P 16 -I {} ./f2p_sweep_one.sh {} < /tmp/instances.txt
+bash testbench/AUCOHL_Lighter_pr16/run_verilator.sh
 ```
 
-The included `f2p_full_sweep_2026-05-27.csv` is a snapshot of the 511-instance sweep run on 2026-05-27 (475 PASS / 32 FAIL / 3 ERROR / 1 misclassified).
+The runner checks the buggy and fixed phases and ends with `PASS: <instance>` when the instance fails before the patch and passes after it. Requirements vary by instance.
+
+For batch runs, edit `TB_ROOT` at the top of `benchmark/verifier/f2p_sweep_one.sh` to point at your `testbench/` directory, then run from the dataset root:
+
+```bash
+ls testbench/ | grep -v '^_' > /tmp/instances.txt
+SWEEP_CSV=/tmp/f2p.csv xargs -P 16 -I {} /path/to/Phoenix-Bench/benchmark/verifier/f2p_sweep_one.sh {} < /tmp/instances.txt
+```
