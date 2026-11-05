@@ -1,6 +1,6 @@
 # HWE — Phoenix-bench Code Release
 
-Code that backs the paper *Phoenix-bench: A Hardware Engineering Benchmark for Agentic AI* (NeurIPS 2026). The companion data (per-instance snapshots, full Verilator testbenches, Docker images) lives at the project page; this tree holds source code, scripts, agent run artifacts, and lightweight metadata (~2.2 GB).
+Code that backs the paper *Phoenix-bench: A Hardware Engineering Benchmark for Agentic AI* (NeurIPS 2026). The companion data (per-instance snapshots, full Verilator testbenches) lives at the project page; this tree holds source code, scripts, agent run artifacts, and lightweight metadata (~2.2 GB).
 
 All paths and identifiers in this release have been anonymized; absolute paths in scripts and logs point at `/workspace/phoenix-bench/`, which the verifier maps to the snapshot/testbench layout described under "Data NOT included" below.
 
